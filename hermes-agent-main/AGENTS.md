@@ -1170,6 +1170,11 @@ characters). If `hermes doctor` reports a key but `hermes chat` returns HTTP 401
 `Missing Authentication header`, the secret value is almost certainly wrong —
 re-save the real key from https://openrouter.ai/keys .
 
+After changing a Cursor secret, **start a new Cloud Agent run** (or fresh VM) so
+`OPENROUTER_API_KEY` is re-injected; continuing the same pod keeps the old value.
+Quick check: `python3 -c "import os; k=os.getenv('OPENROUTER_API_KEY',''); print(len(k), k[:7] if k else 'missing')"`
+should show length ≫ 9 and a `sk-or-v` prefix.
+
 ### Smoke checks without an LLM key
 
 - `hermes doctor`, `hermes tools list`, `hermes cron list`, `hermes skills list`
