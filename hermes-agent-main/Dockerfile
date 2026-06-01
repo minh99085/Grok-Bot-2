@@ -188,12 +188,19 @@ COPY --chmod=0755 docker/cont-init.d/02-reconcile-profiles /etc/cont-init.d/02-r
 # Belt-and-suspenders line-ending normalization for the container boot
 # files. The repo .gitattributes pins these to `eol=lf`, but a worktree
 # that was checked out before that rule existed (or with an overriding
-# local git config) can still carry CRLF. A stray CR in an s6 `type` file
-# makes s6-rc-compile abort at startup ("invalid /etc/s6-overlay/s6-rc.d/
-# <svc>/type: must be oneshot, longrun, or bundle"); a CR on a `#!` shebang
-# line breaks the interpreter. Strip any trailing CR so the image is valid
-# regardless of how the build context was checked out.
-RUN find /etc/s6-overlay/s6-rc.d /etc/cont-init.d -type f \
+# local git config) can still carry CRLF. Two distinct boot failures stem
+# from a stray CR:
+#   * s6 service `type` files — s6-rc-compile aborts at startup ("invalid
+#     /etc/s6-overlay/s6-rc.d/<svc>/type: must be oneshot, longrun, or
+#     bundle").
+#   * `#!`-shebang scripts (main-wrapper.sh / stage2-hook.sh / s6 run +
+#     finish) — a CR on the shebang turns the interpreter into `/bin/sh\r`,
+#     which does not exist, so exec fails with "not found" / exit 127
+#     (e.g. ENTRYPOINT `/opt/hermes/docker/main-wrapper.sh: not found`).
+# Strip any trailing CR so the image boots regardless of how the build
+# context was checked out. /opt/hermes/docker holds the directly-exec'd
+# ENTRYPOINT + cont-init scripts (copied via `COPY . .` above).
+RUN find /etc/s6-overlay/s6-rc.d /etc/cont-init.d /opt/hermes/docker -type f \
         -exec sed -i 's/\r$//' {} +
 
 # ---------- Runtime ----------
