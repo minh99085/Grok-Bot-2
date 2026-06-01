@@ -1159,6 +1159,17 @@ The git checkout lives at **`/workspace/hermes-agent-main/`** (not the repo root
 
 Use **tmux** for long-running `hermes dashboard` / `hermes gateway run` processes in Cloud Agent VMs.
 
+### Cloud Agent secrets → `~/.hermes/.env`
+
+Cursor injects secrets as environment variables. Hermes reads provider keys from
+`~/.hermes/.env` via `load_hermes_dotenv()`. The VM **update script** mirrors
+`OPENROUTER_API_KEY` from the environment into `~/.hermes/.env` when set.
+
+Valid OpenRouter keys are long strings starting with `sk-or-v1-` (typically 40+
+characters). If `hermes doctor` reports a key but `hermes chat` returns HTTP 401
+`Missing Authentication header`, the secret value is almost certainly wrong —
+re-save the real key from https://openrouter.ai/keys .
+
 ### Smoke checks without an LLM key
 
 - `hermes doctor`, `hermes tools list`, `hermes cron list`, `hermes skills list`
