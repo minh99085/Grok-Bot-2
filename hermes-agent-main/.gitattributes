@@ -1,2 +1,16 @@
 # Auto-generated files — collapse diffs and exclude from language stats
 web/package-lock.json linguist-generated=true
+
+# Container boot files MUST stay LF, even when checked out on a host with
+# core.autocrlf=true (the Windows default). A CR in an s6 `type` file makes
+# s6-rc-compile fail at container startup ("invalid .../type: must be
+# oneshot, longrun, or bundle"); a CR on a shebang line breaks the
+# interpreter. See docker/s6-rc.d/ and docker/cont-init.d/.
+docker/s6-rc.d/** text eol=lf
+docker/cont-init.d/** text eol=lf
+docker/entrypoint.sh text eol=lf
+docker/main-wrapper.sh text eol=lf
+docker/stage2-hook.sh text eol=lf
+
+# Shell scripts are LF everywhere — CRLF breaks `#!` shebang resolution.
+*.sh text eol=lf

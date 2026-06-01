@@ -185,6 +185,17 @@ RUN mkdir -p /etc/cont-init.d && \
 COPY --chmod=0755 docker/cont-init.d/015-supervise-perms /etc/cont-init.d/015-supervise-perms
 COPY --chmod=0755 docker/cont-init.d/02-reconcile-profiles /etc/cont-init.d/02-reconcile-profiles
 
+# Belt-and-suspenders line-ending normalization for the container boot
+# files. The repo .gitattributes pins these to `eol=lf`, but a worktree
+# that was checked out before that rule existed (or with an overriding
+# local git config) can still carry CRLF. A stray CR in an s6 `type` file
+# makes s6-rc-compile abort at startup ("invalid /etc/s6-overlay/s6-rc.d/
+# <svc>/type: must be oneshot, longrun, or bundle"); a CR on a `#!` shebang
+# line breaks the interpreter. Strip any trailing CR so the image is valid
+# regardless of how the build context was checked out.
+RUN find /etc/s6-overlay/s6-rc.d /etc/cont-init.d -type f \
+        -exec sed -i 's/\r$//' {} +
+
 # ---------- Runtime ----------
 ENV HERMES_WEB_DIST=/opt/hermes/hermes_cli/web_dist
 ENV HERMES_HOME=/opt/data
