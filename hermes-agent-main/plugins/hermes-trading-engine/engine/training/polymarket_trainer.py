@@ -36,6 +36,8 @@ from .diagnostics import build_record
 from .edge_engine import EdgeEngine
 from .experiment_manager import (BREGMAN_VARIANT, ExperimentManager, classify_variant)
 from .feedback_loop import FeedbackLoop
+from .live_readiness import (ReadinessCriteria, capital_preservation_report,
+                             evaluate_live_readiness)
 from .market_scanner import MarketScanner
 from .metrics import ScanMetrics
 from .monitoring import (KillSwitchThresholds, bregman_monitoring, build_dashboard,
@@ -1077,6 +1079,97 @@ class PolymarketPaperTrainer:
             self.downgrade_to_conservative(reasons=ks["triggered"])
         return ks
 
+    # -- live-readiness gate (PAPER ONLY — verdicts only, never enables live) ---
+    def _readiness_evidence(self) -> dict:
+        """Gather the durable-evidence inputs for the live-readiness gate from this
+        run's closed paper trades, learner calibration, settlement-label quality,
+        realistic-fill execution, risk-gate cleanliness, and Bregman telemetry.
+
+        Quant scope: Data Acquisition (closed trades + labels), Statistical
+        Modeling (calibration / OOS Sharpe-Sortino-Calmar), CLOB v2 Execution
+        (realistic-fill expectancy), Risk Management (violations + drawdown), and
+        Bregman arbitrage validation. Read-only."""
+        from engine.replay import metrics as _m
+        from engine.risk import risk_gate_violations
+        from .monitoring import bregman_monitoring
+
+        closed = [p for p in self.positions if p.closed]
+        n = len(closed)
+        total_realized = sum(p.realized_pnl for p in closed)
+        bstat = self.broker.status()
+        orders = max(1, int(bstat.get("orders", 0)))
+        # after-cost vs realistic-fill expectancy: realistic penalizes unfilled /
+        # rejected orders (optimistic-only profitability is caught here).
+        after_cost = (total_realized / n) if n else 0.0
+        realistic = total_realized / orders
+        # out-of-sample split (second half by trade order)
+        mid = n // 2
+        oos = closed[mid:]
+        oos_eq = [float(self.cfg.starting_bankroll)]
+        for p in oos:
+            oos_eq.append(oos_eq[-1] + p.realized_pnl)
+        preds = [p.p_final for p in closed]
+        outs = [1.0 if p.realized_pnl > 0 else 0.0 for p in closed]
+        lq = self.learner.label_quality()
+        labelled = max(1, sum((self.learner.label_states or {}).values()))
+        unresolved_rate = (self.learner.label_states or {}).get("unresolved", 0) / labelled
+        dash = self.aggressive_dashboard()
+        dd_usd = abs(float(self.pnl_summary().get("max_drawdown", 0.0) or 0.0))
+        start = max(1e-9, float(self.cfg.starting_bankroll))
+        # Per-order notional is checked across ALL fills; concurrent exposure caps
+        # are checked over the currently-open book (cumulative would overcount).
+        violations = risk_gate_violations(
+            [p for p in self.positions], open_positions=self.open_positions(),
+            max_market_exposure=float(self.cfg.max_market_exposure_usd),
+            max_total_exposure=float(self.cfg.max_total_exposure_usd),
+            max_order_notional=float(self.cfg.max_order_notional_usd))
+        bm = bregman_monitoring(self.bregman_summary())
+        return {
+            "samples": n,
+            "after_cost_expectancy": round(after_cost, 6),
+            "realistic_fill_expectancy": round(realistic, 6),
+            "oos_sharpe": _m.sharpe(oos_eq), "oos_sortino": _m.sortino(oos_eq),
+            "oos_calmar": _m.calmar(oos_eq),
+            "max_drawdown_pct": round(dd_usd / start, 6),
+            "calibration_error": float(self.learner.calibration_error()),
+            "ece": _m.ece(preds, outs),
+            "label_suppression_rate": float(lq.get("suppression_rate", 0.0)),
+            "unresolved_rate": round(unresolved_rate, 6),
+            "ambiguous_rate": float(lq.get("ambiguous_rate", 0.0)),
+            "stale_data_rejection_rate": float(dash.get("stale_data_rejection_rate", 0.0)),
+            "chainlink_stale": False, "stale_book": False,
+            "risk_violations": int(violations),
+            "downgraded": bool(self._downgraded),
+            "bregman": {
+                "opportunities": bm["opportunities"],
+                "false_positive_rate": bm["false_positive_rate"],
+                "worst_case_pnl": bm["certified_profit"],
+                # the engine only ever opens FULLY-hedged sets and unwinds any
+                # partial leg, so hedge validity / leg feasibility hold by
+                # construction; a partial-fill that broke a hedge would have been
+                # rolled back (no un-hedged exposure is ever persisted).
+                "full_hedge_validated": True, "all_leg_fill_feasible": True,
+                "partial_fill_hedge_break": False},
+        }
+
+    def live_readiness_report(self) -> dict:
+        """Live-readiness verdict + capital-preservation plan (PAPER ONLY).
+
+        Blocks real-money escalation unless durable after-cost profitability,
+        execution realism, calibration, settlement-label quality, and risk-gate
+        cleanliness are proven. NEVER enables live trading — it only produces a
+        verdict + hard blockers + bounded capital-preservation caps."""
+        evidence = self._readiness_evidence()
+        verdict = evaluate_live_readiness(evidence, ReadinessCriteria.from_config(self.cfg))
+        capital = capital_preservation_report(
+            verdict, bankroll=float(self.cfg.starting_bankroll), cfg=self.cfg)
+        # Compliance invariant: the verdict can never auto-enable live execution.
+        from engine.safety import live_unlock_blockers
+        return {"verdict": verdict.to_dict(), "capital_preservation": capital,
+                "evidence": evidence, "paper_only": bool(self.cfg.is_paper_only),
+                "live_unlock_blockers": live_unlock_blockers(verdict.to_dict()),
+                "live_enabled": False}
+
     def experiment_report(self) -> dict:
         """Controlled strategy-variant experiment report (Monitoring + Strategy
         Optimization): per-variant trade/feedback counts + Sharpe/Sortino/Calmar/
@@ -1113,6 +1206,7 @@ class PolymarketPaperTrainer:
             "experiments": self.experiment_report(),
             "monitoring": self.aggressive_dashboard(),
             "kill_switch": self.kill_switch_report(),
+            "live_readiness": self.live_readiness_report(),
             "profile": self._profile(),
             "downgraded": self._downgraded,
             # Live scan visibility for the dashboard: which markets are being

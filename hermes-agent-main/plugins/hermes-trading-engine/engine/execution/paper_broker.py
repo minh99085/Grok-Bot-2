@@ -421,6 +421,19 @@ class PaperBroker:
                                    remaining=D(order.quantity))
         return res
 
+    def realism_summary(self) -> dict:
+        """Execution-realism posture for the live-readiness gate (CLOB v2
+        Execution). ``realistic_fills`` MUST be on and reference-price ("fantasy")
+        fills MUST be off before any real-money escalation — a strategy that only
+        clears the gate under optimistic fills is not live-ready. Read-only."""
+        return {
+            "realistic_fills": bool(self.realistic),
+            "reject_on_stale_book": bool(self.reject_on_stale),
+            "reference_price_fills": bool(self.allow_reference or self.allow_pm_reference),
+            "optimistic_fill_risk": bool((not self.realistic)
+                                         or self.allow_reference or self.allow_pm_reference),
+        }
+
     def config(self) -> dict:
         return {
             "max_fill_depth_fraction": str(self.depth_fraction),

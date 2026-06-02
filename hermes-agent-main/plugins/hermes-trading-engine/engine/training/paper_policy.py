@@ -115,6 +115,18 @@ class PaperPolicy:
             "slippage_forecast_bps": slippage_forecast(notional, depth),
         }
 
+    def realistic_after_cost_floor(self, edge: EdgeResult, est: ProbabilityEstimate, rec,
+                                   *, order_usd: Optional[float] = None) -> float:
+        """Conservative realistic-fill after-cost edge floor for the live-readiness
+        gate (CLOB v2 Execution): the directional edge HAIRCUT by the modelled
+        fill probability + slippage forecast, so a trade that only profits under
+        optimistic (guaranteed) fills scores at/below zero. Read-only analytics —
+        never sizes or places an order."""
+        fq = self.fill_quality_estimate(edge, est, rec, order_usd=order_usd)
+        fill_p = float(fq.get("fill_probability", 0.0) or 0.0)
+        slip = float(fq.get("slippage_forecast_bps", 0.0) or 0.0) / 10000.0
+        return round(float(getattr(edge, "net_edge", 0.0)) * fill_p - slip, 6)
+
     def explore_size(self) -> float:
         """Small exploratory size for an active-learning paper trade, hard-clamped
         to the paper order-notional ceiling (can never bypass risk caps)."""

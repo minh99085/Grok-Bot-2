@@ -209,6 +209,9 @@ def run(argv=None) -> int:
     ap.add_argument("--monitoring", action="store_true",
                     help="run an aggressive offline demo and print the learning-velocity "
                          "dashboard + kill-switch report (PAPER ONLY)")
+    ap.add_argument("--live-readiness", action="store_true",
+                    help="run an aggressive offline demo and print the live-readiness "
+                         "verdict + capital-preservation plan (PAPER ONLY; never enables live)")
     ap.add_argument("--baseline-report", action="store_true",
                     help="print the algorithm inventory + institutional metrics baseline")
     ap.add_argument("--final-validation", action="store_true",
@@ -229,6 +232,23 @@ def run(argv=None) -> int:
         print(_json.dumps(rep, indent=2, default=str))
         print(f"\nproduction_ready: {rep['production_ready']}  "
               f"no_regression: {rep['no_regression_ok']}  paper_only: {rep['paper_only']}")
+        return 0
+
+    if args.live_readiness:
+        import json as _json
+        t = _run_demo(aggressive=True, ticks=12)
+        rep = t.live_readiness_report()
+        v = rep["verdict"]
+        cap = rep["capital_preservation"]
+        print("=" * 64)
+        print("LIVE-READINESS GATE (PAPER ONLY — verdict NEVER enables live)")
+        print("=" * 64)
+        print(f"state={v['state']}  live_escalation_allowed={v['allows_live_escalation']}  "
+              f"live_enabled={rep['live_enabled']}")
+        print(f"hard_blockers={v['blockers']}")
+        print(f"max_initial_live_notional={cap['max_initial_live_notional']}  "
+              f"max_daily_loss={cap['max_daily_loss']}  allowed={cap['allowed']}")
+        print(_json.dumps(rep, indent=2, default=str))
         return 0
 
     if args.monitoring:

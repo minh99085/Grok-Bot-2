@@ -102,6 +102,9 @@ def write_reports(trainer=None, *, status: Optional[dict] = None,
         json.dumps(status.get("monitoring", {}), default=str, indent=2), encoding="utf-8")
     (run_dir / "kill_switch.json").write_text(
         json.dumps(status.get("kill_switch", {}), default=str, indent=2), encoding="utf-8")
+    # live-readiness verdict + capital-preservation plan (PAPER ONLY — verdict only)
+    (run_dir / "live_readiness.json").write_text(
+        json.dumps(status.get("live_readiness", {}), default=str, indent=2), encoding="utf-8")
 
     candidates = getattr(trainer, "candidates_log", []) if trainer else []
     edges = getattr(trainer, "edge_log", []) if trainer else []
@@ -267,6 +270,12 @@ def _markdown(status: dict, run_id: str) -> str:
         if status.get("downgraded"):
             a(f"- **AUTO-DOWNGRADED to conservative paper mode** (kill-switch: "
               f"{', '.join(ks.get('triggered', []))})")
+        a("")
+    lr = status.get("live_readiness", {}) or {}
+    if lr:
+        from .live_readiness import readiness_markdown
+        for ln in readiness_markdown(lr.get("verdict", {}), lr.get("capital_preservation", {})):
+            a(ln)
         a("")
     a("## 18. Recommendation")
     a(f"- **{status.get('recommendation')}**\n")

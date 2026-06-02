@@ -470,6 +470,36 @@ class RiskEngine:
 # can avoid concentrating risk in one correlated cluster (Risk Management &
 # Portfolio Optimization). Every individual order still passes the RiskEngine.
 # --------------------------------------------------------------------------- #
+def risk_gate_violations(positions: list, *, max_market_exposure: float,
+                         max_total_exposure: float, max_order_notional: float,
+                         open_positions: Optional[list] = None) -> int:
+    """Post-hoc count of HARD risk-cap violations across a position book.
+
+    Live-readiness input (Risk Management & Compliance): with the mandatory
+    TrainingRiskGate/RiskEngine in front of every order this MUST be 0 — a
+    non-zero count means a cap was breached and the strategy is NOT live-ready.
+    Per-order notional > cap is checked over EVERY order in ``positions``;
+    per-market (group) + total exposure caps are checked over the CONCURRENT
+    ``open_positions`` (cumulative would overcount closed trades). Read-only."""
+    tol = 1e-6
+    violations = 0
+    for p in positions or []:
+        if float(getattr(p, "cost", 0.0) or 0.0) > float(max_order_notional) + tol:
+            violations += 1
+    concurrent = open_positions if open_positions is not None else (positions or [])
+    by_group: dict = {}
+    total = 0.0
+    for p in concurrent:
+        cost = float(getattr(p, "cost", 0.0) or 0.0)
+        by_group[getattr(p, "group_key", "") or ""] = \
+            by_group.get(getattr(p, "group_key", "") or "", 0.0) + cost
+        total += cost
+    violations += sum(1 for v in by_group.values() if v > float(max_market_exposure) + tol)
+    if total > float(max_total_exposure) + tol:
+        violations += 1
+    return int(violations)
+
+
 def cluster_exposure_report(graph, positions: list, *,
                             max_cluster_exposure_usd: float = 50.0) -> dict:
     """Per-correlated-cluster gross/net exposure + the clusters breaching the cap.

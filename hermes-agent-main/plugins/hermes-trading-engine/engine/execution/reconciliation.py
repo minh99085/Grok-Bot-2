@@ -131,5 +131,13 @@ class ReconciliationService:
         return report
 
 
+def report_is_clean(report: Optional[dict]) -> bool:
+    """True when a reconciliation report shows NO mismatches (info severity, no
+    warnings). Live-readiness input (Compliance + Risk): a non-clean reconciliation
+    means positions/PnL cannot be trusted, so the strategy is NOT live-ready."""
+    r = report or {}
+    return (str(r.get("severity", SEV_INFO)) == SEV_INFO) and not (r.get("warnings") or [])
+
+
 def _sev_rank(s: str) -> int:
     return {SEV_INFO: 0, SEV_WARNING: 1, SEV_HIGH: 2}.get(s, 0)

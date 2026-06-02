@@ -228,6 +228,32 @@ class TrainingConfig:
     ks_max_avg_spread: float = 0.15
     ks_max_learner_rollbacks: int = 3
     ks_min_samples: int = 10
+    # ---- live-readiness gate (verdicts only; NEVER enables live trading) ----
+    # Blocks real-money escalation unless durable after-cost profitability,
+    # execution realism, calibration, label quality, and risk-gate cleanliness
+    # are proven. These thresholds + caps only PRODUCE VERDICTS; the engine has no
+    # live execution path and this gate never flips a live flag.
+    readiness_min_eval_samples: int = 30
+    readiness_min_qualified_samples: int = 200
+    readiness_min_canary_samples: int = 500
+    readiness_min_canary_full_samples: int = 1000
+    readiness_min_oos_sharpe: float = 1.0
+    readiness_min_canary_sharpe: float = 1.5
+    readiness_min_oos_sortino: float = 1.0
+    readiness_min_oos_calmar: float = 0.5
+    readiness_max_drawdown_pct: float = 0.15
+    readiness_max_calibration_error: float = 0.10
+    readiness_max_ece: float = 0.10
+    readiness_max_label_suppression_rate: float = 0.20
+    readiness_max_unresolved_rate: float = 0.20
+    readiness_max_ambiguous_rate: float = 0.20
+    readiness_max_stale_rejection_rate: float = 0.10
+    # capital-preservation caps for a FUTURE manual live escalation (hard, tiny)
+    live_micro_canary_notional_usd: float = 5.0
+    live_canary_notional_usd: float = 25.0
+    live_max_daily_loss_usd: float = 10.0
+    live_max_per_market_usd: float = 5.0
+    live_max_event_usd: float = 5.0
     # ---- run / sim ----
     take_profit: float = 0.05
     stop_loss: float = 0.05
@@ -305,6 +331,13 @@ class TrainingConfig:
         self.cvar_alpha = min(0.999, max(0.5, self.cvar_alpha))
         self.kelly_max_fraction = max(0.0, min(self.kelly_max_fraction, 0.5))
         self.leg_failure_haircut = max(0.0, min(self.leg_failure_haircut, 1.0))
+        # capital-preservation hard ceilings (tiny; cannot be raised by env/config)
+        self.live_micro_canary_notional_usd = max(0.0, min(self.live_micro_canary_notional_usd, 25.0))
+        self.live_canary_notional_usd = max(0.0, min(self.live_canary_notional_usd, 100.0))
+        self.live_max_daily_loss_usd = max(0.0, min(self.live_max_daily_loss_usd, 50.0))
+        self.live_max_per_market_usd = max(0.0, min(self.live_max_per_market_usd, 50.0))
+        self.live_max_event_usd = max(0.0, min(self.live_max_event_usd, 50.0))
+        self.readiness_max_drawdown_pct = max(0.0, min(1.0, float(self.readiness_max_drawdown_pct)))
         self.research_high_confidence = max(0.0, min(1.0, float(self.research_high_confidence)))
         self.research_confident_ambiguity_frac = max(
             0.0, min(1.0, float(self.research_confident_ambiguity_frac)))
@@ -449,6 +482,16 @@ class TrainingConfig:
             ks_max_avg_spread=_envf("POLYMARKET_KS_MAX_AVG_SPREAD", 0.15),
             ks_max_learner_rollbacks=_envi("POLYMARKET_KS_MAX_LEARNER_ROLLBACKS", 3),
             ks_min_samples=_envi("POLYMARKET_KS_MIN_SAMPLES", 10),
+            readiness_min_eval_samples=_envi("POLYMARKET_READINESS_MIN_EVAL_SAMPLES", 30),
+            readiness_min_qualified_samples=_envi("POLYMARKET_READINESS_MIN_QUALIFIED_SAMPLES", 200),
+            readiness_min_canary_samples=_envi("POLYMARKET_READINESS_MIN_CANARY_SAMPLES", 500),
+            readiness_min_canary_full_samples=_envi("POLYMARKET_READINESS_MIN_CANARY_FULL_SAMPLES", 1000),
+            readiness_max_drawdown_pct=_envf("POLYMARKET_READINESS_MAX_DRAWDOWN_PCT", 0.15),
+            live_micro_canary_notional_usd=_envf("POLYMARKET_LIVE_MICRO_CANARY_NOTIONAL_USD", 5.0),
+            live_canary_notional_usd=_envf("POLYMARKET_LIVE_CANARY_NOTIONAL_USD", 25.0),
+            live_max_daily_loss_usd=_envf("POLYMARKET_LIVE_MAX_DAILY_LOSS_USD", 10.0),
+            live_max_per_market_usd=_envf("POLYMARKET_LIVE_MAX_PER_MARKET_USD", 5.0),
+            live_max_event_usd=_envf("POLYMARKET_LIVE_MAX_EVENT_USD", 5.0),
             signal_model=(os.getenv("POLYMARKET_TRAINING_SIGNAL_MODEL") or "research").lower(),
             starting_bankroll=_envf("HTE_STARTING_BALANCE", 500.0),
             universe=ucfg,

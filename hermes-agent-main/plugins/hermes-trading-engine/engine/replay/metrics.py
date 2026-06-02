@@ -599,6 +599,17 @@ def institutional_metrics(*, equity_rows: Optional[list] = None,
 # --------------------------------------------------------------------------- #
 # anti-overfitting: in-sample vs out-of-sample report
 # --------------------------------------------------------------------------- #
+def after_cost_expectancy(trades: list[dict]) -> float:
+    """Mean realized PnL per trade after all costs (fees + slippage already in
+    ``realized_pnl``). Live-readiness input (Backtesting + CLOB v2 Execution): a
+    strategy is only live-ready with a strictly POSITIVE after-cost expectancy.
+    Divide-by-zero safe."""
+    rows = trades or []
+    if not rows:
+        return 0.0
+    return round(sum(_f(t.get("realized_pnl")) for t in rows) / len(rows), 6)
+
+
 def variant_attribution(orders: list[dict], fills: list[dict]) -> dict:
     """Group replayed orders/fills by ``strategy_variant`` (controlled experiments).
 

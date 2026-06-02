@@ -97,6 +97,30 @@ class AgentReadiness:
         }
 
 
+# Readiness states mirror engine.training.live_readiness (re-exported for the
+# safety layer so the live-unlock guard speaks the same vocabulary).
+READINESS_STATES = ("blocked", "paper_learning", "paper_qualified",
+                    "micro_canary_ready", "canary_ready")
+_LIVE_READY_STATES = frozenset({"micro_canary_ready", "canary_ready"})
+
+
+def live_unlock_blockers(verdict: dict) -> list:
+    """GUARD 0 (live-readiness): reasons a live-money unlock stays BLOCKED.
+
+    Quant scope — *Compliance/Security/Operational Excellence*: a hard invariant
+    on top of the live-readiness verdict. A verdict can never auto-enable live;
+    this returns the explicit blockers (the gate's hard blockers, plus a
+    non-live-ready state, plus a perpetual "manual_review_required" gate since the
+    engine has no live execution adapter). Read-only — enables nothing."""
+    v = verdict or {}
+    blockers = list(v.get("blockers", []) or [])
+    if str(v.get("state")) not in _LIVE_READY_STATES:
+        blockers.append(f"state_not_live_ready:{v.get('state')}")
+    # live enablement is NEVER automatic in this codebase
+    blockers.append("manual_review_required")
+    return blockers
+
+
 class CircuitBreaker:
     """GUARD 3 — runtime kill switches (enforced while in LIVE mode)."""
 

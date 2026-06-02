@@ -110,6 +110,16 @@ def _markdown(runner, summary, metrics, calib, charts, overfit=None) -> str:
         f"- {', '.join(metrics.get('warnings', [])) or 'none'}",
         "- Queue priority is approximated; hidden/iceberg liquidity not modeled; replay quality depends on raw-event quality; unresolved markets are excluded from realized calibration.",
     ]
+    lr = metrics.get("live_readiness") or {}
+    if lr:
+        v = lr.get("verdict", lr) or {}
+        cap = lr.get("capital_preservation", {}) or {}
+        lines += ["", "## Live-readiness gate (PAPER ONLY — verdict never enables live)",
+                  f"- state: **{v.get('state')}**  ·  live-escalation allowed: "
+                  f"{v.get('allows_live_escalation')}  ·  hard blockers: "
+                  f"{', '.join(v.get('blockers', [])) or 'none'}",
+                  f"- max initial live notional: {cap.get('max_initial_live_notional')}  ·  "
+                  f"max daily loss: {cap.get('max_daily_loss')}"]
     ks = metrics.get("kill_switch") or {}
     mon = metrics.get("monitoring") or {}
     if ks or mon:

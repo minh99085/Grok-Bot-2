@@ -12,6 +12,24 @@ from __future__ import annotations
 from .schemas import RiskAuditResult, aggregate_status, make_check
 
 
+def aggregate_risk_clean(results: list) -> dict:
+    """Aggregate a set of per-attempt RiskAuditResults into a single
+    risk-gate-cleanliness verdict for the live-readiness gate.
+
+    Quant scope — *Compliance/Security/Operational Excellence*: clean == every
+    audited submit had risk present, no bypass, and no limit breach. A single
+    dirty audit blocks live escalation. Read-only; mirrors the existing
+    "risk-not-bypassed" invariant across many decisions instead of one."""
+    rs = list(results or [])
+    bypass = sum(1 for r in rs if getattr(r, "bypass_detected", False))
+    breach = sum(1 for r in rs if getattr(r, "limit_breach_detected", False))
+    missing = sum(1 for r in rs if not getattr(r, "risk_approved", False))
+    violations = bypass + breach + missing
+    return {"audited": len(rs), "bypass": bypass, "limit_breach": breach,
+            "missing_risk": missing, "violations": violations,
+            "clean": violations == 0}
+
+
 def run(ctx: dict, cfg) -> RiskAuditResult:
     a = ctx.get("attempt") or {}
     safety = ctx.get("safety_decision")

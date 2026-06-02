@@ -362,3 +362,16 @@ class OrderManagementSystem:
             "open_orders": len(opens), "broker": self.broker.config(),
             "last_reconciliation": self.recon.last_report,
         }
+
+    def readiness_execution_summary(self) -> dict:
+        """Execution-realism + reconciliation snapshot for the live-readiness gate
+        (CLOB v2 Execution + Compliance). Read-only: reports whether the OMS is
+        degraded and whether the last reconciliation was clean — both must be
+        healthy before any real-money escalation."""
+        from .reconciliation import report_is_clean
+        return {
+            "degraded": bool(self.degraded),
+            "degraded_reason": self.degraded_reason,
+            "reconciliation_clean": report_is_clean(self.recon.last_report),
+            "reconciliation_severity": (self.recon.last_report or {}).get("severity"),
+        }
