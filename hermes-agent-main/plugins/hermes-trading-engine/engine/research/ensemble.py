@@ -72,13 +72,21 @@ class ForecastEnsemble:
 
     def combine(self, *, p_market: float | None, p_llm: float | None, p_model: float | None,
                 confidence: float = 0.5, evidence_score: float = 0.5,
-                ambiguity_score: float = 0.0) -> dict:
+                ambiguity_score: float = 0.0, recency_score: float = 1.0,
+                contradiction_score: float = 0.0, diversity_score: float = 1.0) -> dict:
         conf = min(1.0, max(0.0, confidence))
         ev = min(1.0, max(0.0, evidence_score))
         amb = min(1.0, max(0.0, ambiguity_score))
+        # Source-quality discounts (default-neutral so existing callers are
+        # unchanged): stale, contradictory, or single-source evidence shrinks the
+        # LLM weight further. These only ever REDUCE the LLM's influence.
+        rec = min(1.0, max(0.0, recency_score))
+        contra = min(1.0, max(0.0, contradiction_score))
+        div = min(1.0, max(0.0, diversity_score))
+        quality_discount = (0.3 + 0.7 * rec) * (1.0 - 0.5 * contra) * (0.5 + 0.5 * div)
 
         # LLM weight is reduced by low confidence, low evidence, and high ambiguity.
-        llm_quality = conf * (0.4 + 0.6 * ev) * (1.0 - amb)
+        llm_quality = conf * (0.4 + 0.6 * ev) * (1.0 - amb) * quality_discount
         w_market = self.market_weight if p_market is not None else 0.0
         w_llm = self.llm_weight * llm_quality if p_llm is not None else 0.0
         w_model = self.model_weight if p_model is not None else 0.0

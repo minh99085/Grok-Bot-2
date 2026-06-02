@@ -70,6 +70,21 @@ def is_settlement_ambiguous(ambiguity_score: float, threshold: float = 0.5) -> b
     return float(ambiguity_score or 0.0) >= float(threshold)
 
 
+def confident_but_ambiguous(confidence: float, ambiguity_score: float, *,
+                            high_confidence: float = 0.8,
+                            ambiguity_threshold: float = 0.35,
+                            confident_frac: float = 0.6) -> bool:
+    """True when research is HIGHLY confident yet settlement rules are ambiguous.
+
+    Research confidence must never override settlement ambiguity: when confidence
+    is high the market is held to a stricter ambiguity bar
+    (``confident_frac * ambiguity_threshold``). This can only make a gate STRICTER
+    — it never approves or sizes a trade."""
+    c = float(confidence or 0.0)
+    a = float(ambiguity_score or 0.0)
+    return c >= float(high_confidence) and a >= float(confident_frac) * float(ambiguity_threshold)
+
+
 def extract_terms(text: str, patterns: list[str]) -> list[str]:
     t = (text or "")
     found = []

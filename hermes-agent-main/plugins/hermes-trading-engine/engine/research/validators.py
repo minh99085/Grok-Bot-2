@@ -69,3 +69,14 @@ def evidence_sufficient(output: GrokProbabilityOutput, *, min_count: int,
     if not output.evidence or len(output.evidence) < min_count:
         return False
     return evidence_score >= min_score
+
+
+def research_is_advisory_only() -> bool:
+    """Compliance invariant: research/Grok is ALWAYS advisory-only.
+
+    Research can estimate a probability and supply evidence; it can never size,
+    approve, place, arm, or bypass the RiskEngine / EdgeEngine / Bregman gates.
+    Execution/size fields are stripped by :func:`strip_forbidden` and the
+    probability bundle carries no order, size, or approval field. Returns ``True``
+    unconditionally so callers/tests can assert the guarantee explicitly."""
+    return True

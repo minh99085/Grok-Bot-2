@@ -178,6 +178,11 @@ class TrainingConfig:
     leg_failure_haircut: float = 0.5
     chainlink_freshness_penalty_weight: float = 0.5
     settlement_ambiguity_penalty_weight: float = 0.5
+    # ---- research advisory gates (research is NEVER allowed to override) ----
+    # When research confidence is high, the market is held to a stricter ambiguity
+    # bar (research can never push a trade on an ambiguous market).
+    research_high_confidence: float = 0.8
+    research_confident_ambiguity_frac: float = 0.6
     # ---- institutional features + grouping (additive; default ON, offline) ----
     feature_extraction_enabled: bool = True
     grouping_enabled: bool = True
@@ -274,6 +279,9 @@ class TrainingConfig:
         self.cvar_alpha = min(0.999, max(0.5, self.cvar_alpha))
         self.kelly_max_fraction = max(0.0, min(self.kelly_max_fraction, 0.5))
         self.leg_failure_haircut = max(0.0, min(self.leg_failure_haircut, 1.0))
+        self.research_high_confidence = max(0.0, min(1.0, float(self.research_high_confidence)))
+        self.research_confident_ambiguity_frac = max(
+            0.0, min(1.0, float(self.research_confident_ambiguity_frac)))
         if self.universe is None:
             self.universe = um.UniverseConfig.from_env()
 
@@ -384,6 +392,8 @@ class TrainingConfig:
             leg_failure_haircut=_envf("POLYMARKET_LEG_FAILURE_HAIRCUT", 0.5),
             chainlink_freshness_penalty_weight=_envf("POLYMARKET_CHAINLINK_FRESHNESS_PENALTY", 0.5),
             settlement_ambiguity_penalty_weight=_envf("POLYMARKET_AMBIGUITY_PENALTY", 0.5),
+            research_high_confidence=_envf("POLYMARKET_RESEARCH_HIGH_CONFIDENCE", 0.8),
+            research_confident_ambiguity_frac=_envf("POLYMARKET_RESEARCH_CONFIDENT_AMBIGUITY_FRAC", 0.6),
             feature_extraction_enabled=_envb("POLYMARKET_FEATURE_EXTRACTION_ENABLED", True),
             grouping_enabled=_envb("POLYMARKET_GROUPING_ENABLED", True),
             paper_decision_budget=_envi("POLYMARKET_PAPER_DECISION_BUDGET", 30),

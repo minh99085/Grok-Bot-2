@@ -38,6 +38,9 @@ class TradeProposal:
     research_source: str
     sizing_method: str
     kelly_size_usd: float = 0.0
+    # explicit exploration label (empty for normal edge trades). Aggressive
+    # weak-research exploration is always tagged so it is auditable + isolable.
+    exploration_label: str = ""
 
     def to_dict(self) -> dict:
         return dict(self.__dict__)
@@ -117,13 +120,14 @@ class PaperPolicy:
                          float(cfg.max_order_notional_usd)), 2)
 
     def build_exploration_proposal(self, edge: EdgeResult, est: ProbabilityEstimate,
-                                   rec) -> TradeProposal:
-        """Build a small active-learning exploratory proposal for a near-miss.
+                                   rec, *, label: str = "near_miss") -> TradeProposal:
+        """Build a small active-learning exploratory proposal.
 
-        The candidate already passed EVERY hard gate (it is a near-miss, not a
-        hard-gate rejection); this only sizes a tiny clamped paper trade and is
-        still routed through the identical RiskEngine + paper broker. PAPER ONLY —
-        never sizes for live, never bypasses risk."""
+        For a near-miss (passed EVERY hard gate) or, in AGGRESSIVE mode, a
+        weak-research candidate (``label='weak_research'``). It only ever sizes a
+        TINY clamped paper trade (:meth:`explore_size`), is explicitly labelled,
+        and is still routed through the identical RiskEngine + paper broker. PAPER
+        ONLY — never sizes for live, never bypasses a hard risk/quality gate."""
         notional = self.explore_size()
         price = edge.executable_price or est.p_market_mid
         qty = (notional / price) if price > 0 else 0.0
@@ -134,7 +138,7 @@ class PaperPolicy:
             qty=round(qty, 4), p_final=round(edge.p_final, 4),
             net_edge=round(edge.net_edge, 5), confidence=round(est.confidence, 3),
             research_source=est.research_source, sizing_method="active_learning_exploration",
-            kelly_size_usd=0.0)
+            kelly_size_usd=0.0, exploration_label=str(label or "near_miss"))
 
     def build_proposal(self, edge: EdgeResult, est: ProbabilityEstimate, rec) -> TradeProposal:
         notional, method, kelly = self.size(

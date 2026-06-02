@@ -17,8 +17,11 @@ import os
 import time
 from typing import Optional
 
+from .ambiguity import confident_but_ambiguous
 from .calibration_adapter import CalibrationAdapter
 from .ensemble import ForecastEnsemble
+from .evidence_scoring import (confidence_decay, evidence_quality_score,
+                               research_uncertainty_from, score_evidence)
 from .schemas import GrokProbabilityOutput, ProbabilityEstimateBundle
 
 
@@ -37,15 +40,16 @@ def _i(name: str, default: int) -> int:
 
 
 def evidence_score_of(output: GrokProbabilityOutput) -> float:
+    """Source-quality-weighted evidence score blended with model source coverage.
+
+    Delegates the per-item quality to :func:`evidence_quality_score` (which weights
+    by source-type reliability) so an official/exchange source outranks a social
+    post at equal raw credibility. Advisory only — never sizes or approves."""
     items = output.evidence or []
     if not items:
         return 0.0
-    per = []
-    for e in items:
-        q = 0.4 * e.credibility + 0.4 * e.relevance + 0.2 * e.freshness
-        per.append(q * max(0.05, e.weight))
-    mean_q = sum(per) / len(per)
-    score = 0.7 * mean_q + 0.3 * output.source_coverage_score
+    mean_q = evidence_quality_score(items)
+    score = 0.7 * mean_q + 0.3 * float(output.source_coverage_score)
     return round(min(1.0, max(0.0, score)), 6)
 
 
@@ -70,14 +74,29 @@ class ProbabilityEstimator:
         ev_score = evidence_score_of(output)
         source_count = len(output.evidence or [])
 
+        # Source-quality-weighted evidence scores -> decayed confidence + research
+        # uncertainty. Confidence decays when evidence is old, contradictory, or
+        # weakly tied to the market's resolution (advisory only — no sizing).
+        scores = score_evidence(output.evidence, now_ms=ts,
+                                source_coverage=float(output.source_coverage_score))
+        decayed_conf = confidence_decay(output.confidence, scores)
+        research_uncertainty = research_uncertainty_from(scores)
+
         blend = self.ensemble.combine(
             p_market=p_market, p_llm=p_cal, p_model=p_model,
-            confidence=output.confidence, evidence_score=ev_score,
-            ambiguity_score=output.ambiguity_score)
+            confidence=decayed_conf, evidence_score=ev_score,
+            ambiguity_score=output.ambiguity_score, recency_score=scores.recency,
+            contradiction_score=scores.contradiction, diversity_score=scores.diversity)
 
         no_trade: str | None = None
         if output.no_trade_recommendation:
             no_trade = output.no_trade_reason or "grok_no_trade"
+        elif confident_but_ambiguous(output.confidence, output.ambiguity_score,
+                                     high_confidence=0.8,
+                                     ambiguity_threshold=self.max_ambiguity):
+            # High-confidence research on an ambiguous market must NOT trade —
+            # research confidence can never override settlement ambiguity.
+            no_trade = "research_confident_but_ambiguous"
         elif ev_score < self.min_evidence:
             no_trade = "low_evidence"
         elif output.ambiguity_score > self.max_ambiguity:
@@ -93,11 +112,17 @@ class ProbabilityEstimator:
             p_ensemble=blend["p_ensemble"], confidence=round(float(output.confidence), 6),
             ambiguity_score=round(float(output.ambiguity_score), 6),
             evidence_score=ev_score, source_count=source_count,
+            recency_score=scores.recency, source_diversity_score=scores.diversity,
+            contradiction_score=scores.contradiction,
+            settlement_relevance_score=scores.settlement_relevance,
+            research_uncertainty=research_uncertainty,
+            decayed_confidence=decayed_conf,
             calibration_version=self.calibration.version, ensemble_version=self.ensemble.version,
             stale_after_ts_ms=ts + self.stale_seconds * 1000, no_trade_reason=no_trade,
             diagnostics={"blend": blend, "mode": mode,
                          "calibration_method": getattr(self.calibration, "method", "shrink"),
                          "calibration_version": self.calibration.version,
+                         "evidence_scores": scores.to_dict(),
                          "key_assumptions": list(output.key_assumptions or []),
                          "do_not_trade_if": list(output.do_not_trade_if or [])})
         return bundle

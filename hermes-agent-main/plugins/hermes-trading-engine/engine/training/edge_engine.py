@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from engine.markets import universe_manager as um
+from engine.research.ambiguity import confident_but_ambiguous
 
 from .probability_stack import ProbabilityEstimate, _liq_quality
 
@@ -46,7 +47,16 @@ NO_TRADE_REASONS = (
     # market-dependency-graph correlated-cluster exposure cap (additive; only
     # ever makes the gate stricter — see engine.training.dependency_graph).
     "correlated_cluster_exposure",
+    # research is advisory-only: a HIGH-confidence research estimate on an
+    # ambiguous market is held to a stricter ambiguity bar (research can never
+    # override settlement ambiguity). Additive — only ever stricter.
+    "research_confident_but_ambiguous",
 )
+
+# Weak-research reasons: in AGGRESSIVE paper mode these near-quality misses may
+# be explored with a tiny, explicitly-labelled paper trade (never bypassing a
+# hard risk/quality gate). They are NOT explorable in conservative mode.
+WEAK_RESEARCH_REASONS = frozenset({"evidence_too_weak", "no_model_or_research_probability"})
 
 # The decisive trade reason and the two NEAR-MISS reasons. A near-miss passed
 # EVERY hard gate (fresh book, executable price, spread, depth, ambiguity,
@@ -69,6 +79,24 @@ def is_near_miss(reason: str) -> bool:
     """True when a candidate passed all hard gates but missed the edge threshold —
     i.e. it is safe + eligible for an exploratory (feedback) paper trade."""
     return reason in NEAR_MISS_REASONS
+
+
+def is_weak_research_reason(reason: str) -> bool:
+    """True for a weak/absent-research rejection (eligible for tiny aggressive
+    exploration only — never a stale-book/ambiguity/risk hard gate)."""
+    return reason in WEAK_RESEARCH_REASONS
+
+
+def is_explorable(reason: str, *, aggressive_weak_research: bool = False) -> bool:
+    """Whether a rejected candidate may receive a tiny exploratory paper trade.
+
+    Always true for near-misses (passed every hard gate). In AGGRESSIVE mode it is
+    additionally true for weak-research rejections — but NEVER for a hard
+    risk/quality gate (stale book, thin depth, wide spread, ambiguity, stale or
+    irrelevant Chainlink, correlated-cluster cap, max-open, risk rejection)."""
+    if is_near_miss(reason):
+        return True
+    return bool(aggressive_weak_research) and is_weak_research_reason(reason)
 
 
 def overfit_adjusted_min_edge(base: float, penalty: float, *,
@@ -164,6 +192,15 @@ class EdgeEngine:
             return no("depth_too_thin")
         if est.ambiguity_score > float(cfg.max_ambiguity_score):
             return no("ambiguity_too_high")
+        # Research is advisory-only: a high-confidence research estimate on an
+        # ambiguous market is held to a stricter ambiguity bar. Research
+        # confidence can NEVER override settlement ambiguity (only ever stricter).
+        if est.research_usable and confident_but_ambiguous(
+                getattr(est, "confidence", 0.0), est.ambiguity_score,
+                high_confidence=float(getattr(cfg, "research_high_confidence", 0.8)),
+                ambiguity_threshold=float(cfg.max_ambiguity_score),
+                confident_frac=float(getattr(cfg, "research_confident_ambiguity_frac", 0.6))):
+            return no("research_confident_but_ambiguous")
         if (est.research_source == "offline_research_stub"
                 and not bool(cfg.allow_offline_stub_trading) and not est.model_has_edge):
             return no("offline_stub_blocked")

@@ -162,6 +162,13 @@ class ProbabilityEstimateBundle(BaseModel):
     ambiguity_score: float = 0.0
     evidence_score: float = 0.0
     source_count: int = 0
+    # ---- source-quality-weighted evidence sub-scores (advisory; additive) ----
+    recency_score: float = 0.0
+    source_diversity_score: float = 0.0
+    contradiction_score: float = 0.0
+    settlement_relevance_score: float = 0.0
+    research_uncertainty: float = 0.0
+    decayed_confidence: float = 0.0
     calibration_version: str = "v1"
     ensemble_version: str = "v1"
     stale_after_ts_ms: int = 0
@@ -179,6 +186,12 @@ class ProbabilityEstimateBundle(BaseModel):
             "p_calibrated": s(self.p_calibrated), "p_ensemble": s(self.p_ensemble),
             "confidence": s(self.confidence), "ambiguity_score": s(self.ambiguity_score),
             "evidence_score": s(self.evidence_score), "source_count": self.source_count,
+            "recency_score": s(self.recency_score),
+            "source_diversity_score": s(self.source_diversity_score),
+            "contradiction_score": s(self.contradiction_score),
+            "settlement_relevance_score": s(self.settlement_relevance_score),
+            "research_uncertainty": s(self.research_uncertainty),
+            "decayed_confidence": s(self.decayed_confidence),
             "calibration_version": self.calibration_version,
             "ensemble_version": self.ensemble_version, "stale_after_ts_ms": self.stale_after_ts_ms,
             "no_trade_reason": self.no_trade_reason,

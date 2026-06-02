@@ -97,6 +97,9 @@ class ProbabilityEstimate:
     chainlink_features: dict = field(default_factory=dict)
     bregman_group_id: str = ""
     no_trade_probability_reason: str = ""
+    # research-channel uncertainty (from the uncertainty decomposition); a more
+    # uncertain research signal lowers trust + is a higher-value paper sample.
+    research_uncertainty: float = 0.0
 
     def __post_init__(self) -> None:
         # Default the calibrated probability + interval to the executable fair
@@ -252,11 +255,15 @@ class ProbabilityStack:
         # ---- Bregman fair-probability grouping (linked oracle feed) ----
         bregman_group_id = cl_feed if (cl_linked and not cl_block) else ""
 
+        # research-channel uncertainty (advisory; surfaced for trust + active
+        # learning). Sourced from the always-populated uncertainty decomposition.
+        research_uncertainty = float(uncertainty.get("research", 0.0))
+
         # ---- advisory probability-level no-trade reason ----
         no_trade_reason = self._no_trade_probability_reason(
             cl_block=cl_block, fresh=fresh, ambiguity=ambiguity,
             research_usable=research_usable, evidence=evidence,
-            stale_score=stale_score)
+            stale_score=stale_score, confidence=confidence)
 
         return ProbabilityEstimate(
             market_id=rec.market_id, p_market_mid=mid, p_model=p_model,
@@ -273,19 +280,30 @@ class ProbabilityStack:
             confidence_interval_high=ci_hi, uncertainty_components=uncertainty,
             effective_sample_size=ess, calibration_method=cal_method,
             chainlink_features=cl_features, bregman_group_id=bregman_group_id,
-            no_trade_probability_reason=no_trade_reason)
+            no_trade_probability_reason=no_trade_reason,
+            research_uncertainty=research_uncertainty)
 
     def _no_trade_probability_reason(self, *, cl_block: bool, fresh: bool,
                                      ambiguity: float, research_usable: bool,
-                                     evidence: float, stale_score: float) -> str:
+                                     evidence: float, stale_score: float,
+                                     confidence: float = 0.0) -> str:
         """Advisory probability-level no-trade reason (the executable gate lives in
         EdgeEngine; this surfaces WHY the probability itself is untrustworthy)."""
+        from engine.research.ambiguity import confident_but_ambiguous
         cfg = self.cfg
+        max_amb = float(getattr(cfg, "max_ambiguity_score", 0.35))
         if cl_block:
             return "chainlink_stale_or_irrelevant"
         if not fresh:
             return "stale_book"
-        if ambiguity > float(getattr(cfg, "max_ambiguity_score", 0.35)):
+        # research confidence must not override settlement ambiguity
+        if research_usable and confident_but_ambiguous(
+                confidence, ambiguity,
+                high_confidence=float(getattr(cfg, "research_high_confidence", 0.8)),
+                ambiguity_threshold=max_amb,
+                confident_frac=float(getattr(cfg, "research_confident_ambiguity_frac", 0.6))):
+            return "research_confident_but_ambiguous"
+        if ambiguity > max_amb:
             return "high_ambiguity"
         if research_usable and evidence < float(getattr(cfg, "min_evidence_score", 0.5)):
             return "weak_evidence"

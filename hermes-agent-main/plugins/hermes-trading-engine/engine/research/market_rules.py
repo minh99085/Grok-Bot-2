@@ -64,3 +64,12 @@ class MarketRuleParser:
     def is_settlement_ambiguous(self, summary: MarketRuleSummary,
                                 threshold: float = 0.5) -> bool:
         return is_settlement_ambiguous(getattr(summary, "ambiguity_score", 0.0), threshold)
+
+    def evidence_relevance(self, summary: MarketRuleSummary, evidence: list) -> float:
+        """Settlement-rule relevance of an evidence set to this market's rules.
+
+        Higher when the evidence comes from the resolution source / official
+        channels and its claims overlap the parsed resolution criteria. Advisory
+        only — feeds the research trust discount, never sizing/approval."""
+        from .evidence_scoring import settlement_rule_relevance_score
+        return settlement_rule_relevance_score(evidence or [], rule_summary=summary)
