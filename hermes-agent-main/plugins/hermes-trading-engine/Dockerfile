@@ -13,7 +13,6 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY engine /app/engine
 COPY web /app/web
 COPY scripts /app/scripts
-COPY config /app/config
 
 RUN mkdir -p /data
 EXPOSE 8800
