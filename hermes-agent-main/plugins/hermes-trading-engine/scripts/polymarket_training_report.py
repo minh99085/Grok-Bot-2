@@ -206,6 +206,9 @@ def run(argv=None) -> int:
     ap.add_argument("--experiments", action="store_true",
                     help="run an aggressive offline demo and print the controlled "
                          "strategy-variant experiment report + champion/challenger (PAPER ONLY)")
+    ap.add_argument("--monitoring", action="store_true",
+                    help="run an aggressive offline demo and print the learning-velocity "
+                         "dashboard + kill-switch report (PAPER ONLY)")
     ap.add_argument("--baseline-report", action="store_true",
                     help="print the algorithm inventory + institutional metrics baseline")
     ap.add_argument("--final-validation", action="store_true",
@@ -226,6 +229,20 @@ def run(argv=None) -> int:
         print(_json.dumps(rep, indent=2, default=str))
         print(f"\nproduction_ready: {rep['production_ready']}  "
               f"no_regression: {rep['no_regression_ok']}  paper_only: {rep['paper_only']}")
+        return 0
+
+    if args.monitoring:
+        import json as _json
+        t = _run_demo(aggressive=True, ticks=12)
+        dash = t.aggressive_dashboard()
+        ks = t.kill_switch_report()
+        print("=" * 64)
+        print("AGGRESSIVE LEARNING MONITOR + KILL-SWITCH (PAPER ONLY)")
+        print("=" * 64)
+        print(f"profile={dash.get('profile')}  kill_switch={ks.get('severity')}  "
+              f"downgraded={t._downgraded}")
+        print(f"triggered={ks.get('triggered')}")
+        print(_json.dumps(dash, indent=2, default=str))
         return 0
 
     if args.experiments:

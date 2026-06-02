@@ -97,6 +97,12 @@ def write_reports(trainer=None, *, status: Optional[dict] = None,
     (run_dir / "summary.json").write_text(json.dumps(status, default=str, indent=2),
                                           encoding="utf-8")
 
+    # concise monitoring + kill-switch JSON artifacts (Live Monitoring)
+    (run_dir / "monitoring.json").write_text(
+        json.dumps(status.get("monitoring", {}), default=str, indent=2), encoding="utf-8")
+    (run_dir / "kill_switch.json").write_text(
+        json.dumps(status.get("kill_switch", {}), default=str, indent=2), encoding="utf-8")
+
     candidates = getattr(trainer, "candidates_log", []) if trainer else []
     edges = getattr(trainer, "edge_log", []) if trainer else []
     orders = getattr(trainer, "orders_log", []) if trainer else []
@@ -251,6 +257,16 @@ def _markdown(status: dict, run_id: str) -> str:
             a(f"  - {r['strategy_variant']} [{r['role']}]: {r['trade_count']} · "
               f"{r['feedback_count']} · {r['sharpe']} · {r['brier']} · {r['ece']} · "
               f"{r['realized_edge']} · {r['fill_quality']}")
+        a("")
+    mon = status.get("monitoring", {}) or {}
+    ks = status.get("kill_switch", {}) or {}
+    if mon:
+        from .monitoring import kill_switch_markdown
+        for ln in kill_switch_markdown(mon, ks):
+            a(ln)
+        if status.get("downgraded"):
+            a(f"- **AUTO-DOWNGRADED to conservative paper mode** (kill-switch: "
+              f"{', '.join(ks.get('triggered', []))})")
         a("")
     a("## 18. Recommendation")
     a(f"- **{status.get('recommendation')}**\n")

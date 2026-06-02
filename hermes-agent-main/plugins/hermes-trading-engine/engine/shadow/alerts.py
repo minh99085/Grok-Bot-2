@@ -18,6 +18,10 @@ ALERT_TYPES = (
     "paper_broker_rejection_spike", "reconciliation_failure", "scheduler_lag",
     "storage_failure", "readiness_gate_failed", "kill_switch_triggered",
     "secret_redaction_test_failed", "live_endpoint_call_attempted",
+    # aggressive paper-training kill-switch (auto-downgrade) alerts
+    "calibration_deterioration", "excessive_drawdown", "bad_labels", "stale_data",
+    "high_partial_fill_rate", "bregman_false_positives", "spread_blowout",
+    "feedback_corruption", "aggressive_downgraded",
 )
 
 
@@ -54,3 +58,20 @@ class AlertManager:
 
     def resume(self) -> None:
         self._paused = False
+
+    def emit_kill_switch(self, kill_switch: dict) -> list:
+        """Emit one alert per triggered aggressive-training kill-switch condition,
+        plus an ``aggressive_downgraded`` alert when a downgrade occurred. Each
+        triggered condition is CRITICAL (pauses NEW shadow orders; observations
+        continue). PAPER ONLY — never enables/blocks a live order path."""
+        out: list = []
+        for kind in (kill_switch or {}).get("triggered", []):
+            atype = kind if kind in ALERT_TYPES else "kill_switch_triggered"
+            out.append(self.emit("CRITICAL", atype,
+                                 f"aggressive paper kill-switch: {kind}",
+                                 payload={"kill_switch": kind}))
+        if (kill_switch or {}).get("downgraded"):
+            out.append(self.emit("CRITICAL", "aggressive_downgraded",
+                                 "aggressive paper mode auto-downgraded to conservative",
+                                 payload={"triggered": kill_switch.get("triggered", [])}))
+        return out

@@ -46,6 +46,13 @@ def _markdown(session_id: str, config: ShadowConfig, report: LiveReadinessReport
               "shadow_fill_count", "fill_ratio", "risk_rejection_rate", "reject_rate",
               "total_fees"):
         lines.append(f"- {k}: {metrics.get(k)}")
+    # aggressive paper-training kill-switch (when carried into shadow metrics)
+    ks = metrics.get("kill_switch") or {}
+    if ks:
+        lines += ["", "## Aggressive kill-switch (PAPER ONLY)",
+                  f"- severity: **{ks.get('severity', 'OK')}** · triggered: "
+                  f"{', '.join(ks.get('triggered', [])) or 'none'} · downgraded: "
+                  f"{ks.get('downgraded', False)}"]
     lines += ["", "## Readiness gates", "", "| gate | status | observed | threshold |",
               "|---|---|---|---|"]
     for g in report.gate_results:

@@ -210,6 +210,24 @@ class TrainingConfig:
     experiment_id: str = "exp_default"
     variant_budget_weights: dict = field(default_factory=dict)
     bregman_first_budget: bool = True
+    # ---- monitoring + kill-switch (auto-downgrade aggressive->conservative) ----
+    # Kill-switch trips on calibration deterioration, excessive drawdown, bad
+    # labels, stale data, high partial-fill, Bregman false positives, spread
+    # blowout, or feedback corruption. It only ever DOWNGRADES paper aggression;
+    # it never touches a live control.
+    kill_switch_enabled: bool = True
+    kill_switch_auto_downgrade: bool = True
+    ks_max_calibration_error: float = 0.20
+    ks_max_brier_trend: float = 0.05
+    ks_max_loss_streak: int = 10
+    ks_max_label_suppression_rate: float = 0.5
+    ks_max_ambiguous_rate: float = 0.5
+    ks_max_stale_rejection_rate: float = 0.5
+    ks_max_partial_fill_rate: float = 0.5
+    ks_max_bregman_fp_rate: float = 0.10
+    ks_max_avg_spread: float = 0.15
+    ks_max_learner_rollbacks: int = 3
+    ks_min_samples: int = 10
     # ---- run / sim ----
     take_profit: float = 0.05
     stop_loss: float = 0.05
@@ -418,6 +436,19 @@ class TrainingConfig:
             experiments_enabled=_envb("POLYMARKET_EXPERIMENTS_ENABLED", False),
             experiment_id=(os.getenv("POLYMARKET_EXPERIMENT_ID") or "exp_default").strip(),
             bregman_first_budget=_envb("POLYMARKET_BREGMAN_FIRST_BUDGET", True),
+            kill_switch_enabled=_envb("POLYMARKET_KILL_SWITCH_ENABLED", True),
+            kill_switch_auto_downgrade=_envb("POLYMARKET_KILL_SWITCH_AUTO_DOWNGRADE", True),
+            ks_max_calibration_error=_envf("POLYMARKET_KS_MAX_CALIBRATION_ERROR", 0.20),
+            ks_max_brier_trend=_envf("POLYMARKET_KS_MAX_BRIER_TREND", 0.05),
+            ks_max_loss_streak=_envi("POLYMARKET_KS_MAX_LOSS_STREAK", 10),
+            ks_max_label_suppression_rate=_envf("POLYMARKET_KS_MAX_LABEL_SUPPRESSION_RATE", 0.5),
+            ks_max_ambiguous_rate=_envf("POLYMARKET_KS_MAX_AMBIGUOUS_RATE", 0.5),
+            ks_max_stale_rejection_rate=_envf("POLYMARKET_KS_MAX_STALE_REJECTION_RATE", 0.5),
+            ks_max_partial_fill_rate=_envf("POLYMARKET_KS_MAX_PARTIAL_FILL_RATE", 0.5),
+            ks_max_bregman_fp_rate=_envf("POLYMARKET_KS_MAX_BREGMAN_FP_RATE", 0.10),
+            ks_max_avg_spread=_envf("POLYMARKET_KS_MAX_AVG_SPREAD", 0.15),
+            ks_max_learner_rollbacks=_envi("POLYMARKET_KS_MAX_LEARNER_ROLLBACKS", 3),
+            ks_min_samples=_envi("POLYMARKET_KS_MIN_SAMPLES", 10),
             signal_model=(os.getenv("POLYMARKET_TRAINING_SIGNAL_MODEL") or "research").lower(),
             starting_bankroll=_envf("HTE_STARTING_BALANCE", 500.0),
             universe=ucfg,

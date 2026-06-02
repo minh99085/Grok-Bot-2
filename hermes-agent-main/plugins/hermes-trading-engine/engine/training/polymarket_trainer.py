@@ -38,6 +38,8 @@ from .experiment_manager import (BREGMAN_VARIANT, ExperimentManager, classify_va
 from .feedback_loop import FeedbackLoop
 from .market_scanner import MarketScanner
 from .metrics import ScanMetrics
+from .monitoring import (KillSwitchThresholds, bregman_monitoring, build_dashboard,
+                         evaluate_kill_switch, loss_streak)
 from .online_learner import OnlineLearner
 from .paper_policy import PaperPolicy, TradeProposal
 from .portfolio import (PortfolioLimits, PortfolioPosition, PortfolioRiskManager,
@@ -311,6 +313,14 @@ class PolymarketPaperTrainer:
         self.bregman_sets_opened = 0
         self.bregman_rejected = 0
         self.started_ts = time.time()
+        # final monitoring + kill-switch state (PAPER ONLY). Aggressive mode
+        # auto-downgrades to conservative when a kill-switch metric trips; it
+        # never touches a live control.
+        self._metric_history: list = []
+        self._downgraded = False
+        self._kill_switch: dict = {"triggered": [], "should_downgrade": False,
+                                    "severity": "OK", "alerts": []}
+        self._ks_thresholds = KillSwitchThresholds.from_config(self.cfg)
 
     # -- safety preflight ----------------------------------------------------
     def preflight(self) -> dict:
@@ -426,6 +436,13 @@ class PolymarketPaperTrainer:
                                        feedback_samples=evaluated)
 
         self.feedback.maybe_update(now)
+        # final monitoring + kill-switch: auto-downgrade aggressive->conservative
+        # when a kill-switch metric trips (PAPER ONLY; never touches live controls)
+        if getattr(self.cfg, "kill_switch_enabled", True):
+            try:
+                self.run_monitoring(now=now)
+            except Exception:  # noqa: BLE001 — monitoring must never break a tick
+                pass
         self._persist_status()
         return {"tick": self.tick_count, "mode": self.mode, "scanned": scan.scanned,
                 "kept": scan.kept, "candidates": len(candidates), "opened": opened,
@@ -946,6 +963,120 @@ class PolymarketPaperTrainer:
             "legacy_arb_disabled": inv["legacy_arb_disabled"],
         }
 
+    # -- final monitoring + kill-switch -------------------------------------
+    def _profile(self) -> str:
+        if self._downgraded:
+            return "conservative"
+        return "aggressive" if (self.cfg.exploration_enabled
+                                or getattr(self.cfg, "experiments_enabled", False)) else "conservative"
+
+    def _chainlink_linked_performance(self) -> dict:
+        closed = [p for p in self.positions if p.closed and getattr(p, "chainlink_linked", False)]
+        if not closed:
+            return {"trades": 0, "win_rate": 0.0, "pnl": 0.0}
+        wins = sum(1 for p in closed if p.realized_pnl > 0)
+        return {"trades": len(closed), "win_rate": round(wins / len(closed), 4),
+                "pnl": round(sum(p.realized_pnl for p in closed), 4)}
+
+    def _stale_data_rejections(self) -> int:
+        from .monitoring import STALE_DATA_REASONS
+        ntr = self.learner.no_trade_reasons or {}
+        return int(sum(v for k, v in ntr.items() if k in STALE_DATA_REASONS))
+
+    def _monitoring_raw(self) -> dict:
+        from engine.replay import metrics as _m
+        closed = [p for p in self.positions if p.closed]
+        closed_pnls = [p.realized_pnl for p in closed]
+        preds = [p.p_final for p in closed]
+        outs = [1.0 if p.realized_pnl > 0 else 0.0 for p in closed]
+        lq = self.learner.label_quality()
+        ntr_total = sum((self.learner.no_trade_reasons or {}).values())
+        stale = self._stale_data_rejections()
+        bstat = self.broker.status()
+        orders = max(1, int(bstat.get("orders", 0)))
+        return {
+            "trades_opened": len([p for p in self.positions]),
+            "useful_feedback": int(self.learner.closed),
+            "labels_resolved": len(closed),
+            "calibration_error": float(self.learner.calibration_error()),
+            "brier": _m.brier_score(preds, outs),
+            "ece": _m.ece(preds, outs),
+            "bregman": bregman_monitoring(self.bregman_summary()),
+            "chainlink_linked_performance": self._chainlink_linked_performance(),
+            "exploration_budget_used": float(self.exploration_budget_used),
+            "drawdown": float(self.pnl_summary().get("max_drawdown", 0.0) or 0.0),
+            "loss_streak": loss_streak(closed_pnls),
+            "stale_data_rejections": stale,
+            "stale_data_rejection_rate": round(stale / ntr_total, 6) if ntr_total else 0.0,
+            "partial_fill_rate": round(int(bstat.get("rejects", 0)) / orders, 6),
+            "avg_spread": float(self.metrics.avg_spread or 0.0),
+            "label_suppression_rate": float(lq.get("suppression_rate", 0.0)),
+            "ambiguous_rate": float(lq.get("ambiguous_rate", 0.0)),
+            "learner_rollbacks": int(getattr(self.learner, "rollbacks", 0)),
+            "profile": self._profile(),
+        }
+
+    def aggressive_dashboard(self) -> dict:
+        """Learning-velocity dashboard (Live Monitoring). Shows whether aggressive
+        paper mode is learning FASTER without unsafe behaviour. PAPER ONLY."""
+        return build_dashboard(self._monitoring_raw(),
+                               runtime_seconds=time.time() - self.started_ts,
+                               history=self._metric_history)
+
+    def kill_switch_report(self) -> dict:
+        d = self.aggressive_dashboard()
+        ks = evaluate_kill_switch(d, self._ks_thresholds,
+                                  aggressive=(self._profile() == "aggressive"))
+        ks["downgraded"] = self._downgraded
+        return ks
+
+    def _snapshot_metrics(self) -> None:
+        """Append a calibration/Brier/ECE snapshot for trend tracking."""
+        raw = self._monitoring_raw()
+        self._metric_history.append({
+            "ts": time.time(), "brier": raw["brier"], "ece": raw["ece"],
+            "calibration_error": raw["calibration_error"]})
+        self._metric_history = self._metric_history[-200:]
+
+    def downgrade_to_conservative(self, *, reasons: Optional[list] = None) -> None:
+        """Auto-downgrade aggressive -> conservative PAPER mode on a kill-switch.
+
+        Turns OFF exploration / active-learning / experiments and tightens the
+        entry gate. PAPER ONLY — never enables a live flag, never touches the CLOB
+        boundary or legacy-arbitrage disablement (the preflight stays clean)."""
+        if self._downgraded:
+            return
+        self._downgraded = True
+        self.cfg.exploration_enabled = False
+        self.cfg.exploration_rate = 0.0
+        self.cfg.active_learning_enabled = False
+        self.cfg.experiments_enabled = False
+        self.cfg.min_net_edge = max(float(self.cfg.min_net_edge), 0.03)
+        try:
+            self.experiments.begin_tick({})  # no per-variant budget after downgrade
+        except Exception:  # noqa: BLE001
+            pass
+        logger_reasons = reasons or self._kill_switch.get("triggered", [])
+        self.kill_switch_alerts = getattr(self, "kill_switch_alerts", [])
+        self.kill_switch_alerts.append({
+            "ts": time.time(), "action": "downgrade_to_conservative",
+            "reasons": list(logger_reasons)})
+
+    def run_monitoring(self, *, now: Optional[float] = None) -> dict:
+        """Compute the dashboard + evaluate the kill-switch, auto-downgrading
+        aggressive -> conservative when a metric trips. Returns the kill-switch
+        report. Safe to call every tick."""
+        self._snapshot_metrics()
+        dashboard = self.aggressive_dashboard()
+        aggressive = self._profile() == "aggressive"
+        ks = evaluate_kill_switch(dashboard, self._ks_thresholds, aggressive=aggressive)
+        self._kill_switch = ks
+        if (ks["should_downgrade"] and aggressive
+                and getattr(self.cfg, "kill_switch_enabled", True)
+                and getattr(self.cfg, "kill_switch_auto_downgrade", True)):
+            self.downgrade_to_conservative(reasons=ks["triggered"])
+        return ks
+
     def experiment_report(self) -> dict:
         """Controlled strategy-variant experiment report (Monitoring + Strategy
         Optimization): per-variant trade/feedback counts + Sharpe/Sortino/Calmar/
@@ -980,6 +1111,10 @@ class PolymarketPaperTrainer:
             "bregman": self.bregman_summary(),
             "portfolio": self.portfolio_report(),
             "experiments": self.experiment_report(),
+            "monitoring": self.aggressive_dashboard(),
+            "kill_switch": self.kill_switch_report(),
+            "profile": self._profile(),
+            "downgraded": self._downgraded,
             # Live scan visibility for the dashboard: which markets are being
             # scanned right now + when the last scan ran (proves it's running).
             "watchlist": getattr(self, "_watch_sample", []),

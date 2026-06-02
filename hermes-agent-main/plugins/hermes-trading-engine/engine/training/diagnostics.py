@@ -63,6 +63,37 @@ class DiagnosticsRecord:
         return d
 
 
+@dataclass
+class MonitoringSnapshot:
+    """One persisted aggressive-learning monitoring + kill-switch snapshot.
+
+    Captures the learning-velocity dashboard + the kill-switch verdict at a point
+    in time so a reviewer can audit WHETHER aggressive paper mode was learning
+    faster without unsafe behaviour, and WHY (if) it auto-downgraded. PAPER ONLY —
+    a record, never an action (Live Monitoring + Compliance)."""
+
+    ts_ms: int
+    profile: str
+    severity: str
+    triggered: list = field(default_factory=list)
+    downgraded: bool = False
+    dashboard: dict = field(default_factory=dict)
+
+    def to_dict(self) -> dict:
+        return {"ts_ms": self.ts_ms, "profile": self.profile, "severity": self.severity,
+                "triggered": list(self.triggered), "downgraded": self.downgraded,
+                "dashboard": dict(self.dashboard)}
+
+
+def build_monitoring_snapshot(*, ts_ms: int, dashboard: dict, kill_switch: dict,
+                              downgraded: bool) -> MonitoringSnapshot:
+    return MonitoringSnapshot(
+        ts_ms=ts_ms, profile=str(dashboard.get("profile", "aggressive")),
+        severity=str((kill_switch or {}).get("severity", "OK")),
+        triggered=list((kill_switch or {}).get("triggered", [])),
+        downgraded=bool(downgraded), dashboard=dict(dashboard or {}))
+
+
 def new_diagnostics_id() -> str:
     return f"diag-{uuid.uuid4().hex[:14]}"
 

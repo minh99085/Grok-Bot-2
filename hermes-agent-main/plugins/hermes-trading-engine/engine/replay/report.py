@@ -110,6 +110,17 @@ def _markdown(runner, summary, metrics, calib, charts, overfit=None) -> str:
         f"- {', '.join(metrics.get('warnings', [])) or 'none'}",
         "- Queue priority is approximated; hidden/iceberg liquidity not modeled; replay quality depends on raw-event quality; unresolved markets are excluded from realized calibration.",
     ]
+    ks = metrics.get("kill_switch") or {}
+    mon = metrics.get("monitoring") or {}
+    if ks or mon:
+        lines += ["", "## Aggressive kill-switch (PAPER ONLY)",
+                  f"- severity: **{ks.get('severity', 'OK')}**  ·  triggered: "
+                  f"{', '.join(ks.get('triggered', [])) or 'none'}  ·  downgraded: "
+                  f"{ks.get('downgraded', False)}"]
+        if mon:
+            lines.append(f"- paper trades/hr: {mon.get('paper_trades_per_hour')}  ·  "
+                         f"useful feedback/hr: {mon.get('useful_feedback_per_hour')}  ·  "
+                         f"loss streak: {mon.get('loss_streak')}")
     if charts:
         lines += ["", "## Charts", *[f"- {c}" for c in charts]]
     return "\n".join(lines) + "\n"

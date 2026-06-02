@@ -55,6 +55,22 @@ def run(argv=None) -> int:
     print(f"  risk: approvals={risk.get('approvals')} rejections={risk.get('rejections')}")
     print(f"  safety: preflight_ok={safety.get('ok')} live_detected={safety.get('live_detected')}")
     print(f"  arbitrage_disabled: {safety.get('checks', {}).get('arbitrage_disabled')}")
+    mon = st.get("monitoring", {}) or {}
+    ks = st.get("kill_switch", {}) or {}
+    if mon:
+        print(f"  profile: {st.get('profile', mon.get('profile'))} · kill_switch: "
+              f"{ks.get('severity', 'OK')}"
+              + (f" (downgraded: {', '.join(ks.get('triggered', []))})"
+                 if st.get("downgraded") else ""))
+        print(f"  learning: trades/hr={mon.get('paper_trades_per_hour')} "
+              f"feedback/hr={mon.get('useful_feedback_per_hour')} "
+              f"labels/day={mon.get('labels_resolved_per_day')}")
+        print(f"  quality: calib_improvement={mon.get('calibration_improvement')} "
+              f"brier_trend={mon.get('brier_trend')} ece_trend={mon.get('ece_trend')} "
+              f"loss_streak={mon.get('loss_streak')}")
+        print(f"  bregman: opps={mon.get('bregman_opportunities')} "
+              f"certified_profit={mon.get('certified_bregman_profit')} "
+              f"fp_rate={mon.get('bregman_false_positive_rate')}")
     return 0
 
 

@@ -246,6 +246,36 @@ class ActiveLearningMetrics:
         }
 
 
+def loss_streak(realized_pnls: list) -> int:
+    """Trailing consecutive losing trades (Live Monitoring kill-switch input).
+
+    Counts losses (realized_pnl < 0) from the end of the chronological sequence;
+    a flat (0.0) trade ends the streak."""
+    n = 0
+    for pnl in reversed(list(realized_pnls or [])):
+        try:
+            v = float(pnl)
+        except (TypeError, ValueError):
+            break
+        if v < 0:
+            n += 1
+        else:
+            break
+    return n
+
+
+def metric_trend(history: list, key: str) -> float:
+    """Trend (last - first) of ``key`` across an ordered metric ``history``.
+
+    Negative is improving for loss-like metrics (Brier/ECE); 0 with < 2 points.
+    Pure + side-effect-free (Statistical Modeling)."""
+    vals = [float(h.get(key)) for h in (history or [])
+            if isinstance(h, dict) and h.get(key) is not None]
+    if len(vals) < 2:
+        return 0.0
+    return round(vals[-1] - vals[0], 6)
+
+
 def variant_attribution_table(experiment: dict) -> list:
     """Flatten an experiment report's per-variant metrics into report rows.
 
