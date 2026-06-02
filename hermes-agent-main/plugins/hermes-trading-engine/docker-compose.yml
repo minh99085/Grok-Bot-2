@@ -404,7 +404,7 @@ services:
       PAPER_MAX_DAILY_LOSS_USD: "50"
     command: >
       python scripts/start_polymarket_paper_training.py
-      --minutes 100000 --tick-seconds ${POLYMARKET_TRAINING_TICK_SECONDS:-30}
+      --minutes 100000 --tick-seconds ${POLYMARKET_TRAINING_TICK_SECONDS:-10}
       --catalog ${POLYMARKET_TRAINING_CATALOG:-gamma}
       --realtime
     restart: unless-stopped

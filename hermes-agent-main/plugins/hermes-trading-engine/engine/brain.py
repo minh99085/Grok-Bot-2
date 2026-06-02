@@ -98,6 +98,12 @@ class GrokBrain:
         self.s = settings
         self.api_key = (os.getenv("GROK_API_KEY") or os.getenv("XAI_API_KEY") or "").strip()
         self.model = (os.getenv("GROK_MODEL") or os.getenv("HTE_GROK_MODEL") or "grok-4.3").strip()
+        # When a model is EXPLICITLY configured (GROK_MODEL / HTE_GROK_MODEL),
+        # pin it: use only that model (no auto-downgrade to a higher-scored
+        # one from /v1/models). Falls back to auto-resolution only if the
+        # pinned model is rejected by the API (lands in _bad_models).
+        self._strict_model = bool((os.getenv("GROK_MODEL")
+                                   or os.getenv("HTE_GROK_MODEL") or "").strip())
         self.base_url = (os.getenv("GROK_BASE_URL") or os.getenv("HTE_GROK_BASE_URL")
                          or "https://api.x.ai/v1").rstrip("/")
         self.refresh_seconds = float(os.getenv("HTE_GROK_REFRESH_SECONDS", "30"))
@@ -210,6 +216,11 @@ class GrokBrain:
             self._last_error = f"model list failed: {str(exc)[:120]}"
 
     def _candidates(self) -> list[str]:
+        # Pinned (explicitly-configured) model: use it alone so the panel shows
+        # exactly what was requested (e.g. grok-4.3). Only after the API rejects
+        # it (so it's in _bad_models) do we fall through to auto-resolution.
+        if getattr(self, "_strict_model", False) and self.model and self.model not in self._bad_models:
+            return [self.model]
         pool = self._available_models or _FALLBACK_MODELS
         usable = sorted([m for m in pool if _score_model(m) > -50 and m not in self._bad_models],
                         key=_score_model, reverse=True)

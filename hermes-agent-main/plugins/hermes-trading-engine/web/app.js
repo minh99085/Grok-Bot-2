@@ -85,7 +85,7 @@ function renderResearchPanel(s) {
       ).join("")
     : '<div style="color:#777">no estimates yet — research is OFF by default</div>';
   panel.innerHTML =
-    '<div style="margin-bottom:6px"><b style="color:#fff">Research / probability ' +
+    '<div style="margin-bottom:6px"><b style="color:#fff">AI research &amp; probability ' +
     `<span style="color:#777;font-weight:400">(Grok research-only · mode ${esc(rs.mode)} · ` +
     `strategy ${rs.use_in_strategy ? "on" : "off"})</span></b></div>` + rows;
 }
@@ -115,7 +115,7 @@ function renderVenuePanel() {
       `<span style="color:#9a9ab0">md=${v.supports_market_data} meta=${v.supports_metadata} ${esc(v.detail || "")}</span></div>`
     ).join("");
     panel.innerHTML =
-      '<div style="margin-bottom:6px"><b style="color:#fff">Venue Health ' +
+      '<div style="margin-bottom:6px"><b style="color:#fff">Exchange connections ' +
       '<span style="color:#777;font-weight:400">(read-only; no orders)</span></b></div>' +
       (rows || '<div style="color:#777">no venues</div>');
   }).catch(() => { /* venue panel is non-critical */ });
@@ -142,7 +142,7 @@ function renderShadowPanel() {
     let readinessHtml = "";
     const finish = () => {
       panel.innerHTML =
-        '<div style="margin-bottom:6px"><b style="color:#fff">Shadow Mode ' +
+        '<div style="margin-bottom:6px"><b style="color:#fff">Shadow test (watch-only) ' +
         '<span style="color:#777;font-weight:400">(shadow_live · no live orders)</span></b></div>' +
         '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
         `<span style="min-width:90px">${st.enabled ? "enabled" : "disabled"}</span>` +
@@ -182,7 +182,7 @@ function renderGuardedLivePanel() {
     }
     const esc = (t) => String(t == null ? "" : t).replace(/</g, "&lt;");
     panel.innerHTML =
-      '<div style="margin-bottom:6px"><b style="color:#fff">Guarded Live Design ' +
+      '<div style="margin-bottom:6px"><b style="color:#fff">Live-trading safety (off) ' +
       '<span style="color:#d08770;font-weight:400">(DRY-RUN ONLY · real execution DISABLED)</span></b></div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
       `<span style="min-width:90px">${st.enabled ? "enabled" : "disabled"}</span>` +
@@ -213,7 +213,7 @@ function renderMarketUniversePanel() {
     const esc = (t) => String(t == null ? "" : t).replace(/</g, "&lt;");
     const cfg = u.config || {};
     let head =
-      '<div style="margin-bottom:6px"><b style="color:#fff">Polymarket Universe ' +
+      '<div style="margin-bottom:6px"><b style="color:#fff">Markets being scanned ' +
       '<span style="color:#7fd1c4;font-weight:400">(selection only · no orders placed here)</span></b></div>';
     if (!u.available) {
       panel.innerHTML = head +
@@ -268,7 +268,7 @@ function renderMicroLivePanel() {
     }
     const esc = (t) => String(t == null ? "" : t).replace(/</g, "&lt;");
     panel.innerHTML =
-      '<div style="margin-bottom:6px"><b style="color:#fff">Micro Live ' +
+      '<div style="margin-bottom:6px"><b style="color:#fff">Tiny live test (off) ' +
       '<span style="color:#d08770;font-weight:400">(CLI-only · one canary · FOK-only · DISABLED by default)</span></b></div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
       `<span style="min-width:90px">${st.enabled ? "enabled" : "disabled"}</span>` +
@@ -299,7 +299,7 @@ function renderPostCanaryPanel() {
     }
     const esc = (t) => String(t == null ? "" : t).replace(/</g, "&lt;");
     panel.innerHTML =
-      '<div style="margin-bottom:6px"><b style="color:#fff">Post-Canary Analysis &amp; Veto ' +
+      '<div style="margin-bottom:6px"><b style="color:#fff">Live-test review ' +
       '<span style="color:#a3be8c;font-weight:400">(analysis only · never scales)</span></b></div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
       `<span style="min-width:160px">recommendation ${esc(a ? a.recommendation : "n/a")}</span>` +
@@ -330,7 +330,7 @@ function renderProductionReviewPanel() {
     }
     const esc = (t) => String(t == null ? "" : t).replace(/</g, "&lt;");
     panel.innerHTML =
-      '<div style="margin-bottom:6px"><b style="color:#fff">Production Review ' +
+      '<div style="margin-bottom:6px"><b style="color:#fff">Go-live checklist ' +
       '<span style="color:#ebcb8b;font-weight:400">(DESIGN REVIEW only · no execution)</span></b></div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
       `<span style="min-width:200px">recommendation ${esc(a ? a.recommendation : "n/a")}</span>` +
@@ -380,7 +380,7 @@ function renderOmsPanel(s) {
     : '<div style="color:#777">no open positions</div>';
   panel.innerHTML =
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
-    '<b style="color:#fff">Orders &amp; fills <span style="color:#777;font-weight:400">(paper OMS)</span></b>' +
+    '<b style="color:#fff">Orders &amp; fills <span style="color:#777;font-weight:400">(paper — fake money)</span></b>' +
     `<span>open: <b>${oms.open_orders || 0}</b> &middot; ` +
     `recon: <b style="color:${sevCol}">${esc(sev.toUpperCase())}</b>` +
     `${oms.degraded ? ' &middot; <span style="color:#ff5c5c;font-weight:700">DEGRADED</span>' : ""}</span></div>` +
@@ -421,7 +421,7 @@ function renderMarketDataPanel(s) {
     : '<div style="color:#777">no subscribed assets</div>';
   panel.innerHTML =
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
-    '<b style="color:#fff">Polymarket CLOB market data <span style="color:#777;font-weight:400">(read-only)</span></b>' +
+    '<b style="color:#fff">Live market data <span style="color:#777;font-weight:400">(read-only price feed)</span></b>' +
     `<span style="color:${col};font-weight:700">${esc(status.toUpperCase())}</span></div>` +
     '<div style="color:#9a9ab0;margin-bottom:4px">' +
     `subscribed: <b>${st.subscribed_asset_count || 0}</b> &middot; ` +
@@ -467,7 +467,7 @@ function renderRiskPanel(s) {
     : '<div style="color:#777">no risk rejections yet</div>';
   panel.innerHTML =
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
-    '<b style="color:#fff">Risk gate</b>' +
+    '<b style="color:#fff">Risk checks <span style="color:#777;font-weight:400">(safety limits)</span></b>' +
     `<span>${ks} &middot; approvals: <b style="color:#5cff9d">${r.approvals_total || 0}</b>` +
     ` &middot; rejections: <b style="color:#ffd479">${r.rejections_total || 0}</b></span></div>` +
     '<div style="color:#9a9ab0;margin:4px 0 2px">latest approved decisions ' +
@@ -883,15 +883,17 @@ function renderTrades(s) {
 
 // =========================================================================
 function render(s) {
+  // Paper-trading panels first (what you use day-to-day); advanced / live-only
+  // panels last. Order is purely cosmetic — every panel still renders.
+  try { renderMarketUniversePanel(); } catch (e) { /* markets panel is non-critical */ }
+  try { renderMarketDataPanel(s); } catch (e) { /* market-data panel is non-critical */ }
+  try { renderOmsPanel(s); } catch (e) { /* orders panel is non-critical */ }
   try { renderRiskPanel(s); } catch (e) { /* risk panel is non-critical */ }
-  try { renderMarketDataPanel(s); } catch (e) { /* md panel is non-critical */ }
-  try { renderOmsPanel(s); } catch (e) { /* oms panel is non-critical */ }
-  try { renderReplayPanel(s); } catch (e) { /* replay panel is non-critical */ }
   try { renderResearchPanel(s); } catch (e) { /* research panel is non-critical */ }
+  try { renderReplayPanel(s); } catch (e) { /* backtest panel is non-critical */ }
   try { renderVenuePanel(); } catch (e) { /* venue panel is non-critical */ }
   try { renderShadowPanel(); } catch (e) { /* shadow panel is non-critical */ }
   try { renderGuardedLivePanel(); } catch (e) { /* guarded-live panel is non-critical */ }
-  try { renderMarketUniversePanel(); } catch (e) { /* universe panel is non-critical */ }
   try { renderMicroLivePanel(); } catch (e) { /* micro-live panel is non-critical */ }
   try { renderPostCanaryPanel(); } catch (e) { /* post-canary panel is non-critical */ }
   try { renderProductionReviewPanel(); } catch (e) { /* production-review panel is non-critical */ }
