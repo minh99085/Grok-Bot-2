@@ -38,10 +38,15 @@ def test_registry_override(tmp_path):
 
 
 def test_no_secrets_in_registry():
+    import re
+    addr_re = re.compile(r"^0x[0-9a-fA-F]{40}$")
     for spec in DEFAULT_FEEDS.values():
-        # public metadata only — no private keys / rpc urls
-        assert "key" not in spec.to_dict().get("description", "").lower() or True
-        assert spec.address == ""  # offline-safe default
+        # public metadata only — addresses are public mainnet aggregator
+        # (proxy) addresses, NOT secrets. Assert they're blank or well-formed
+        # public 0x addresses, and never an RPC URL / private key.
+        assert spec.address == "" or addr_re.match(spec.address), spec.address
+        assert "://" not in spec.address              # no embedded RPC URL
+        assert len(spec.address) <= 42                # not a 64-hex private key
 
 
 # --- scanning + metrics -----------------------------------------------------

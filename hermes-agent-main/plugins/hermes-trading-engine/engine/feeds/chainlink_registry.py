@@ -51,13 +51,21 @@ def _spec(key, pair, kws, category, *, decimals=8, heartbeat_s=3600.0,
 
 
 # Built-in default registry. Keywords are used for keyword/slug/category linking
-# to Polymarket markets. Addresses intentionally left blank (offline-safe).
+# to Polymarket markets. Crypto feeds carry public mainnet aggregator addresses
+# so live reads work out of the box once CHAINLINK_RPC_URL is set; the rest are
+# left blank (offline-safe; add via the registry override file/env if needed).
 DEFAULT_FEEDS: dict = {
     s.key: s for s in (
-        _spec("ETH/USD", "ETH/USD", ["eth", "ethereum", "ether"], "crypto", heartbeat_s=3600),
-        _spec("BTC/USD", "BTC/USD", ["btc", "bitcoin", "xbt"], "crypto", heartbeat_s=3600),
-        _spec("SOL/USD", "SOL/USD", ["sol", "solana"], "crypto", heartbeat_s=3600),
-        _spec("LINK/USD", "LINK/USD", ["link", "chainlink"], "crypto", heartbeat_s=3600),
+        # Public Ethereum-mainnet Chainlink aggregator (proxy) addresses — not
+        # secrets. Enable live reads by setting CHAINLINK_RPC_URL (any ETH RPC).
+        _spec("ETH/USD", "ETH/USD", ["eth", "ethereum", "ether"], "crypto", heartbeat_s=3600,
+              address="0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419"),
+        _spec("BTC/USD", "BTC/USD", ["btc", "bitcoin", "xbt"], "crypto", heartbeat_s=3600,
+              address="0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c"),
+        _spec("SOL/USD", "SOL/USD", ["sol", "solana"], "crypto", heartbeat_s=3600,
+              address="0x4ffC43a60e009B551865A93d232E33Fce9f01507"),
+        _spec("LINK/USD", "LINK/USD", ["link", "chainlink"], "crypto", heartbeat_s=3600,
+              address="0x2c1d072e956AFFC0D435Cb7AC38EF18d24d9127c"),
         _spec("MATIC/USD", "MATIC/USD", ["matic", "polygon"], "crypto", heartbeat_s=3600),
         _spec("DOGE/USD", "DOGE/USD", ["doge", "dogecoin"], "crypto", heartbeat_s=3600),
         _spec("EUR/USD", "EUR/USD", ["eur", "euro"], "fx", heartbeat_s=3600),

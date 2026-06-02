@@ -154,22 +154,74 @@ class RpcChainlinkSource(ChainlinkSource):
     _LATEST_ROUND_DATA = "0xfeaf968c"  # latestRoundData()
     _DECIMALS = "0x313ce567"           # decimals()
 
-    def __init__(self, rpc_url: Optional[str] = None, timeout_s: float = 6.0):
+    def __init__(self, rpc_url: Optional[str] = None, timeout_s: float = 6.0,
+                 *, registry: Optional[dict] = None, refresh_s: float = 30.0,
+                 history_limit: int = 50):
         self.rpc_url = rpc_url or os.getenv("CHAINLINK_RPC_URL") or ""
         self.timeout_s = timeout_s
         self.enabled = bool(self.rpc_url)
+        self.refresh_s = max(0.0, refresh_s)
+        self.history_limit = max(1, history_limit)
+        # feed_key -> ChainlinkFeedSpec, so history()/read_by_key() can resolve a
+        # bare feed key (what the scanner passes) to its public aggregator
+        # address. Lazy import avoids any import cycle with the registry module.
+        if registry is None:
+            try:
+                from .chainlink_registry import load_registry
+                registry = load_registry()
+            except Exception:  # noqa: BLE001
+                registry = {}
+        self._registry = registry or {}
+        self._hist: dict = {}        # feed_key -> list[ChainlinkReading] (rolling)
+        self._last_fetch: dict = {}  # feed_key -> unix s of last live RPC attempt
+
+    def _append(self, reading: ChainlinkReading) -> None:
+        """Append to the rolling window, de-duping consecutive identical rounds so
+        polling faster than the feed heartbeat doesn't inflate the window."""
+        buf = self._hist.setdefault(reading.feed_key, [])
+        if buf and buf[-1].updated_at == reading.updated_at \
+                and getattr(buf[-1], "round_id", None) == getattr(reading, "round_id", None):
+            buf[-1] = reading
+        else:
+            buf.append(reading)
+        if len(buf) > self.history_limit:
+            del buf[:-self.history_limit]
+
+    def _maybe_refresh(self, feed_key: str, now: Optional[float]) -> None:
+        """Throttled live read: at most one RPC round-trip per feed per
+        ``refresh_s`` (history() is polled every scan tick)."""
+        if not self.enabled:
+            return
+        spec = self._registry.get(feed_key)
+        if spec is None or not getattr(spec, "address", ""):
+            return
+        t = now if now is not None else time.time()
+        last = self._last_fetch.get(feed_key, 0.0)
+        if self.refresh_s and (t - last) < self.refresh_s and self._hist.get(feed_key):
+            return
+        self._last_fetch[feed_key] = t
+        r = self._read(spec.key, spec.address, getattr(spec, "decimals", 8), now)
+        if r is not None:
+            self._append(r)
 
     def history(self, feed_key: str, now: Optional[float] = None, limit: int = 50) -> list:
-        r = None
-        return [r] if (r := self.read_by_key(feed_key, now)) else []
+        self._maybe_refresh(feed_key, now)
+        buf = self._hist.get(feed_key, [])
+        if now is not None:
+            buf = [r for r in buf if r.observed_ts <= now]
+        return buf[-limit:]
 
     def read(self, spec, now: Optional[float] = None) -> Optional[ChainlinkReading]:
         if not self.enabled or not getattr(spec, "address", ""):
             return None
-        return self._read(spec.key, spec.address, getattr(spec, "decimals", 8), now)
+        r = self._read(spec.key, spec.address, getattr(spec, "decimals", 8), now)
+        if r is not None:
+            self._append(r)
+        return r
 
-    def read_by_key(self, feed_key, now=None) -> Optional[ChainlinkReading]:  # pragma: no cover
-        return None
+    def read_by_key(self, feed_key, now=None) -> Optional[ChainlinkReading]:
+        spec = self._registry.get(feed_key)
+        return self.read(spec, now) if spec is not None else None
 
     def _read(self, key, address, decimals, now) -> Optional[ChainlinkReading]:  # pragma: no cover
         try:

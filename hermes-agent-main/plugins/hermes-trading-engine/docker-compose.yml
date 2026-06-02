@@ -67,6 +67,15 @@ services:
       POLYMARKET_CLOB_STALE_MS: "3000"
       POLYMARKET_CLOB_PERSIST_RAW: "1"
       POLYMARKET_CLOB_SUBSCRIBE_TRENDING: "1"
+      # ---- Chainlink real price feed (READ-ONLY oracle input) ----
+      # ON: the scanner reads live Chainlink mainnet aggregators (latestRoundData)
+      # over JSON-RPC and uses them ONLY as a probability/edge input feature for
+      # crypto-linked markets. Never sizes/approves/places an order; capped nudge.
+      # Set CHAINLINK_RPC_URL to ANY Ethereum RPC (the public default below works
+      # with no key; for higher rate limits put your own Alchemy/Infura URL in
+      # .env). With no reachable RPC the layer abstains gracefully (paper-safe).
+      CHAINLINK_ENABLED: "1"
+      CHAINLINK_RPC_URL: "${CHAINLINK_RPC_URL:-https://ethereum-rpc.publicnode.com}"
       # ---- Adaptive Polymarket Market Universe Manager (selection only) ----
       # Scans a large catalog, filters + scores + tiers markets, and produces a
       # live watchlist + trade-candidate shortlist. It NEVER places/cancels/sizes
@@ -374,6 +383,14 @@ services:
       DISABLE_BTC_PULSE_TRADING: "1"
       POLYMARKET_TRAINING_MODE: "${POLYMARKET_TRAINING_MODE:-paper_train}"
       POLYMARKET_CLOB_ENABLED: "1"
+      # ---- Chainlink real price feed (READ-ONLY oracle input) ----
+      # Live Chainlink mainnet aggregator reads (latestRoundData over JSON-RPC),
+      # used ONLY as a probability/edge input feature for crypto-linked markets.
+      # Never sizes/approves/places an order. Public RPC default works key-less;
+      # override CHAINLINK_RPC_URL in .env for higher rate limits. Unreachable RPC
+      # => layer abstains gracefully (paper-safe).
+      CHAINLINK_ENABLED: "1"
+      CHAINLINK_RPC_URL: "${CHAINLINK_RPC_URL:-https://ethereum-rpc.publicnode.com}"
       RESEARCH_MODE: "${RESEARCH_MODE:-online_paper}"
       GROK_API_KEY: "${GROK_API_KEY:-}"
       XAI_API_KEY: "${XAI_API_KEY:-}"
