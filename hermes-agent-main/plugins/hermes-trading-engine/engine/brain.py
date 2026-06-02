@@ -214,7 +214,11 @@ class GrokBrain:
         usable = sorted([m for m in pool if _score_model(m) > -50 and m not in self._bad_models],
                         key=_score_model, reverse=True)
         ordered = []
-        if self.model and self.model not in self._bad_models and (self.model in pool or not self._available_models):
+        # Always try the explicitly-configured model (GROK_MODEL, e.g. grok-4.3)
+        # FIRST, even if it isn't in the account's fetched /v1/models list — the
+        # list can be incomplete/cached. If the API rejects it, it lands in
+        # _bad_models and we fall back on the next call.
+        if self.model and self.model not in self._bad_models:
             ordered.append(self.model)
         for m in usable:
             if m not in ordered:
