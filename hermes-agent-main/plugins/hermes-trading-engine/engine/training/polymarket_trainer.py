@@ -342,6 +342,18 @@ class PolymarketPaperTrainer:
 
         # live-watch subscription (selection only, churn-capped)
         watch = records[:self.cfg.live_watch_limit]
+        # Human-readable sample of WHAT we're scanning right now (dashboard
+        # visibility only — selection, never an order). Top live-watched markets
+        # with their real Polymarket question text + live book stats.
+        self._watch_sample = [{
+            "market_id": r.market_id,
+            "question": (getattr(r, "question", "") or r.market_id)[:100],
+            "category": getattr(r, "category", "") or "uncategorized",
+            "mid": round(market_mid(r), 4),
+            "spread": round(getattr(r, "spread", 0.0) or 0.0, 4),
+            "liquidity_usd": round(getattr(r, "liquidity_usd", 0.0) or 0.0),
+        } for r in watch[:15]]
+        self._last_scan_ts = now
         health = self.subs.reconcile(watch)
         self.metrics.subscribed_assets = health.subscribed_assets
 
@@ -889,6 +901,11 @@ class PolymarketPaperTrainer:
                           else {"enabled": False}),
             "bregman": self.bregman_summary(),
             "portfolio": self.portfolio_report(),
+            # Live scan visibility for the dashboard: which markets are being
+            # scanned right now + when the last scan ran (proves it's running).
+            "watchlist": getattr(self, "_watch_sample", []),
+            "last_scan_ts": getattr(self, "_last_scan_ts", 0.0),
+            "tick": self.tick_count,
             "safety": self.preflight(),
         }
 

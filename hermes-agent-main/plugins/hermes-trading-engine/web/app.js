@@ -974,7 +974,26 @@ async function renderPmTraining() {
   const ntr = Object.entries(learn.no_trade_reasons || {}).sort((a, b) => b[1] - a[1]).slice(0, 4);
   const topReasons = ntr.map(([k, v]) => `${k}: ${v}`).join(" \u00B7 ") || "none";
   const blLine = bl.map((b) => `${b.baseline_name}: ${b.trade_count} (${b.pnl})`).join(" \u00B7 ") || "n/a";
+  // Live list of the markets being scanned RIGHT NOW (real Polymarket
+  // questions), plus how fresh the last scan is — so it's obvious what the bot
+  // is looking at and that it's actively ticking.
+  const wl = s.watchlist || [];
+  const esc = (x) => String(x == null ? "" : x).replace(/[<>&"]/g, (c) =>
+    ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]));
+  const ageSec = s.last_scan_ts ? Math.max(0, Math.round(Date.now() / 1000 - s.last_scan_ts)) : null;
+  const freshTxt = ageSec == null ? "no scan yet"
+    : ageSec < 90 ? `scanned ${ageSec}s ago` : `last scan ${Math.round(ageSec / 60)}m ago (stale?)`;
+  const wlRows = wl.length
+    ? wl.map((m) =>
+        `<div style="display:flex;gap:8px;justify-content:space-between;border-bottom:1px solid #1c1c1c;padding:2px 0">` +
+        `<span style="color:#cfd8d4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:64%" title="${esc(m.question)}">${esc(m.question || m.market_id)}</span>` +
+        `<span style="color:#7fd1c4;white-space:nowrap">${esc(m.category)}</span>` +
+        `<span style="color:#999;white-space:nowrap">mid ${m.mid} \u00B7 sp ${m.spread}</span></div>`).join("")
+    : '<div style="color:#888">no markets in the current scan window yet</div>';
   $("pmtrain-detail").innerHTML =
+    `<div style="margin:2px 0 4px"><b style="color:#fff">Markets it is scanning now</b> ` +
+    `<span style="color:#777">(showing ${wl.length} of ${scan.scanned || 0} \u00B7 tick #${s.tick || 0} \u00B7 ${freshTxt})</span></div>` +
+    `<div style="max-height:170px;overflow:auto;margin-bottom:6px">${wlRows}</div>` +
     `<div>subscribed: ${subs.subscribed_assets || 0} &middot; churn: ${subs.churn_count || 0} &middot; ` +
     `stale books: ${subs.stale_books || scan.stale_books || 0} &middot; avg spread: ${(subs.avg_spread || scan.avg_spread || 0)}</div>` +
     `<div>risk approvals/rejections: ${risk.approvals || 0}/${risk.rejections || 0}</div>` +
