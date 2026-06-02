@@ -11,10 +11,14 @@
 # user via `s6-setuidgid`.
 #
 # Security notes:
-#   - The dashboard service binds to 127.0.0.1 by default. It stores API
-#     keys; exposing it on LAN without auth is unsafe. If you want remote
-#     access, use an SSH tunnel or put it behind a reverse proxy that
-#     adds authentication — do NOT pass --insecure --host 0.0.0.0.
+#   - The dashboard service publishes its port to the host's loopback
+#     only (`127.0.0.1:9119:9119`). It binds 0.0.0.0 INSIDE the container
+#     (with --insecure) so Docker's port-forward can reach it, but the
+#     host-side publish is loopback-scoped, so it is NOT exposed on the
+#     LAN. The dashboard stores API keys; if you want remote access, use
+#     an SSH tunnel or a reverse proxy that adds authentication. Do NOT
+#     change the publish to `0.0.0.0:9119:9119` / `9119:9119` (those
+#     expose it on every interface) without putting auth in front.
 #   - If you override entrypoint, keep `/init` as the first command in
 #     the chain (or let docker use the image's default ENTRYPOINT,
 #     which is `["/init", "/opt/hermes/docker/main-wrapper.sh"]`).
@@ -64,9 +68,16 @@ services:
     image: hermes-agent
     container_name: hermes-dashboard
     restart: unless-stopped
-    network_mode: host
     depends_on:
       - gateway
+    # Publish the dashboard to the host's loopback only. We deliberately
+    # do NOT use `network_mode: host` here: Docker Desktop (Windows/macOS)
+    # does not forward host-networked container ports to the host, so a
+    # host-networked dashboard is unreachable at http://localhost:9119
+    # ("localhost refused to connect"). A loopback port publish behaves
+    # identically on Linux, Windows, and macOS.
+    ports:
+      - "127.0.0.1:9119:9119"
     volumes:
       - ~/.hermes:/opt/data
     environment:
@@ -78,8 +89,12 @@ services:
       # exclusive lock on /opt/data/logs/gateways/<profile>/, so letting
       # both containers run it makes this one loop on
       # "s6-log: fatal: unable to lock ...: Resource busy". The dashboard
-      # reads gateway status from the shared volume + health URL, so it
-      # does not need to supervise gateways itself.
+      # reads gateway status from the shared ~/.hermes volume, so it does
+      # not need to supervise gateways itself.
       - HERMES_SUPERVISE_GATEWAYS=0
-    # Localhost-only. For remote access, tunnel via `ssh -L 9119:localhost:9119`.
-    command: ["dashboard", "--host", "127.0.0.1", "--no-open"]
+    # Bind 0.0.0.0 INSIDE the container so Docker's port-forward can reach
+    # the dashboard; --insecure is required for a non-loopback bind. This
+    # stays safe because the port above is published to the host's
+    # 127.0.0.1 only, so the dashboard is never exposed on the LAN. For
+    # remote access, tunnel via `ssh -L 9119:localhost:9119`.
+    command: ["dashboard", "--host", "0.0.0.0", "--port", "9119", "--no-open", "--insecure"]
