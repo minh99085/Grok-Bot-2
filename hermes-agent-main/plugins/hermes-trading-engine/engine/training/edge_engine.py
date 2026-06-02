@@ -71,6 +71,16 @@ def is_near_miss(reason: str) -> bool:
     return reason in NEAR_MISS_REASONS
 
 
+def overfit_adjusted_min_edge(base: float, penalty: float, *,
+                              conservative: float = 0.03) -> float:
+    """Raise the minimum net-edge threshold toward a conservative value as the
+    overfit penalty rises (anti-overfitting). ``penalty=0`` keeps the aggressive
+    threshold; ``penalty=1`` reverts to ``conservative``. This only ever makes
+    the entry gate STRICTER, never looser."""
+    p = max(0.0, min(1.0, float(penalty)))
+    return (1.0 - p) * float(base) + p * float(conservative)
+
+
 @dataclass
 class EdgeResult:
     market_id: str

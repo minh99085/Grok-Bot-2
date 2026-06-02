@@ -131,6 +131,13 @@ def main(argv=None) -> int:
     print(f"  fill ratio    : {m.get('fill_ratio')}  fees={m.get('total_fees')}")
     print(f"  calibration   : brier={c.get('brier_score')} ece={c.get('expected_calibration_error')} "
           f"resolved={c.get('resolved_count')} unresolved={c.get('unresolved_count')}")
+    ov = report.get("overfit", {}) or {}
+    if ov:
+        iv, ov_oos = ov.get("in_sample", {}), ov.get("out_of_sample", {})
+        print(f"  overfit       : {'OVERFIT' if ov.get('overfit') else 'OK'} "
+              f"score={ov.get('overfit_score')} "
+              f"sharpe IS/OOS={iv.get('sharpe')}/{ov_oos.get('sharpe')} "
+              f"brier IS/OOS={iv.get('brier')}/{ov_oos.get('brier')}")
     print(f"  artifacts     : {out_dir}")
     return 0 if report["status"] == "finished" else 4
 

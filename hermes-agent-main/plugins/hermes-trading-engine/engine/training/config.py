@@ -185,6 +185,18 @@ class TrainingConfig:
     paper_decision_budget: int = 30      # max candidates evaluated per tick
     feedback_sample_target: int = 200    # target feedback-loop samples
     tiny_trade_min_liquidity: float = 100.0  # liquidity floor for tiny paper trades
+    # ---- anti-overfitting / walk-forward parameter governance (PAPER ONLY) ----
+    # Aggressive mode may learn fast online, but production-like parameters
+    # (thresholds, shrink factors, risk sizes, exploration) can only be promoted
+    # when walk-forward validation passes. These never relax a risk gate.
+    walk_forward_enabled: bool = False
+    walk_forward_train: int = 6           # train window length (observations)
+    walk_forward_test: int = 3            # test window length (observations)
+    oos_degrade_tolerance: float = 0.2    # max tolerated OOS/IS degradation
+    min_param_stability: float = 0.5      # min walk-forward stability to promote
+    max_overfit_penalty: float = 0.5      # max IS->OOS penalty to promote
+    overfit_rollback_tolerance: float = 0.05  # val-error slack before learner rollback
+    aggressive_can_promote_params: bool = False  # gated until walk-forward passes
     # ---- run / sim ----
     take_profit: float = 0.05
     stop_loss: float = 0.05
@@ -252,6 +264,13 @@ class TrainingConfig:
         self.exploration_budget_usd = max(0.0, min(self.exploration_budget_usd, 200.0))
         self.max_drawdown_usd = max(0.0, min(self.max_drawdown_usd, 5000.0))
         self.diversity_target = max(0, min(int(self.diversity_target), 100))
+        # anti-overfitting governance clamps (bounded; cannot relax a risk gate)
+        self.walk_forward_train = max(2, min(int(self.walk_forward_train), 100000))
+        self.walk_forward_test = max(1, min(int(self.walk_forward_test), 100000))
+        self.oos_degrade_tolerance = max(0.0, min(1.0, float(self.oos_degrade_tolerance)))
+        self.min_param_stability = max(0.0, min(1.0, float(self.min_param_stability)))
+        self.max_overfit_penalty = max(0.0, min(1.0, float(self.max_overfit_penalty)))
+        self.overfit_rollback_tolerance = max(0.0, min(1.0, float(self.overfit_rollback_tolerance)))
         self.cvar_alpha = min(0.999, max(0.5, self.cvar_alpha))
         self.kelly_max_fraction = max(0.0, min(self.kelly_max_fraction, 0.5))
         self.leg_failure_haircut = max(0.0, min(self.leg_failure_haircut, 1.0))
@@ -370,6 +389,14 @@ class TrainingConfig:
             paper_decision_budget=_envi("POLYMARKET_PAPER_DECISION_BUDGET", 30),
             feedback_sample_target=_envi("POLYMARKET_FEEDBACK_SAMPLE_TARGET", 200),
             tiny_trade_min_liquidity=_envf("POLYMARKET_TINY_TRADE_MIN_LIQUIDITY", 100.0),
+            walk_forward_enabled=_envb("POLYMARKET_WALK_FORWARD_ENABLED", False),
+            walk_forward_train=_envi("POLYMARKET_WALK_FORWARD_TRAIN", 6),
+            walk_forward_test=_envi("POLYMARKET_WALK_FORWARD_TEST", 3),
+            oos_degrade_tolerance=_envf("POLYMARKET_OOS_DEGRADE_TOLERANCE", 0.2),
+            min_param_stability=_envf("POLYMARKET_MIN_PARAM_STABILITY", 0.5),
+            max_overfit_penalty=_envf("POLYMARKET_MAX_OVERFIT_PENALTY", 0.5),
+            overfit_rollback_tolerance=_envf("POLYMARKET_OVERFIT_ROLLBACK_TOLERANCE", 0.05),
+            aggressive_can_promote_params=_envb("POLYMARKET_AGGRESSIVE_CAN_PROMOTE_PARAMS", False),
             signal_model=(os.getenv("POLYMARKET_TRAINING_SIGNAL_MODEL") or "research").lower(),
             starting_bankroll=_envf("HTE_STARTING_BALANCE", 500.0),
             universe=ucfg,
@@ -439,6 +466,10 @@ class TrainingConfig:
             max_bregman_bundle_exposure_usd=15.0, diversity_target=8,
             exploration_budget_usd=15.0, max_drawdown_usd=40.0,
             kelly_max_fraction=0.03, leg_failure_haircut=0.6,
+            # anti-overfitting: walk-forward governance ON, but aggressive mode
+            # CANNOT promote production-like params until walk-forward validation
+            # passes (it may still learn fast online and roll back on degrade).
+            walk_forward_enabled=True, aggressive_can_promote_params=False,
         )
         base.update(overrides)
         return cls(**base)

@@ -430,6 +430,7 @@ class ReplayRunner:
                 "confidence": None, "realized_outcome": row.get("realized_outcome"),
                 "bucket": None, "brier": None, "log_loss": None, "ts_ms": self.clock.now_ms()})
         self._calibration = {k: v for k, v in calib.items() if k != "rows"}
+        self._calib_rows = calib.get("rows", []) or []  # kept for IS/OOS overfit split
 
         # metrics
         self.metrics = met.summarize(
@@ -486,6 +487,46 @@ class ReplayRunner:
         except Exception:  # noqa: BLE001
             return {}, {}
 
+    def _overfit_report(self) -> dict:
+        """In-sample vs out-of-sample overfit report (anti-overfitting).
+
+        Splits the replay's equity curve and matched calibration rows in half by
+        TIME and reports IS vs OOS Sharpe / drawdown / Brier / log-loss / ECE so a
+        reviewer can see whether the run's edge generalizes out of sample.
+        Best-effort + deterministic; never breaks the replay report."""
+        try:
+            eqs = met.equity_series(self.equity_rows)
+            rows = [r for r in (getattr(self, "_calib_rows", []) or [])
+                    if r.get("realized_outcome") is not None
+                    and r.get("predicted_probability") is not None]
+            if len(eqs) < 4 and len(rows) < 4:
+                return {}
+
+            def _half(seq):
+                mid = len(seq) // 2
+                return seq[:mid], seq[mid:]
+
+            is_d: dict = {}
+            oos_d: dict = {}
+            if len(eqs) >= 4:
+                e_is, e_oos = _half(eqs)
+                is_d["sharpe"], oos_d["sharpe"] = met.sharpe(e_is), met.sharpe(e_oos)
+                is_d["max_drawdown"] = -met.max_drawdown(e_is)[0]
+                oos_d["max_drawdown"] = -met.max_drawdown(e_oos)[0]
+            if len(rows) >= 4:
+                r_is, r_oos = _half(rows)
+                for half, dst in ((r_is, is_d), (r_oos, oos_d)):
+                    preds = [float(x["predicted_probability"]) for x in half]
+                    outs = [float(x["realized_outcome"]) for x in half]
+                    dst["brier"] = met.brier_score(preds, outs)
+                    dst["log_loss"] = met.log_loss(preds, outs)
+                    dst["ece"] = met.ece(preds, outs)
+            if not is_d or not oos_d:
+                return {}
+            return met.overfit_report(is_d, oos_d)
+        except Exception:  # noqa: BLE001
+            return {}
+
     def _build_report(self) -> dict:
         graph_report, cluster_exposure = self._dependency_graph_report()
         return {
@@ -497,6 +538,7 @@ class ReplayRunner:
             "calibration": getattr(self, "_calibration", {}),
             "dependency_graph": graph_report,
             "cluster_exposure": cluster_exposure,
+            "overfit": self._overfit_report(),
             "execution_diagnostics": met.execution_diagnostics(self.orders, self.fills),
             "counts": {"orders": len(self.orders), "fills": len(self.fills),
                        "proposals": len(self.proposals), "equity_points": len(self.equity_rows)},

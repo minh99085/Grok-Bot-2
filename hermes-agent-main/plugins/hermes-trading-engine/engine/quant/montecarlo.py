@@ -65,3 +65,35 @@ def simulate(closes: list[float], horizon_steps: int = 60, paths: int = 500,
         },
         "converged": True,
     }
+
+
+def pnl_dispersion(returns: list[float], *, paths: int = 1000,
+                   seed: int | None = 0) -> dict:
+    """Bootstrap dispersion of mean realized PnL (anti-overfitting robustness).
+
+    Resamples the realized per-trade return series with replacement ``paths``
+    times and summarizes the distribution of the bootstrap mean. A high
+    dispersion (wide p05..p95 / large ``fragility`` relative to the point
+    estimate) means the measured edge is fragile — a red flag that learned
+    parameters may be overfit to a lucky sample rather than a stable edge.
+    Deterministic for a fixed ``seed``; never trades.
+    """
+    arr = np.asarray([float(x) for x in returns], dtype=float)
+    n = arr.size
+    if n == 0:
+        return {"mean": 0.0, "p05": 0.0, "p95": 0.0, "std": 0.0,
+                "fragility": 0.0, "n": 0, "paths": int(paths)}
+    rng = np.random.default_rng(seed)
+    idx = rng.integers(0, n, size=(int(paths), n))
+    boot_means = arr[idx].mean(axis=1)
+    mean = float(np.mean(boot_means))
+    std = float(np.std(boot_means))
+    p05 = float(np.percentile(boot_means, 5))
+    p95 = float(np.percentile(boot_means, 95))
+    point = float(np.mean(arr))
+    # fragility: bootstrap std relative to the point estimate (coefficient of
+    # variation of the mean). Large => the edge does not survive resampling.
+    fragility = std / (abs(point) + 1e-9)
+    return {"mean": round(mean, 6), "p05": round(p05, 6), "p95": round(p95, 6),
+            "std": round(std, 6), "fragility": round(fragility, 6),
+            "point": round(point, 6), "n": int(n), "paths": int(paths)}

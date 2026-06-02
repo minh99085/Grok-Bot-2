@@ -594,3 +594,29 @@ def institutional_metrics(*, equity_rows: Optional[list] = None,
     _log.debug("institutional_metrics computed: trades=%s decisions=%s sharpe=%s",
                trade_count, decisions, metrics["sharpe"])
     return metrics
+
+
+# --------------------------------------------------------------------------- #
+# anti-overfitting: in-sample vs out-of-sample report
+# --------------------------------------------------------------------------- #
+def overfit_report(in_sample: dict, out_of_sample: dict, *, detector=None) -> dict:
+    """In-sample vs out-of-sample overfit report for the aggressive learner.
+
+    Surfaces IS/OOS Sharpe, Brier, log-loss, ECE, drawdown, and realized edge,
+    their deltas, and an overfit verdict (via the training overfit detector).
+    Used by replay reporting + the training report so a reviewer can see, at a
+    glance, whether learned parameters generalize out of sample.
+    """
+    keys = ("sharpe", "brier", "log_loss", "ece", "max_drawdown", "realized_edge")
+    is_v = {k: _f(in_sample.get(k)) for k in keys if k in in_sample}
+    oos_v = {k: _f(out_of_sample.get(k)) for k in keys if k in out_of_sample}
+    delta = {k: round(oos_v[k] - is_v[k], 6) for k in keys
+             if k in is_v and k in oos_v}
+    from engine.training.overfit_governor import OverfitDetector
+    det = detector or OverfitDetector()
+    verdict = det.detect(in_sample, out_of_sample)
+    return {"in_sample": {k: round(v, 6) for k, v in is_v.items()},
+            "out_of_sample": {k: round(v, 6) for k, v in oos_v.items()},
+            "delta": delta, "overfit": verdict.overfit,
+            "overfit_score": round(verdict.score, 6), "reasons": verdict.reasons,
+            "penalties": {k: round(v, 6) for k, v in verdict.penalties.items()}}

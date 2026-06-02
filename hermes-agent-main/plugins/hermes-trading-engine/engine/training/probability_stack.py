@@ -308,6 +308,16 @@ def feedback_uncertainty(est: "ProbabilityEstimate") -> float:
     return max(0.0, min(1.0, hi - lo))
 
 
+def overfit_adjusted_shrink(base: float, penalty: float, *,
+                            conservative: float = 0.25) -> float:
+    """Pull the shrink-toward-market factor back to a conservative value as the
+    overfit penalty rises (anti-overfitting). A smaller shrink keeps fair value
+    closer to the market price, suppressing fragile, overfit edges. ``penalty=0``
+    keeps the aggressive shrink; ``penalty=1`` reverts to ``conservative``."""
+    p = max(0.0, min(1.0, float(penalty)))
+    return (1.0 - p) * float(base) + p * float(conservative)
+
+
 def _liq_quality(liq: float) -> float:
     import math
     liq = max(0.0, float(liq or 0.0))

@@ -140,11 +140,69 @@ def _system_block(t) -> dict:
     }
 
 
+def _overfit_block(t) -> dict:
+    """In-sample vs out-of-sample overfit diagnostics for an aggressive demo run.
+
+    Splits the trainer's CLOSED positions chronologically into an in-sample first
+    half and an out-of-sample second half, computes per-half institutional
+    metrics, and runs the walk-forward promotion gate. Demonstrates that an
+    overfit aggressive parameter set is BLOCKED from promotion (Compliance)."""
+    from engine.replay import metrics as _m
+    from engine.training.overfit_governor import (
+        WalkForwardParameterGovernor, walk_forward_evaluate)
+
+    closed = [p for p in t.positions if p.closed]
+
+    def _half_metrics(half):
+        eqs = [float(t.cfg.starting_bankroll)]
+        for p in half:
+            eqs.append(eqs[-1] + p.realized_pnl)
+        trades = [{"realized_pnl": p.realized_pnl, "cost": p.cost,
+                   "net_edge": p.net_edge, "category": p.category} for p in half]
+        preds = [p.p_final for p in half]
+        outs = [1.0 if p.realized_pnl > 0 else 0.0 for p in half]
+        inst = _m.institutional_metrics(equities=eqs, trades=trades,
+                                        decisions=len(half), rejections=0,
+                                        predictions=preds, outcomes=outs,
+                                        notional_traded=sum(p.cost for p in half))
+        return {"sharpe": inst["sharpe"], "brier": inst["brier_score"],
+                "log_loss": inst["log_loss"], "ece": inst["ece"],
+                "max_drawdown": inst["max_drawdown"],
+                "realized_edge": inst["realized_edge"]}
+
+    mid = len(closed) // 2
+    is_m = _half_metrics(closed[:mid]) if mid else {}
+    oos_m = _half_metrics(closed[mid:]) if len(closed) - mid else {}
+    rep = _m.overfit_report(is_m, oos_m) if (is_m and oos_m) else {}
+
+    # walk-forward over realized per-trade returns
+    obs = [{"ts": i, "category": p.category,
+            "ret": (p.realized_pnl / p.cost) if p.cost else 0.0}
+           for i, p in enumerate(closed)]
+    gov = WalkForwardParameterGovernor(
+        oos_degrade_tolerance=float(t.cfg.oos_degrade_tolerance),
+        min_param_stability=float(t.cfg.min_param_stability),
+        max_overfit_penalty=float(t.cfg.max_overfit_penalty))
+    wf = walk_forward_evaluate(obs, metric_fn=lambda r: sum(x["ret"] for x in r) / len(r),
+                               train=int(t.cfg.walk_forward_train),
+                               test=int(t.cfg.walk_forward_test)) if len(obs) >= 4 else None
+    decision = (gov.can_promote(walk_forward=wf, in_sample=is_m, out_of_sample=oos_m,
+                                aggressive=True) if wf is not None else
+                {"promote": False, "reasons": ["insufficient_samples"]})
+    return {"closed": len(closed), "overfit_report": rep,
+            "walk_forward": wf.to_dict() if wf is not None else None,
+            "promotion": decision,
+            "aggressive_can_promote_params": bool(t.cfg.aggressive_can_promote_params)}
+
+
 def run(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Write a Polymarket PAPER training report.")
     ap.add_argument("--data-dir", default=None)
     ap.add_argument("--out-root", default="polymarket_training_reports")
     ap.add_argument("--demo", action="store_true", help="force an offline synthetic demo run")
+    ap.add_argument("--overfit-check", action="store_true",
+                    help="run an aggressive offline demo and print the IS-vs-OOS overfit "
+                         "report + walk-forward promotion gate (PAPER ONLY)")
     ap.add_argument("--baseline-report", action="store_true",
                     help="print the algorithm inventory + institutional metrics baseline")
     ap.add_argument("--final-validation", action="store_true",
@@ -165,6 +223,19 @@ def run(argv=None) -> int:
         print(_json.dumps(rep, indent=2, default=str))
         print(f"\nproduction_ready: {rep['production_ready']}  "
               f"no_regression: {rep['no_regression_ok']}  paper_only: {rep['paper_only']}")
+        return 0
+
+    if args.overfit_check:
+        import json as _json
+        t = _run_demo(aggressive=True, ticks=12)
+        block = _overfit_block(t)
+        print("=" * 64)
+        print("ANTI-OVERFIT CHECK — aggressive paper demo (PAPER ONLY)")
+        print("=" * 64)
+        print(_json.dumps(block, indent=2, default=str))
+        promote = block["promotion"]["promote"]
+        print(f"\npromote_production_params: {promote}  "
+              f"overfit: {block['overfit_report'].get('overfit')}")
         return 0
 
     if args.baseline_report:

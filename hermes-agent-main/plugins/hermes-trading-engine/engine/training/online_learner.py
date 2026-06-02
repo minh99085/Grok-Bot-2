@@ -15,9 +15,13 @@ JSON so learning accumulates across ticks and runs.
 
 from __future__ import annotations
 
+import copy
 import json
+import logging
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger("hte.training.online_learner")
 
 from .metrics import (ambiguity_bucket, edge_bucket, evidence_bucket,
                       liquidity_bucket, prob_bucket, spread_bucket)
@@ -53,30 +57,39 @@ class OnlineLearner:
         # hierarchical signal-resolver telemetry (strategy mix + alpha attribution)
         self.signal_strategies: dict = {}      # strategy -> {selected, traded}
         self.alpha_attribution: dict = {}      # alpha source -> running sum
+        # anti-overfitting: stable-state checkpoint + auto-rollback bookkeeping
+        self.rollbacks = 0
+        self._stable_snapshot: Optional[dict] = None
+        self._stable_score: Optional[float] = None
         self._load()
 
     # -- persistence ---------------------------------------------------------
+    def _apply_state(self, d: dict) -> None:
+        """Load every learned-state field from a state dict (used by both the
+        on-disk loader and :meth:`restore` for anti-overfit rollback)."""
+        for k in ("decisions", "trades", "no_trades", "closed",
+                  "suppressed_outcomes"):
+            setattr(self, k, int(d.get(k, 0)))
+        self.label_states = dict(d.get("label_states", {}))
+        self.no_trade_reasons = dict(d.get("no_trade_reasons", {}))
+        self.prob_buckets = dict(d.get("prob_buckets", {}))
+        self.categories = dict(d.get("categories", {}))
+        self.edge_buckets = dict(d.get("edge_buckets", {}))
+        self.spread_buckets = dict(d.get("spread_buckets", {}))
+        self.liquidity_buckets = dict(d.get("liquidity_buckets", {}))
+        self.ambiguity_buckets = dict(d.get("ambiguity_buckets", {}))
+        self.evidence_buckets = dict(d.get("evidence_buckets", {}))
+        self.markouts = dict(d.get("markouts", self.markouts))
+        self.signal_strategies = dict(d.get("signal_strategies", {}))
+        self.alpha_attribution = dict(d.get("alpha_attribution", {}))
+
     def _load(self) -> None:
         if self.path and self.path.exists():
             try:
                 d = json.loads(self.path.read_text(encoding="utf-8"))
             except (ValueError, OSError):
                 return
-            for k in ("decisions", "trades", "no_trades", "closed",
-                      "suppressed_outcomes"):
-                setattr(self, k, int(d.get(k, 0)))
-            self.label_states = dict(d.get("label_states", {}))
-            self.no_trade_reasons = dict(d.get("no_trade_reasons", {}))
-            self.prob_buckets = dict(d.get("prob_buckets", {}))
-            self.categories = dict(d.get("categories", {}))
-            self.edge_buckets = dict(d.get("edge_buckets", {}))
-            self.spread_buckets = dict(d.get("spread_buckets", {}))
-            self.liquidity_buckets = dict(d.get("liquidity_buckets", {}))
-            self.ambiguity_buckets = dict(d.get("ambiguity_buckets", {}))
-            self.evidence_buckets = dict(d.get("evidence_buckets", {}))
-            self.markouts = dict(d.get("markouts", self.markouts))
-            self.signal_strategies = dict(d.get("signal_strategies", {}))
-            self.alpha_attribution = dict(d.get("alpha_attribution", {}))
+            self._apply_state(d)
 
     def persist(self) -> None:
         if not self.path:
@@ -86,6 +99,46 @@ class OnlineLearner:
             self.path.write_text(json.dumps(self.state(), default=str), encoding="utf-8")
         except OSError:
             pass
+
+    # -- anti-overfitting: stable snapshot + automatic rollback --------------
+    def snapshot(self) -> dict:
+        """Deep copy of the current learned state (for a stable checkpoint)."""
+        return copy.deepcopy(self.state())
+
+    def restore(self, snap: dict) -> None:
+        """Restore learned state from a snapshot taken by :meth:`snapshot`."""
+        self._apply_state(copy.deepcopy(snap))
+
+    def checkpoint_stable(self, *, validation_error: Optional[float] = None) -> None:
+        """Mark the current learned state as the last KNOWN-GOOD checkpoint.
+
+        ``validation_error`` is the out-of-sample calibration error that
+        certified this state; if omitted, the in-sample calibration error is
+        used. :meth:`maybe_rollback` reverts to this checkpoint when a later
+        validation error degrades past tolerance — the anti-overfit safety net
+        for aggressive paper learning.
+        """
+        self._stable_snapshot = self.snapshot()
+        self._stable_score = (float(validation_error) if validation_error is not None
+                              else self.calibration_error())
+
+    def maybe_rollback(self, validation_error: float, *, tolerance: float = 0.05) -> bool:
+        """Roll back to the last stable checkpoint when validation degrades.
+
+        Returns True iff a rollback was performed. No-op when there is no stable
+        checkpoint or the validation error is within ``tolerance`` of the
+        checkpoint's certified error.
+        """
+        if self._stable_snapshot is None:
+            return False
+        base = self._stable_score if self._stable_score is not None else 0.0
+        if float(validation_error) > base + float(tolerance):
+            self.restore(self._stable_snapshot)
+            self.rollbacks += 1
+            logger.info("online_learner rollback: val_err=%.4f > stable=%.4f + tol=%.4f",
+                        float(validation_error), base, float(tolerance))
+            return True
+        return False
 
     # -- recording -----------------------------------------------------------
     def record_decision(self, *, traded: bool, reason: str = "") -> None:
@@ -284,6 +337,7 @@ class OnlineLearner:
             "evidence_buckets": self.evidence_buckets, "markouts": self.markouts,
             "signal_strategies": self.signal_strategies,
             "alpha_attribution": self.alpha_attribution,
+            "rollbacks": self.rollbacks,
         }
 
     def summary(self) -> dict:

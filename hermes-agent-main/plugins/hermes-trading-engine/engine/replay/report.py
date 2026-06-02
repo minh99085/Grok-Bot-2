@@ -38,6 +38,14 @@ def write_report(runner, output_dir: str | Path) -> Path:
     }
     artifacts.write_json(base / "summary.json", summary)
 
+    overfit = {}
+    try:
+        overfit = runner._overfit_report()
+    except Exception:  # noqa: BLE001
+        overfit = {}
+    if overfit:
+        artifacts.write_json(base / "overfit_report.json", overfit)
+
     artifacts.write_csv(base / "equity_curve.csv", runner.equity_rows)
     artifacts.write_csv(base / "orders.csv", runner.orders)
     artifacts.write_csv(base / "fills.csv", runner.fills)
@@ -53,12 +61,12 @@ def write_report(runner, output_dir: str | Path) -> Path:
                         [{"market_id": k, "pnl": v} for k, v in pnlm.items()])
 
     charts = artifacts.maybe_charts(base, runner.equity_rows, calib)
-    (base / "replay_report.md").write_text(_markdown(runner, summary, metrics, calib, charts),
-                                           encoding="utf-8")
+    (base / "replay_report.md").write_text(
+        _markdown(runner, summary, metrics, calib, charts, overfit), encoding="utf-8")
     return base
 
 
-def _markdown(runner, summary, metrics, calib, charts) -> str:
+def _markdown(runner, summary, metrics, calib, charts, overfit=None) -> str:
     ep = summary["episode"]
     pnlm = metrics.get("pnl_by_market", {}) or {}
     winners = sorted(pnlm.items(), key=lambda kv: kv[1], reverse=True)[:5]
@@ -93,6 +101,7 @@ def _markdown(runner, summary, metrics, calib, charts) -> str:
         f"- Brier: {calib.get('brier_score')}  ·  Log loss: {calib.get('log_loss')}  "
         f"·  ECE: {calib.get('expected_calibration_error')}",
         "",
+        *(_overfit_lines(overfit) if overfit else []),
         "## Top markets",
         "Winners: " + ", ".join(f"{k} ({v})" for k, v in winners) if winners else "Winners: none",
         "Losers: " + ", ".join(f"{k} ({v})" for k, v in losers) if losers else "Losers: none",
@@ -104,3 +113,18 @@ def _markdown(runner, summary, metrics, calib, charts) -> str:
     if charts:
         lines += ["", "## Charts", *[f"- {c}" for c in charts]]
     return "\n".join(lines) + "\n"
+
+
+def _overfit_lines(overfit: dict) -> list:
+    """In-sample vs out-of-sample anti-overfit section (Strategy Optimization)."""
+    is_v = overfit.get("in_sample", {})
+    oos_v = overfit.get("out_of_sample", {})
+    keys = [k for k in ("sharpe", "brier", "log_loss", "ece", "max_drawdown",
+                        "realized_edge") if k in is_v or k in oos_v]
+    rows = [f"  - {k}: IS={is_v.get(k)}  OOS={oos_v.get(k)}  Δ={overfit.get('delta', {}).get(k)}"
+            for k in keys]
+    verdict = "OVERFIT ⚠" if overfit.get("overfit") else "OK"
+    return ["## Overfitting (in-sample vs out-of-sample)",
+            f"- Verdict: **{verdict}**  ·  score: {overfit.get('overfit_score')}",
+            f"- Reasons: {', '.join(overfit.get('reasons', [])) or 'none'}",
+            *rows, ""]
