@@ -2,6 +2,25 @@
 
 Instructions for AI agents working in this plugin.
 
+## Repo layout — IMPORTANT (read first)
+
+There are **two** Docker setups in this repo. They build **different apps**:
+
+| Path | Builds | Port | Use it? |
+|------|--------|------|---------|
+| `hermes-agent-main/docker-compose.yml` (repo root) | the generic **Hermes AI agent** (gateway + web dashboard) | 9119 | NOT the trading bot |
+| `hermes-agent-main/plugins/hermes-trading-engine/docker-compose.yml` (**here**) | the **Polymarket paper-trading bot** (`engine.app` + training loop) | 8800 | ✅ THIS is the bot |
+
+The trading bot lives **only** here: `hermes-agent-main/plugins/hermes-trading-engine/`.
+It is a standalone container (`build: .` → this folder's `Dockerfile`, `python:3.11-slim`
++ `uvicorn engine.app:app`). It does NOT use the root Dockerfile / s6 / the 9119 dashboard.
+
+**Common pitfall:** a stray top-level `hermes-trading-engine/` copy (a sibling of
+`hermes-agent-main/`) or a stale Docker image will show OLD behavior (e.g. the
+removed "Paper Campaign" panel, wrong Grok model). Always build from **this**
+path and use `--remove-orphans`. The paper campaign has been removed from the
+codebase — if you still see it, you are running a stale image / stray copy.
+
 ## User preference (ALWAYS follow)
 
 **At the end of every task, give simple copy‑paste instructions to start the
