@@ -10,7 +10,7 @@ FAIL CLOSED if any are set.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 from engine.markets import universe_manager as um
@@ -202,6 +202,14 @@ class TrainingConfig:
     max_overfit_penalty: float = 0.5      # max IS->OOS penalty to promote
     overfit_rollback_tolerance: float = 0.05  # val-error slack before learner rollback
     aggressive_can_promote_params: bool = False  # gated until walk-forward passes
+    # ---- experiment manager (controlled strategy-variant experiments; PAPER) ----
+    # Run distinct strategy variants (bregman / statistical / directional /
+    # chainlink / exploration) as controlled experiments with a PAPER-ONLY slot
+    # budget split across variants. Never relaxes a hard risk cap.
+    experiments_enabled: bool = False
+    experiment_id: str = "exp_default"
+    variant_budget_weights: dict = field(default_factory=dict)
+    bregman_first_budget: bool = True
     # ---- run / sim ----
     take_profit: float = 0.05
     stop_loss: float = 0.05
@@ -407,6 +415,9 @@ class TrainingConfig:
             max_overfit_penalty=_envf("POLYMARKET_MAX_OVERFIT_PENALTY", 0.5),
             overfit_rollback_tolerance=_envf("POLYMARKET_OVERFIT_ROLLBACK_TOLERANCE", 0.05),
             aggressive_can_promote_params=_envb("POLYMARKET_AGGRESSIVE_CAN_PROMOTE_PARAMS", False),
+            experiments_enabled=_envb("POLYMARKET_EXPERIMENTS_ENABLED", False),
+            experiment_id=(os.getenv("POLYMARKET_EXPERIMENT_ID") or "exp_default").strip(),
+            bregman_first_budget=_envb("POLYMARKET_BREGMAN_FIRST_BUDGET", True),
             signal_model=(os.getenv("POLYMARKET_TRAINING_SIGNAL_MODEL") or "research").lower(),
             starting_bankroll=_envf("HTE_STARTING_BALANCE", 500.0),
             universe=ucfg,
@@ -480,6 +491,9 @@ class TrainingConfig:
             # CANNOT promote production-like params until walk-forward validation
             # passes (it may still learn fast online and roll back on degrade).
             walk_forward_enabled=True, aggressive_can_promote_params=False,
+            # controlled strategy-variant experiments ON: spread the wider paper
+            # budget across variants (Bregman first) instead of one blended policy.
+            experiments_enabled=True, experiment_id="aggressive_experiment",
         )
         base.update(overrides)
         return cls(**base)

@@ -203,6 +203,9 @@ def run(argv=None) -> int:
     ap.add_argument("--overfit-check", action="store_true",
                     help="run an aggressive offline demo and print the IS-vs-OOS overfit "
                          "report + walk-forward promotion gate (PAPER ONLY)")
+    ap.add_argument("--experiments", action="store_true",
+                    help="run an aggressive offline demo and print the controlled "
+                         "strategy-variant experiment report + champion/challenger (PAPER ONLY)")
     ap.add_argument("--baseline-report", action="store_true",
                     help="print the algorithm inventory + institutional metrics baseline")
     ap.add_argument("--final-validation", action="store_true",
@@ -223,6 +226,23 @@ def run(argv=None) -> int:
         print(_json.dumps(rep, indent=2, default=str))
         print(f"\nproduction_ready: {rep['production_ready']}  "
               f"no_regression: {rep['no_regression_ok']}  paper_only: {rep['paper_only']}")
+        return 0
+
+    if args.experiments:
+        import json as _json
+        from engine.training.metrics import variant_attribution_table
+        t = _run_demo(aggressive=True, ticks=12)
+        rep = t.experiment_report()
+        print("=" * 64)
+        print("CONTROLLED STRATEGY-VARIANT EXPERIMENTS (PAPER ONLY)")
+        print("=" * 64)
+        cc = rep.get("champion_challenger", {})
+        print(f"experiment_id     : {rep.get('experiment_id')}")
+        print(f"champion          : {cc.get('champion')}")
+        print(f"challengers       : {cc.get('challengers')}")
+        print(f"combined_trades   : {rep.get('combined_trades')} "
+              f"(combined hard caps apply across ALL variants)")
+        print(_json.dumps(variant_attribution_table(rep), indent=2, default=str))
         return 0
 
     if args.overfit_check:

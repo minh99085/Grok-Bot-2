@@ -150,6 +150,14 @@ def write_reports(trainer=None, *, status: Optional[dict] = None,
                ["baseline_name", "trade_count", "scored_trades", "pnl", "win_rate",
                 "drawdown"])
 
+    # controlled strategy-variant experiment attribution (champion/challenger)
+    from .metrics import variant_attribution_table
+    exp_rows = variant_attribution_table(status.get("experiments", {}))
+    _write_csv(run_dir / "experiments.csv", exp_rows,
+               ["strategy_variant", "role", "trade_count", "feedback_count",
+                "sharpe", "sortino", "calmar", "max_drawdown", "brier", "log_loss",
+                "ece", "realized_edge", "fill_quality"])
+
     (run_dir / "report.md").write_text(_markdown(status, run_id), encoding="utf-8")
     return {"run_id": run_id, "run_dir": str(run_dir), "recommendation": rec,
             "files": sorted(p.name for p in run_dir.iterdir())}
@@ -231,6 +239,19 @@ def _markdown(status: dict, run_id: str) -> str:
         a(f"- {b.get('baseline_name')}: trades={b.get('trade_count')} "
           f"scored={b.get('scored_trades')} pnl={b.get('pnl')} win_rate={b.get('win_rate')}")
     a("")
+    exp = status.get("experiments", {}) or {}
+    if exp.get("enabled"):
+        from .metrics import variant_attribution_table
+        cc = exp.get("champion_challenger", {}) or {}
+        a("## 17b. Strategy-variant experiments (PAPER ONLY)")
+        a(f"- experiment_id: `{exp.get('experiment_id')}` · champion: "
+          f"**{cc.get('champion')}** · challengers: {', '.join(cc.get('challengers', [])) or 'none'}")
+        a("- per-variant (trades · feedback · sharpe · brier · ece · realized_edge · fill_q):")
+        for r in variant_attribution_table(exp):
+            a(f"  - {r['strategy_variant']} [{r['role']}]: {r['trade_count']} · "
+              f"{r['feedback_count']} · {r['sharpe']} · {r['brier']} · {r['ece']} · "
+              f"{r['realized_edge']} · {r['fill_quality']}")
+        a("")
     a("## 18. Recommendation")
     a(f"- **{status.get('recommendation')}**\n")
     a("---")

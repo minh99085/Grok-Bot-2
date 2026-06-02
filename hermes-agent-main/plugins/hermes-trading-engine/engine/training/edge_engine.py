@@ -129,6 +129,9 @@ class EdgeResult:
     chainlink_confidence: float = 0.0
     chainlink_feed: str = ""
     chainlink_no_trade: bool = False
+    # controlled-experiment strategy-variant annotation (set by the trainer when
+    # experiments are enabled; additive — never affects the edge math).
+    strategy_variant: str = ""
 
     def to_dict(self) -> dict:
         d = {k: v for k, v in self.__dict__.items()}

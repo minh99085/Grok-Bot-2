@@ -246,6 +246,32 @@ class ActiveLearningMetrics:
         }
 
 
+def variant_attribution_table(experiment: dict) -> list:
+    """Flatten an experiment report's per-variant metrics into report rows.
+
+    Each row is one strategy variant with its trade/feedback counts and the core
+    risk-adjusted + calibration metrics, marked champion/challenger. Pure +
+    side-effect-free (Monitoring + Strategy Optimization)."""
+    variants = (experiment or {}).get("variants", {}) or {}
+    cc = (experiment or {}).get("champion_challenger", {}) or {}
+    champion = cc.get("champion")
+    challengers = set(cc.get("challengers", []) or [])
+    rows = []
+    for name, m in variants.items():
+        role = ("champion" if name == champion
+                else "challenger" if name in challengers else "inactive")
+        rows.append({"strategy_variant": name, "role": role,
+                     "trade_count": m.get("trade_count", 0),
+                     "feedback_count": m.get("feedback_count", 0),
+                     "sharpe": m.get("sharpe"), "sortino": m.get("sortino"),
+                     "calmar": m.get("calmar"), "max_drawdown": m.get("max_drawdown"),
+                     "brier": m.get("brier"), "log_loss": m.get("log_loss"),
+                     "ece": m.get("ece"), "realized_edge": m.get("realized_edge"),
+                     "fill_quality": m.get("fill_quality")})
+    rows.sort(key=lambda r: (r["role"] != "champion", -(r["realized_edge"] or 0.0)))
+    return rows
+
+
 def label_delay_bucket(delay_ms: float) -> str:
     """Settlement-delay (ms) -> labelled bucket: <1m, <1h, <1d, <1w, >=1w."""
     return bucket_label(float(delay_ms or 0.0),

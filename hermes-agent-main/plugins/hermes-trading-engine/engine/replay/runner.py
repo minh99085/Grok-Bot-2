@@ -539,6 +539,7 @@ class ReplayRunner:
             "dependency_graph": graph_report,
             "cluster_exposure": cluster_exposure,
             "overfit": self._overfit_report(),
+            "variant_attribution": met.variant_attribution(self.orders, self.fills),
             "execution_diagnostics": met.execution_diagnostics(self.orders, self.fills),
             "counts": {"orders": len(self.orders), "fills": len(self.fills),
                        "proposals": len(self.proposals), "equity_points": len(self.equity_rows)},

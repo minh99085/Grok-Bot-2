@@ -46,6 +46,7 @@ class OnlineLearner:
         self.suppressed_outcomes = 0
         self.label_states: dict = {}
         self.no_trade_reasons: dict = {}
+        self.variant_decisions: dict = {}   # variant -> {traded, no_trade}
         self.prob_buckets: dict = {}        # bucket -> {n, sum_pred, wins}
         self.categories: dict = {}          # cat -> {n, wins, reliability, ewma_capture}
         self.edge_buckets: dict = {}        # bucket -> {n, pnl, wins}
@@ -72,6 +73,7 @@ class OnlineLearner:
             setattr(self, k, int(d.get(k, 0)))
         self.label_states = dict(d.get("label_states", {}))
         self.no_trade_reasons = dict(d.get("no_trade_reasons", {}))
+        self.variant_decisions = dict(d.get("variant_decisions", {}))
         self.prob_buckets = dict(d.get("prob_buckets", {}))
         self.categories = dict(d.get("categories", {}))
         self.edge_buckets = dict(d.get("edge_buckets", {}))
@@ -141,13 +143,18 @@ class OnlineLearner:
         return False
 
     # -- recording -----------------------------------------------------------
-    def record_decision(self, *, traded: bool, reason: str = "") -> None:
+    def record_decision(self, *, traded: bool, reason: str = "",
+                        variant: Optional[str] = None) -> None:
         self.decisions += 1
         if traded:
             self.trades += 1
         else:
             self.no_trades += 1
             self.no_trade_reasons[reason] = self.no_trade_reasons.get(reason, 0) + 1
+        # optional per-variant decision tally for controlled experiments
+        if variant:
+            v = self.variant_decisions.setdefault(variant, {"traded": 0, "no_trade": 0})
+            v["traded" if traded else "no_trade"] += 1
 
     def record_outcome(self, *, predicted_prob: float, win: bool, realized_pnl: float,
                        category: str = "uncategorized", net_edge: float = 0.0,
@@ -330,6 +337,7 @@ class OnlineLearner:
             "suppressed_outcomes": self.suppressed_outcomes,
             "label_states": self.label_states,
             "no_trade_reasons": self.no_trade_reasons,
+            "variant_decisions": self.variant_decisions,
             "prob_buckets": self.prob_buckets, "categories": self.categories,
             "edge_buckets": self.edge_buckets, "spread_buckets": self.spread_buckets,
             "liquidity_buckets": self.liquidity_buckets,

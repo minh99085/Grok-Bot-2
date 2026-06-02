@@ -41,6 +41,9 @@ class TradeProposal:
     # explicit exploration label (empty for normal edge trades). Aggressive
     # weak-research exploration is always tagged so it is auditable + isolable.
     exploration_label: str = ""
+    # controlled strategy-variant experiment attribution (PAPER ONLY)
+    experiment_id: str = ""
+    strategy_variant: str = ""
 
     def to_dict(self) -> dict:
         return dict(self.__dict__)

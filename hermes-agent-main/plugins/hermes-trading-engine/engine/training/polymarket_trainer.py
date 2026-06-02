@@ -34,6 +34,7 @@ from .candidate_ranker import CandidateRanker
 from .config import (TrainingConfig, FORBIDDEN_LIVE_FLAGS, _envb, _envf, _envi)
 from .diagnostics import build_record
 from .edge_engine import EdgeEngine
+from .experiment_manager import (BREGMAN_VARIANT, ExperimentManager, classify_variant)
 from .feedback_loop import FeedbackLoop
 from .market_scanner import MarketScanner
 from .metrics import ScanMetrics
@@ -189,6 +190,9 @@ class PaperPosition:
     exploration: bool = False
     strategy: str = "directional"        # "directional" | "bregman"
     chainlink_linked: bool = False       # linked to a (fresh) Chainlink oracle feed
+    # experiment attribution (controlled strategy-variant experiments; PAPER ONLY)
+    experiment_id: str = ""
+    strategy_variant: str = "directional_edge"
     mark: float = 0.0
     closed: bool = False
     exit_price: float = 0.0
@@ -254,6 +258,15 @@ class PolymarketPaperTrainer:
         # exposure, CVaR, drawdown budget, exploration budget) + reporting. It only
         # ever TIGHTENS — the mandatory gates are TrainingRiskGate + RiskEngine.
         self.portfolio = PortfolioRiskManager(PortfolioLimits.from_config(self.cfg))
+        # Controlled strategy-variant experiment manager (PAPER ONLY). Always
+        # present (cheap accounting); per-variant slot allocation is only ENFORCED
+        # when cfg.experiments_enabled. It can never relax a hard risk cap.
+        self.experiments = ExperimentManager(
+            experiment_id=getattr(self.cfg, "experiment_id", "exp_default"),
+            starting_bankroll=float(self.cfg.starting_bankroll),
+            weights=(getattr(self.cfg, "variant_budget_weights", None) or None),
+            bregman_first=bool(getattr(self.cfg, "bregman_first_budget", True)),
+            aggressive=bool(self.cfg.exploration_enabled))
         self.exploration_budget_used = 0.0
         self.bregman_worst_case_leg_failure = 0.0
         self.subs = SubscriptionManager(self.cfg)
@@ -385,7 +398,19 @@ class PolymarketPaperTrainer:
         # FLAGSHIP PRIORITY: certified Bregman arbitrage is evaluated + opened
         # BEFORE any directional trade (it outranks directional only when its
         # certified profit lower bound is positive after all costs).
-        bregman_opened = self._run_bregman(candidates, now)
+        if getattr(self.cfg, "experiments_enabled", False):
+            # Controlled experiments: split the remaining paper trade-slot budget
+            # across variants (Bregman FIRST when certified opps exist). The slot
+            # sum never exceeds the budget, so combined hard caps still bind.
+            tradable = self._bregman_tradable(candidates, now)
+            cap_slots = max(0, min(int(budget), int(self.cfg.max_open_trades))
+                            - len(self.open_positions()))
+            alloc = self.experiments.allocate(cap_slots, bregman_available=bool(tradable))
+            self.experiments.begin_tick(alloc)
+            bregman_opened = self._open_bregman_sets(
+                tradable, candidates, now, cap=alloc.get(BREGMAN_VARIANT))
+        else:
+            bregman_opened = self._run_bregman(candidates, now)
         opened += bregman_opened
         for rec in candidates:
             if len(self.open_positions()) >= self.cfg.max_open_trades:
@@ -426,17 +451,27 @@ class PolymarketPaperTrainer:
         self.bregman_log = [c.to_dict() for c in certs]
         return certs
 
-    def _run_bregman(self, records: list, now: float) -> int:
+    def _bregman_tradable(self, records: list, now: float) -> list:
+        """Certify + rank tradable Bregman opportunities (read-only). Used to know
+        Bregman availability before allocating the experiment budget."""
         certs = self.scan_bregman(records, now)
         tradable = sorted([c for c in certs if c.is_opportunity],
                           key=lambda o: o.profit_lower_bound, reverse=True)
         self.bregman_opportunity_count += len(tradable)
+        return tradable
+
+    def _open_bregman_sets(self, tradable: list, records: list, now: float, *,
+                           cap: Optional[int] = None) -> int:
+        """Open up to ``cap`` certified Bregman sets (``None`` = no per-variant cap;
+        the global ``max_open_trades`` + RiskEngine always bind)."""
         if (self.mode != "paper_train"
                 or not getattr(self.cfg, "bregman_execution_enabled", True)):
             return 0
         rec_by_id = {r.market_id: r for r in records}
         opened = 0
         for opp in tradable:
+            if cap is not None and opened >= cap:
+                break
             # never act on a synthesized leg price (binary NO leg is derived)
             if opp.group_type == "binary_yes_no":
                 continue
@@ -445,6 +480,10 @@ class PolymarketPaperTrainer:
             if self._open_bregman(opp, rec_by_id, now):
                 opened += 1
         return opened
+
+    def _run_bregman(self, records: list, now: float) -> int:
+        tradable = self._bregman_tradable(records, now)
+        return self._open_bregman_sets(tradable, records, now, cap=None)
 
     def _open_bregman(self, opp: CertifiedBregmanOpportunity, rec_by_id: dict,
                       now: float) -> bool:
@@ -531,7 +570,8 @@ class PolymarketPaperTrainer:
                 liquidity=float(getattr(rec, "liquidity_usd", 0.0) or 0.0),
                 open_tick=self.tick_count, yes_price_entry=fill["fill_price"],
                 executable_price_entry=fill["fill_price"], p_market_entry=fill["fill_price"],
-                strategy="bregman", mark=fill["fill_price"])
+                strategy="bregman", mark=fill["fill_price"],
+                experiment_id=self.experiments.experiment_id, strategy_variant=BREGMAN_VARIANT)
             self.positions.append(pos)
             opened_positions.append(pos)
             self.bregman_fills_log.append({
@@ -540,6 +580,8 @@ class PolymarketPaperTrainer:
                 "price": fill["fill_price"], "qty": fill["fill_qty"],
                 "notional": fill["notional"], "tick": self.tick_count})
         self.bregman_sets_opened += 1
+        self.experiments.record_trade(BREGMAN_VARIANT, notional=bundle_notional)
+        self.experiments.record_fill(BREGMAN_VARIANT, filled=True)
         self.learner.record_decision(traded=True)
         self.learner.record_signal(strategy="bregman_arbitrage",
                                    attribution={"bregman_divergence": opp.divergence_gap,
@@ -684,7 +726,21 @@ class PolymarketPaperTrainer:
         """Build proposal -> RiskEngine -> PaperBroker (trace-id chain). PAPER
         ONLY. Exploratory trades use a small bounded notional capped to the same
         hard paper order-notional ceiling as normal trades."""
+        # Strategy-variant attribution for controlled experiments (PAPER ONLY).
+        variant = classify_variant(
+            strategy=_resolved_strategy(getattr(self, "_last_resolved", None)),
+            exploration=exploratory,
+            chainlink_linked=bool(getattr(est, "bregman_group_id", "")))
+        # Per-variant paper budget (only enforced when experiments are enabled;
+        # the global max_open_trades + RiskEngine always bind regardless).
+        if getattr(self.cfg, "experiments_enabled", False) and not self.experiments.can_open(variant):
+            self.rejection_count += 1
+            self.learner.record_decision(traded=False, reason="variant_budget_exhausted")
+            return {"opened": False, "reason": "variant_budget_exhausted"}
+
         proposal = self.policy.build_proposal(edge, est, rec)
+        proposal.experiment_id = self.experiments.experiment_id
+        proposal.strategy_variant = variant
         if exploratory:
             notional = min(float(self.cfg.exploration_notional_usd),
                            float(self.cfg.max_order_notional_usd))
@@ -710,9 +766,12 @@ class PolymarketPaperTrainer:
                                 "risk_decision_id": decision.risk_decision_id,
                                 "market_id": rec.market_id, "outcome": edge.outcome,
                                 "status": fill["status"], "reason": fill["reason"],
-                                "exploration": exploratory})
+                                "exploration": exploratory,
+                                "experiment_id": self.experiments.experiment_id,
+                                "strategy_variant": variant})
         if fill["status"] != "filled":
             self.rejection_count += 1
+            self.experiments.record_fill(variant, filled=False)
             self.learner.record_decision(traded=False, reason="paperbroker_rejected")
             return {"opened": False, "reason": "paperbroker_rejected"}
 
@@ -732,16 +791,20 @@ class PolymarketPaperTrainer:
             p_market_entry=est.p_market_mid, exploration=exploratory,
             strategy=_resolved_strategy(getattr(self, "_last_resolved", None)),
             chainlink_linked=bool(getattr(est, "bregman_group_id", "")),
-            mark=fill["fill_price"])
+            mark=fill["fill_price"],
+            experiment_id=self.experiments.experiment_id, strategy_variant=variant)
         self.positions.append(pos)
+        self.experiments.record_trade(variant, notional=float(fill["notional"]))
+        self.experiments.record_fill(variant, filled=True)
         self.fills_log.append({
             "proposal_id": proposal_id, "risk_decision_id": decision.risk_decision_id,
             "order_id": fill["order_id"], "fill_id": fill["fill_id"],
             "market_id": rec.market_id, "asset_id": proposal.asset_id, "side": "BUY",
             "outcome": edge.outcome, "price": fill["fill_price"], "qty": fill["fill_qty"],
             "notional": fill["notional"], "tick": self.tick_count,
-            "diagnostics_id": diag.diagnostics_id, "exploration": exploratory})
-        self.learner.record_decision(traded=True)
+            "diagnostics_id": diag.diagnostics_id, "exploration": exploratory,
+            "experiment_id": self.experiments.experiment_id, "strategy_variant": variant})
+        self.learner.record_decision(traded=True, variant=variant)
         if self.tstore is not None:
             try:
                 self.tstore.record_learning_event(
@@ -794,6 +857,11 @@ class PolymarketPaperTrainer:
             realized_pnl=pos.realized_pnl, size_usd=max(1e-9, pos.cost), win=win,
             category=pos.category, net_edge=pos.net_edge, spread=pos.spread,
             liquidity=pos.liquidity, ambiguity=pos.ambiguity, evidence=pos.evidence)
+        # variant-scoped experiment feedback (separates learning per variant)
+        self.experiments.record_feedback(
+            getattr(pos, "strategy_variant", "directional_edge"),
+            predicted_prob=pos.p_final, win=win, realized_pnl=pos.realized_pnl,
+            net_edge=pos.net_edge, cost=max(1e-9, pos.cost))
         # baselines settle on this opportunity (realized = exit mark as settle proxy)
         per_unit = (pos.realized_pnl / pos.qty) if pos.qty else 0.0
         self.baselines.settle(
@@ -878,6 +946,16 @@ class PolymarketPaperTrainer:
             "legacy_arb_disabled": inv["legacy_arb_disabled"],
         }
 
+    def experiment_report(self) -> dict:
+        """Controlled strategy-variant experiment report (Monitoring + Strategy
+        Optimization): per-variant trade/feedback counts + Sharpe/Sortino/Calmar/
+        drawdown/Brier/log-loss/ECE/realized-edge/fill-quality, plus the
+        champion/challenger ranking. PAPER ONLY, read-only."""
+        rep = self.experiments.to_dict()
+        rep["enabled"] = bool(getattr(self.cfg, "experiments_enabled", False))
+        rep["bregman_first_budget"] = bool(getattr(self.cfg, "bregman_first_budget", True))
+        return rep
+
     def status(self) -> dict:
         return {
             "available": True,
@@ -901,6 +979,7 @@ class PolymarketPaperTrainer:
                           else {"enabled": False}),
             "bregman": self.bregman_summary(),
             "portfolio": self.portfolio_report(),
+            "experiments": self.experiment_report(),
             # Live scan visibility for the dashboard: which markets are being
             # scanned right now + when the last scan ran (proves it's running).
             "watchlist": getattr(self, "_watch_sample", []),

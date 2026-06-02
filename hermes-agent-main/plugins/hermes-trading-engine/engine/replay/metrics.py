@@ -599,6 +599,28 @@ def institutional_metrics(*, equity_rows: Optional[list] = None,
 # --------------------------------------------------------------------------- #
 # anti-overfitting: in-sample vs out-of-sample report
 # --------------------------------------------------------------------------- #
+def variant_attribution(orders: list[dict], fills: list[dict]) -> dict:
+    """Group replayed orders/fills by ``strategy_variant`` (controlled experiments).
+
+    Returns ``variant -> {orders, fills, fill_quality, notional}``. Orders/fills
+    that carry no ``strategy_variant`` are bucketed under ``"unattributed"`` so
+    the report is well-defined even for replays produced before experiments
+    existed. Pure + side-effect-free (Monitoring)."""
+    out: dict = {}
+    for o in orders or []:
+        v = str(o.get("strategy_variant") or "unattributed")
+        d = out.setdefault(v, {"orders": 0, "fills": 0, "notional": 0.0})
+        d["orders"] += 1
+    for f in fills or []:
+        v = str(f.get("strategy_variant") or "unattributed")
+        d = out.setdefault(v, {"orders": 0, "fills": 0, "notional": 0.0})
+        d["fills"] += 1
+        d["notional"] = round(d["notional"] + _f(f.get("notional")), 6)
+    for v, d in out.items():
+        d["fill_quality"] = round(d["fills"] / d["orders"], 6) if d["orders"] else 0.0
+    return out
+
+
 def overfit_report(in_sample: dict, out_of_sample: dict, *, detector=None) -> dict:
     """In-sample vs out-of-sample overfit report for the aggressive learner.
 
