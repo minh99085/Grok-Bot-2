@@ -45,6 +45,28 @@ NO_TRADE_REASONS = (
     "paperbroker_rejected", "chainlink_stale_or_irrelevant",
 )
 
+# The decisive trade reason and the two NEAR-MISS reasons. A near-miss passed
+# EVERY hard gate (fresh book, executable price, spread, depth, ambiguity,
+# Chainlink, research, duplicate-event, max-open-trades, risk) but did not clear
+# the net-edge / uncertainty threshold. Active learning may only ever fill paper
+# budget from near-misses — never from a hard-gate rejection.
+TRADE_REASON = "trade"
+NEAR_MISS_REASONS = frozenset({"edge_too_low", "uncertainty_too_high"})
+HARD_GATE_REASONS = frozenset(set(NO_TRADE_REASONS) - NEAR_MISS_REASONS)
+
+
+def is_hard_gate_reason(reason: str) -> bool:
+    """True when a candidate was rejected by a mandatory risk/quality gate and is
+    therefore NEVER eligible for active-learning exploration (stale book, invalid
+    market, stale/irrelevant Chainlink, thin depth, wide spread, risk cap, ...)."""
+    return reason in HARD_GATE_REASONS
+
+
+def is_near_miss(reason: str) -> bool:
+    """True when a candidate passed all hard gates but missed the edge threshold —
+    i.e. it is safe + eligible for an exploratory (feedback) paper trade."""
+    return reason in NEAR_MISS_REASONS
+
 
 @dataclass
 class EdgeResult:

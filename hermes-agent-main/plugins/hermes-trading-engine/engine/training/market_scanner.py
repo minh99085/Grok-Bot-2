@@ -30,7 +30,7 @@ from typing import Optional
 
 from engine.markets import universe_manager as um
 
-from .candidate_ranker import rank_candidates
+from .candidate_ranker import annotate_feedback_value, rank_candidates
 from .institutional_features import compute_features, feature_coverage
 from .market_grouping import bregman_suitability, group_markets, grouping_metrics
 from .metrics import ScanMetrics
@@ -156,6 +156,15 @@ class MarketScanner:
                                  bregman_by_market=bregman_by_market, now=now)
         shortlist_limit = int(getattr(self.cfg, "shortlist_limit", 150))
         shortlist = ranked[:shortlist_limit]
+        # Active-learning annotation (aggressive paper mode only): tag each
+        # shortlisted candidate with a feedback_value so the ActiveLearningSelector
+        # can fill idle paper budget with the highest-learning-value near-misses.
+        # Purely additive — quality ordering above is unchanged.
+        if getattr(self.cfg, "active_learning_enabled", False):
+            annotate_feedback_value(
+                shortlist, learner=self.learner,
+                category_target=int(getattr(self.cfg, "category_sample_target", 50)),
+                now=now)
         recs = [d["record"] for d in shortlist]
 
         # --- institutional feature extraction over the shortlist ---

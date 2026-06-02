@@ -87,6 +87,43 @@ class ShadowCandidateSelector:
             return "category_blacklisted"
         return None
 
+    def feedback_value(self, c: CandidateMarket, *, category_samples: int = 0,
+                       category_target: int = 50, now_ms: Optional[int] = None) -> float:
+        """Active-learning feedback value for an ALREADY-SELECTED candidate.
+
+        Filtering/gating is unchanged (a rejected candidate is never ranked); this
+        only orders *passing* candidates by how much a paper trade would teach the
+        model (Signal Generation support). Read-only, offline."""
+        from engine.training.active_learning import feedback_value_score
+        now_ms = now_ms if now_ms is not None else int(time.time() * 1000)
+        amb = float(c.ambiguity_score or 0.0)
+        liq_q = max(0.0, min(1.0, float(c.liquidity_score or 0.0)))
+        spread = float(c.spread) if c.spread is not None else 0.0
+        uncertainty = max(0.0, min(1.0, 0.5 * min(1.0, spread / 0.08) + 0.3 * (1.0 - liq_q) + 0.2 * amb))
+        ttr_s = ((c.close_ts_ms - now_ms) / 1000.0) if c.close_ts_ms is not None else None
+        score, _ = feedback_value_score(
+            uncertainty=uncertainty, category_samples=category_samples,
+            category_target=category_target, liquidity_quality=liq_q,
+            time_to_resolution_s=ttr_s, chainlink_relevance=0.0,
+            calibration_gap=0.0, bregman_relevance=0.0,
+            expected_label_availability=0.8)
+        return score
+
+    def rank_by_feedback_value(self, candidates: list[CandidateMarket], *,
+                               category_counts: Optional[dict] = None,
+                               category_target: int = 50,
+                               now_ms: Optional[int] = None) -> list[CandidateMarket]:
+        """Return SELECTED candidates ordered by descending feedback value
+        (active-learning exploration order). Rejected candidates are excluded."""
+        counts = category_counts or {}
+        selected = [c for c in candidates if getattr(c, "selected", False)]
+        return sorted(
+            selected,
+            key=lambda c: (-self.feedback_value(
+                c, category_samples=int(counts.get(c.category or "", 0)),
+                category_target=category_target, now_ms=now_ms),
+                str(c.market_id or c.market_ticker or "")))
+
     def select(self, items: list[dict], now_ms: Optional[int] = None) -> list[CandidateMarket]:
         out: list[CandidateMarket] = []
         per_venue: dict[str, int] = {}

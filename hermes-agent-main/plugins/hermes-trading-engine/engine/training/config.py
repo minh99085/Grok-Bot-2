@@ -147,6 +147,14 @@ class TrainingConfig:
     exploration_rate: float = 0.0          # fraction of near-miss candidates explored
     exploration_notional_usd: float = 2.0  # small exploratory size (clamped to caps)
     exploration_min_edge: float = -0.01    # min net_edge eligible for exploration
+    # ---- active learning (aggressive paper mode; PAPER ONLY) ----
+    # Fill idle paper budget with the highest-feedback-value near-misses. NEVER
+    # bypasses a hard gate; bounded by exploration_budget_usd + the caps below.
+    active_learning_enabled: bool = False
+    exploration_split: float = 0.5         # max fraction of idle slots reserved for exploration
+    category_sample_target: int = 50       # per-category feedback-sample target
+    max_explore_per_category: int = 3      # diversity: max exploratory trades / category / tick
+    max_explore_per_event: int = 1         # diversity: max exploratory trades / event / tick
     # ---- Chainlink oracle layer (additive; default OFF) ----
     chainlink_enabled: bool = False
     chainlink_history_limit: int = 30
@@ -231,6 +239,11 @@ class TrainingConfig:
         self.exploration_rate = max(0.0, min(1.0, self.exploration_rate))
         self.exploration_notional_usd = max(0.0, min(self.exploration_notional_usd,
                                                      self.max_order_notional_usd))
+        # active-learning controls (bounded; cannot relax any hard risk gate)
+        self.exploration_split = max(0.0, min(1.0, float(self.exploration_split)))
+        self.category_sample_target = max(1, min(int(self.category_sample_target), 100000))
+        self.max_explore_per_category = max(0, min(int(self.max_explore_per_category), 100))
+        self.max_explore_per_event = max(0, min(int(self.max_explore_per_event), 100))
         # hard PAPER clamps for the portfolio caps (cannot be raised by config/env)
         self.max_event_exposure_usd = max(0.0, min(self.max_event_exposure_usd, 500.0))
         self.max_category_exposure_usd = max(0.0, min(self.max_category_exposure_usd, 1000.0))
@@ -330,6 +343,11 @@ class TrainingConfig:
             exploration_rate=_envf("POLYMARKET_EXPLORATION_RATE", 0.0),
             exploration_notional_usd=_envf("POLYMARKET_EXPLORATION_NOTIONAL_USD", 2.0),
             exploration_min_edge=_envf("POLYMARKET_EXPLORATION_MIN_EDGE", -0.01),
+            active_learning_enabled=_envb("POLYMARKET_ACTIVE_LEARNING_ENABLED", False),
+            exploration_split=_envf("POLYMARKET_EXPLORATION_SPLIT", 0.5),
+            category_sample_target=_envi("POLYMARKET_CATEGORY_SAMPLE_TARGET", 50),
+            max_explore_per_category=_envi("POLYMARKET_MAX_EXPLORE_PER_CATEGORY", 3),
+            max_explore_per_event=_envi("POLYMARKET_MAX_EXPLORE_PER_EVENT", 1),
             chainlink_enabled=_envb("CHAINLINK_ENABLED", False),
             chainlink_history_limit=_envi("CHAINLINK_HISTORY_LIMIT", 30),
             bregman_enabled=_envb("POLYMARKET_BREGMAN_ENABLED", True),
@@ -406,6 +424,10 @@ class TrainingConfig:
             feature_extraction_enabled=True, grouping_enabled=True,
             exploration_enabled=True, exploration_rate=0.25,
             exploration_notional_usd=2.0, exploration_min_edge=-0.01,
+            # active learning ON: fill idle paper budget with highest-feedback-value
+            # near-misses, balanced exploration/exploitation, diversified coverage.
+            active_learning_enabled=True, exploration_split=0.5,
+            category_sample_target=100, max_explore_per_category=4, max_explore_per_event=2,
             # higher paper decision budget + feedback target -> more trades/feedback
             paper_decision_budget=120, feedback_sample_target=500,
             tiny_trade_min_liquidity=50.0,

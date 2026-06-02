@@ -97,6 +97,19 @@ class FeedbackLoop:
         for the training report (Strategy Optimization & Live Monitoring)."""
         return self.label_quality.to_dict()
 
+    def category_sample_progress(self, target: int) -> dict:
+        """Per-category feedback-sample progress vs. an active-learning target.
+
+        Surfaces which categories are still under-sampled so aggressive paper
+        mode can steer exploration toward them (Portfolio Optimization /
+        Monitoring). Read-only; never changes a gate."""
+        target = int(target)
+        counts = self.learner.category_sample_counts() if hasattr(
+            self.learner, "category_sample_counts") else {}
+        return {cat: {"samples": n, "target": target, "under_target": max(0, target - n),
+                      "satisfied": n >= target}
+                for cat, n in counts.items()}
+
     def edge_adjustment(self) -> float:
         """Multiplier on the next cycle's edge threshold.
 

@@ -88,6 +88,33 @@ class PaperPolicy:
             return min(kelly, float(cfg.max_kelly_size_usd)), "fractional_kelly", kelly
         return float(cfg.fixed_notional_usd), "fixed", kelly
 
+    def explore_size(self) -> float:
+        """Small exploratory size for an active-learning paper trade, hard-clamped
+        to the paper order-notional ceiling (can never bypass risk caps)."""
+        cfg = self.cfg
+        return round(min(float(getattr(cfg, "exploration_notional_usd", 2.0)),
+                         float(cfg.max_order_notional_usd)), 2)
+
+    def build_exploration_proposal(self, edge: EdgeResult, est: ProbabilityEstimate,
+                                   rec) -> TradeProposal:
+        """Build a small active-learning exploratory proposal for a near-miss.
+
+        The candidate already passed EVERY hard gate (it is a near-miss, not a
+        hard-gate rejection); this only sizes a tiny clamped paper trade and is
+        still routed through the identical RiskEngine + paper broker. PAPER ONLY —
+        never sizes for live, never bypasses risk."""
+        notional = self.explore_size()
+        price = edge.executable_price or est.p_market_mid
+        qty = (notional / price) if price > 0 else 0.0
+        asset_id = rec.clob_token_ids[0] if rec.clob_token_ids else rec.market_id
+        return TradeProposal(
+            market_id=est.market_id, asset_id=str(asset_id), outcome=edge.outcome,
+            side="BUY", price=round(price, 4), notional_usd=round(notional, 2),
+            qty=round(qty, 4), p_final=round(edge.p_final, 4),
+            net_edge=round(edge.net_edge, 5), confidence=round(est.confidence, 3),
+            research_source=est.research_source, sizing_method="active_learning_exploration",
+            kelly_size_usd=0.0)
+
     def build_proposal(self, edge: EdgeResult, est: ProbabilityEstimate, rec) -> TradeProposal:
         notional, method, kelly = self.size(
             edge, calibrated_probability=getattr(est, "calibrated_probability", None))

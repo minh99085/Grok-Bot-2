@@ -138,6 +138,62 @@ def rank_candidates(records, cfg, *, category_reliability: Optional[dict] = None
     return scored
 
 
+def feedback_value_features(rec, *, learner=None, chainlink_relevance: float = 0.0,
+                            bregman_relevance: float = 0.0, category_target: int = 50,
+                            now: Optional[float] = None) -> dict:
+    """Derive the active-learning feedback-value feature dict from a market
+    record + learner state (Feature Engineering for active learning).
+
+    Coarse, deterministic, offline: the uncertainty term is a pre-estimate proxy
+    (spread + low-liquidity + ambiguity) since the full ProbabilityEstimate is
+    computed later; the learner supplies per-category sample counts + the local
+    calibration gap. Never changes a gate."""
+    now = now or time.time()
+    liq = max(0.0, float(getattr(rec, "liquidity_usd", 0.0) or 0.0))
+    liq_q = min(1.0, math.log1p(liq) / math.log1p(100_000.0)) if liq > 0 else 0.0
+    spread = float(getattr(rec, "spread", 0.0) or 0.0)
+    amb_raw = um._as_float(rec.raw.get("ambiguity"), None) if getattr(rec, "raw", None) else None
+    amb = amb_raw if amb_raw is not None else (0.0 if getattr(rec, "has_resolution_text", False) else 0.5)
+    uncertainty = max(0.0, min(1.0, 0.5 * min(1.0, spread / 0.08) + 0.3 * (1.0 - liq_q) + 0.2 * amb))
+    ttr = (rec.end_ts - now) if getattr(rec, "end_ts", None) else None
+    cat_samples = learner.category_samples(rec.category) if (
+        learner is not None and hasattr(learner, "category_samples")) else 0
+    mid = float(getattr(rec, "yes_price", None) or 0.5)
+    calib_gap = learner.calibration_gap_at(mid) if (
+        learner is not None and hasattr(learner, "calibration_gap_at")) else 0.0
+    has_text = bool(getattr(rec, "has_resolution_text", False))
+    avail = 0.9 if (has_text and ttr is not None and 0 < ttr <= 30 * 86400) else (
+        0.5 if has_text else 0.2)
+    return dict(uncertainty=uncertainty, category_samples=cat_samples,
+                category_target=category_target, liquidity_quality=liq_q,
+                time_to_resolution_s=ttr, chainlink_relevance=chainlink_relevance,
+                calibration_gap=calib_gap, bregman_relevance=bregman_relevance,
+                expected_label_availability=avail)
+
+
+def annotate_feedback_value(scored: list, *, learner=None, category_target: int = 50,
+                            now: Optional[float] = None) -> list:
+    """Annotate ranked candidate dicts (from :func:`rank_candidates`) with a
+    ``feedback_value`` in [0,1] + components, reusing the Chainlink/Bregman
+    bonuses already on each record. Additive — ordering by quality is unchanged;
+    active learning consumes ``feedback_value`` separately."""
+    from .active_learning import feedback_value_score
+    for d in scored:
+        rec = d.get("record")
+        if rec is None:
+            continue
+        comps = d.get("components", {})
+        feats = feedback_value_features(
+            rec, learner=learner,
+            chainlink_relevance=float(comps.get("chainlink_relevance", 0.0) or 0.0),
+            bregman_relevance=float(comps.get("bregman_suitability", 0.0) or 0.0),
+            category_target=category_target, now=now)
+        fv, fcomp = feedback_value_score(**feats)
+        d["feedback_value"] = fv
+        d["feedback_components"] = fcomp
+    return scored
+
+
 class CandidateRanker:
     """Thin stateful wrapper that folds in learned category reliability and an
     optional Chainlink relevance boost (fresh-only)."""

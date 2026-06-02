@@ -189,6 +189,63 @@ class LabelQualityMetrics:
         }
 
 
+@dataclass
+class ActiveLearningMetrics:
+    """Cumulative active-learning selection diagnostics for training reports +
+    live monitoring. The headline metric is ``feedback_samples_per_risk_unit`` —
+    useful feedback samples generated per paper dollar put at exploration risk —
+    which aggressive mode is designed to raise. Pure counters; no side effects.
+    """
+
+    ticks: int = 0
+    candidates_skipped: int = 0
+    selected_for_edge: int = 0
+    selected_for_feedback: int = 0
+    selected_for_bregman: int = 0
+    rejected_by_hard_gate: int = 0
+    diversity_skipped: int = 0
+    budget_skipped: int = 0
+    exploration_budget_used: float = 0.0
+    feedback_value_sum: float = 0.0
+
+    def record(self, diagnostics: dict) -> None:
+        self.ticks += 1
+        for k in ("candidates_skipped", "selected_for_edge", "selected_for_feedback",
+                  "selected_for_bregman", "rejected_by_hard_gate",
+                  "diversity_skipped", "budget_skipped"):
+            setattr(self, k, getattr(self, k) + int(diagnostics.get(k, 0) or 0))
+        self.exploration_budget_used = round(
+            self.exploration_budget_used + float(diagnostics.get("exploration_budget_used", 0.0) or 0.0), 6)
+        self.feedback_value_sum = round(
+            self.feedback_value_sum + float(diagnostics.get("feedback_value_sum", 0.0) or 0.0), 6)
+
+    @property
+    def feedback_samples_per_risk_unit(self) -> float:
+        return round(self.selected_for_feedback / self.exploration_budget_used, 6) \
+            if self.exploration_budget_used > 0 else 0.0
+
+    @property
+    def feedback_value_per_risk_unit(self) -> float:
+        return round(self.feedback_value_sum / self.exploration_budget_used, 6) \
+            if self.exploration_budget_used > 0 else 0.0
+
+    def to_dict(self) -> dict:
+        return {
+            "ticks": self.ticks,
+            "candidates_skipped": self.candidates_skipped,
+            "selected_for_edge": self.selected_for_edge,
+            "selected_for_feedback": self.selected_for_feedback,
+            "selected_for_bregman": self.selected_for_bregman,
+            "rejected_by_hard_gate": self.rejected_by_hard_gate,
+            "diversity_skipped": self.diversity_skipped,
+            "budget_skipped": self.budget_skipped,
+            "exploration_budget_used": round(self.exploration_budget_used, 6),
+            "feedback_value_sum": round(self.feedback_value_sum, 6),
+            "feedback_samples_per_risk_unit": self.feedback_samples_per_risk_unit,
+            "feedback_value_per_risk_unit": self.feedback_value_per_risk_unit,
+        }
+
+
 def label_delay_bucket(delay_ms: float) -> str:
     """Settlement-delay (ms) -> labelled bucket: <1m, <1h, <1d, <1w, >=1w."""
     return bucket_label(float(delay_ms or 0.0),

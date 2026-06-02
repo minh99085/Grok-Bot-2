@@ -217,6 +217,28 @@ class OnlineLearner:
             return 0.0
         return round(sum(r["gap"] for r in rows) / len(rows), 4)
 
+    # -- active-learning feedback-value inputs -------------------------------
+    def category_samples(self, category: str) -> int:
+        """Number of resolved samples recorded for a category (drives the
+        per-category under-sampling term of the active-learning feedback value)."""
+        c = self.categories.get(category or "uncategorized")
+        return int(c.get("n", 0)) if c else 0
+
+    def category_sample_counts(self) -> dict:
+        return {k: int(v.get("n", 0)) for k, v in self.categories.items()}
+
+    def calibration_gap_at(self, prob: float) -> float:
+        """Reliability gap |predicted - actual| for the probability bucket that
+        contains ``prob`` (0 when too few samples). A weakly-calibrated region is
+        exactly where an exploratory paper trade teaches the model the most."""
+        b = self.prob_buckets.get(prob_bucket(prob))
+        if not b or int(b.get("n", 0)) < self.min_bucket_samples:
+            return 0.0
+        n = int(b["n"])
+        pred = b.get("sum_pred", 0.0) / n
+        actual = int(b.get("wins", 0)) / n
+        return round(abs(pred - actual), 6)
+
     def _resolved_pairs(self) -> list:
         """Reconstruct ``(predicted, outcome)`` pairs from the bucket stats so a
         calibration model can be fitted for the training report (Strategy

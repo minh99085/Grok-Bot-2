@@ -294,6 +294,20 @@ class ProbabilityStack:
         return ""
 
 
+def feedback_uncertainty(est: "ProbabilityEstimate") -> float:
+    """Uncertainty magnitude in [0,1] for active-learning feedback value.
+
+    Prefers the decomposed total uncertainty; falls back to the calibrated
+    confidence-interval width. A more uncertain estimate is a higher-value paper
+    sample (Statistical Modeling / active learning). Read-only."""
+    u = getattr(est, "uncertainty_components", None)
+    if isinstance(u, dict) and u.get("total") is not None:
+        return max(0.0, min(1.0, float(u["total"])))
+    lo = float(getattr(est, "confidence_interval_low", 0.0) or 0.0)
+    hi = float(getattr(est, "confidence_interval_high", 0.0) or 0.0)
+    return max(0.0, min(1.0, hi - lo))
+
+
 def _liq_quality(liq: float) -> float:
     import math
     liq = max(0.0, float(liq or 0.0))
