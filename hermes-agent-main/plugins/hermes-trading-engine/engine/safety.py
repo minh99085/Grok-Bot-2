@@ -234,3 +234,26 @@ class CircuitBreaker:
                 "max_orders_per_min": self.max_orders_per_min, "api_fail_rate": self.api_fail_rate,
             },
         }
+
+
+def capital_lock_ok(*, open_capital_lock: float, additional: float,
+                    max_open_capital_lock_usd: float) -> bool:
+    """True when adding ``additional`` capital keeps total locked capital within
+    the open-capital-lock ceiling. Safety guard for the adaptive capital
+    allocator (Compliance / Operational Excellence). Read-only; never sizes."""
+    return (max(0.0, float(open_capital_lock)) + max(0.0, float(additional))
+            <= float(max_open_capital_lock_usd) + 1e-9)
+
+
+def capital_preservation_blockers(report=None) -> list:
+    """List capital-preservation blockers from a capital-allocation report — a
+    tripped drawdown governor (pause / downgrade) or a negative-expectancy
+    allocation leak. Empty list means the capital plan is clean. Read-only."""
+    rep = report or {}
+    blockers: list = []
+    gov = rep.get("drawdown_governor") or {}
+    if str(gov.get("action", "trade")) in ("pause_strategy", "downgrade_conservative"):
+        blockers.append("drawdown_governor:" + str(gov.get("action")))
+    if rep.get("negative_expectancy_leak"):
+        blockers.append("negative_expectancy_allocation")
+    return blockers

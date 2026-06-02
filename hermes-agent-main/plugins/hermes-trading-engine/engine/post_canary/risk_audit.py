@@ -66,6 +66,19 @@ def run(ctx: dict, cfg) -> RiskAuditResult:
     breach = bool(ctx.get("limit_breach_detected"))
     checks.append(make_check("no_limit_breach", "FAIL" if breach else "PASS", "CRITICAL"))
 
+    # Capital-allocation audit (Risk Management + Compliance): a clean canary must
+    # never have funded a negative-expectancy strategy outside tiny exploration,
+    # and the drawdown governor must not be in a pause/downgrade state.
+    cap = ctx.get("capital_allocation") or {}
+    if cap:
+        leak = int(cap.get("negative_expectancy_leak", 0) or 0)
+        checks.append(make_check("no_negative_expectancy_allocation",
+                                 "FAIL" if leak else "PASS", "CRITICAL", observed=leak))
+        gov_action = str((cap.get("drawdown_governor") or {}).get("action", "trade"))
+        bad_gov = gov_action in ("pause_strategy", "downgrade_conservative")
+        checks.append(make_check("drawdown_governor_not_tripped",
+                                 "FAIL" if bad_gov else "PASS", "WARN", observed=gov_action))
+
     return RiskAuditResult(
         status=aggregate_status(checks), checks=checks, risk_decision_id=risk_id,
         safety_envelope_decision_id=a.get("safety_envelope_decision_id"),

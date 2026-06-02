@@ -46,6 +46,8 @@ from .online_learner import OnlineLearner
 from .paper_policy import PaperPolicy, TradeProposal
 from .portfolio import (PortfolioLimits, PortfolioPosition, PortfolioRiskManager,
                         PortfolioState, bregman_bundle_size, max_drawdown)
+from .capital_allocator import (AdaptiveCapitalAllocator, AllocationDecision,
+                                CapitalCandidate, drawdown_governor, _bucket_for)
 from .probability_stack import ProbabilityStack, market_mid
 from .signal_resolver import SignalResolver
 from .subscription_manager import SubscriptionManager
@@ -262,6 +264,12 @@ class PolymarketPaperTrainer:
         # exposure, CVaR, drawdown budget, exploration budget) + reporting. It only
         # ever TIGHTENS — the mandatory gates are TrainingRiskGate + RiskEngine.
         self.portfolio = PortfolioRiskManager(PortfolioLimits.from_config(self.cfg))
+        # Adaptive capital allocator (micro-live readiness; PAPER ONLY). Splits
+        # capital into ordered buckets (certified Bregman first), sizes with
+        # fractional Kelly + hard risk haircuts, runs the drawdown governor, and
+        # only ever TIGHTENS the mandatory gates. Used here for read-only capital
+        # allocation analytics + the status report; never relaxes a risk cap.
+        self.capital_allocator = AdaptiveCapitalAllocator(self.cfg)
         # Controlled strategy-variant experiment manager (PAPER ONLY). Always
         # present (cheap accounting); per-variant slot allocation is only ENFORCED
         # when cfg.experiments_enabled. It can never relax a hard risk cap.
@@ -657,6 +665,79 @@ class PolymarketPaperTrainer:
             exploration_used=self.exploration_budget_used,
             worst_case_leg_failure=self.bregman_worst_case_leg_failure,
             feedback_events=int(self.learner.closed))
+        rep["profile"] = "aggressive" if self.cfg.exploration_enabled else "conservative"
+        return rep
+
+    # -- adaptive capital allocation (micro-live readiness) ------------------
+    def _execution_quality_proxy(self) -> float:
+        """Realised-fill quality proxy for the drawdown governor (CLOB v2):
+        the broker fill ratio, haircut by the stale-book rejection rate."""
+        orders = max(1, int(getattr(self.broker, "orders", 0)))
+        fill_ratio = min(1.0, float(getattr(self.broker, "fills", 0)) / orders)
+        rejects = int(getattr(self.broker, "rejects", 0))
+        reject_pen = min(1.0, rejects / orders)
+        return round(max(0.0, fill_ratio * (1.0 - 0.5 * reject_pen)), 6)
+
+    def _capital_decisions_snapshot(self) -> list:
+        """Build read-only allocation decisions for the OPEN book so the report
+        reflects how live capital is currently distributed across buckets."""
+        decisions = []
+        for p in self.positions:
+            if p.closed:
+                continue
+            variant = (getattr(p, "strategy_variant", "")
+                       or getattr(p, "strategy", "directional"))
+            is_bregman = getattr(p, "strategy", "") == "bregman"
+            if not is_bregman and bool(getattr(p, "chainlink_linked", False)) \
+                    and "chainlink" not in str(variant).lower():
+                variant = "chainlink_edge"
+            cand = CapitalCandidate(
+                strategy=variant, bregman=is_bregman, bregman_certified=is_bregman,
+                exploration=bool(getattr(p, "exploration", False)))
+            notional = float(getattr(p, "cost", 0.0) or 0.0)
+            net = float(getattr(p, "net_edge", 0.0) or 0.0)
+            decisions.append(AllocationDecision(
+                approved=True, bucket=_bucket_for(cand), notional_usd=notional,
+                strategy=variant, market_id=getattr(p, "market_id", ""),
+                net_after_cost_edge=net, exploration=cand.exploration,
+                expected_profit=round(notional * max(0.0, net), 6)))
+        return decisions
+
+    def capital_drawdown_governor(self) -> dict:
+        """Current drawdown-governor verdict (reduce / pause / downgrade)."""
+        closed = [p for p in self.positions if p.closed]
+        closed_pnls = [p.realized_pnl for p in closed]
+        ci = float((self.feedback.summary() or {}).get("calibration_instability", 0.0) or 0.0)
+        return drawdown_governor(
+            loss_streak=loss_streak(closed_pnls), drawdown=self._drawdown(),
+            max_drawdown_usd=float(self.cfg.max_drawdown_usd),
+            calibration_instability=ci,
+            execution_quality=self._execution_quality_proxy(),
+            limits=self.capital_allocator.dd_limits)
+
+    def capital_allocation_report(self) -> dict:
+        """Capital allocation + drawdown-governor report (Risk Management &
+        Portfolio Optimization + Live Monitoring): per-bucket allocation, expected
+        return, expected shortfall / CVaR, concentration, capital efficiency,
+        feedback per risk unit, the drawdown-governor verdict, and the live
+        portfolio constraints. Read-only — never sizes or places an order."""
+        closed = [p for p in self.positions if p.closed]
+        returns = [round(p.realized_pnl / p.cost, 6) if p.cost else 0.0 for p in closed]
+        decisions = self._capital_decisions_snapshot()
+        rep = self.capital_allocator.capital_allocation_report(
+            decisions, returns=returns, equity_curve=self._equity_curve(),
+            feedback_events=int(self.learner.closed))
+        rep["enabled"] = bool(getattr(self.cfg, "capital_allocation_enabled", True))
+        rep["drawdown_governor"] = self.capital_drawdown_governor()
+        con = self.capital_allocator.constraints
+        rep["constraints"] = {
+            "max_market_exposure_usd": con.max_market_exposure_usd,
+            "max_event_exposure_usd": con.max_event_exposure_usd,
+            "max_correlated_cluster_exposure_usd": con.max_cluster_exposure_usd,
+            "max_strategy_exposure_usd": con.max_strategy_exposure_usd,
+            "max_daily_loss_usd": con.max_daily_loss_usd,
+            "max_open_capital_lock_usd": con.max_open_capital_lock_usd,
+        }
         rep["profile"] = "aggressive" if self.cfg.exploration_enabled else "conservative"
         return rep
 
@@ -1203,6 +1284,7 @@ class PolymarketPaperTrainer:
                           else {"enabled": False}),
             "bregman": self.bregman_summary(),
             "portfolio": self.portfolio_report(),
+            "capital_allocation": self.capital_allocation_report(),
             "experiments": self.experiment_report(),
             "monitoring": self.aggressive_dashboard(),
             "kill_switch": self.kill_switch_report(),

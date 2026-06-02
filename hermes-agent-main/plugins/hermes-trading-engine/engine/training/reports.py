@@ -293,6 +293,23 @@ def _markdown(status: dict, run_id: str) -> str:
         for ln in readiness_markdown(lr.get("verdict", {}), lr.get("capital_preservation", {})):
             a(ln)
         a("")
+    cap = status.get("capital_allocation", {}) or {}
+    if cap:
+        gov = cap.get("drawdown_governor", {}) or {}
+        a("## 17b. Adaptive capital allocation (PAPER ONLY)")
+        a(f"- total_allocated: {cap.get('total_allocated')} · expected_return: "
+          f"{cap.get('expected_return')} · capital_efficiency: {cap.get('capital_efficiency')}")
+        a(f"- CVaR/expected_shortfall: {cap.get('cvar')} · max_drawdown: "
+          f"{cap.get('max_drawdown')} · concentration: {cap.get('concentration')}")
+        a(f"- feedback_per_risk_unit: {cap.get('feedback_per_risk_unit')}")
+        for b, v in (cap.get("bucket_allocations") or {}).items():
+            a(f"  - {b}: {v}")
+        a(f"- drawdown_governor: action={gov.get('action')} "
+          f"size_multiplier={gov.get('size_multiplier')} reasons={gov.get('reasons')}")
+        rej = cap.get("rejected_sizing_reasons") or {}
+        if rej:
+            a(f"- rejected_sizing_reasons: {rej}")
+        a("")
     a("## 18. Recommendation")
     a(f"- **{status.get('recommendation')}**\n")
     a("---")

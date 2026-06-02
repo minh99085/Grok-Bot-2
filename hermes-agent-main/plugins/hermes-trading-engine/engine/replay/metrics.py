@@ -810,3 +810,25 @@ def overfit_report(in_sample: dict, out_of_sample: dict, *, detector=None) -> di
             "delta": delta, "overfit": verdict.overfit,
             "overfit_score": round(verdict.score, 6), "reasons": verdict.reasons,
             "penalties": {k: round(v, 6) for k, v in verdict.penalties.items()}}
+
+
+def capital_allocation_report(decisions, *, returns=None, equity_curve=None,
+                              feedback_events: int = 0) -> dict:
+    """Replay/backtest capital-allocation report: per-bucket allocation, expected
+    return, expected shortfall / CVaR, exposure concentration, capital efficiency,
+    feedback per risk unit, and the rejected-sizing-reason tally. Asserts that no
+    negative-expectancy strategy received capital outside the tiny-exploration
+    bucket (Robustness + Compliance). Read-only — never sizes / places an order."""
+    from engine.training.capital_allocator import (
+        AdaptiveCapitalAllocator, BUCKET_EXPLORATION)
+    rep = AdaptiveCapitalAllocator().capital_allocation_report(
+        decisions, returns=returns, equity_curve=equity_curve,
+        feedback_events=feedback_events)
+    leak = sum(1 for d in decisions
+               if getattr(d, "approved", False)
+               and float(getattr(d, "net_after_cost_edge", 0.0)) <= 0.0
+               and getattr(d, "bucket", "") != BUCKET_EXPLORATION
+               and not getattr(d, "exploration", False))
+    rep["negative_expectancy_leak"] = int(leak)
+    rep["capital_allocation_clean"] = bool(leak == 0)
+    return rep

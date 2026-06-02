@@ -400,3 +400,18 @@ class OrderManagementSystem:
             "realistic_fills": bool(getattr(self.broker, "realistic", False)),
             "conservative_execution": bool(getattr(self.broker, "conservative", False)),
         }
+
+    def open_capital_lock(self) -> float:
+        """Total notional currently locked across open positions (the capital
+        the adaptive capital allocator must keep within its open-capital-lock
+        ceiling). Read-only — never sizes / places an order."""
+        try:
+            positions = self.recon.positions() if hasattr(self.recon, "positions") else []
+        except Exception:  # noqa: BLE001 — accounting must never break the OMS
+            positions = []
+        total = 0.0
+        for p in (positions or []):
+            qty = abs(float(getattr(p, "qty", getattr(p, "quantity", 0.0)) or 0.0))
+            px = float(getattr(p, "avg_price", getattr(p, "price", 0.0)) or 0.0)
+            total += qty * px
+        return round(total, 6)

@@ -215,3 +215,35 @@ class PaperPolicy:
             net_edge=round(edge.net_edge, 5), confidence=round(est.confidence, 3),
             research_source=est.research_source, sizing_method=method,
             kelly_size_usd=kelly)
+
+    def capital_haircut_size(self, edge: EdgeResult, est: ProbabilityEstimate, rec,
+                             *, calibrated_probability: Optional[float] = None,
+                             order_usd: Optional[float] = None) -> dict:
+        """Fractional-Kelly notional with the adaptive-capital hard risk haircuts
+        (uncertainty, calibration error, liquidity, spread, slippage, label
+        quality, settlement ambiguity, adverse-selection markout).
+
+        Returns the base Kelly size, the combined haircut, the per-factor
+        components, and the hair-cut notional (clamped to the paper order
+        ceiling). Read-only sizing analytics — the trade still routes through the
+        identical RiskEngine + paper broker, and this never grows a size."""
+        from .capital_allocator import kelly_haircut_components, kelly_haircut_size_usd
+        cfg = self.cfg
+        base = (order_usd if order_usd is not None
+                else self.kelly_size(edge, calibrated_probability=calibrated_probability))
+        max_spread = float(getattr(cfg, "max_spread", 0.08)) or 0.08
+        depth = float(getattr(rec, "top_depth_usd", 0.0) or 0.0)
+        min_liq = float(getattr(cfg, "tiny_trade_min_liquidity", 100.0)) or 100.0
+        unc = float(getattr(est, "total_uncertainty", 0.0) or 0.0)
+        factors = dict(
+            uncertainty=unc,
+            calibration_error=float(getattr(est, "calibration_error", 0.0) or 0.0),
+            liquidity=max(0.0, min(1.0, depth / min_liq)),
+            spread=max(0.0, min(1.0, float(getattr(est, "spread", 0.0) or 0.0) / max_spread)),
+            settlement_ambiguity=float(getattr(est, "ambiguity", 0.0) or 0.0),
+            adverse_selection=float(getattr(edge, "adverse_selection", 0.0) or 0.0))
+        size = kelly_haircut_size_usd(base, max_size_usd=float(cfg.max_order_notional_usd),
+                                      **factors)
+        return {"base_kelly_usd": round(float(base), 6),
+                "haircut_components": kelly_haircut_components(**factors),
+                "haircut_size_usd": size}

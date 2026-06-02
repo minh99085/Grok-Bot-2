@@ -46,6 +46,19 @@ def write_report(runner, output_dir: str | Path) -> Path:
     if overfit:
         artifacts.write_json(base / "overfit_report.json", overfit)
 
+    # Capital-allocation report (Risk Management & Portfolio Optimization +
+    # Robustness): per-bucket allocation, expected return, CVaR / expected
+    # shortfall, concentration, capital efficiency, feedback per risk unit, and a
+    # negative-expectancy-leak check. Read-only over the replay book.
+    capital_alloc = {}
+    try:
+        capital_alloc = _capital_allocation(runner, metrics)
+    except Exception:  # noqa: BLE001 — reporting must never break a replay run
+        capital_alloc = {}
+    if capital_alloc:
+        artifacts.write_json(base / "capital_allocation.json", capital_alloc)
+        summary["capital_allocation"] = capital_alloc
+
     artifacts.write_csv(base / "equity_curve.csv", runner.equity_rows)
     artifacts.write_csv(base / "orders.csv", runner.orders)
     artifacts.write_csv(base / "fills.csv", runner.fills)
@@ -102,6 +115,7 @@ def _markdown(runner, summary, metrics, calib, charts, overfit=None) -> str:
         f"·  ECE: {calib.get('expected_calibration_error')}",
         "",
         *(_overfit_lines(overfit) if overfit else []),
+        *_capital_allocation_lines(summary.get("capital_allocation", {})),
         "## Top markets",
         "Winners: " + ", ".join(f"{k} ({v})" for k, v in winners) if winners else "Winners: none",
         "Losers: " + ", ".join(f"{k} ({v})" for k, v in losers) if losers else "Losers: none",
@@ -157,3 +171,50 @@ def _overfit_lines(overfit: dict) -> list:
             f"- Verdict: **{verdict}**  ·  score: {overfit.get('overfit_score')}",
             f"- Reasons: {', '.join(overfit.get('reasons', [])) or 'none'}",
             *rows, ""]
+
+
+def _capital_allocation(runner, metrics: dict) -> dict:
+    """Build a capital-allocation report over the replay book (Risk Management &
+    Portfolio Optimization). Read-only; never sizes / places an order."""
+    from engine.replay.metrics import capital_allocation_report
+    from engine.training.capital_allocator import AllocationDecision, _bucket_for, CapitalCandidate
+    decisions = []
+    for row in (getattr(runner, "positions", []) or []):
+        r = row if isinstance(row, dict) else getattr(row, "__dict__", {})
+        strategy = str(r.get("strategy_variant") or r.get("strategy") or "directional")
+        is_bregman = str(r.get("strategy", "")) == "bregman"
+        cost = float(r.get("cost", r.get("notional", 0.0)) or 0.0)
+        pnl = float(r.get("realized_pnl", 0.0) or 0.0)
+        net = round(pnl / cost, 6) if cost else 0.0
+        cand = CapitalCandidate(strategy=strategy, bregman=is_bregman,
+                                bregman_certified=is_bregman,
+                                exploration=bool(r.get("exploration", False)))
+        decisions.append(AllocationDecision(
+            approved=True, bucket=_bucket_for(cand), notional_usd=cost,
+            strategy=strategy, market_id=str(r.get("market_id", "")),
+            net_after_cost_edge=net, exploration=cand.exploration,
+            expected_profit=round(cost * max(0.0, net), 6)))
+    if not decisions:
+        return {}
+    returns = [float(x.get("return", 0.0) or 0.0) if isinstance(x, dict) else 0.0
+               for x in (getattr(runner, "positions", []) or [])]
+    equity = [float((row.get("equity") if isinstance(row, dict) else 0.0) or 0.0)
+              for row in (getattr(runner, "equity_rows", []) or [])]
+    return capital_allocation_report(decisions, returns=returns, equity_curve=equity,
+                                     feedback_events=int(metrics.get("resolved_count", 0) or 0))
+
+
+def _capital_allocation_lines(cap: dict) -> list:
+    """Capital-allocation markdown section for the replay report."""
+    if not cap:
+        return []
+    out = ["## Capital allocation (PAPER ONLY)",
+           f"- total_allocated: {cap.get('total_allocated')}  ·  expected_return: "
+           f"{cap.get('expected_return')}  ·  capital_efficiency: {cap.get('capital_efficiency')}",
+           f"- CVaR / expected_shortfall: {cap.get('cvar')}  ·  concentration: "
+           f"{cap.get('concentration')}  ·  max_drawdown: {cap.get('max_drawdown')}",
+           f"- feedback_per_risk_unit: {cap.get('feedback_per_risk_unit')}  ·  "
+           f"negative_expectancy_leak: {cap.get('negative_expectancy_leak')}"]
+    for b, v in (cap.get("bucket_allocations") or {}).items():
+        out.append(f"  - {b}: {v}")
+    return out + [""]

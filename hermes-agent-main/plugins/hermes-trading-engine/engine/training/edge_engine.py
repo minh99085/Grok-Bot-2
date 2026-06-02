@@ -315,3 +315,18 @@ class EdgeEngine:
         if tradables:
             return max(tradables, key=lambda r: r.net_edge)
         return yes
+
+
+def after_cost_capital_edge(edge: EdgeResult, *, fill_failure: float = 0.0,
+                            adverse_selection: float = 0.0,
+                            timing_decay: float = 0.0) -> float:
+    """Realistic AFTER-COST edge for capital allocation.
+
+    Nets the directional ``net_edge`` (already cost-adjusted by the EdgeEngine)
+    against the CLOB-v2 + timing costs the pre-trade math does not see (fill
+    failure, adverse-selection markout, timing decay). The adaptive capital
+    allocator funds only a strictly positive result — read-only, no sizing."""
+    base = float(getattr(edge, "net_edge", 0.0) or 0.0)
+    extra = (max(0.0, float(fill_failure)) + max(0.0, float(adverse_selection))
+             + max(0.0, float(timing_decay)))
+    return round(base - extra, 8)

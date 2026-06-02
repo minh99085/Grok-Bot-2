@@ -428,3 +428,16 @@ def entropy_bucket(h: float) -> str:
 def ttr_bucket(days: float) -> str:
     """Time-to-resolution (days) -> labelled bucket."""
     return bucket_label(float(days or 0.0), [1, 7, 30, 90])
+
+
+def capital_allocation_summary(decisions, *, returns=None, equity_curve=None,
+                               feedback_events: int = 0, allocator=None) -> dict:
+    """Aggregate capital-allocation decisions into a report (expected return,
+    expected shortfall / CVaR, concentration, capital efficiency, feedback per
+    risk unit, per-bucket split, rejected-sizing reasons). Read-only analytics —
+    never sizes or places an order. PAPER ONLY."""
+    from engine.training.capital_allocator import AdaptiveCapitalAllocator
+    alloc = allocator or AdaptiveCapitalAllocator()
+    return alloc.capital_allocation_report(
+        decisions, returns=returns, equity_curve=equity_curve,
+        feedback_events=feedback_events)

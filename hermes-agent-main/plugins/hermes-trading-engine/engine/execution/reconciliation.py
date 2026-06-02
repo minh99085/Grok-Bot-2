@@ -141,3 +141,17 @@ def report_is_clean(report: Optional[dict]) -> bool:
 
 def _sev_rank(s: str) -> int:
     return {SEV_INFO: 0, SEV_WARNING: 1, SEV_HIGH: 2}.get(s, 0)
+
+
+def reconciled_capital_lock(positions: list) -> float:
+    """Total reconciled capital lock (sum of |qty| * avg_price) across positions.
+
+    The adaptive capital allocator trusts this number only when the matching
+    reconciliation report is clean (see :func:`report_is_clean`); a non-clean
+    book means locked capital cannot be trusted. Read-only — never sizes."""
+    total = Decimal(0)
+    for p in (positions or []):
+        qty = abs(D(getattr(p, "qty", getattr(p, "quantity", 0)) or 0))
+        px = D(getattr(p, "avg_price", getattr(p, "price", 0)) or 0)
+        total += qty * px
+    return float(round(total, 6))

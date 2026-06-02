@@ -609,3 +609,27 @@ class BregmanBundleExecutionSimulator:
             cancelled=cancelled, timed_out=timed_out, leg_results=leg_results,
             hedge_break_blocked=not fully_hedged, unwind_cost=unwind_cost,
             hedge_gap_ms=round(cum_latency, 3))
+
+
+def bregman_capital_priority(opp) -> dict:
+    """Capital-priority verdict for a Bregman opportunity.
+
+    A certified opportunity (``certified`` + positive ``profit_lower_bound``) is
+    granted FIRST-priority capital and may pre-empt directional edge; anything
+    else is downgraded to capital-priority ``none`` (log/audit only — never
+    funded). This is the single capital gate that lets Bregman jump the queue,
+    and ONLY when certification passes. Read-only — never sizes / places."""
+    certified = bool(getattr(opp, "certified", False)) and bool(
+        getattr(opp, "is_opportunity", False))
+    profit_lb = float(getattr(opp, "profit_lower_bound", 0.0) or 0.0)
+    funded = certified and profit_lb > 0.0
+    from engine.training.capital_allocator import BUCKET_BREGMAN
+    return {
+        "bucket": BUCKET_BREGMAN if funded else "",
+        "priority": 0 if funded else 999,        # 0 == highest priority
+        "fundable": funded,
+        "preempts_directional": funded,
+        "certified": certified,
+        "profit_lower_bound": round(profit_lb, 6),
+        "reason": "certified" if funded else "not_certified",
+    }

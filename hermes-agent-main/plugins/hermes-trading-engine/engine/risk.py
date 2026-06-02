@@ -536,3 +536,22 @@ def cluster_exposure_report(graph, positions: list, *,
     except Exception:  # noqa: BLE001 — netting must never break risk evaluation
         return {"clusters": {}, "overexposed": [],
                 "max_cluster_exposure_usd": max_cluster_exposure_usd}
+
+
+def capital_allocation_constraint_check(*, notional: float, constraints,
+                                        market_exposure: float = 0.0,
+                                        event_exposure: float = 0.0,
+                                        cluster_exposure: float = 0.0,
+                                        strategy_exposure: float = 0.0,
+                                        open_capital_lock: float = 0.0,
+                                        day_pnl: float = 0.0) -> tuple:
+    """Additive capital-allocation exposure check (market / event / correlated
+    cluster / strategy / daily loss / open capital lock). This NEVER relaxes the
+    mandatory RiskEngine gate — it only ever ADDS a tighter portfolio constraint
+    on top, for the adaptive capital allocator. Read-only; returns ``(ok, reason)``."""
+    from engine.training.capital_allocator import check_portfolio_constraints
+    return check_portfolio_constraints(
+        notional=notional, constraints=constraints, market_exposure=market_exposure,
+        event_exposure=event_exposure, cluster_exposure=cluster_exposure,
+        strategy_exposure=strategy_exposure, open_capital_lock=open_capital_lock,
+        day_pnl=day_pnl)
