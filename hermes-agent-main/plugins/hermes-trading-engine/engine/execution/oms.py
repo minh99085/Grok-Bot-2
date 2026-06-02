@@ -395,4 +395,8 @@ class OrderManagementSystem:
             "degraded_reason": self.degraded_reason,
             "reconciliation_clean": report_is_clean(self.recon.last_report),
             "reconciliation_severity": (self.recon.last_report or {}).get("severity"),
+            # CLOB v2 execution-realism posture (live-readiness validation): a
+            # real-money escalation requires realistic + conservative fills.
+            "realistic_fills": bool(getattr(self.broker, "realistic", False)),
+            "conservative_execution": bool(getattr(self.broker, "conservative", False)),
         }

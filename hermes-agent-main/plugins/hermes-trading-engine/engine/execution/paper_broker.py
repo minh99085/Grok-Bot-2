@@ -89,6 +89,18 @@ def _clamp01(x: float) -> float:
     return max(0.0, min(1.0, float(x)))
 
 
+def _ttr_fill_term(time_to_resolution_s: Optional[float]) -> float:
+    """Time-to-resolution fill dampener in [0,1]. Unknown -> 1.0 (neutral); a
+    short horizon (market about to resolve) reduces fill likelihood, saturating
+    to 1.0 around a 1-day horizon."""
+    import math
+    if time_to_resolution_s is None:
+        return 1.0
+    t = max(0.0, float(time_to_resolution_s))
+    ref = 86400.0
+    return max(0.0, min(1.0, math.log1p(t) / math.log1p(ref)))
+
+
 class RealisticFillModel:
     """Probabilistic CLOB v2 fill model (PAPER ONLY).
 
@@ -101,16 +113,24 @@ class RealisticFillModel:
 
     def __init__(self, *, max_spread: float = 0.08,
                  max_depth_fraction: Decimal = Decimal("0.35"),
-                 stale_ms: int = 3000, seed_salt: str = ""):
+                 stale_ms: int = 3000, seed_salt: str = "",
+                 conservative: bool = False, conservative_haircut: float = 0.7):
         self.max_spread = float(max_spread)
         self.max_depth_fraction = Decimal(str(max_depth_fraction))
         self.stale_ms = int(stale_ms)
         self.seed_salt = str(seed_salt)
+        # CONSERVATIVE execution mode (required for live-readiness validation):
+        # haircuts the fill probability AND the executable depth fraction so a
+        # profitable paper result cannot be an artifact of optimistic fills.
+        self.conservative = bool(conservative)
+        self.conservative_haircut = float(conservative_haircut)
 
     def fill_probability(self, *, spread: float, depth_usd: float, order_usd: float,
                          book_age_ms: float = 0.0, volatility: float = 0.0,
                          queue_proxy: float = 0.0, aggressiveness: float = 1.0,
-                         stale: bool = False, max_spread: Optional[float] = None) -> float:
+                         stale: bool = False, max_spread: Optional[float] = None,
+                         time_to_resolution_s: Optional[float] = None,
+                         recent_trade_velocity: float = 1.0) -> float:
         if stale or depth_usd <= 0 or order_usd <= 0:
             return 0.0
         ms = float(max_spread if max_spread is not None else self.max_spread)
@@ -120,14 +140,25 @@ class RealisticFillModel:
         vol_term = _clamp01(1.0 - 2.0 * max(0.0, float(volatility)))
         queue_term = _clamp01(1.0 - max(0.0, float(queue_proxy)))
         aggr_term = _clamp01(0.5 + 0.25 * max(0.0, min(2.0, float(aggressiveness))))
-        return round(_clamp01(spread_term * depth_term * age_term
-                              * vol_term * queue_term * aggr_term), 6)
+        # time-to-resolution: very short horizons (market about to resolve) have
+        # thin, locking books -> dampen fills. Unknown -> neutral (1.0).
+        ttr_term = _ttr_fill_term(time_to_resolution_s)
+        # recent trade velocity: more recent prints -> more counterparties -> more
+        # likely to fill. Neutral (no haircut) at velocity 1.0; quiet books reduce.
+        vel_term = _clamp01(0.5 + 0.5 * max(0.0, min(2.0, float(recent_trade_velocity))))
+        p = (spread_term * depth_term * age_term * vol_term * queue_term
+             * aggr_term * ttr_term * vel_term)
+        if self.conservative:
+            p *= self.conservative_haircut
+        return round(_clamp01(p), 6)
 
     def fill_fraction(self, *, order_usd: float, depth_usd: float,
                       queue_proxy: float = 0.0,
                       max_depth_fraction: Optional[Decimal] = None) -> float:
         frac = float(max_depth_fraction if max_depth_fraction is not None
                      else self.max_depth_fraction)
+        if self.conservative:
+            frac *= self.conservative_haircut       # less executable depth
         fillable = max(0.0, float(depth_usd)) * frac * (1.0 - _clamp01(queue_proxy))
         order = max(1e-9, float(order_usd))
         if order <= fillable:
@@ -151,6 +182,7 @@ class PaperBroker:
                  reject_on_stale: Optional[bool] = None,
                  stale_ms: Optional[int] = None,
                  realistic: Optional[bool] = None,
+                 conservative: Optional[bool] = None,
                  fill_model: Optional[RealisticFillModel] = None):
         self.fees = fee_model or FeeModel()
         self.slippage = slippage_model or SlippageModel()
@@ -175,8 +207,13 @@ class PaperBroker:
         self.reject_on_stale = (reject_on_stale if reject_on_stale is not None
                                 else _env_flag("PAPER_REJECT_ON_STALE_BOOK", "1"))
         self.stale_ms = stale_ms if stale_ms is not None else _env_int("POLYMARKET_CLOB_STALE_MS", "3000")
+        # CONSERVATIVE execution mode (live-readiness validation): pessimistic
+        # fills + heavier slippage so paper profitability is not a fill artifact.
+        self.conservative = (conservative if conservative is not None
+                             else _env_flag("PAPER_CONSERVATIVE_FILLS", "0"))
         self.fill_model = fill_model or RealisticFillModel(
-            max_depth_fraction=self.depth_fraction, stale_ms=self.stale_ms)
+            max_depth_fraction=self.depth_fraction, stale_ms=self.stale_ms,
+            conservative=self.conservative)
 
     # ------------------------------------------------------------------ #
     @staticmethod
@@ -337,23 +374,36 @@ class PaperBroker:
                                                  queue_proxy=0.0)
         roll = self.fill_model.roll(order.client_order_id)
 
-        def _diag(res: ExecutionResult) -> ExecutionResult:
+        # conservative slippage forecast + its error band (live-readiness uses
+        # the realized-vs-forecast gap to reject optimistic-only profitability).
+        from engine.training.execution_quality import (conservative_slippage_forecast,
+                                                        slippage_forecast_error)
+        slip_forecast = conservative_slippage_forecast(order_usd, depth_usd) \
+            if self.conservative else None
+        slip_error = slippage_forecast_error(order_usd, depth_usd)
+
+        def _diag(res: ExecutionResult, *, failed: bool = False) -> ExecutionResult:
             res.realistic = True
+            res.conservative = self.conservative
             res.fill_probability = p_fill
             res.fill_fraction = fraction
             res.queue_position = 0.0
+            res.failed_fill = failed
+            res.slippage_forecast_bps = slip_forecast
+            res.slippage_forecast_error_bps = slip_error
             avg = res.avg_fill_price
             mid = (float(book.best_bid) + float(book.best_ask)) / 2.0 \
                 if (book.best_bid is not None and book.best_ask is not None) else best_f
             if avg is not None:
                 res.adverse_selection_bps = markout_bps(avg, D(str(mid)), side)
+                res.slippage_realized_bps = markout_bps(D(str(best_f)), avg, side)
             res.partial_fill = res.status == OrderStatus.PARTIALLY_FILLED
             return res
 
         # did not win the fill this draw -> no guaranteed fill
         if roll >= p_fill or p_fill <= 0.0:
             nm = self._non_marketable(order)
-            return _diag(nm)
+            return _diag(nm, failed=True)
 
         fill_cap = qty * Decimal(str(fraction))
         fills: list[Fill] = []
@@ -428,6 +478,7 @@ class PaperBroker:
         clears the gate under optimistic fills is not live-ready. Read-only."""
         return {
             "realistic_fills": bool(self.realistic),
+            "conservative_fills": bool(self.conservative),
             "reject_on_stale_book": bool(self.reject_on_stale),
             "reference_price_fills": bool(self.allow_reference or self.allow_pm_reference),
             "optimistic_fill_risk": bool((not self.realistic)

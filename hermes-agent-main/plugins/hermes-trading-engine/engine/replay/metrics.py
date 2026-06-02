@@ -652,6 +652,69 @@ def bregman_certification_metrics(certs: Optional[list] = None, *,
     }
 
 
+def optimistic_vs_realistic_pnl(optimistic_pnls: list, realistic_pnls: list) -> dict:
+    """Compare optimistic (guaranteed-fill) PnL with realistic (probabilistic +
+    partial + slippage) PnL. ``realistic_is_conservative`` is True when realistic
+    PnL never exceeds optimistic — the property that proves a profitable paper
+    result is NOT inflated by guaranteed fills (Robustness Testing + CLOB v2)."""
+    opt = sum(_f(x) for x in (optimistic_pnls or []))
+    real = sum(_f(x) for x in (realistic_pnls or []))
+    return {
+        "optimistic": round(opt, 6), "realistic": round(real, 6),
+        "gap": round(opt - real, 6),
+        "realistic_is_conservative": real <= opt + 1e-9,
+        "n_optimistic": len(optimistic_pnls or []), "n_realistic": len(realistic_pnls or []),
+    }
+
+
+_EQ_BUCKETS = {
+    "liquidity": [1000, 5000, 25000, 100000],
+    "spread": [0.01, 0.02, 0.04, 0.08],
+    "ttr": [3600, 86400, 604800, 2592000],
+}
+
+
+def _eq_bucket(value, edges) -> str:
+    prev = None
+    for e in edges:
+        if _f(value) < e:
+            return f"[{'-inf' if prev is None else prev},{e})"
+        prev = e
+    return f"[{edges[-1]},inf)"
+
+
+def execution_quality_by(rows: list[dict], *, key: str) -> dict:
+    """Group fill/execution rows by ``key`` and report per-group execution
+    quality (Live Monitoring). ``key`` is one of ``strategy``, ``market_id``,
+    ``category``, ``liquidity``, ``spread``, or ``ttr`` (the last three are
+    bucketed). Each row may carry ``filled``/``orders``, ``slippage_bps``,
+    ``markout_bps``, ``partial`` and the grouping field. Pure + safe."""
+    buckets = _EQ_BUCKETS.get(key)
+    out: dict = {}
+    for r in rows or []:
+        if buckets is not None:
+            g = _eq_bucket(r.get(key), buckets)
+        else:
+            g = str(r.get(key, "unknown"))
+        d = out.setdefault(g, {"n": 0, "orders": 0, "fills": 0, "partials": 0,
+                               "slippage_sum": 0.0, "markout_sum": 0.0})
+        d["n"] += 1
+        d["orders"] += int(r.get("orders", 1) or 0)
+        d["fills"] += int(r.get("filled", r.get("fills", 0)) or 0)
+        d["partials"] += int(bool(r.get("partial", False)))
+        d["slippage_sum"] += _f(r.get("slippage_bps"))
+        d["markout_sum"] += _f(r.get("markout_bps"))
+    for g, d in out.items():
+        n = max(1, d["n"])
+        d["fill_rate"] = round(d["fills"] / max(1, d["orders"]), 6)
+        d["partial_rate"] = round(d["partials"] / n, 6)
+        d["avg_slippage_bps"] = round(d["slippage_sum"] / n, 6)
+        d["avg_markout_bps"] = round(d["markout_sum"] / n, 6)
+        d.pop("slippage_sum", None)
+        d.pop("markout_sum", None)
+    return out
+
+
 def after_cost_expectancy(trades: list[dict]) -> float:
     """Mean realized PnL per trade after all costs (fees + slippage already in
     ``realized_pnl``). Live-readiness input (Backtesting + CLOB v2 Execution): a

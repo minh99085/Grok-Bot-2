@@ -94,6 +94,18 @@ def drag_breakdown(ask: float, bid: Optional[float], tick: float, *,
     }
 
 
+def forecast_error_bps(order_usd: float, depth_usd: float, *,
+                       error_coeff: float = 50.0) -> float:
+    """Slippage forecast-error band (bps, 1σ): uncertainty grows with the order's
+    share of executable depth. 0 for a zero-size order. The conservative execution
+    path widens the planned slippage by this band so a realized fill worse than the
+    point estimate stays within the planned envelope (Robustness Testing)."""
+    o = max(0.0, float(order_usd or 0.0))
+    if o <= 0.0:
+        return 0.0
+    return round(float(error_coeff) * (o / max(1e-9, float(depth_usd))), 6)
+
+
 def markout_bps(fill_price, ref_price, side: str) -> Optional[Decimal]:
     """Adverse-selection markout in bps (favourable > 0, adverse < 0).
 

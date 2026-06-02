@@ -239,6 +239,14 @@ class ExecutionResult:
     partial_fill: bool = False
     queue_position: Optional[float] = None
     adverse_selection_bps: Optional[Decimal] = None
+    # additional CLOB v2 realism diagnostics (additive; default = neutral)
+    failed_fill: bool = False               # lost the probabilistic fill draw
+    delayed_fill: bool = False              # filled after a modelled latency
+    cancel_replace_count: int = 0           # cancel/replace attempts to chase fills
+    slippage_forecast_bps: Optional[float] = None
+    slippage_realized_bps: Optional[Decimal] = None
+    slippage_forecast_error_bps: Optional[float] = None
+    conservative: bool = False              # produced under conservative execution
 
     @property
     def filled_quantity(self) -> Decimal:

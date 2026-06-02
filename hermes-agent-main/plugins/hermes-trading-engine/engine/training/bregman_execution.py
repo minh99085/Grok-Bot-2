@@ -453,6 +453,9 @@ class BundleExecutionResult:
     cancelled: bool
     timed_out: bool
     leg_results: list
+    hedge_break_blocked: bool = False   # True when the hedge broke (block sizing)
+    unwind_cost: float = 0.0            # cost to unwind the un-hedged partial legs
+    hedge_gap_ms: float = 0.0           # total time to assemble all legs
 
     def to_dict(self) -> dict:
         return {
@@ -463,6 +466,9 @@ class BundleExecutionResult:
             "realized_pnl": round(self.realized_pnl, 6),
             "partial_fill_rate": round(self.partial_fill_rate, 6),
             "cancelled": self.cancelled, "timed_out": self.timed_out,
+            "hedge_break_blocked": self.hedge_break_blocked,
+            "unwind_cost": round(self.unwind_cost, 6),
+            "hedge_gap_ms": round(self.hedge_gap_ms, 3),
             "leg_results": [l.to_dict() for l in self.leg_results],
         }
 
@@ -488,7 +494,9 @@ class BregmanBundleExecutionSimulator:
     def simulate(self, opp: CertifiedBregmanOpportunity, *,
                  leg_fill_fractions: Optional[list] = None,
                  leg_latencies_ms: Optional[list] = None,
-                 now: Optional[float] = None) -> BundleExecutionResult:
+                 now: Optional[float] = None, leg_order: str = "as_is",
+                 max_hedge_gap_ms: Optional[int] = None,
+                 unwind_cost_bps: float = 0.0) -> BundleExecutionResult:
         legs = list(opp.legs)
         n = len(legs)
         sets = float(opp.sets)
@@ -496,9 +504,25 @@ class BregmanBundleExecutionSimulator:
         # group payout is $1 per share for a complete set (one outcome resolves YES)
         payout = 1.0
 
+        # leg ordering policy: execute the least-liquid (hardest) leg first so the
+        # bundle fails fast before committing capital, or most-liquid first. The
+        # fraction/latency overrides are kept aligned to the chosen order.
+        order_idx = list(range(n))
+        if leg_order in ("liquidity_asc", "liquidity_desc") and n:
+            order_idx.sort(key=lambda i: float(getattr(legs[i], "depth_usd", 0.0) or 0.0),
+                           reverse=(leg_order == "liquidity_desc"))
+            legs = [legs[i] for i in order_idx]
+            if leg_fill_fractions is not None:
+                leg_fill_fractions = [leg_fill_fractions[i] if i < len(leg_fill_fractions)
+                                      else 1.0 for i in order_idx]
+            if leg_latencies_ms is not None:
+                leg_latencies_ms = [leg_latencies_ms[i] if i < len(leg_latencies_ms)
+                                    else 0.0 for i in order_idx]
+
         leg_results: list = []
         cum_latency = 0.0
         timed_out = False
+        hedge_gap_exceeded = False
         cancelled = False
         realized_cost = 0.0
         fully_filled = 0
@@ -552,17 +576,29 @@ class BregmanBundleExecutionSimulator:
                     partial_or_failed += 1
                 break
 
-        fully_hedged = (fully_filled == n) and not timed_out
+        # max hedge gap: even if every leg eventually filled, a hedge that took
+        # too long to assemble is exposed to mid moves between legs -> broken.
+        if (max_hedge_gap_ms is not None and fully_filled == n
+                and cum_latency > float(max_hedge_gap_ms)):
+            hedge_gap_exceeded = True
+
+        fully_hedged = (fully_filled == n) and not timed_out and not hedge_gap_exceeded
+        # partial-fill unwind cost: liquidating the un-hedged filled legs costs
+        # the spread/slippage to exit (only ever ADDS to the loss).
+        unwind_cost = (round(realized_cost * max(0.0, float(unwind_cost_bps)) / 10000.0, 6)
+                       if not fully_hedged else 0.0)
         if fully_hedged:
             failure_mode = ""
             realized_pnl = sets * (payout - cost_per_set)        # the certified profit
         elif timed_out:
             failure_mode = "timeout"
-            # filled legs are unhedged; worst case the missing leg wins => lose cost
-            realized_pnl = -realized_cost
+            realized_pnl = -realized_cost - unwind_cost
+        elif hedge_gap_exceeded:
+            failure_mode = "hedge_gap_exceeded"
+            realized_pnl = -realized_cost - unwind_cost
         else:
             failure_mode = "partial_fill_breaks_hedge"
-            realized_pnl = -realized_cost
+            realized_pnl = -realized_cost - unwind_cost
         partial_fill_rate = round(partial_or_failed / n, 6) if n else 0.0
 
         return BundleExecutionResult(
@@ -570,4 +606,6 @@ class BregmanBundleExecutionSimulator:
             fully_hedged=fully_hedged, hedge_complete=fully_hedged,
             failure_mode=failure_mode, realized_cost=round(realized_cost, 6),
             realized_pnl=round(realized_pnl, 6), partial_fill_rate=partial_fill_rate,
-            cancelled=cancelled, timed_out=timed_out, leg_results=leg_results)
+            cancelled=cancelled, timed_out=timed_out, leg_results=leg_results,
+            hedge_break_blocked=not fully_hedged, unwind_cost=unwind_cost,
+            hedge_gap_ms=round(cum_latency, 3))

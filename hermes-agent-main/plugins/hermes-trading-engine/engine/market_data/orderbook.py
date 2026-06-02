@@ -320,3 +320,14 @@ def depth_sufficiency(order_usd: float, depth_usd: float) -> float:
     if o <= 0.0:
         return 1.0
     return round(min(1.0, d / o), 6)
+
+
+def trade_velocity_score(trades_per_min: float, *, ref_per_min: float = 10.0) -> float:
+    """Recent trade-velocity factor in ``[0, ~2]`` for the fill-probability model.
+
+    Normalizes recent prints/min against a reference cadence: a quiet book (no
+    recent trades) scores low (fills are less likely), a busy book scores high.
+    Used as the ``recent_trade_velocity`` input to the CLOB v2 fill model."""
+    tpm = max(0.0, float(trades_per_min or 0.0))
+    ref = max(1e-9, float(ref_per_min))
+    return round(min(2.0, tpm / ref), 6)

@@ -147,6 +147,33 @@ class PaperPolicy:
             "notional_usd": 0.0,            # never sized
         }
 
+    def conservative_fill_quality_estimate(self, edge: EdgeResult, est: ProbabilityEstimate,
+                                           rec, *, order_usd: Optional[float] = None,
+                                           time_to_resolution_s: Optional[float] = None,
+                                           recent_trade_velocity: float = 1.0) -> dict:
+        """CONSERVATIVE forward fill-quality estimate for live-readiness validation
+        (CLOB v2 Execution). Uses the full factor set (spread, depth, size, book
+        age, volatility, time-to-resolution, recent trade velocity) with the
+        conservative haircut + the conservative slippage forecast, so a paper edge
+        that only survives optimistic fills is exposed. Read-only analytics."""
+        from .execution_quality import (conservative_slippage_forecast, fill_probability,
+                                         partial_fill_risk)
+        spread = float(getattr(est, "spread", 0.0) or 0.0)
+        depth = float(getattr(rec, "top_depth_usd", 0.0) or 0.0)
+        notional = (order_usd if order_usd is not None
+                    else float(getattr(self.cfg, "fixed_notional_usd", 0.0)))
+        stale = not bool(getattr(est, "fresh_book", True))
+        max_spread = float(getattr(self.cfg, "max_spread", 0.08))
+        vol = float((getattr(est, "uncertainty_components", {}) or {}).get("market", 0.0))
+        return {
+            "fill_probability": fill_probability(
+                spread, depth, notional, stale=stale, max_spread=max_spread,
+                volatility=vol, time_to_resolution_s=time_to_resolution_s,
+                recent_trade_velocity=recent_trade_velocity, conservative=True),
+            "partial_fill_risk": partial_fill_risk(notional, depth),
+            "conservative_slippage_bps": conservative_slippage_forecast(notional, depth),
+        }
+
     def explore_size(self) -> float:
         """Small exploratory size for an active-learning paper trade, hard-clamped
         to the paper order-notional ceiling (can never bypass risk caps)."""

@@ -26,6 +26,21 @@ def _bps(markout, fill):
     return (markout / fill) * Decimal(10000)
 
 
+def conservative_markout_bps(fill_price, mid_price, side: str, *,
+                             error_bps: float = 0.0, sigmas: float = 1.0) -> Optional[Decimal]:
+    """Conservative (worst-case) markout in bps: the point markout shifted ADVERSE
+    by ``sigmas`` × ``error_bps`` so a fill that later moves against us is never
+    under-counted. Additive helper for the PAPER/replay conservative-execution
+    audit; does NOT touch the live ``run()`` path. Quant scope — *CLOB v2
+    Execution* + *Live Trading & Monitoring*."""
+    fp, mp = _d(fill_price), _d(mid_price)
+    if fp is None or mp is None or fp == 0:
+        return None
+    sign = Decimal(1) if str(side).upper() == "BUY" else Decimal(-1)
+    point_bps = sign * (mp - fp) / fp * Decimal(10000)
+    return point_bps - Decimal(str(max(0.0, float(sigmas)))) * Decimal(str(max(0.0, float(error_bps))))
+
+
 def run(ctx: dict, cfg) -> MarkoutAnalysisResult:
     md = ctx.get("market_data") or {}
     plan = ctx.get("plan") or {}

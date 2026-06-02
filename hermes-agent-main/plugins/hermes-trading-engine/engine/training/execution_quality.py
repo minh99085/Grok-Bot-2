@@ -38,17 +38,44 @@ def queue_position_approximation(ahead_size: float, order_size: float,
 
 
 def fill_probability(spread: float, depth_usd: float, order_usd: float, *,
-                     stale: bool = False, max_spread: float = 0.08) -> float:
+                     stale: bool = False, max_spread: float = 0.08,
+                     book_age_ms: float = 0.0, volatility: float = 0.0,
+                     queue_proxy: float = 0.0, aggressiveness: float = 1.0,
+                     time_to_resolution_s: Optional[float] = None,
+                     recent_trade_velocity: float = 1.0, stale_ms: float = 3000.0,
+                     conservative: bool = False, conservative_haircut: float = 0.7) -> float:
     """Estimated probability a marketable paper order fills in ``[0, 1]``.
 
     Falls toward 0 as the spread widens past ``max_spread``, as the order grows
-    relative to top-of-book depth, and to 0 outright on a stale book.
+    relative to top-of-book depth, as the book ages, as volatility rises, as our
+    queue position worsens, as the resolution horizon shortens, and as recent
+    trade velocity drops; rises with price aggressiveness. ``conservative`` mode
+    haircuts the result. The original 3-arg call is fully back-compatible (every
+    new factor defaults to neutral). 0 outright on a stale book.
     """
     if stale or depth_usd <= 0 or order_usd <= 0:
         return 0.0
     spread_term = _clamp01(1.0 - max(0.0, float(spread)) / max(1e-9, max_spread))
     depth_term = _clamp01(float(depth_usd) / (float(depth_usd) + float(order_usd)))
-    return round(_clamp01(spread_term * depth_term), 6)
+    age_term = _clamp01(1.0 - max(0.0, float(book_age_ms)) / max(1e-9, float(stale_ms)))
+    vol_term = _clamp01(1.0 - 2.0 * max(0.0, float(volatility)))
+    queue_term = _clamp01(1.0 - max(0.0, float(queue_proxy)))
+    aggr_term = _clamp01(0.5 + 0.25 * max(0.0, min(2.0, float(aggressiveness))))
+    ttr_term = _ttr_term(time_to_resolution_s)
+    vel_term = _clamp01(0.5 + 0.5 * max(0.0, min(2.0, float(recent_trade_velocity))))
+    p = (spread_term * depth_term * age_term * vol_term * queue_term
+         * aggr_term * ttr_term * vel_term)
+    if conservative:
+        p *= float(conservative_haircut)
+    return round(_clamp01(p), 6)
+
+
+def _ttr_term(time_to_resolution_s: Optional[float]) -> float:
+    """Time-to-resolution fill dampener in [0,1] (unknown -> 1.0 neutral)."""
+    if time_to_resolution_s is None:
+        return 1.0
+    t = max(0.0, float(time_to_resolution_s))
+    return _clamp01(math.log1p(t) / math.log1p(86400.0))
 
 
 def slippage_forecast(order_usd: float, depth_usd: float, *, base_bps: float = 25.0,
@@ -58,6 +85,30 @@ def slippage_forecast(order_usd: float, depth_usd: float, *, base_bps: float = 2
     depth = max(1e-9, float(depth_usd))
     impact = float(impact_coeff) * (max(0.0, float(order_usd)) / depth)
     return round(float(base_bps) + impact, 6)
+
+
+def slippage_forecast_error(order_usd: float, depth_usd: float, *,
+                            error_coeff: float = 50.0) -> float:
+    """Forecast-error band (bps, 1σ) on the slippage forecast — uncertainty grows
+    with the order's share of depth. 0 for a zero-size order. Used to widen the
+    conservative slippage forecast so a realized fill that is worse than the point
+    estimate is still within the planned envelope (Robustness Testing)."""
+    o = max(0.0, float(order_usd))
+    if o <= 0.0:
+        return 0.0
+    depth = max(1e-9, float(depth_usd))
+    return round(float(error_coeff) * (o / depth), 6)
+
+
+def conservative_slippage_forecast(order_usd: float, depth_usd: float, *,
+                                   base_bps: float = 25.0, impact_coeff: float = 100.0,
+                                   error_coeff: float = 50.0, sigmas: float = 1.0) -> float:
+    """Conservative slippage forecast = point estimate + ``sigmas`` × error band.
+    Never below the point estimate (live-readiness validation uses this)."""
+    point = slippage_forecast(order_usd, depth_usd, base_bps=base_bps,
+                              impact_coeff=impact_coeff)
+    err = slippage_forecast_error(order_usd, depth_usd, error_coeff=error_coeff)
+    return round(point + max(0.0, float(sigmas)) * err, 6)
 
 
 def spread_blowout(spread: float, baseline_spread: float, *, factor: float = 3.0) -> bool:

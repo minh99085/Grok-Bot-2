@@ -547,6 +547,13 @@ class ReplayRunner:
                 getattr(self, "_bregman_certs", []),
                 bundles=getattr(self, "_bregman_bundles", [])),
             "variant_attribution": met.variant_attribution(self.orders, self.fills),
+            # execution quality grouped for live monitoring (by strategy / market /
+            # category / liquidity / spread / time-to-resolution buckets). Rows are
+            # the replay fills; absent fields bucket as "unknown" (well-defined).
+            "execution_quality_by": {
+                k: met.execution_quality_by(self.fills, key=k)
+                for k in ("strategy_variant", "market_id", "category",
+                          "liquidity", "spread", "ttr")},
             "execution_diagnostics": met.execution_diagnostics(self.orders, self.fills),
             "counts": {"orders": len(self.orders), "fills": len(self.fills),
                        "proposals": len(self.proposals), "equity_points": len(self.equity_rows)},

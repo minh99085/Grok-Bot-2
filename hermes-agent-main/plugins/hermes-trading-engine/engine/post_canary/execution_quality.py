@@ -23,6 +23,17 @@ def _d(v) -> Optional[Decimal]:
         return None
 
 
+def slippage_forecast_vs_realized_bps(forecast_bps, realized_bps) -> Optional[Decimal]:
+    """Forecast error = realized − forecast slippage (bps). Positive means the
+    fill was WORSE than forecast (an optimistic forecast). Additive helper for the
+    PAPER/replay conservative-execution audit; does NOT touch the live ``run()``
+    path. Quant scope — *CLOB v2 Execution* + *Robustness Testing*."""
+    f, r = _d(forecast_bps), _d(realized_bps)
+    if f is None or r is None:
+        return None
+    return r - f
+
+
 def run(ctx: dict, cfg) -> ExecutionQualityResult:
     a = ctx.get("attempt") or {}
     plan = ctx.get("plan") or {}
