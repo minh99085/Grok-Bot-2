@@ -42,5 +42,22 @@ if [ -d /run/service/.s6-svscan ]; then
     done
 fi
 
+# Gateway-supervision gate. In a split deployment a dedicated
+# dashboard-only container shares the same /opt/data volume as the
+# gateway container (see docker-compose.yml). That container must NOT
+# register per-profile gateway s6 services: s6 supervises each gateway's
+# s6-log logger independently of the service's `down` marker, and s6-log
+# takes an exclusive per-logdir lock. With two containers both pointing a
+# logger at the shared /opt/data/logs/gateways/<profile>/, the second one
+# loops on "s6-log: fatal: unable to lock ...: Resource busy". Default is
+# ON (single-container and gateway containers supervise gateways); the
+# dashboard service sets HERMES_SUPERVISE_GATEWAYS=0 to opt out.
+case "${HERMES_SUPERVISE_GATEWAYS:-1}" in
+    0|false|FALSE|False|no|NO|No)
+        echo "reconcile: HERMES_SUPERVISE_GATEWAYS is off; skipping per-profile gateway registration"
+        exit 0
+        ;;
+esac
+
 exec s6-setuidgid hermes /opt/hermes/.venv/bin/python -m hermes_cli.container_boot
 

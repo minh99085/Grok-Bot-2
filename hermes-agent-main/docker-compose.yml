@@ -72,5 +72,14 @@ services:
     environment:
       - HERMES_UID=${HERMES_UID:-10000}
       - HERMES_GID=${HERMES_GID:-10000}
+      # This container shares the ~/.hermes volume with the gateway
+      # container above. Per-profile gateway supervision (and its s6-log
+      # writer) belongs to the gateway container only — s6-log takes an
+      # exclusive lock on /opt/data/logs/gateways/<profile>/, so letting
+      # both containers run it makes this one loop on
+      # "s6-log: fatal: unable to lock ...: Resource busy". The dashboard
+      # reads gateway status from the shared volume + health URL, so it
+      # does not need to supervise gateways itself.
+      - HERMES_SUPERVISE_GATEWAYS=0
     # Localhost-only. For remote access, tunnel via `ssh -L 9119:localhost:9119`.
     command: ["dashboard", "--host", "127.0.0.1", "--no-open"]
