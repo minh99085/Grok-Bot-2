@@ -21,6 +21,7 @@ from typing import Optional
 
 from .metrics import (ambiguity_bucket, edge_bucket, evidence_bucket,
                       liquidity_bucket, prob_bucket, spread_bucket)
+from .settlement import is_trainable_state
 
 _MARKOUT_HORIZONS = ("5s", "30s", "1m", "5m", "15m", "1h")
 
@@ -35,6 +36,11 @@ class OnlineLearner:
         self.trades = 0
         self.no_trades = 0
         self.closed = 0
+        # Settlement-label quality: only clean (trainable) labels mutate state;
+        # dirty labels (void/ambiguous/unresolved/partially_invalid/stale) are
+        # counted here and otherwise ignored (no calibration/bucket pollution).
+        self.suppressed_outcomes = 0
+        self.label_states: dict = {}
         self.no_trade_reasons: dict = {}
         self.prob_buckets: dict = {}        # bucket -> {n, sum_pred, wins}
         self.categories: dict = {}          # cat -> {n, wins, reliability, ewma_capture}
@@ -56,8 +62,10 @@ class OnlineLearner:
                 d = json.loads(self.path.read_text(encoding="utf-8"))
             except (ValueError, OSError):
                 return
-            for k in ("decisions", "trades", "no_trades", "closed"):
+            for k in ("decisions", "trades", "no_trades", "closed",
+                      "suppressed_outcomes"):
                 setattr(self, k, int(d.get(k, 0)))
+            self.label_states = dict(d.get("label_states", {}))
             self.no_trade_reasons = dict(d.get("no_trade_reasons", {}))
             self.prob_buckets = dict(d.get("prob_buckets", {}))
             self.categories = dict(d.get("categories", {}))
@@ -92,7 +100,26 @@ class OnlineLearner:
                        category: str = "uncategorized", net_edge: float = 0.0,
                        spread: float = 0.0, liquidity: float = 0.0,
                        ambiguity: float = 0.0, evidence: float = 0.0,
-                       markouts: Optional[dict] = None) -> None:
+                       markouts: Optional[dict] = None,
+                       label_state: Optional[str] = None,
+                       trainable: Optional[bool] = None) -> bool:
+        """Record a closed-trade outcome. Returns True if it trained the model.
+
+        SETTLEMENT-TRUTH GUARD: a closed position only becomes a training label
+        when it carries a clean (``resolved_yes`` / ``resolved_no``) settlement
+        label. ``label_state=None`` is treated as a legacy clean label for
+        back-compat. Dirty labels are counted in ``suppressed_outcomes`` and make
+        NO mutation to calibration / category / bucket / markout state — this is
+        what stops aggressive paper trading from poisoning the probability stack.
+        """
+        if label_state is not None:
+            self.label_states[label_state] = self.label_states.get(label_state, 0) + 1
+        if trainable is None:
+            trainable = is_trainable_state(label_state)
+        if not trainable:
+            self.suppressed_outcomes += 1
+            return False
+
         self.closed += 1
         w = 1 if win else 0
 
@@ -126,6 +153,23 @@ class OnlineLearner:
                 m = self.markouts[h]
                 m["n"] += 1
                 m["sum"] = round(m["sum"] + float(v), 6)
+        return True
+
+    def label_quality(self) -> dict:
+        """Settlement-label quality summary (coverage / suppression / states)."""
+        terminal = self.closed + self.suppressed_outcomes
+        suppressed_unresolved = int(self.label_states.get("unresolved", 0))
+        labelled = sum(self.label_states.values())
+        return {
+            "clean_trained": self.closed,
+            "suppressed": self.suppressed_outcomes,
+            "label_states": dict(self.label_states),
+            "suppression_rate": round(self.suppressed_outcomes / terminal, 4) if terminal else 0.0,
+            "ambiguous_rate": round(self.label_states.get("ambiguous", 0) / labelled, 4)
+            if labelled else 0.0,
+            "label_coverage": round((labelled - suppressed_unresolved) / labelled, 4)
+            if labelled else 0.0,
+        }
 
     def record_signal(self, *, strategy: str, attribution: Optional[dict] = None,
                       traded: bool = False) -> None:
@@ -208,6 +252,8 @@ class OnlineLearner:
         return {
             "decisions": self.decisions, "trades": self.trades,
             "no_trades": self.no_trades, "closed": self.closed,
+            "suppressed_outcomes": self.suppressed_outcomes,
+            "label_states": self.label_states,
             "no_trade_reasons": self.no_trade_reasons,
             "prob_buckets": self.prob_buckets, "categories": self.categories,
             "edge_buckets": self.edge_buckets, "spread_buckets": self.spread_buckets,
@@ -222,6 +268,8 @@ class OnlineLearner:
         return {
             "decisions": self.decisions, "trades": self.trades,
             "no_trades": self.no_trades, "closed": self.closed,
+            "suppressed_outcomes": self.suppressed_outcomes,
+            "label_quality": self.label_quality(),
             "calibration_error": self.calibration_error(),
             "calibration": self.calibration_table(),
             "calibration_artifact": self.calibration_artifact(),

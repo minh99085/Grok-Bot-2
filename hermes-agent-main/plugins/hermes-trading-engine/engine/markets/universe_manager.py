@@ -244,6 +244,10 @@ class MarketRecord:
     end_ts: Optional[float]
     book_age_s: Optional[float]
     has_resolution_text: bool
+    # Settlement-source metadata (selection/label provenance only — never an
+    # execution input). Surfaced so settlement-truth labels can record which
+    # source resolved the market (Data Acquisition & Ingestion / Compliance).
+    resolution_source: str = ""
     raw: dict = field(default_factory=dict)
 
     @classmethod
@@ -287,6 +291,8 @@ class MarketRecord:
             end_ts=_parse_end_ts(raw),
             book_age_s=book_age,
             has_resolution_text=bool(desc or rules),
+            resolution_source=str(raw.get("resolutionSource")
+                                  or raw.get("resolution_source") or ""),
             raw=raw,
         )
 

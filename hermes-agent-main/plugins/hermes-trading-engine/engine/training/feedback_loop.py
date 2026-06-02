@@ -24,7 +24,9 @@ from typing import Optional
 
 from engine.campaigns.signal_models import FeedbackCalibrator
 
+from .metrics import LabelQualityMetrics
 from .online_learner import OnlineLearner
+from .settlement import LabelState, SettlementLabel, is_trainable_state
 
 
 class FeedbackLoop:
@@ -37,13 +39,48 @@ class FeedbackLoop:
         self.updates = 0
         self.last_update_ts = 0.0
         self._last_summary: dict = {}
+        # Settlement-label quality (Strategy Optimization + Live Monitoring):
+        # only clean labels reach the calibrator/learner; dirty ones are counted.
+        self.label_quality = LabelQualityMetrics()
+        self.suppressed = 0
 
     def record_outcome(self, *, predicted_prob: float, predicted_edge: float,
                        realized_pnl: float, size_usd: float, win: bool,
                        category: str = "uncategorized", net_edge: float = 0.0,
                        spread: float = 0.0, liquidity: float = 0.0,
                        ambiguity: float = 0.0, evidence: float = 0.0,
-                       markouts: Optional[dict] = None) -> None:
+                       markouts: Optional[dict] = None,
+                       label: Optional[SettlementLabel] = None,
+                       label_state: Optional[str] = None,
+                       label_confidence: float = 1.0,
+                       settlement_source: str = "paper_mark",
+                       settlement_delay_ms=None) -> bool:
+        """Feed one closed paper trade into calibration + learning.
+
+        SETTLEMENT-TRUTH GATE: a closed position only trains the calibrator and
+        learner when it carries a clean (``resolved_yes`` / ``resolved_no``)
+        settlement label. ``label``/``label_state=None`` is treated as a legacy
+        clean label (back-compat). Dirty labels (void / ambiguous / unresolved /
+        partially_invalid / stale_resolution) are recorded for label-quality
+        reporting and otherwise SUPPRESSED — they never move calibration or
+        learner state. Returns True iff the outcome trained the model.
+        """
+        if label is not None:
+            label_state = label.state
+            label_confidence = label.confidence
+            settlement_source = label.source
+            settlement_delay_ms = label.delay_ms
+        trainable = is_trainable_state(label_state)
+        # effective state for reporting (legacy clean default when unlabelled)
+        eff_state = label_state if label_state is not None else (
+            LabelState.RESOLVED_YES if win else LabelState.RESOLVED_NO)
+        self.label_quality.record(state=eff_state, trainable=trainable,
+                                  confidence=label_confidence,
+                                  delay_ms=settlement_delay_ms)
+        if not trainable:
+            self.suppressed += 1
+            return False
+
         self.calibrator.record_outcome(predicted_prob=predicted_prob,
                                        predicted_edge=predicted_edge,
                                        realized_pnl=realized_pnl, size_usd=size_usd)
@@ -51,7 +88,14 @@ class FeedbackLoop:
                                     realized_pnl=realized_pnl, category=category,
                                     net_edge=net_edge, spread=spread,
                                     liquidity=liquidity, ambiguity=ambiguity,
-                                    evidence=evidence, markouts=markouts)
+                                    evidence=evidence, markouts=markouts,
+                                    label_state=label_state, trainable=True)
+        return True
+
+    def label_quality_report(self) -> dict:
+        """Label coverage / delay / ambiguous-rate / invalid-feedback suppression
+        for the training report (Strategy Optimization & Live Monitoring)."""
+        return self.label_quality.to_dict()
 
     def edge_adjustment(self) -> float:
         """Multiplier on the next cycle's edge threshold.
@@ -81,6 +125,8 @@ class FeedbackLoop:
             "enabled": self.enabled,
             "updates": self.updates,
             "edge_adjustment": self.edge_adjustment(),
+            "suppressed_dirty_labels": self.suppressed,
+            "label_quality": self.label_quality_report(),
             "calibrator": self.calibrator.summary(),
             "learner": self.learner.summary(),
         }

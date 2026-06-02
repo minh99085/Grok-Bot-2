@@ -403,6 +403,24 @@ class ReplayRunner:
                   if p["fair_probability"] is not None else None}
                  for p in self.proposals if p.get("fair_probability") is not None]
         outcomes = self.out_store.get_market_outcomes(venue="polymarket")
+        # Settlement-truth overlay: classify replayed resolution events and tag
+        # each outcome with its clean/dirty label_state so calibration is fit on
+        # CLEAN settlement truth only (dirty labels excluded). No-op when the
+        # episode carries no resolution events (back-compat / determinism).
+        try:
+            from .event_loader import ReplayEventLoader
+            settlements = ReplayEventLoader.extract_settlements(self.events)
+        except Exception:  # noqa: BLE001
+            settlements = []
+        if settlements:
+            by_market = {s["market_id"]: s for s in settlements}
+            for o in outcomes:
+                s = by_market.get(o.get("market_id"))
+                if s and s.get("label_state") and "label_state" not in o:
+                    o["label_state"] = s["label_state"]
+            known = {(o.get("market_id"), o.get("asset_id")) for o in outcomes}
+            outcomes = outcomes + [s for s in settlements
+                                   if (s["market_id"], s["asset_id"]) not in known]
         calib = cal.summarize_calibration(preds, outcomes)
         for row in calib.get("rows", []):
             self.out_store.add_replay_calibration({

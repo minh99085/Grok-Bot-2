@@ -55,6 +55,21 @@ class AmbiguityScorer:
         return round(score, 4), categories
 
 
+def label_confidence(ambiguity_score: float, *, source_weight: float = 1.0) -> float:
+    """Settlement-label confidence in [0,1] from ambiguity + source reliability.
+
+    Used by the Settlement Truth Engine: a clean resolution from a reliable
+    source with low ambiguity yields high confidence; high ambiguity or a weak
+    source lowers it (and can demote a label to ``ambiguous``)."""
+    a = float(ambiguity_score or 0.0)
+    return round(max(0.0, min(1.0, float(source_weight) * (1.0 - a))), 4)
+
+
+def is_settlement_ambiguous(ambiguity_score: float, threshold: float = 0.5) -> bool:
+    """True when a market's resolution is too ambiguous to produce a clean label."""
+    return float(ambiguity_score or 0.0) >= float(threshold)
+
+
 def extract_terms(text: str, patterns: list[str]) -> list[str]:
     t = (text or "")
     found = []

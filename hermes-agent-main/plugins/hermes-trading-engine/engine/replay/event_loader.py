@@ -96,6 +96,60 @@ class ReplayEventLoader:
         return self._post(events, **filters)
 
     # ------------------------------------------------------------------ #
+    @staticmethod
+    def extract_settlements(events: list[ReplayEvent], *, engine=None,
+                            venue: str = "polymarket") -> list[dict]:
+        """Derive settlement-truth outcomes from replayed ``market_resolved``
+        events so replay calibration trains only on CLEAN labels.
+
+        Each resolved market yields one outcome dict carrying ``realized_outcome``
+        (market YES = 1 / NO = 0), the settlement ``label_state`` + confidence +
+        source (classified by :class:`SettlementTruthEngine`), suitable for
+        :func:`engine.replay.calibration.match_predictions`. Best-effort + offline
+        (Data Acquisition & Ingestion); never raises into the replay loop.
+        """
+        from engine.training.settlement import LabelState, SettlementTruthEngine
+
+        eng = engine or SettlementTruthEngine()
+        _RES_TYPES = {"market_resolved", "resolution", "settlement", "resolved"}
+        out: list[dict] = []
+        for ev in events:
+            if ev.event_type not in _RES_TYPES:
+                continue
+            p = ev.payload if isinstance(ev.payload, dict) else {}
+            winner = (p.get("winning_outcome") or p.get("winner")
+                      or p.get("outcome") or p.get("resolved_outcome"))
+            voided = bool(p.get("voided") or p.get("invalid")
+                          or str(p.get("umaResolutionStatus", "")).lower() in ("voided", "invalid"))
+            try:
+                amb = float(p.get("ambiguity_score") or 0.0)
+            except (TypeError, ValueError):
+                amb = 0.0
+            obs = {
+                "market_id": ev.market_id, "asset_id": ev.asset_id,
+                "resolved": True, "winning_outcome": winner, "voided": voided,
+                "ambiguity_score": amb,
+                "settlement_source": p.get("settlement_source") or ev.source or "polymarket",
+                "stale": bool(p.get("stale")), "partial": bool(p.get("partial")),
+                "close_ts_ms": p.get("close_ts_ms"),
+                "resolved_ts_ms": p.get("resolved_ts_ms") or ev.ts_ms,
+            }
+            try:
+                lab = eng.classify(obs, now_ms=ev.ts_ms)
+            except Exception:  # noqa: BLE001 — settlement parsing must not break replay
+                continue
+            realized = 1 if lab.state == LabelState.RESOLVED_YES else (
+                0 if lab.state == LabelState.RESOLVED_NO else None)
+            out.append({
+                "venue": ev.venue or venue, "market_id": ev.market_id,
+                "asset_id": ev.asset_id, "outcome": None,
+                "realized_outcome": realized, "label_state": lab.state,
+                "label_confidence": lab.confidence, "settlement_source": lab.source,
+                "resolved_ts_ms": lab.resolved_ts_ms,
+            })
+        return out
+
+    # ------------------------------------------------------------------ #
     def _post(self, events: list[ReplayEvent], *, venue=None, market_id=None,
               market_ids=None, asset_id=None, asset_ids=None, start_ts_ms=None,
               end_ts_ms=None, event_type=None, max_events=None, dedup=False,

@@ -9,7 +9,12 @@ from __future__ import annotations
 import time
 from typing import Optional
 
-from .ambiguity import AmbiguityScorer, extract_terms
+from .ambiguity import (
+    AmbiguityScorer,
+    extract_terms,
+    is_settlement_ambiguous,
+    label_confidence,
+)
 from .schemas import MarketRuleSummary
 
 _AMBIGUOUS_TERMS = [
@@ -50,3 +55,12 @@ class MarketRuleParser:
             edge_cases=edge_cases[:20], ambiguous_terms=ambiguous_terms,
             ambiguity_categories=categories, ambiguity_score=score,
             parsed_ts_ms=int(time.time() * 1000))
+
+    def label_confidence(self, summary: MarketRuleSummary) -> float:
+        """Settlement-label confidence implied by a parsed rule summary (the
+        cleaner the rules, the higher the confidence the eventual label earns)."""
+        return label_confidence(getattr(summary, "ambiguity_score", 0.0))
+
+    def is_settlement_ambiguous(self, summary: MarketRuleSummary,
+                                threshold: float = 0.5) -> bool:
+        return is_settlement_ambiguous(getattr(summary, "ambiguity_score", 0.0), threshold)

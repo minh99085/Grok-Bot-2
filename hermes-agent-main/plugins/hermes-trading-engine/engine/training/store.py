@@ -54,6 +54,18 @@ _SCHEMA = {
             id INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT, ts_ms INTEGER,
             baseline_name TEXT, trade_count INTEGER, pnl REAL, drawdown REAL,
             brier REAL, log_loss REAL, ece REAL, payload_json TEXT)""",
+    # Settlement-truth labels: the clean/dirty label-state record per market that
+    # decides whether a closed paper trade may train the probability stack. Keyed
+    # by (run_id, market_id, asset_id) and idempotent (INSERT OR REPLACE). No
+    # secrets; settlement source kept for auditability.
+    "polymarket_settlements": """
+        CREATE TABLE IF NOT EXISTS polymarket_settlements (
+            run_id TEXT, market_id TEXT, asset_id TEXT, label_state TEXT,
+            trainable INTEGER, confidence REAL, settlement_source TEXT,
+            winning_outcome TEXT, ambiguity_score REAL, resolved_ts_ms INTEGER,
+            close_ts_ms INTEGER, delay_ms INTEGER, observed_ts_ms INTEGER,
+            reasons_json TEXT, payload_json TEXT,
+            PRIMARY KEY (run_id, market_id, asset_id))""",
 }
 
 
@@ -138,6 +150,60 @@ class TrainingStore:
             (run_id, _now_ms(), r["baseline_name"], r.get("trade_count"), r.get("pnl"),
              r.get("drawdown"), json.dumps(r)))
         self._conn.commit()
+
+    def record_settlement(self, run_id, label) -> None:
+        """Persist one settlement-truth label (idempotent per market/asset).
+
+        ``label`` may be a :class:`engine.training.settlement.SettlementLabel`
+        or a plain dict with the same fields. PAPER ONLY; never an order path."""
+        d = label.to_dict() if hasattr(label, "to_dict") else dict(label)
+        self._conn.execute(
+            "INSERT OR REPLACE INTO polymarket_settlements (run_id, market_id, "
+            "asset_id, label_state, trainable, confidence, settlement_source, "
+            "winning_outcome, ambiguity_score, resolved_ts_ms, close_ts_ms, "
+            "delay_ms, observed_ts_ms, reasons_json, payload_json) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (run_id, str(d.get("market_id") or ""), str(d.get("asset_id") or ""),
+             d.get("state") or d.get("label_state"),
+             1 if d.get("trainable") else 0, d.get("confidence"),
+             d.get("source") or d.get("settlement_source"),
+             d.get("winning_outcome"), d.get("ambiguity_score"),
+             d.get("resolved_ts_ms"), d.get("close_ts_ms"), d.get("delay_ms"),
+             d.get("observed_ts_ms"), json.dumps(d.get("reasons", [])),
+             json.dumps(d)))
+        self._conn.commit()
+
+    def get_settlements(self, run_id: Optional[str] = None, limit: int = 1000) -> list:
+        if run_id is not None:
+            cur = self._conn.execute(
+                "SELECT * FROM polymarket_settlements WHERE run_id=? "
+                "ORDER BY observed_ts_ms DESC LIMIT ?", (run_id, int(limit)))
+        else:
+            cur = self._conn.execute(
+                "SELECT * FROM polymarket_settlements ORDER BY observed_ts_ms DESC "
+                "LIMIT ?", (int(limit),))
+        return [dict(r) for r in cur.fetchall()]
+
+    def label_quality_summary(self, run_id: Optional[str] = None) -> dict:
+        """Aggregate label coverage / ambiguous-rate / suppression from persisted
+        settlements (training report; Live Trading & Monitoring)."""
+        rows = self.get_settlements(run_id, limit=1_000_000)
+        total = len(rows)
+        by_state: dict = {}
+        trainable = 0
+        for r in rows:
+            st = r.get("label_state") or "unresolved"
+            by_state[st] = by_state.get(st, 0) + 1
+            if r.get("trainable"):
+                trainable += 1
+        unresolved = by_state.get("unresolved", 0)
+        return {
+            "total": total, "trainable": trainable,
+            "suppressed": total - trainable, "by_state": by_state,
+            "label_coverage": round((total - unresolved) / total, 6) if total else 0.0,
+            "ambiguous_rate": round(by_state.get("ambiguous", 0) / total, 6) if total else 0.0,
+            "suppression_rate": round((total - trainable) / total, 6) if total else 0.0,
+        }
 
     def close(self) -> None:
         try:

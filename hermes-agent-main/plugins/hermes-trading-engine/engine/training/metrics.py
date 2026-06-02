@@ -121,6 +121,80 @@ class ScanMetrics:
         }
 
 
+@dataclass
+class LabelQualityMetrics:
+    """Settlement-label quality for training reports + live monitoring.
+
+    Tracks how many closed positions produced a clean (trainable) label vs. a
+    dirty one that was *suppressed* from learning, the ambiguous-label rate,
+    label coverage (fraction with any terminal settlement), and settlement
+    delay. Pure counters — no side effects. (Quant scope: Strategy Optimization
+    & Robustness Testing + Live Trading & Monitoring.)
+    """
+
+    total: int = 0
+    trainable: int = 0
+    suppressed: int = 0
+    by_state: dict = field(default_factory=dict)
+    confidence_sum: float = 0.0
+    delay_samples: int = 0
+    delay_sum_ms: float = 0.0
+
+    def record(self, *, state: str, trainable: bool, confidence: float = 1.0,
+               delay_ms=None) -> None:
+        self.total += 1
+        self.by_state[state] = self.by_state.get(state, 0) + 1
+        self.confidence_sum += float(confidence or 0.0)
+        if trainable:
+            self.trainable += 1
+        else:
+            self.suppressed += 1
+        if delay_ms is not None:
+            try:
+                self.delay_sum_ms += float(delay_ms)
+                self.delay_samples += 1
+            except (TypeError, ValueError):
+                pass
+
+    @property
+    def ambiguous_rate(self) -> float:
+        return round(self.by_state.get("ambiguous", 0) / self.total, 6) if self.total else 0.0
+
+    @property
+    def label_coverage(self) -> float:
+        """Fraction of outcomes that reached a terminal settlement (not unresolved)."""
+        if not self.total:
+            return 0.0
+        return round((self.total - self.by_state.get("unresolved", 0)) / self.total, 6)
+
+    @property
+    def suppression_rate(self) -> float:
+        return round(self.suppressed / self.total, 6) if self.total else 0.0
+
+    @property
+    def avg_delay_ms(self) -> float:
+        return round(self.delay_sum_ms / self.delay_samples, 2) if self.delay_samples else 0.0
+
+    @property
+    def avg_confidence(self) -> float:
+        return round(self.confidence_sum / self.total, 6) if self.total else 0.0
+
+    def to_dict(self) -> dict:
+        return {
+            "total": self.total, "trainable": self.trainable,
+            "suppressed": self.suppressed, "by_state": dict(self.by_state),
+            "ambiguous_rate": self.ambiguous_rate, "label_coverage": self.label_coverage,
+            "suppression_rate": self.suppression_rate, "avg_delay_ms": self.avg_delay_ms,
+            "avg_confidence": self.avg_confidence,
+        }
+
+
+def label_delay_bucket(delay_ms: float) -> str:
+    """Settlement-delay (ms) -> labelled bucket: <1m, <1h, <1d, <1w, >=1w."""
+    return bucket_label(float(delay_ms or 0.0),
+                        [60_000, 3_600_000, 86_400_000, 604_800_000])
+
+
 def bucket_label(value: float, edges: list) -> str:
     """Return a human-readable bucket label for `value` given ascending edges."""
     prev = None

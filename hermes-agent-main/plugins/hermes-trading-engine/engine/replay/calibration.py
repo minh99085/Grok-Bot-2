@@ -75,9 +75,17 @@ def match_predictions(predictions: list[dict], outcomes: list[dict]) -> dict:
     """Match probability predictions to realized outcomes.
 
     ``predictions``: dicts with venue/market_id/asset_id/outcome/predicted_probability.
-    ``outcomes``: dicts with venue/market_id/asset_id/outcome/realized_outcome (0/1).
-    Returns resolved (p, y) pairs, unresolved count, and per-row tagging.
+    ``outcomes``: dicts with venue/market_id/asset_id/outcome/realized_outcome (0/1)
+    and an OPTIONAL ``label_state`` (settlement-truth state). When a matched
+    outcome carries a *dirty* label_state (void / ambiguous / unresolved /
+    partially_invalid / stale_resolution) it is EXCLUDED from the resolved pairs
+    so calibration is fit only on clean settlement truth — dirty labels can never
+    pollute Brier / log-loss / ECE. Outcomes with no ``label_state`` are treated
+    as clean (back-compat). Returns resolved (p, y) pairs, unresolved count,
+    suppressed-dirty count, per-state breakdown, and per-row tagging.
     """
+    from engine.training.settlement import is_trainable_state
+
     index = {}
     for o in outcomes:
         key = (o.get("venue"), o.get("market_id"), o.get("asset_id"), o.get("outcome"))
@@ -88,6 +96,8 @@ def match_predictions(predictions: list[dict], outcomes: list[dict]) -> dict:
     resolved: list[tuple[float, int]] = []
     rows: list[dict] = []
     unresolved = 0
+    suppressed_dirty = 0
+    by_state: dict = {}
     for pr in predictions:
         p = pr.get("predicted_probability")
         if p is None:
@@ -102,10 +112,24 @@ def match_predictions(predictions: list[dict], outcomes: list[dict]) -> dict:
             unresolved += 1
             rows.append({**pr, "realized_outcome": None, "resolved": False})
             continue
+        label_state = out.get("label_state")
+        if label_state is not None:
+            by_state[label_state] = by_state.get(label_state, 0) + 1
+        if not is_trainable_state(label_state):
+            # terminal-but-dirty: matched + has a realized value, but the label is
+            # not clean settlement truth -> never used for calibration.
+            suppressed_dirty += 1
+            rows.append({**pr, "realized_outcome": int(out.get("realized_outcome")),
+                         "resolved": False, "label_state": label_state,
+                         "suppressed_dirty": True})
+            continue
         y = int(out.get("realized_outcome"))
         resolved.append((float(p), y))
-        rows.append({**pr, "realized_outcome": y, "resolved": True})
-    return {"pairs": resolved, "unresolved": unresolved, "rows": rows}
+        rows.append({**pr, "realized_outcome": y, "resolved": True,
+                     "label_state": label_state})
+    return {"pairs": resolved, "unresolved": unresolved,
+            "suppressed_dirty": suppressed_dirty, "label_states": by_state,
+            "rows": rows}
 
 
 def calibration_slope_intercept(pairs: list[tuple[float, int]]) -> tuple[float, float]:
@@ -135,6 +159,8 @@ def export_calibration_artifact(predictions: list[dict], outcomes: list[dict], *
     artifact.update({
         "resolved_count": len(pairs),
         "unresolved_count": matched["unresolved"],
+        "suppressed_dirty_count": matched.get("suppressed_dirty", 0),
+        "label_states": matched.get("label_states", {}),
         "baseline": {
             "brier_score": brier_score(pairs),
             "log_loss": log_loss(pairs),
@@ -159,6 +185,8 @@ def summarize_calibration(predictions: list[dict], outcomes: list[dict], buckets
     return {
         "resolved_count": len(pairs),
         "unresolved_count": matched["unresolved"],
+        "suppressed_dirty_count": matched.get("suppressed_dirty", 0),
+        "label_states": matched.get("label_states", {}),
         "brier_score": brier_score(pairs),
         "log_loss": log_loss(pairs),
         "expected_calibration_error": expected_calibration_error(pairs, buckets),

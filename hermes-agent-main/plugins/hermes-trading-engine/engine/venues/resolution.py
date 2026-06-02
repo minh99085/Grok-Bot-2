@@ -57,3 +57,28 @@ def build_resolution_ruleset(meta: VenueMarketMetadata,
         ambiguity_categories=categories, ambiguity_score=round(score, 4),
         parsed_ts_ms=int(time.time() * 1000),
         raw_text_hash=payload_hash(text) if text else None)
+
+
+def settlement_label(ruleset: ResolutionRuleSet, *, winning_outcome=None,
+                     voided: bool = False, resolved: Optional[bool] = None,
+                     resolved_ts_ms: Optional[int] = None,
+                     now_ms: Optional[int] = None):
+    """Classify a venue resolution into a settlement-truth label.
+
+    Bridges venue-neutral resolution metadata (ambiguity score + settlement
+    source) into the training-side :class:`SettlementTruthEngine` so Kalshi and
+    Polymarket settle into identical clean/dirty label states. Lazy import keeps
+    the venues layer decoupled from training at import time."""
+    from ..training.settlement import SettlementTruthEngine
+
+    source = ruleset.settlement_sources[0].name if getattr(ruleset, "settlement_sources", None) else "unknown"
+    obs = {
+        "market_id": ruleset.market_id, "asset_id": ruleset.asset_id,
+        "resolved": bool(resolved) if resolved is not None else (
+            winning_outcome is not None or voided),
+        "winning_outcome": winning_outcome, "voided": voided,
+        "ambiguity_score": float(getattr(ruleset, "ambiguity_score", 0.0) or 0.0),
+        "settlement_source": source, "close_ts_ms": ruleset.close_ts_ms,
+        "resolved_ts_ms": resolved_ts_ms,
+    }
+    return SettlementTruthEngine().classify(obs, now_ms=now_ms)
