@@ -466,3 +466,131 @@ def institutional_campaign_report(evidence_by_profile: dict, *, bankroll: float 
     certificate only when ALL gates pass). Never enables live trading."""
     from engine.training.validation_campaign import run_campaign
     return run_campaign(evidence_by_profile, bankroll=bankroll).to_dict()
+
+
+# --------------------------------------------------------------------------- #
+# News-conditioned diagnostics + with/without-news ablation.
+#
+# News is advisory: it adjusts the RESEARCH probability/confidence only. These
+# helpers measure whether news *improved* calibration and after-cost edge by
+# category — they NEVER size or approve a trade.
+# --------------------------------------------------------------------------- #
+def _edge_decision(p: float, p_market, min_edge: float):
+    """Best advisory edge + decision side vs market mid (no sizing, no order)."""
+    if p_market is None:
+        return 0.0, "no_market"
+    edge_yes = float(p) - float(p_market)
+    edge_no = float(p_market) - float(p)
+    if edge_yes >= edge_no:
+        edge, side = edge_yes, "yes"
+    else:
+        edge, side = edge_no, "no"
+    if edge < float(min_edge):
+        return round(edge, 6), "no_trade"
+    return round(edge, 6), side
+
+
+def news_conditioned_diagnostics(*, prob_without_news: float, prob_with_news: float,
+                                 p_market=None, outcome=None, min_edge: float = 0.03,
+                                 news_veto_applied: bool = False,
+                                 news_ambiguity_blocker: bool = False,
+                                 news_contradiction_blocker: bool = False) -> dict:
+    """Per-market news diagnostics: probabilities, edges, decisions, and (when a
+    realized 0/1 ``outcome`` is known) whether news helped or hurt the outcome."""
+    edge_wo, dec_wo = _edge_decision(prob_without_news, p_market, min_edge)
+    edge_wn, dec_wn = _edge_decision(prob_with_news, p_market, min_edge)
+    if news_veto_applied:
+        dec_wn = "no_trade"
+    helped = hurt = False
+    if outcome is not None:
+        y = int(outcome)
+        # Brier improvement = news moved probability toward the realized outcome.
+        err_wo = (float(prob_without_news) - y) ** 2
+        err_wn = (float(prob_with_news) - y) ** 2
+        if err_wn < err_wo - 1e-9:
+            helped = True
+        elif err_wn > err_wo + 1e-9:
+            hurt = True
+    return {
+        "probability_without_news": round(float(prob_without_news), 6),
+        "probability_with_news": round(float(prob_with_news), 6),
+        "probability_delta_from_news": round(float(prob_with_news) - float(prob_without_news), 6),
+        "edge_without_news": edge_wo,
+        "edge_with_news": edge_wn,
+        "decision_without_news": dec_wo,
+        "decision_with_news": dec_wn,
+        "news_veto_applied": bool(news_veto_applied),
+        "news_ambiguity_blocker": bool(news_ambiguity_blocker),
+        "news_contradiction_blocker": bool(news_contradiction_blocker),
+        "news_helped_outcome": helped,
+        "news_hurt_outcome": hurt,
+    }
+
+
+def news_ablation_report(rows: list, *, min_improvement: float = 0.0) -> dict:
+    """With-news vs without-news ablation over researched-market rows.
+
+    Each row: ``probability_without_news``, ``probability_with_news``,
+    ``outcome`` (0/1, optional), ``category`` (optional). Returns Brier/log-loss/
+    ECE with and without news, helped/hurt/neutral counts, average probability
+    delta, and a per-category recommended news weight (only categories where news
+    measurably improves Brier get a positive weight; the rest get 0)."""
+    from engine.replay.calibration import (brier_score, expected_calibration_error,
+                                           log_loss)
+    rows = list(rows or [])
+    pairs_wo, pairs_wn = [], []
+    deltas = []
+    helped = hurt = neutral = 0
+    by_cat: dict[str, dict] = {}
+    for r in rows:
+        pwo = float(r.get("probability_without_news"))
+        pwn = float(r.get("probability_with_news"))
+        deltas.append(pwn - pwo)
+        cat = str(r.get("category") or "uncategorized")
+        c = by_cat.setdefault(cat, {"wo": [], "wn": [], "n": 0})
+        c["n"] += 1
+        y = r.get("outcome")
+        if y is not None:
+            y = int(y)
+            pairs_wo.append((pwo, y))
+            pairs_wn.append((pwn, y))
+            c["wo"].append((pwo, y))
+            c["wn"].append((pwn, y))
+            ewo, ewn = (pwo - y) ** 2, (pwn - y) ** 2
+            if ewn < ewo - 1e-9:
+                helped += 1
+            elif ewn > ewo + 1e-9:
+                hurt += 1
+            else:
+                neutral += 1
+        else:
+            neutral += 1
+
+    rec_weight: dict[str, float] = {}
+    for cat, c in by_cat.items():
+        if not c["wo"]:
+            rec_weight[cat] = 0.0
+            continue
+        b_wo = brier_score(c["wo"]) or 0.0
+        b_wn = brier_score(c["wn"]) or 0.0
+        improvement = b_wo - b_wn       # positive => news lowered Brier (better)
+        if improvement > float(min_improvement):
+            rec_weight[cat] = round(min(1.0, improvement * 10.0), 6)
+        else:
+            rec_weight[cat] = 0.0
+
+    return {
+        "n_rows": len(rows),
+        "n_resolved": len(pairs_wo),
+        "ensemble_without_news_brier": brier_score(pairs_wo),
+        "ensemble_with_news_brier": brier_score(pairs_wn),
+        "ensemble_without_news_log_loss": log_loss(pairs_wo),
+        "ensemble_with_news_log_loss": log_loss(pairs_wn),
+        "ensemble_without_news_ece": expected_calibration_error(pairs_wo),
+        "ensemble_with_news_ece": expected_calibration_error(pairs_wn),
+        "news_probability_delta_avg": round(sum(deltas) / len(deltas), 6) if deltas else 0.0,
+        "news_helped_count": helped,
+        "news_hurt_count": hurt,
+        "news_neutral_count": neutral,
+        "recommended_news_weight_by_category": rec_weight,
+    }

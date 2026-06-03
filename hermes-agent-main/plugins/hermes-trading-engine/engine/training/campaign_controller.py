@@ -714,6 +714,14 @@ def campaign_safety_check(cfg) -> dict:
         # it does not affect ``btc_autotrade_disabled`` or the pass/fail verdict.
         "btc_pulse_paper_parallel": _envb("HTE_BTC_PULSE_PAPER_ENABLED", False),
         "risk_gates_required": bool(getattr(cfg, "risk_engine_enabled", False)),
+        # News scanner is advisory + read-only. Under campaign-safe it is forced
+        # read-only + timestamped + cached and can NEVER trigger a live order or
+        # bypass the clean-label guard / algorithm-freeze / param promotion.
+        "news_scanner_enabled": bool(getattr(cfg, "news_scanner_enabled", False)),
+        "news_provider_mode": getattr(cfg, "news_provider_mode", "offline_cache"),
+        "news_read_only": bool(getattr(cfg, "news_live_read_only", True)),
+        "news_replay_timestamp_safe": bool(getattr(cfg, "news_replay_timestamp_safe", True)),
+        "news_cannot_trigger_live_orders": True,
         "note": "PAPER ONLY — campaign-safe profile never enables a live path.",
     }
 

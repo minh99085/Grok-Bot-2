@@ -66,7 +66,8 @@ class ProbabilityEstimator:
     def estimate(self, output: GrokProbabilityOutput, *, p_market: float | None = None,
                  p_model: float | None = None, research_run_id: str | None = None,
                  venue: str = "polymarket", mode: str = "online_paper",
-                 allow_low_source: bool = False, ts_ms: int | None = None
+                 allow_low_source: bool = False, ts_ms: int | None = None,
+                 news_packet=None
                  ) -> ProbabilityEstimateBundle:
         ts = ts_ms if ts_ms is not None else int(time.time() * 1000)
         p_llm = float(output.fair_probability)
@@ -95,8 +96,40 @@ class ProbabilityEstimator:
             ambiguity_score=output.ambiguity_score, recency_score=scores.recency,
             contradiction_score=scores.contradiction, diversity_score=scores.diversity)
 
+        # News-conditioned advisory adjustment (bounded, fail-safe). News only
+        # ever HAIRCUTS confidence, bumps ambiguity, applies a tiny directional
+        # nudge, or vetoes — it never sizes/approves a trade or bypasses a gate.
+        p_ensemble_base = blend["p_ensemble"]
+        p_ensemble_news = p_ensemble_base
+        news_diag = None
+        if news_packet is not None:
+            from .news_ranker import news_adjustment
+            adj = news_adjustment(news_packet)
+            decayed_conf = round(decayed_conf * float(adj["confidence_factor"]), 6)
+            if adj["prob_delta"]:
+                p_ensemble_news = max(0.0, min(1.0, p_ensemble_base + adj["prob_delta"]))
+            news_amb = min(1.0, float(output.ambiguity_score) + adj["ambiguity_add"])
+            news_diag = {
+                "news_provider_mode": getattr(news_packet, "provider_mode", None),
+                "news_items_used": adj["items_used"],
+                "news_confidence_factor": adj["confidence_factor"],
+                "news_support_direction": adj["support_direction"],
+                "news_contradiction_blocker": bool(adj["contradiction"]),
+                "news_ambiguity_blocker": adj["ambiguity_add"] >= 0.2,
+                "news_settlement_warning": bool(adj["settlement_warning"]),
+                "news_stale": bool(adj["stale"]),
+                "news_veto_applied": bool(adj["veto_reason"]),
+                "news_veto_reason": adj["veto_reason"],
+                "prob_without_news": round(p_ensemble_base, 6),
+                "prob_with_news": round(p_ensemble_news, 6),
+                "prob_delta_from_news": round(p_ensemble_news - p_ensemble_base, 6),
+                "news_ambiguity_score": round(news_amb, 6),
+            }
+
         no_trade: str | None = None
-        if output.no_trade_recommendation:
+        if news_diag is not None and news_diag["news_veto_applied"]:
+            no_trade = news_diag["news_veto_reason"]
+        elif output.no_trade_recommendation:
             no_trade = output.no_trade_reason or "grok_no_trade"
         elif confident_but_ambiguous(output.confidence, output.ambiguity_score,
                                      high_confidence=0.8,
@@ -116,7 +149,7 @@ class ProbabilityEstimator:
             asset_id=output.asset_id, outcome=output.outcome, ts_ms=ts,
             p_market_mid=p_market, p_llm_raw=round(p_llm, 6), p_model=p_model,
             p_calibrated=p_cal if p_cal is not None else 0.5,
-            p_ensemble=blend["p_ensemble"], confidence=round(float(output.confidence), 6),
+            p_ensemble=p_ensemble_news, confidence=round(float(output.confidence), 6),
             ambiguity_score=round(float(output.ambiguity_score), 6),
             evidence_score=ev_score, source_count=source_count,
             recency_score=scores.recency, source_diversity_score=scores.diversity,
@@ -136,5 +169,6 @@ class ProbabilityEstimator:
                              p_cal if p_cal is not None else blend["p_ensemble"],
                              blend["p_ensemble"]),
                          "key_assumptions": list(output.key_assumptions or []),
-                         "do_not_trade_if": list(output.do_not_trade_if or [])})
+                         "do_not_trade_if": list(output.do_not_trade_if or []),
+                         **({"news": news_diag} if news_diag is not None else {})})
         return bundle

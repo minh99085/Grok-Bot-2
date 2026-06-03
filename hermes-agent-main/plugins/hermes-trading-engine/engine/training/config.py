@@ -293,6 +293,22 @@ class TrainingConfig:
     realistic_fill_enabled: bool = False   # slippage+depth fills, no fantasy fills
     clean_label_guard: bool = True         # only clean settled labels train (mandatory)
     risk_engine_enabled: bool = True       # RiskEngine is mandatory (no bypass)
+    # ---- controlled market-news evidence scanner (advisory only; default OFF) ----
+    # News is scanned, cached, timestamped, scored, sanitized, and handed to Grok
+    # as a bounded read-only packet. It NEVER sizes/approves/submits a trade,
+    # never bypasses EdgeEngine/RiskEngine/Bregman, and never makes a campaign
+    # micro_canary_ready. Live provider mode is opt-in and never used in replay.
+    news_scanner_enabled: bool = False
+    news_provider_mode: str = "offline_cache"   # offline_cache | fixture | live_read_only
+    news_live_read_only: bool = True
+    news_max_queries_per_market: int = 3
+    news_max_items_per_market: int = 8
+    news_max_snippet_chars: int = 500
+    news_cache_ttl_seconds: int = 1800
+    news_min_relevance_score: float = 0.2
+    news_min_source_credibility: float = 0.4
+    news_enable_grok_packet: bool = True
+    news_replay_timestamp_safe: bool = True
     # ---- run / sim ----
     take_profit: float = 0.05
     stop_loss: float = 0.05
@@ -361,6 +377,23 @@ class TrainingConfig:
             self.allow_pm_reference_price_fills = False
             self.reject_on_stale_book = True
             self.disable_btc_pulse_trading = True
+            # News scanner under campaign-safe profile: read-only + timestamped +
+            # cached only. It may be enabled in offline_cache or live_read_only
+            # mode, but can NEVER trigger live orders or bypass any guard.
+            self.news_live_read_only = True
+            self.news_replay_timestamp_safe = True
+            if self.news_provider_mode not in ("offline_cache", "fixture", "live_read_only"):
+                self.news_provider_mode = "offline_cache"
+        # news scanner clamps (bounded; advisory only — cannot relax a risk gate)
+        if self.news_provider_mode not in ("offline_cache", "fixture", "live_read_only"):
+            self.news_provider_mode = "offline_cache"
+        self.news_max_queries_per_market = max(1, min(int(self.news_max_queries_per_market), 10))
+        self.news_max_items_per_market = max(1, min(int(self.news_max_items_per_market), 25))
+        self.news_max_snippet_chars = max(50, min(int(self.news_max_snippet_chars), 2000))
+        self.news_cache_ttl_seconds = max(0, min(int(self.news_cache_ttl_seconds), 86400))
+        self.news_min_relevance_score = max(0.0, min(1.0, float(self.news_min_relevance_score)))
+        self.news_min_source_credibility = max(
+            0.0, min(1.0, float(self.news_min_source_credibility)))
         # hard PAPER clamps (cannot exceed even if env is misconfigured)
         self.fixed_notional_usd = max(0.0, min(self.fixed_notional_usd, 50.0))
         self.max_kelly_size_usd = max(0.0, min(self.max_kelly_size_usd, 50.0))
@@ -592,6 +625,17 @@ class TrainingConfig:
             realistic_fill_enabled=_envb("POLYMARKET_REALISTIC_FILL_ENABLED", False),
             clean_label_guard=_envb("POLYMARKET_CLEAN_LABEL_GUARD", True),
             risk_engine_enabled=_envb("POLYMARKET_RISK_ENGINE_ENABLED", True),
+            news_scanner_enabled=_envb("NEWS_SCANNER_ENABLED", False),
+            news_provider_mode=(os.getenv("NEWS_PROVIDER_MODE") or "offline_cache").strip().lower(),
+            news_live_read_only=_envb("NEWS_LIVE_READ_ONLY", True),
+            news_max_queries_per_market=_envi("NEWS_MAX_QUERIES_PER_MARKET", 3),
+            news_max_items_per_market=_envi("NEWS_MAX_ITEMS_PER_MARKET", 8),
+            news_max_snippet_chars=_envi("NEWS_MAX_SNIPPET_CHARS", 500),
+            news_cache_ttl_seconds=_envi("NEWS_CACHE_TTL_SECONDS", 1800),
+            news_min_relevance_score=_envf("NEWS_MIN_RELEVANCE_SCORE", 0.2),
+            news_min_source_credibility=_envf("NEWS_MIN_SOURCE_CREDIBILITY", 0.4),
+            news_enable_grok_packet=_envb("NEWS_ENABLE_GROK_PACKET", True),
+            news_replay_timestamp_safe=_envb("NEWS_REPLAY_TIMESTAMP_SAFE", True),
             experiments_enabled=_envb("POLYMARKET_EXPERIMENTS_ENABLED", False),
             experiment_id=(os.getenv("POLYMARKET_EXPERIMENT_ID") or "exp_default").strip(),
             bregman_first_budget=_envb("POLYMARKET_BREGMAN_FIRST_BUDGET", True),

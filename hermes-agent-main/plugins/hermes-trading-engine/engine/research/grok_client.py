@@ -72,8 +72,13 @@ class GrokResearchClient:
         self._api_key = os.getenv("XAI_API_KEY") or os.getenv("GROK_API_KEY") or ""
 
     # -- public --------------------------------------------------------- #
-    def research(self, market_ctx: dict, mode: Optional[str] = None) -> ResearchResult:
+    def research(self, market_ctx: dict, mode: Optional[str] = None,
+                 news_packet=None) -> ResearchResult:
         mode = mode or self.mode
+        # News packet is bounded, sanitized, read-only advisory evidence. It may
+        # be supplied explicitly or carried on the (non-secret) market context.
+        if news_packet is None:
+            news_packet = market_ctx.get("news_packet")
         venue = market_ctx.get("venue") or "polymarket"
         market_id = str(market_ctx.get("market_id") or "")
         asset_id = market_ctx.get("asset_id")
@@ -95,7 +100,7 @@ class GrokResearchClient:
                               "BUDGET_BLOCKED", reason or "budget", retryable=True)
 
         cached_evidence = self._cached_evidence(venue, market_id)
-        messages = build_messages(market_ctx, cached_evidence)
+        messages = build_messages(market_ctx, cached_evidence, news_packet)
         phash = prompt_hash(messages, cfg)
 
         raw, usage, latency_ms, err = self._invoke_with_retries(messages)
@@ -137,7 +142,7 @@ class GrokResearchClient:
         bundle = self.estimator.estimate(
             output, p_market=market_ctx.get("p_market_mid"),
             p_model=market_ctx.get("p_model"), research_run_id=run_id,
-            venue=venue, mode=mode, ts_ms=ts)
+            venue=venue, mode=mode, ts_ms=ts, news_packet=news_packet)
 
         if self.store is not None:
             try:
