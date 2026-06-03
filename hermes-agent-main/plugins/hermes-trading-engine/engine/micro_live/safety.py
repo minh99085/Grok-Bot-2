@@ -88,6 +88,25 @@ class MicroSafetyEnvelope:
         add("reconciliation_clean", ctx.get("reconciliation_clean", True))
         add("idempotency_ok", ctx.get("idempotency_ok", True))
 
+        # --- Canary framework gate (real-money prep; consumed only in canary
+        # mode). A live canary order is impossible without a VALID readiness
+        # certificate, an allowed (certified-Bregman / proven-statistical)
+        # strategy, and no active rollback. These checks only ever TIGHTEN the
+        # envelope and are inert outside canary mode (default disabled). --------
+        if ctx.get("canary_mode") or ("canary_certificate" in ctx):
+            from .canary import (ALLOWED_CANARY_STRATEGIES_DEFAULT,
+                                 verify_canary_certificate)
+            cert = ctx.get("canary_certificate")
+            cert_ok, _ = verify_canary_certificate(cert, now_ms=now)
+            add("canary_certificate_valid", cert_ok)
+            strat = str(ctx.get("strategy", "")).lower()
+            allowed_list = [s.lower() for s in (getattr(cert, "allowed_strategies", None)
+                                                or ALLOWED_CANARY_STRATEGIES_DEFAULT)]
+            strat_ok = (strat in allowed_list
+                        and (("bregman" not in strat) or bool(ctx.get("bregman_certified", False))))
+            add("canary_strategy_allowed", strat_ok)
+            add("canary_not_rolled_back", not bool(ctx.get("canary_rolled_back", False)))
+
         allowed = all(checks.values())
         reason = "ok" if allowed else next(n for n, ok in checks.items() if not ok)
         return SafetyEnvelopeDecision(

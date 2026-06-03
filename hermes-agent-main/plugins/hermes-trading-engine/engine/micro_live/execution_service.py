@@ -16,6 +16,7 @@ from typing import Callable, Optional
 from . import ledger
 from .account_snapshot import build_account_snapshot, redacted_account_payload
 from .audit import write_audit
+from .canary import CanaryConfig, CanaryController, authorize_canary_order
 from .config import SUBMIT_CONFIRMATION, MicroLiveConfig
 from .errors import MicroLiveDisabled, NotImplementedLiveSigning
 from .idempotency import already_attempted, make_client_order_id
@@ -42,6 +43,11 @@ class MicroLiveExecutionService:
         self.cfg = config or MicroLiveConfig.from_env()
         self.guard = network_guard or NetworkGuard(allow_production=self.cfg.allow_production)
         self.sm = MicroLiveStateMachine(store, state="CANARY_READY")
+        # Canary framework controller (DISABLED by default). When engaged, a live
+        # order also requires a valid readiness certificate + manual-enable +
+        # dry-run-off + allowed strategy + canary caps + no active rollback.
+        self.canary_cfg = CanaryConfig.from_env()
+        self.canary = CanaryController(config=self.canary_cfg)
 
     # ------------------------------------------------------------------ #
     def _make_broker(self, plan, *, locks_ok, signer, transport):
@@ -87,6 +93,39 @@ class MicroLiveExecutionService:
             return self._blocked("canary_plan_not_found", canary_plan_id=canary_plan_id)
         plan = MicroLiveCanaryPlan(**{k: row.get(k) for k in MicroLiveCanaryPlan.model_fields
                                       if k in row})
+        # 4b) CANARY FRAMEWORK GATE (real-money prep; default disabled). When the
+        # canary framework is engaged, a live order requires a VALID readiness
+        # certificate, the manual-enable flag, dry-run OFF, an allowed strategy,
+        # the canary caps, and no active rollback. RiskEngine/SafetyEnvelope are
+        # still enforced by preflight below, so we pass them through here.
+        if self.canary_cfg.enabled or market_ctx.get("canary_mode"):
+            if self.canary.is_rolled_back():
+                return self._blocked("canary_gate_blocked:rollback_active",
+                                     canary_plan_id=canary_plan_id)
+            auth = authorize_canary_order({
+                "certificate": market_ctx.get("canary_certificate"),
+                "manual_enable": market_ctx.get("canary_manual_enable",
+                                                self.canary_cfg.manual_enable),
+                "dry_run": market_ctx.get("canary_dry_run", self.canary_cfg.dry_run),
+                "risk_approved": True, "safety_allowed": True,
+                "stale_ms": market_ctx.get("stale_ms", 0),
+                "strategy": market_ctx.get("strategy", plan.strategy
+                                           if hasattr(plan, "strategy") else ""),
+                "bregman_certified": market_ctx.get("bregman_certified", False),
+                "notional": float(Decimal(str(getattr(plan, "notional", 0) or 0))),
+                "orders_today": market_ctx.get("orders_today", 0),
+                "daily_loss": market_ctx.get("daily_loss", 0.0),
+                "open_exposure": market_ctx.get("open_exposure", 0.0),
+                "event_exposure": market_ctx.get("event_exposure", 0.0),
+                "strategy_exposure": market_ctx.get("strategy_exposure", 0.0),
+                "bregman_bundle_lock": market_ctx.get("bregman_bundle_lock", 0.0),
+                "rolled_back": self.canary.is_rolled_back(),
+            }, caps=self.canary_cfg.caps,
+                max_stale_ms=int(self.canary_cfg.rollback_limits.max_stale_ms), now_ms=now)
+            if not auth.allowed:
+                reason = auth.reasons[0] if auth.reasons else "blocked"
+                return self._blocked("canary_gate_blocked:" + reason,
+                                     canary_plan_id=canary_plan_id)
         # 5) idempotency / single-order-per-token / daily caps
         if already_attempted(self.store, canary_plan_id):
             return self._blocked("duplicate_submit_for_plan", canary_plan_id=canary_plan_id)
