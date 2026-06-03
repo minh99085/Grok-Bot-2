@@ -39,6 +39,13 @@ services:
       BTC_AUTOTRADE_ENABLED: "${BTC_AUTOTRADE_ENABLED:-0}"
       BTC_PULSE_TICK_SECONDS: "${BTC_PULSE_TICK_SECONDS:-30}"
       BTC_PULSE_ROUND_SECONDS: "${BTC_PULSE_ROUND_SECONDS:-300}"
+      # ---- Dashboard BTC 5-min PULSE panel paper betting (default OFF) ----
+      # The dashboard's "BTC 5MIN PULSE" panel is the legacy engine. Under
+      # POLYMARKET_ONLY_MODE its trade path is frozen unless this PAPER-only flag
+      # is set. Flip HTE_BTC_PULSE_PAPER_ENABLED=1 to let the panel place
+      # simulated pulse bets (paper only; still goes through the RiskEngine and
+      # daily-loss gates; never live, never a wallet).
+      HTE_BTC_PULSE_PAPER_ENABLED: "${HTE_BTC_PULSE_PAPER_ENABLED:-0}"
       # Training Engine v2 mode: disabled | observe_only | paper_train (default observe_only)
       POLYMARKET_TRAINING_MODE: "${POLYMARKET_TRAINING_MODE:-observe_only}"
       # cautious | balanced | aggressive  (default: cautious)
