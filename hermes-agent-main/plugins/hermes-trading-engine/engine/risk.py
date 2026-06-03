@@ -555,3 +555,13 @@ def capital_allocation_constraint_check(*, notional: float, constraints,
         event_exposure=event_exposure, cluster_exposure=cluster_exposure,
         strategy_exposure=strategy_exposure, open_capital_lock=open_capital_lock,
         day_pnl=day_pnl)
+
+
+def canary_caps_check(*, notional: float, caps=None, **exposures) -> tuple:
+    """Additive micro-live CANARY capital-cap check (tiny notional, orders/day,
+    daily loss, open/event/strategy exposure, Bregman bundle capital lock). This
+    only ever TIGHTENS the live-execution control surface and is inert unless the
+    (default-disabled) canary framework is engaged. Returns ``(ok, reason)``."""
+    from engine.micro_live.canary import CanaryCaps
+    caps = caps or CanaryCaps()
+    return caps.check(notional=notional, **exposures)

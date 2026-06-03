@@ -127,3 +127,19 @@ def build_payload(plan, config: MicroLiveConfig):
     if plan.venue == "polymarket":
         return build_polymarket_fok_payload(plan, config)
     return None, [f"venue_not_supported:{plan.venue}"]
+
+
+def enforce_canary_caps(payload, caps=None, *, strategy: str = "",
+                        open_exposure: float = 0.0, event_exposure: float = 0.0,
+                        strategy_exposure: float = 0.0,
+                        bregman_bundle_lock: float = 0.0) -> list[str]:
+    """Re-assert the tiny CANARY capital caps against a built payload's notional
+    just before submit (defence in depth). Returns a list of cap-breach errors
+    (empty == within caps). Only ever TIGHTENS; inert unless canary is engaged."""
+    from .canary import CanaryCaps
+    caps = caps or CanaryCaps()
+    notional = float(Decimal(str(getattr(payload, "notional", 0) or 0)))
+    ok, reason = caps.check(notional=notional, open_exposure=open_exposure,
+                            event_exposure=event_exposure, strategy_exposure=strategy_exposure,
+                            bregman_bundle_lock=bregman_bundle_lock, strategy=strategy)
+    return [] if ok else [f"canary_cap_breach:{reason}"]

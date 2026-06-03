@@ -91,3 +91,13 @@ class SafetyEnvelope:
             allowed=allowed, mode=mode, state=state, reason=reason, checks=checks,
             config_hash=cfg.config_hash(), proposal_id=ctx.get("proposal_id"),
             client_order_id=ctx.get("client_order_id"))
+
+
+def canary_readiness_consumed(ctx: dict) -> tuple:
+    """Additive helper: verify the micro-live canary readiness certificate carried
+    in ``ctx`` (real-money prep; default disabled). Returns ``(ok, reason)``. A
+    missing/invalid certificate means no canary live order — this only TIGHTENS
+    the guarded-live envelope and never enables live execution."""
+    from ..micro_live.canary import verify_canary_certificate
+    return verify_canary_certificate(ctx.get("canary_certificate"),
+                                     now_ms=ctx.get("now_ms"))

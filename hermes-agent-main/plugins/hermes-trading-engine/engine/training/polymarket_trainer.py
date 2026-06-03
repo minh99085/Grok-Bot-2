@@ -668,6 +668,17 @@ class PolymarketPaperTrainer:
         rep["profile"] = "aggressive" if self.cfg.exploration_enabled else "conservative"
         return rep
 
+    # -- micro-live canary framework status (DISABLED by default) ------------
+    def canary_status(self) -> dict:
+        """Read-only micro-live canary framework status for the report. The
+        canary is DISABLED by default; this never enables live trading and never
+        sizes or places an order. Compliance/Security + Live Trading & Monitoring."""
+        try:
+            from engine.micro_live.canary import CanaryController
+            return CanaryController().status()
+        except Exception:  # noqa: BLE001 — status must never break the paper loop
+            return {"enabled": False, "dry_run": True, "rolled_back": False}
+
     # -- adaptive capital allocation (micro-live readiness) ------------------
     def _execution_quality_proxy(self) -> float:
         """Realised-fill quality proxy for the drawdown governor (CLOB v2):
@@ -1285,6 +1296,7 @@ class PolymarketPaperTrainer:
             "bregman": self.bregman_summary(),
             "portfolio": self.portfolio_report(),
             "capital_allocation": self.capital_allocation_report(),
+            "canary": self.canary_status(),
             "experiments": self.experiment_report(),
             "monitoring": self.aggressive_dashboard(),
             "kill_switch": self.kill_switch_report(),

@@ -310,6 +310,26 @@ def _markdown(status: dict, run_id: str) -> str:
         if rej:
             a(f"- rejected_sizing_reasons: {rej}")
         a("")
+    canary = status.get("canary", {}) or {}
+    if canary:
+        a("## 17c. Micro-live canary (DISABLED by default)")
+        a(f"- enabled: {canary.get('enabled')} · dry_run: {canary.get('dry_run')} · "
+          f"manual_enable: {canary.get('manual_enable')} · rolled_back: "
+          f"{canary.get('rolled_back')}")
+        a(f"- require_certificate: {canary.get('require_certificate')} · "
+          f"allowed_strategies: {canary.get('allowed_strategies')}")
+        caps = canary.get("caps", {}) or {}
+        if caps:
+            a(f"- caps: {caps}")
+        cmp = canary.get("fill_vs_paper", {}) or {}
+        if cmp:
+            a(f"- live-vs-paper: fills={cmp.get('fills_compared')} "
+              f"within_tolerance_rate={cmp.get('within_tolerance_rate')} "
+              f"mean_slippage_forecast_error_bps={cmp.get('mean_slippage_forecast_error_bps')}")
+        lr = canary.get("last_rollback")
+        if lr:
+            a(f"- last_rollback: target={lr.get('target_mode')} reasons={lr.get('reasons')}")
+        a("")
     a("## 18. Recommendation")
     a(f"- **{status.get('recommendation')}**\n")
     a("---")

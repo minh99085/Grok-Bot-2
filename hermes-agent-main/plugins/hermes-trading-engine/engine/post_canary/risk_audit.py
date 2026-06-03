@@ -79,6 +79,19 @@ def run(ctx: dict, cfg) -> RiskAuditResult:
         checks.append(make_check("drawdown_governor_not_tripped",
                                  "FAIL" if bad_gov else "PASS", "WARN", observed=gov_action))
 
+    # Micro-live CANARY audit (real-money prep; default disabled): a live canary
+    # order must have carried a VALID readiness certificate and must NOT have run
+    # while a rollback was active. Inert outside canary mode.
+    canary = ctx.get("canary") or {}
+    if canary:
+        cert_ok = bool(canary.get("certificate_valid"))
+        checks.append(make_check("canary_readiness_certificate_valid",
+                                 "PASS" if cert_ok else "FAIL", "CRITICAL",
+                                 observed=canary.get("certificate_id")))
+        rolled = bool(canary.get("rolled_back"))
+        checks.append(make_check("canary_not_rolled_back_at_submit",
+                                 "FAIL" if rolled else "PASS", "CRITICAL", observed=rolled))
+
     return RiskAuditResult(
         status=aggregate_status(checks), checks=checks, risk_decision_id=risk_id,
         safety_envelope_decision_id=a.get("safety_envelope_decision_id"),

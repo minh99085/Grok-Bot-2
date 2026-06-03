@@ -44,3 +44,11 @@ class LiveBrokerInterface(ABC):
     create_and_post_order = submit_order
     create_market_order = submit_order
     create_and_post_market_order = submit_order
+
+    @staticmethod
+    def canary_execution_locked() -> bool:
+        """Invariant: the design-only broker interface NEVER ships a working live
+        execution path. The micro-live canary framework adds gating ON TOP of
+        this lock (readiness certificate, manual-enable, caps, rollback); it does
+        not unlock execution here. Always True. Compliance/Security."""
+        return True

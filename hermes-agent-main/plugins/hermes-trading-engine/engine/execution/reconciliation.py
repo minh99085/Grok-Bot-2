@@ -143,6 +143,14 @@ def _sev_rank(s: str) -> int:
     return {SEV_INFO: 0, SEV_WARNING: 1, SEV_HIGH: 2}.get(s, 0)
 
 
+def reconciliation_triggers_canary_rollback(report: Optional[dict]) -> bool:
+    """True when a reconciliation report is NOT clean — a mismatch must trigger an
+    automatic micro-live canary rollback to paper/conservative mode (positions /
+    PnL can no longer be trusted). Read-only; mirrors :func:`report_is_clean`.
+    Compliance/Security + Live Trading & Monitoring."""
+    return not report_is_clean(report)
+
+
 def reconciled_capital_lock(positions: list) -> float:
     """Total reconciled capital lock (sum of |qty| * avg_price) across positions.
 

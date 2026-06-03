@@ -415,3 +415,13 @@ class OrderManagementSystem:
             px = float(getattr(p, "avg_price", getattr(p, "price", 0.0)) or 0.0)
             total += qty * px
         return round(total, 6)
+
+    def canary_live_blocked(self) -> bool:
+        """True when the micro-live CANARY rollback kill switch is engaged, so no
+        live order may proceed. Read-only; default disabled. Live Trading &
+        Monitoring + Compliance — additive, never enables live execution."""
+        try:
+            from engine.micro_live.canary import CanaryController
+            return CanaryController().is_rolled_back()
+        except Exception:  # noqa: BLE001 — monitoring must never break the OMS
+            return False

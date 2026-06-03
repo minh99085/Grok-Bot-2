@@ -23,6 +23,15 @@ def _d(v) -> Optional[Decimal]:
         return None
 
 
+def live_vs_paper_fill_comparison(live_fill: dict, paper_prediction: dict) -> dict:
+    """Compare a realised LIVE canary fill to its realistic PAPER prediction
+    (fill realism, slippage forecast error, price error). Additive helper for the
+    canary report; does NOT touch the live ``run()`` path. Quant scope —
+    *CLOB v2 Execution* + *Live Trading & Monitoring* + *Robustness Testing*."""
+    from engine.micro_live.canary import compare_fill_to_paper_prediction
+    return compare_fill_to_paper_prediction(live_fill, paper_prediction)
+
+
 def slippage_forecast_vs_realized_bps(forecast_bps, realized_bps) -> Optional[Decimal]:
     """Forecast error = realized − forecast slippage (bps). Positive means the
     fill was WORSE than forecast (an optimistic forecast). Additive helper for the

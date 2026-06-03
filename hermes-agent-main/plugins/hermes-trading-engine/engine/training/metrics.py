@@ -441,3 +441,19 @@ def capital_allocation_summary(decisions, *, returns=None, equity_curve=None,
     return alloc.capital_allocation_report(
         decisions, returns=returns, equity_curve=equity_curve,
         feedback_events=feedback_events)
+
+
+def canary_fill_vs_paper_report(live_fills: list, paper_predictions: list) -> dict:
+    """Canary report comparing realised LIVE fills to the realistic PAPER
+    predictions made before submission (Live Trading & Monitoring + Robustness).
+
+    Pairs each live fill with its paper prediction (by index) and aggregates fill
+    realism, slippage forecast error, and price error. Read-only — never sizes or
+    places an order. PAPER ONLY analytics over a (separately gated) live canary."""
+    from engine.micro_live.canary import (canary_comparison_report,
+                                          compare_fill_to_paper_prediction)
+    fills = list(live_fills or [])
+    preds = list(paper_predictions or [])
+    rows = [compare_fill_to_paper_prediction(fills[i], preds[i] if i < len(preds) else {})
+            for i in range(len(fills))]
+    return canary_comparison_report(rows)

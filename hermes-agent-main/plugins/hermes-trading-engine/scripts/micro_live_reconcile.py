@@ -16,7 +16,18 @@ def main(argv=None) -> int:
     ap.add_argument("--latest", action="store_true")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--db", default=None)
+    ap.add_argument("--canary-status", action="store_true",
+                    help="show micro-live canary framework status + rollback state")
     args = ap.parse_args(argv)
+
+    if args.canary_status:
+        from engine.micro_live.canary import CanaryController
+        status = CanaryController().status()
+        print(json.dumps(status, indent=2, default=str) if args.json
+              else f"canary enabled={status['enabled']} dry_run={status['dry_run']} "
+                   f"rolled_back={status['rolled_back']} "
+                   f"allowed_strategies={status['allowed_strategies']}")
+        return 0
 
     from engine.storage import Store
     store = Store(Path(args.db or default_db()))
