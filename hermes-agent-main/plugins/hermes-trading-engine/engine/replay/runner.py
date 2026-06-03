@@ -487,6 +487,25 @@ class ReplayRunner:
         except Exception:  # noqa: BLE001
             return {}, {}
 
+    def validation_evidence(self) -> dict:
+        """Map this replay run into the institutional-campaign readiness evidence
+        for ONE profile (Backtesting & Simulation -> Live Trading & Monitoring).
+
+        Combines the run metrics, calibration, and overfit (out-of-sample) report
+        into the evidence dict consumed by the validation campaign. Read-only;
+        never enables live trading."""
+        metrics = dict(getattr(self, "metrics", {}) or {})
+        calib = dict(getattr(self, "_calibration", {}) or {})
+        try:
+            oos = self._overfit_report() or {}
+            oosv = oos.get("out_of_sample", {}) or {}
+            for k in ("sharpe", "sortino", "calmar"):
+                if k in oosv:
+                    metrics.setdefault("oos_" + k, oosv[k])
+        except Exception:  # noqa: BLE001 — evidence assembly must never break a replay
+            pass
+        return met.campaign_profile_evidence(metrics, calibration=calib)
+
     def _overfit_report(self) -> dict:
         """In-sample vs out-of-sample overfit report (anti-overfitting).
 

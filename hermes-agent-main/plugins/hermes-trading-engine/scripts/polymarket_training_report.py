@@ -217,7 +217,45 @@ def run(argv=None) -> int:
     ap.add_argument("--final-validation", action="store_true",
                     help="run conservative vs Chainlink+Bregman-first aggressive offline demos "
                          "and print the final baseline-vs-upgraded validation report (PAPER ONLY)")
+    ap.add_argument("--institutional-campaign", action="store_true",
+                    help="run the FINAL institutional validation campaign across all 9 profiles "
+                         "and print the pass/fail readiness report + verdict (PAPER ONLY). "
+                         "Optionally seed per-profile evidence from --campaign-evidence-json.")
+    ap.add_argument("--campaign-evidence-json", default=None,
+                    help="path to a JSON file mapping profile_id -> readiness evidence "
+                         "(e.g. assembled from per-profile replay runs)")
     args = ap.parse_args(argv)
+
+    if args.institutional_campaign:
+        import json as _json
+        from engine.training.validation_campaign import (CAMPAIGN_PROFILE_IDS,
+                                                         campaign_markdown, run_campaign)
+        if args.campaign_evidence_json:
+            raw = _json.loads(Path(args.campaign_evidence_json).read_text(encoding="utf-8"))
+            evidence = {pid: (raw.get(pid) or {}) for pid in CAMPAIGN_PROFILE_IDS}
+        else:
+            # offline demo evidence: a conservative + an aggressive paper run.
+            cons = _run_demo(aggressive=False, ticks=40).validation_evidence()
+            aggr = _run_demo(aggressive=True, ticks=40).validation_evidence()
+            evidence = {pid: dict(aggr) for pid in CAMPAIGN_PROFILE_IDS}
+            evidence["conservative_baseline"] = dict(cons)
+        report = run_campaign(evidence)
+        out_root = Path(args.out_root)
+        out_root.mkdir(parents=True, exist_ok=True)
+        (out_root / "institutional_campaign.json").write_text(
+            _json.dumps(report.to_dict(), indent=2, default=str), encoding="utf-8")
+        (out_root / "institutional_campaign.md").write_text(
+            campaign_markdown(report), encoding="utf-8")
+        print("=" * 64)
+        print("FINAL INSTITUTIONAL VALIDATION CAMPAIGN (PAPER ONLY — never enables live)")
+        print("=" * 64)
+        print(campaign_markdown(report))
+        print(f"decision: {'READY' if report.overall_ready else 'NOT READY'}  "
+              f"state={report.readiness_state}  "
+              f"certificate={'ISSUED' if report.certificate else 'NOT ISSUED'}")
+        print(f"artifacts: {out_root / 'institutional_campaign.json'} , "
+              f"{out_root / 'institutional_campaign.md'}")
+        return 0
 
     if args.final_validation:
         import json as _json

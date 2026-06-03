@@ -79,6 +79,17 @@ def run(ctx: dict, cfg) -> RiskAuditResult:
         checks.append(make_check("drawdown_governor_not_tripped",
                                  "FAIL" if bad_gov else "PASS", "WARN", observed=gov_action))
 
+    # Institutional validation campaign audit: a live escalation is permitted only
+    # when the campaign marked the strategy READY (all seven hard criteria pass).
+    campaign = ctx.get("campaign") or {}
+    if campaign:
+        ready = bool(campaign.get("overall_ready"))
+        checks.append(make_check("institutional_campaign_ready",
+                                 "PASS" if ready else "FAIL", "CRITICAL",
+                                 observed=campaign.get("readiness_state"),
+                                 reason="" if ready else "campaign not ready: "
+                                 + ",".join(campaign.get("blockers", []))[:160]))
+
     # Micro-live CANARY audit (real-money prep; default disabled): a live canary
     # order must have carried a VALID readiness certificate and must NOT have run
     # while a rollback was active. Inert outside canary mode.

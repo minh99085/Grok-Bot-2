@@ -23,6 +23,23 @@ def _d(v) -> Optional[Decimal]:
         return None
 
 
+def campaign_realistic_fill_metric(optimistic_pnls: list, realistic_pnls: list) -> dict:
+    """Realistic-fill profitability summary for the institutional validation
+    campaign: mean optimistic vs realistic per-trade PnL and whether profit
+    survives realistic CLOB v2 fills. Additive; read-only. Quant scope —
+    *CLOB v2 Execution* + *Backtesting & Simulation* + *Robustness Testing*."""
+    opt = [float(x) for x in (optimistic_pnls or [])]
+    real = [float(x) for x in (realistic_pnls or [])]
+    mean_opt = round(sum(opt) / len(opt), 8) if opt else 0.0
+    mean_real = round(sum(real) / len(real), 8) if real else 0.0
+    return {
+        "optimistic_expectancy": mean_opt,
+        "realistic_fill_expectancy": mean_real,
+        "fill_drag": round(mean_opt - mean_real, 8),
+        "profitable_under_realistic_fills": bool(mean_real > 0.0),
+    }
+
+
 def live_vs_paper_fill_comparison(live_fill: dict, paper_prediction: dict) -> dict:
     """Compare a realised LIVE canary fill to its realistic PAPER prediction
     (fill realism, slippage forecast error, price error). Additive helper for the

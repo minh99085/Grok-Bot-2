@@ -59,6 +59,15 @@ def write_report(runner, output_dir: str | Path) -> Path:
         artifacts.write_json(base / "capital_allocation.json", capital_alloc)
         summary["capital_allocation"] = capital_alloc
 
+    # Institutional validation-campaign evidence for THIS replay (one profile).
+    try:
+        campaign_evidence = runner.validation_evidence()
+        if campaign_evidence:
+            artifacts.write_json(base / "campaign_evidence.json", campaign_evidence)
+            summary["campaign_evidence"] = campaign_evidence
+    except Exception:  # noqa: BLE001 — evidence export must never break a replay run
+        pass
+
     artifacts.write_csv(base / "equity_curve.csv", runner.equity_rows)
     artifacts.write_csv(base / "orders.csv", runner.orders)
     artifacts.write_csv(base / "fills.csv", runner.fills)

@@ -68,6 +68,9 @@ def main(argv=None) -> int:
     ap.add_argument("--baseline-report", action="store_true",
                     help="print the deterministic algorithm inventory baseline and exit "
                          "(no replay run; does not change default behavior)")
+    ap.add_argument("--campaign-profile", default=None,
+                    help="tag this replay's validation evidence with a campaign profile id "
+                         "and write it to <out>/campaign_evidence.json (offline, no live)")
     args = ap.parse_args(argv)
 
     if args.baseline_report:
@@ -117,6 +120,18 @@ def main(argv=None) -> int:
     runner = ReplayRunner(config, store, events)
     report = runner.run()
     out_dir = write_report(runner, config.output_dir)
+
+    # Institutional validation campaign evidence (one profile) — offline, no live.
+    if args.campaign_profile:
+        try:
+            evidence = runner.validation_evidence()
+            payload = {"campaign_profile": args.campaign_profile, "evidence": evidence}
+            (Path(out_dir) / "campaign_evidence.json").write_text(
+                json.dumps(payload, indent=2, default=str), encoding="utf-8")
+            print(f"  campaign      : wrote validation evidence for profile "
+                  f"'{args.campaign_profile}'")
+        except Exception as exc:  # noqa: BLE001
+            print(f"  campaign      : evidence export failed: {exc}", file=sys.stderr)
 
     m = report.get("metrics", {})
     c = report.get("calibration", {})

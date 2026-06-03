@@ -330,6 +330,18 @@ def _markdown(status: dict, run_id: str) -> str:
         if lr:
             a(f"- last_rollback: target={lr.get('target_mode')} reasons={lr.get('reasons')}")
         a("")
+    camp = status.get("institutional_campaign", {}) or {}
+    if camp:
+        a("## 17d. Institutional validation campaign (PAPER ONLY)")
+        a(f"- decision: **{'READY' if camp.get('overall_ready') else 'NOT READY'}** · "
+          f"readiness_state: {camp.get('readiness_state')} · certificate: "
+          f"{'ISSUED' if camp.get('certificate') else 'NOT ISSUED'}")
+        crit = camp.get("criteria", {}) or {}
+        for name, cr in crit.items():
+            a(f"  - {'PASS' if cr.get('passed') else 'FAIL'} {name}")
+        if camp.get("blockers"):
+            a(f"- blockers: {camp.get('blockers')}")
+        a("")
     a("## 18. Recommendation")
     a(f"- **{status.get('recommendation')}**\n")
     a("---")

@@ -52,6 +52,8 @@ def main(argv=None) -> int:
     print(f"overall: {report.overall_status}  next: {report.recommended_next_step}")
     print(f"artifacts: {out}")
     print("NO live orders were submitted.")
+    print("For the final cross-profile readiness verdict, run: "
+          "scripts/polymarket_training_report.py --institutional-campaign")
     return 0
 
 

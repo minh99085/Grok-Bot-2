@@ -457,3 +457,12 @@ def canary_fill_vs_paper_report(live_fills: list, paper_predictions: list) -> di
     rows = [compare_fill_to_paper_prediction(fills[i], preds[i] if i < len(preds) else {})
             for i in range(len(fills))]
     return canary_comparison_report(rows)
+
+
+def institutional_campaign_report(evidence_by_profile: dict, *, bankroll: float = 1000.0) -> dict:
+    """Run the final institutional validation campaign over the per-profile
+    evidence and return the machine-readable pass/fail report (readiness verdict,
+    seven hard criteria, blockers, ablation, per-profile metrics, and the canary
+    certificate only when ALL gates pass). Never enables live trading."""
+    from engine.training.validation_campaign import run_campaign
+    return run_campaign(evidence_by_profile, bankroll=bankroll).to_dict()

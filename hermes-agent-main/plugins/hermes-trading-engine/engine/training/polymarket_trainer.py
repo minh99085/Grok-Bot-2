@@ -1244,6 +1244,13 @@ class PolymarketPaperTrainer:
                 "partial_fill_hedge_break": False},
         }
 
+    def validation_evidence(self) -> dict:
+        """This paper run's institutional-campaign readiness evidence (the dict
+        the validation campaign consumes for the profile this run represents).
+        Read-only; never enables live trading. Backtesting & Simulation ->
+        Live Trading & Monitoring."""
+        return self._readiness_evidence()
+
     def live_readiness_report(self) -> dict:
         """Live-readiness verdict + capital-preservation plan (PAPER ONLY).
 

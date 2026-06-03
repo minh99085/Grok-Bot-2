@@ -832,3 +832,55 @@ def capital_allocation_report(decisions, *, returns=None, equity_curve=None,
     rep["negative_expectancy_leak"] = int(leak)
     rep["capital_allocation_clean"] = bool(leak == 0)
     return rep
+
+
+def campaign_profile_evidence(metrics: dict, *, calibration: Optional[dict] = None,
+                              bregman: Optional[dict] = None, labels: Optional[dict] = None,
+                              realistic: Optional[dict] = None,
+                              risk: Optional[dict] = None) -> dict:
+    """Map a replay/backtest result into the institutional-campaign readiness
+    evidence shape for ONE profile (Backtesting & Simulation -> Live-readiness).
+
+    Read-only; pulls after-cost / realistic-fill expectancy, OOS risk-adjusted
+    ratios, calibration, settlement-label quality, stale-data + risk-gate
+    cleanliness, and Bregman certification into the dict consumed by
+    :func:`engine.training.validation_campaign.evaluate_profile`."""
+    m = metrics or {}
+    cal = calibration or {}
+    lab = labels or {}
+    rl = realistic or {}
+    rk = risk or {}
+    return {
+        "samples": int(_f(m.get("resolved_count", m.get("trade_count", m.get("samples"))))),
+        "net_pnl": _f(m.get("total_pnl", m.get("net_pnl"))),
+        "after_cost_expectancy": _f(m.get("after_cost_expectancy", m.get("realized_edge"))),
+        "realistic_fill_expectancy": _f(rl.get("realistic_fill_expectancy",
+                                               m.get("realistic_fill_expectancy"))),
+        "sharpe": _f(m.get("sharpe")), "sortino": _f(m.get("sortino")),
+        "calmar": _f(m.get("calmar")), "omega": _f(m.get("omega")),
+        "oos_sharpe": _f(m.get("oos_sharpe", m.get("sharpe"))),
+        "oos_sortino": _f(m.get("oos_sortino", m.get("sortino"))),
+        "oos_calmar": _f(m.get("oos_calmar", m.get("calmar"))),
+        "max_drawdown_pct": _f(m.get("max_drawdown_pct", m.get("max_drawdown"))),
+        "cvar": _f(m.get("cvar")), "profit_factor": _f(m.get("profit_factor")),
+        "turnover": _f(m.get("turnover")),
+        "brier": _f(cal.get("brier_score", m.get("brier"))),
+        "log_loss": _f(cal.get("log_loss", m.get("log_loss"))),
+        "ece": _f(cal.get("expected_calibration_error", m.get("ece"))),
+        "calibration_error": _f(cal.get("calibration_error",
+                                        cal.get("expected_calibration_error", m.get("ece")))),
+        "ci_coverage": _f(cal.get("confidence_interval_coverage", m.get("ci_coverage"))),
+        "edge_decay": _f(m.get("edge_decay")), "fill_quality": _f(m.get("fill_quality",
+                                                                       m.get("fill_ratio"))),
+        "slippage_bps": _f(m.get("slippage_bps")), "markout": _f(m.get("markout")),
+        "capital_efficiency": _f(m.get("capital_efficiency")),
+        "label_suppression_rate": _f(lab.get("suppression_rate")),
+        "unresolved_rate": _f(lab.get("unresolved_rate")),
+        "ambiguous_rate": _f(lab.get("ambiguous_rate")),
+        "stale_data_rejection_rate": _f(m.get("stale_data_rejection_rate")),
+        "chainlink_stale": bool(m.get("chainlink_stale", False)),
+        "stale_book": bool(m.get("stale_book", False)),
+        "risk_violations": int(_f(rk.get("violations", m.get("risk_violations")))),
+        "downgraded": bool(m.get("downgraded", False)),
+        "bregman": dict(bregman or m.get("bregman", {}) or {}),
+    }
