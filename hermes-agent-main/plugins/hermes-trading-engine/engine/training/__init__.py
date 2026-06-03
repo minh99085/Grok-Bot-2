@@ -26,6 +26,10 @@ from . import legacy  # noqa: F401
 
 from .config import (TrainingConfig, AggressivePaperTrainingConfig,
                      FORBIDDEN_LIVE_FLAGS, MODES)
+from .campaign_controller import (CampaignState, CampaignThresholds, CampaignProgress,
+                                  CampaignEvidence, CampaignVerdict,
+                                  TrainingCampaignController, campaign_json,
+                                  campaign_markdown)
 from .algorithm_inventory import algorithm_inventory
 from .metrics import ScanMetrics, bucket_label, liquidity_bucket, spread_bucket
 from .candidate_ranker import CandidateRanker, rank_candidates, score_candidate

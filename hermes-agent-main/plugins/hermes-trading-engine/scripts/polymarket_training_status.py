@@ -25,10 +25,20 @@ def run(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Print Polymarket PAPER training status (read-only).")
     ap.add_argument("--data-dir", default=None)
     ap.add_argument("--json", action="store_true", help="print raw JSON status")
+    ap.add_argument("--campaign-json", action="store_true",
+                    help="print ONLY the institutional paper-training campaign JSON")
     args = ap.parse_args(argv)
 
     dd = Path(args.data_dir) if args.data_dir else _data_dir()
     path = dd / "polymarket_training.json"
+    if args.campaign_json:
+        camp_path = dd / "polymarket_training_campaign.json"
+        if not camp_path.exists():
+            print("{}")
+            return 0
+        data = json.loads(camp_path.read_text(encoding="utf-8"))
+        print(json.dumps(data.get("report", data), indent=2, default=str))
+        return 0
     if not path.exists():
         print(f"no training status at {path} — start training first.")
         return 0
@@ -71,6 +81,29 @@ def run(argv=None) -> int:
         print(f"  bregman: opps={mon.get('bregman_opportunities')} "
               f"certified_profit={mon.get('certified_bregman_profit')} "
               f"fp_rate={mon.get('bregman_false_positive_rate')}")
+    camp = st.get("training_campaign") or {}
+    if camp and camp.get("enabled") is not False:
+        ev = camp.get("evidence", {}) or {}
+        th = camp.get("thresholds", {}) or {}
+        prog = (camp.get("progress", {}) or {})
+        print("=" * 56)
+        print(f"  CAMPAIGN: {camp.get('campaign_name')} · freeze="
+              f"{camp.get('algorithm_freeze_mode')} · verdict={camp.get('state')} · "
+              f"no_live_orders={camp.get('no_live_orders')}")
+        print(f"  elapsed: {ev.get('elapsed_days')}d / {ev.get('runtime_hours')}h · "
+              f"overall progress: {prog.get('overall_pct')}%")
+        print(f"  decisions: {ev.get('decisions')}/{th.get('target_min_decisions')} · "
+              f"trades: {ev.get('paper_trades')}/{th.get('target_min_paper_trades')} · "
+              f"resolved: {ev.get('resolved_labels')}/{th.get('target_min_resolved_labels')} · "
+              f"clean: {ev.get('clean_labels')}/{th.get('target_min_clean_labels')}")
+        print(f"  bregman candidates: {ev.get('bregman_candidates')}/"
+              f"{th.get('target_min_bregman_candidates')} · "
+              f"certified: {ev.get('bregman_certified')} · "
+              f"false_positives: {ev.get('bregman_false_positives')}")
+        print(f"  after-cost: {ev.get('after_cost_expectancy')} · realistic-fill: "
+              f"{ev.get('realistic_fill_expectancy')}")
+        print(f"  next required evidence: {camp.get('next_target')}")
+        print(f"  blockers: {', '.join(camp.get('blockers', [])) or 'none'}")
     return 0
 
 

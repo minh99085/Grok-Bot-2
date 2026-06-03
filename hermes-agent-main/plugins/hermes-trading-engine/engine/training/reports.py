@@ -105,6 +105,17 @@ def write_reports(trainer=None, *, status: Optional[dict] = None,
     # live-readiness verdict + capital-preservation plan (PAPER ONLY — verdict only)
     (run_dir / "live_readiness.json").write_text(
         json.dumps(status.get("live_readiness", {}), default=str, indent=2), encoding="utf-8")
+    # institutional paper-training campaign artifacts (PAPER ONLY) — when present
+    campaign = status.get("training_campaign") or {}
+    if campaign and campaign.get("enabled") is not False:
+        (run_dir / "training_campaign.json").write_text(
+            json.dumps(campaign, default=str, indent=2), encoding="utf-8")
+        try:
+            from .campaign_controller import campaign_markdown
+            (run_dir / "training_campaign.md").write_text(
+                campaign_markdown(campaign), encoding="utf-8")
+        except Exception:  # noqa: BLE001 — campaign report must never break the run report
+            pass
 
     candidates = getattr(trainer, "candidates_log", []) if trainer else []
     edges = getattr(trainer, "edge_log", []) if trainer else []

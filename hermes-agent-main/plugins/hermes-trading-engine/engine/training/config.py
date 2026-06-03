@@ -268,6 +268,20 @@ class TrainingConfig:
     live_max_daily_loss_usd: float = 10.0
     live_max_per_market_usd: float = 5.0
     live_max_event_usd: float = 5.0
+    # ---- institutional paper-training campaign (PAPER ONLY; default OFF) ----
+    # Campaign mode freezes algorithm development and runs the aggressive paper
+    # engine purely to collect durable evidence. It NEVER enables live trading and
+    # NEVER relaxes a risk gate; algorithm_freeze_mode forces param promotion off.
+    campaign_enabled: bool = False
+    campaign_name: str = "institutional_paper_campaign"
+    algorithm_freeze_mode: bool = False
+    campaign_start_ts: object = None       # float|int|ISO-string|None
+    campaign_target_min_days: int = 14
+    campaign_target_min_decisions: int = 1000
+    campaign_target_min_paper_trades: int = 300
+    campaign_target_min_resolved_labels: int = 100
+    campaign_target_min_bregman_candidates: int = 50
+    campaign_max_bregman_false_positives: int = 0
     # ---- run / sim ----
     take_profit: float = 0.05
     stop_loss: float = 0.05
@@ -308,6 +322,19 @@ class TrainingConfig:
     def __post_init__(self):
         if self.mode not in MODES:
             self.mode = "observe_only"
+        # Algorithm-freeze (campaign) mode: evidence quality over new code. It can
+        # NEVER promote production-like parameters and NEVER touches a live flag.
+        if bool(self.algorithm_freeze_mode):
+            self.aggressive_can_promote_params = False
+        self.campaign_target_min_days = max(0, int(self.campaign_target_min_days))
+        self.campaign_target_min_decisions = max(0, int(self.campaign_target_min_decisions))
+        self.campaign_target_min_paper_trades = max(0, int(self.campaign_target_min_paper_trades))
+        self.campaign_target_min_resolved_labels = max(
+            0, int(self.campaign_target_min_resolved_labels))
+        self.campaign_target_min_bregman_candidates = max(
+            0, int(self.campaign_target_min_bregman_candidates))
+        self.campaign_max_bregman_false_positives = max(
+            0, int(self.campaign_max_bregman_false_positives))
         # hard PAPER clamps (cannot exceed even if env is misconfigured)
         self.fixed_notional_usd = max(0.0, min(self.fixed_notional_usd, 50.0))
         self.max_kelly_size_usd = max(0.0, min(self.max_kelly_size_usd, 50.0))
@@ -510,6 +537,20 @@ class TrainingConfig:
             max_overfit_penalty=_envf("POLYMARKET_MAX_OVERFIT_PENALTY", 0.5),
             overfit_rollback_tolerance=_envf("POLYMARKET_OVERFIT_ROLLBACK_TOLERANCE", 0.05),
             aggressive_can_promote_params=_envb("POLYMARKET_AGGRESSIVE_CAN_PROMOTE_PARAMS", False),
+            campaign_enabled=_envb("POLYMARKET_CAMPAIGN_ENABLED", False),
+            campaign_name=os.getenv("POLYMARKET_CAMPAIGN_NAME", "institutional_paper_campaign"),
+            algorithm_freeze_mode=_envb("POLYMARKET_ALGORITHM_FREEZE_MODE", False),
+            campaign_start_ts=os.getenv("POLYMARKET_CAMPAIGN_START_TS") or None,
+            campaign_target_min_days=_envi("POLYMARKET_CAMPAIGN_TARGET_MIN_DAYS", 14),
+            campaign_target_min_decisions=_envi("POLYMARKET_CAMPAIGN_TARGET_MIN_DECISIONS", 1000),
+            campaign_target_min_paper_trades=_envi(
+                "POLYMARKET_CAMPAIGN_TARGET_MIN_PAPER_TRADES", 300),
+            campaign_target_min_resolved_labels=_envi(
+                "POLYMARKET_CAMPAIGN_TARGET_MIN_RESOLVED_LABELS", 100),
+            campaign_target_min_bregman_candidates=_envi(
+                "POLYMARKET_CAMPAIGN_TARGET_MIN_BREGMAN_CANDIDATES", 50),
+            campaign_max_bregman_false_positives=_envi(
+                "POLYMARKET_CAMPAIGN_MAX_BREGMAN_FALSE_POSITIVES", 0),
             experiments_enabled=_envb("POLYMARKET_EXPERIMENTS_ENABLED", False),
             experiment_id=(os.getenv("POLYMARKET_EXPERIMENT_ID") or "exp_default").strip(),
             bregman_first_budget=_envb("POLYMARKET_BREGMAN_FIRST_BUDGET", True),

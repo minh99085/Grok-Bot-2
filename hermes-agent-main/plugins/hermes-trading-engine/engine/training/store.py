@@ -66,6 +66,20 @@ _SCHEMA = {
             close_ts_ms INTEGER, delay_ms INTEGER, observed_ts_ms INTEGER,
             reasons_json TEXT, payload_json TEXT,
             PRIMARY KEY (run_id, market_id, asset_id))""",
+    # Institutional paper-training campaign tracker (PAPER ONLY). One row per
+    # campaign (upserted) + an append-only snapshot trail. No secrets, no live
+    # state; the campaign verdict NEVER enables live trading.
+    "polymarket_training_campaigns": """
+        CREATE TABLE IF NOT EXISTS polymarket_training_campaigns (
+            campaign_id TEXT PRIMARY KEY, campaign_name TEXT, run_id TEXT,
+            started_ts_ms INTEGER, last_update_ts_ms INTEGER, status TEXT,
+            algorithm_freeze_mode INTEGER, thresholds_json TEXT, evidence_json TEXT,
+            verdict_json TEXT, blockers_json TEXT, progress_json TEXT)""",
+    "polymarket_training_campaign_snapshots": """
+        CREATE TABLE IF NOT EXISTS polymarket_training_campaign_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, campaign_id TEXT, run_id TEXT,
+            ts_ms INTEGER, status TEXT, evidence_json TEXT, verdict_json TEXT,
+            blockers_json TEXT)""",
 }
 
 
@@ -100,6 +114,37 @@ class TrainingStore:
             "VALUES (?,?,?,?,?,?,?)",
             (run_id, _now_ms(), None, mode, config_hash, status, notes))
         self._conn.commit()
+
+    def record_campaign(self, *, campaign_id, campaign_name, run_id, started_ts_ms,
+                        last_update_ts_ms, status, algorithm_freeze_mode,
+                        thresholds_json="", evidence_json="", verdict_json="",
+                        blockers_json="", progress_json="") -> None:
+        """Upsert the durable campaign row (PAPER ONLY; never enables live)."""
+        self._conn.execute(
+            "INSERT OR REPLACE INTO polymarket_training_campaigns "
+            "(campaign_id, campaign_name, run_id, started_ts_ms, last_update_ts_ms, status, "
+            "algorithm_freeze_mode, thresholds_json, evidence_json, verdict_json, "
+            "blockers_json, progress_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (campaign_id, campaign_name, run_id, started_ts_ms, last_update_ts_ms, status,
+             1 if algorithm_freeze_mode else 0, thresholds_json, evidence_json, verdict_json,
+             blockers_json, progress_json))
+        self._conn.commit()
+
+    def record_campaign_snapshot(self, *, campaign_id, run_id, status,
+                                 evidence_json="", verdict_json="", blockers_json="") -> None:
+        """Append a campaign progress snapshot (audit trail; PAPER ONLY)."""
+        self._conn.execute(
+            "INSERT INTO polymarket_training_campaign_snapshots "
+            "(campaign_id, run_id, ts_ms, status, evidence_json, verdict_json, blockers_json) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (campaign_id, run_id, _now_ms(), status, evidence_json, verdict_json, blockers_json))
+        self._conn.commit()
+
+    def get_campaign(self, campaign_id) -> Optional[dict]:
+        cur = self._conn.execute(
+            "SELECT * FROM polymarket_training_campaigns WHERE campaign_id=?", (campaign_id,))
+        row = cur.fetchone()
+        return dict(row) if row else None
 
     def stop_run(self, run_id, status="stopped") -> None:
         self._conn.execute(

@@ -304,6 +304,23 @@ class PolymarketPaperTrainer:
         except Exception:  # noqa: BLE001 - persistence must never crash training
             self.tstore = None
 
+        # Institutional paper-training campaign controller (PAPER ONLY; default
+        # OFF). When enabled it freezes algorithm development and collects durable
+        # evidence across runs; it NEVER enables live trading. Reloads + persists
+        # campaign state to <data_dir>/polymarket_training_campaign.json.
+        self.campaign = None
+        self._campaign_error = None
+        self._campaign_baseline_calibration = None
+        if bool(getattr(self.cfg, "campaign_enabled", False)):
+            try:
+                from .campaign_controller import TrainingCampaignController
+                self.campaign = TrainingCampaignController.from_config(
+                    self.cfg, state_path=self.data_dir / "polymarket_training_campaign.json",
+                    store=self.tstore, run_id=self.run_id)
+            except Exception as exc:  # noqa: BLE001 — campaign must never crash training
+                self.campaign = None
+                self._campaign_error = f"init_failed:{exc}"
+
         self.cash = float(self.cfg.starting_bankroll)
         self.positions: list = []
         self.fills_log: list = []
@@ -454,6 +471,9 @@ class PolymarketPaperTrainer:
             except Exception:  # noqa: BLE001 — monitoring must never break a tick
                 pass
         self._persist_status()
+        # Institutional campaign: aggregate this tick's REAL evidence (PAPER ONLY).
+        # Never breaks the tick if campaign reporting fails.
+        self._update_campaign()
         return {"tick": self.tick_count, "mode": self.mode, "scanned": scan.scanned,
                 "kept": scan.kept, "candidates": len(candidates), "opened": opened,
                 "bregman_opened": bregman_opened,
@@ -1251,6 +1271,100 @@ class PolymarketPaperTrainer:
         Live Trading & Monitoring."""
         return self._readiness_evidence()
 
+    # -- institutional paper-training campaign (PAPER ONLY) ------------------
+    def _campaign_snapshot(self) -> dict:
+        """Assemble the campaign controller's snapshot from REAL collected
+        evidence (decisions, paper trades, resolved/clean labels, Bregman
+        candidates/certified/false-positives, after-cost + realistic-fill
+        expectancy, calibration, risk-gate cleanliness, stale-data). live_orders
+        is ALWAYS zero — this is PAPER ONLY. Read-only; never enables live."""
+        ev = self._readiness_evidence()
+        pnl = self.pnl_summary()
+        dash = self.aggressive_dashboard()
+        breg_ev = ev.get("bregman", {}) or {}
+        # resolved / clean settlement labels from the learner's label states
+        states = dict(getattr(self.learner, "label_states", {}) or {})
+        total_labelled = sum(int(v) for v in states.values())
+        unresolved = int(states.get("unresolved", 0))
+        resolved_labels = max(0, total_labelled - unresolved)
+        clean_labels = int(states.get("clean", states.get("trainable", 0)))
+        # Bregman candidates = certified opportunities + rejected candidates
+        bregman_candidates = int(getattr(self, "bregman_opportunity_count", 0)) \
+            + int(getattr(self, "bregman_rejected", 0))
+        bregman_certified = int(getattr(self, "bregman_sets_opened", 0))
+        fp_rate = float(breg_ev.get("false_positive_rate", 0.0) or 0.0)
+        opps = int(breg_ev.get("opportunities", 0) or 0)
+        bregman_false_positives = int(round(fp_rate * opps)) if fp_rate > 0 else 0
+        calib = float(ev.get("calibration_error", 0.0) or 0.0)
+        if self._campaign_baseline_calibration is None:
+            self._campaign_baseline_calibration = calib
+        live_state = "paper_learning"
+        try:
+            from .live_readiness import ReadinessCriteria, evaluate_live_readiness
+            live_state = evaluate_live_readiness(
+                ev, ReadinessCriteria.from_config(self.cfg)).state
+        except Exception:  # noqa: BLE001
+            pass
+        return {
+            "run_id": self.run_id,
+            "started_ts": float(self.started_ts),
+            "runtime_seconds": max(0.0, time.time() - float(self.started_ts)),
+            "decisions": int(self.decision_count),
+            "paper_trades": int(pnl.get("trades_opened", 0) or 0),
+            "resolved_labels": resolved_labels,
+            "clean_labels": clean_labels,
+            "bregman_candidates": bregman_candidates,
+            "bregman_certified": bregman_certified,
+            "bregman_false_positives": bregman_false_positives,
+            "partial_fill_hedge_breaks": 1 if bool(breg_ev.get("partial_fill_hedge_break")) else 0,
+            "risk_violations": int(ev.get("risk_violations", 0) or 0),
+            "live_orders": 0,                         # PAPER ONLY — always zero
+            "after_cost_expectancy": float(ev.get("after_cost_expectancy", 0.0) or 0.0),
+            "realistic_fill_expectancy": float(ev.get("realistic_fill_expectancy", 0.0) or 0.0),
+            "optimistic_expectancy": float(ev.get("after_cost_expectancy", 0.0) or 0.0),
+            "calibration_error": calib,
+            "baseline_calibration_error": float(self._campaign_baseline_calibration),
+            "ece": float(ev.get("ece", 0.0) or 0.0),
+            "stale_data_rejection_rate": float(ev.get("stale_data_rejection_rate", 0.0) or 0.0),
+            "stale_chainlink": bool(ev.get("chainlink_stale", False)),
+            "stale_book": bool(ev.get("stale_book", False)),
+            "stale_data_confidence_improvement": False,
+            "max_drawdown_pct": float(ev.get("max_drawdown_pct", 0.0) or 0.0),
+            "slippage_bps": float(dash.get("slippage_bps", 0.0) or 0.0),
+            "algorithm_freeze_mode": bool(getattr(self.cfg, "algorithm_freeze_mode", False)),
+            "live_readiness_state": live_state,
+            "validation_campaign": None,
+            "replay_validation_ran": False,
+        }
+
+    def campaign_report(self) -> Optional[dict]:
+        """Institutional paper-training campaign report (PAPER ONLY). Returns the
+        controller's pass/fail report (evidence, progress, verdict, blockers, next
+        target) or ``None`` when campaign mode is disabled. Never enables live."""
+        if self.campaign is None:
+            if self._campaign_error:
+                return {"enabled": False, "error": self._campaign_error, "no_live_orders": True}
+            return None
+        try:
+            return self.campaign.report()
+        except Exception as exc:  # noqa: BLE001 — reporting must never break the loop
+            self._campaign_error = f"report_failed:{exc}"
+            return {"enabled": True, "error": self._campaign_error, "no_live_orders": True}
+
+    def _update_campaign(self) -> None:
+        """Update the campaign controller from this tick's real evidence. The
+        trainer keeps running even if the update fails (logged in
+        ``self._campaign_error``)."""
+        if self.campaign is None:
+            return
+        try:
+            self.campaign.update(self._campaign_snapshot())
+            self._campaign_error = None
+        except Exception as exc:  # noqa: BLE001 — campaign must never break a tick
+            self._campaign_error = f"update_failed:{exc}"
+            import logging
+            logging.getLogger(__name__).warning("campaign update failed: %s", exc)
+
     def live_readiness_report(self) -> dict:
         """Live-readiness verdict + capital-preservation plan (PAPER ONLY).
 
@@ -1280,6 +1394,16 @@ class PolymarketPaperTrainer:
         return rep
 
     def status(self) -> dict:
+        out = self._status_core()
+        if self.campaign is not None:
+            try:
+                out["training_campaign"] = self.campaign_report()
+            except Exception as exc:  # noqa: BLE001 — status must never crash
+                out["training_campaign"] = {"enabled": True, "error": str(exc),
+                                            "no_live_orders": True}
+        return out
+
+    def _status_core(self) -> dict:
         return {
             "available": True,
             "run_id": self.run_id,

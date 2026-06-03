@@ -39,6 +39,19 @@ def run(argv=None) -> int:
     stop_path.write_text("stop", encoding="utf-8")
     print(f"stop sentinel written: {stop_path}")
 
+    # If a campaign is in progress, mark stop_requested in its state WITHOUT
+    # deleting any evidence (durable evidence is preserved across stops).
+    campaign_path = dd / "polymarket_training_campaign.json"
+    if campaign_path.exists():
+        try:
+            from engine.training.campaign_controller import TrainingCampaignController
+            ctrl = TrainingCampaignController.load(campaign_path)
+            ctrl.state_path = campaign_path
+            ctrl.mark_stop_requested()
+            print(f"campaign stop_requested set: {campaign_path} (evidence preserved)")
+        except Exception as exc:  # noqa: BLE001 — never block the stop on campaign IO
+            print(f"campaign state update skipped: {exc}")
+
     status_path = dd / "polymarket_training.json"
     if status_path.exists():
         status = json.loads(status_path.read_text(encoding="utf-8"))

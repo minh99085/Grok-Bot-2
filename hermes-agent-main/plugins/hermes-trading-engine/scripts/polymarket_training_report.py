@@ -224,7 +224,34 @@ def run(argv=None) -> int:
     ap.add_argument("--campaign-evidence-json", default=None,
                     help="path to a JSON file mapping profile_id -> readiness evidence "
                          "(e.g. assembled from per-profile replay runs)")
+    ap.add_argument("--training-campaign", action="store_true",
+                    help="load the persisted multi-day paper-CAMPAIGN state and write "
+                         "training_campaign.json + training_campaign.md (PAPER ONLY)")
     args = ap.parse_args(argv)
+
+    if args.training_campaign:
+        import json as _json
+        from engine.training.campaign_controller import (TrainingCampaignController,
+                                                         campaign_json, campaign_markdown)
+        dd = Path(args.data_dir) if args.data_dir else _data_dir()
+        camp_path = dd / "polymarket_training_campaign.json"
+        out_root = Path(args.out_root)
+        out_root.mkdir(parents=True, exist_ok=True)
+        if not camp_path.exists():
+            print(f"no campaign state at {camp_path} — start a campaign first.")
+            return 1
+        ctrl = TrainingCampaignController.load(camp_path)
+        rep = ctrl.report()
+        (out_root / "training_campaign.json").write_text(campaign_json(rep), encoding="utf-8")
+        (out_root / "training_campaign.md").write_text(campaign_markdown(rep), encoding="utf-8")
+        print("=" * 64)
+        print("INSTITUTIONAL PAPER-TRAINING CAMPAIGN (multi-day evidence tracker)")
+        print("=" * 64)
+        print(campaign_markdown(rep))
+        print(f"verdict: {rep.get('state')} · no_live_orders: {rep.get('no_live_orders')}")
+        print(f"artifacts: {out_root / 'training_campaign.json'} , "
+              f"{out_root / 'training_campaign.md'}")
+        return 0
 
     if args.institutional_campaign:
         import json as _json

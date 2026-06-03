@@ -76,6 +76,28 @@ def run(argv=None) -> int:
     ap.add_argument("--report", action="store_true", help="write a training report when finished")
     ap.add_argument("--mode", choices=["disabled", "observe_only", "paper_train"],
                     default="paper_train", help="training mode (PAPER ONLY either way)")
+    ap.add_argument("--data-dir", default=None, help="data dir for status + campaign state")
+    # ---- institutional paper-training campaign (PAPER ONLY) ----
+    ap.add_argument("--aggressive-paper", action="store_true",
+                    help="use the AGGRESSIVE paper-training profile (more paper trades, "
+                         "more feedback). Still PAPER ONLY; hard risk caps unchanged.")
+    ap.add_argument("--campaign", action="store_true",
+                    help="enable campaign mode (durable multi-run evidence collection)")
+    ap.add_argument("--campaign-name", default=None, help="campaign name")
+    ap.add_argument("--algorithm-freeze", action="store_true",
+                    help="freeze algorithm development (no param promotion / threshold relaxation)")
+    ap.add_argument("--target-days", type=int, default=None)
+    ap.add_argument("--target-decisions", type=int, default=None)
+    ap.add_argument("--target-trades", type=int, default=None)
+    ap.add_argument("--target-resolved-labels", type=int, default=None)
+    ap.add_argument("--target-bregman-candidates", type=int, default=None)
+    ap.add_argument("--write-campaign-report", action="store_true",
+                    help="write training_campaign.json + .md when finished")
+    ap.add_argument("--continue-until-thresholds", action="store_true",
+                    help="keep running until campaign thresholds pass, --max-hours is reached, "
+                         "or the stop sentinel exists")
+    ap.add_argument("--max-hours", type=float, default=336.0,
+                    help="max wall-clock hours for --continue-until-thresholds")
     args = ap.parse_args(argv)
 
     pf = preflight()
@@ -89,10 +111,40 @@ def run(argv=None) -> int:
         return 2
     print("preflight OK — PAPER ONLY, no real orders, Grok research-only.\n")
 
-    cfg = TrainingConfig.from_env()
+    # --aggressive-paper uses the explicit AGGRESSIVE paper profile (not from_env).
+    overrides = {}
+    if args.campaign:
+        overrides["campaign_enabled"] = True
+    if args.campaign_name:
+        overrides["campaign_name"] = args.campaign_name
+    if args.algorithm_freeze:
+        overrides["algorithm_freeze_mode"] = True
+    if args.target_days is not None:
+        overrides["campaign_target_min_days"] = args.target_days
+    if args.target_decisions is not None:
+        overrides["campaign_target_min_decisions"] = args.target_decisions
+    if args.target_trades is not None:
+        overrides["campaign_target_min_paper_trades"] = args.target_trades
+    if args.target_resolved_labels is not None:
+        overrides["campaign_target_min_resolved_labels"] = args.target_resolved_labels
+    if args.target_bregman_candidates is not None:
+        overrides["campaign_target_min_bregman_candidates"] = args.target_bregman_candidates
+    if args.aggressive_paper:
+        cfg = TrainingConfig.aggressive_paper(**overrides)
+    else:
+        cfg = TrainingConfig.from_env()
+        for k, v in overrides.items():
+            setattr(cfg, k, v)
+        cfg.__post_init__()  # re-apply freeze/clamp invariants after overrides
     cfg.mode = args.mode  # start-paper explicitly drives paper training
-    trainer = PolymarketPaperTrainer(cfg)
-    print(f"mode: {cfg.mode} (PAPER ONLY)")
+    data_dir = Path(args.data_dir) if args.data_dir else None
+    trainer = PolymarketPaperTrainer(cfg, data_dir=data_dir)
+    dd = trainer.data_dir
+    stop_path = dd / "polymarket_training.stop"
+    print(f"mode: {cfg.mode} (PAPER ONLY)"
+          + (f" · profile: {'aggressive' if args.aggressive_paper else 'default'}")
+          + (" · CAMPAIGN" if cfg.campaign_enabled else "")
+          + (" · ALGORITHM FROZEN" if cfg.algorithm_freeze_mode else ""))
     # double-check the trainer's own runtime gate agrees
     if not trainer.preflight()["ok"]:
         print("\033[91m*** REFUSING: trainer preflight failed. ***\033[0m")
@@ -117,15 +169,34 @@ def run(argv=None) -> int:
         return 0
 
     deadline = time.time() + args.minutes * 60.0 if args.minutes > 0 else None
+    max_hours_deadline = (time.time() + args.max_hours * 3600.0
+                          if args.continue_until_thresholds else None)
     ticks = 0
     while True:
+        # The start loop MUST honor the stop sentinel written by the stop script.
+        if stop_path.exists():
+            print(f"stop sentinel detected ({stop_path}) — stopping (data preserved).")
+            if trainer.campaign is not None:
+                try:
+                    trainer.campaign.mark_stop_requested()
+                except Exception:  # noqa: BLE001
+                    pass
+            break
         trainer.run_tick(provider())
         ticks += 1
         st = trainer.status()
         print(f"tick {ticks}: scanned={st['scan_metrics']['scanned']} "
               f"open={st['pnl']['open_positions']} equity={st['pnl']['equity']} "
               f"closed={st['pnl']['trades_closed']}")
-        if deadline is not None:
+        _print_campaign_progress(trainer)
+        if args.continue_until_thresholds:
+            if trainer.campaign is not None and trainer.campaign.thresholds_met():
+                print("campaign evidence thresholds met — stopping.")
+                break
+            if max_hours_deadline is not None and time.time() >= max_hours_deadline:
+                print("max-hours reached — stopping.")
+                break
+        elif deadline is not None:
             if time.time() >= deadline:
                 break
         elif ticks >= args.max_ticks:
@@ -133,11 +204,44 @@ def run(argv=None) -> int:
         if args.realtime:
             time.sleep(max(0.0, args.tick_seconds))
     trainer.finalize()
-    if args.report or args.minutes > 0:
+    if args.report or args.minutes > 0 or args.continue_until_thresholds:
         out = write_reports(trainer)
         print(f"report: {out['run_dir']} · recommendation={out['recommendation']}")
+    if args.write_campaign_report and trainer.campaign is not None:
+        from engine.training.campaign_controller import campaign_json, campaign_markdown
+        rep = trainer.campaign_report() or {}
+        (dd / "training_campaign.json").write_text(campaign_json(rep), encoding="utf-8")
+        (dd / "training_campaign.md").write_text(campaign_markdown(rep), encoding="utf-8")
+        print(f"campaign report: {dd / 'training_campaign.json'} · "
+              f"verdict={rep.get('state')}")
     print(f"training run complete · ticks={ticks} · equity={trainer.equity()}")
     return 0
+
+
+def _print_campaign_progress(trainer) -> None:
+    """Print concise per-tick campaign progress (PAPER ONLY)."""
+    if getattr(trainer, "campaign", None) is None:
+        return
+    try:
+        rep = trainer.campaign_report() or {}
+        ev = rep.get("evidence", {}) or {}
+        th = rep.get("thresholds", {}) or {}
+        print(
+            f"  campaign[{rep.get('campaign_name')}]: verdict={rep.get('state')} "
+            f"freeze={rep.get('algorithm_freeze_mode')} | "
+            f"days={ev.get('elapsed_days')}/{th.get('target_min_days')} "
+            f"hrs={ev.get('runtime_hours')}/{th.get('target_min_runtime_hours')} "
+            f"dec={ev.get('decisions')}/{th.get('target_min_decisions')} "
+            f"trades={ev.get('paper_trades')}/{th.get('target_min_paper_trades')} "
+            f"resolved={ev.get('resolved_labels')}/{th.get('target_min_resolved_labels')} "
+            f"clean={ev.get('clean_labels')}/{th.get('target_min_clean_labels')} "
+            f"breg_cand={ev.get('bregman_candidates')}/{th.get('target_min_bregman_candidates')} "
+            f"breg_fp={ev.get('bregman_false_positives')} "
+            f"after_cost={ev.get('after_cost_expectancy')} "
+            f"realistic={ev.get('realistic_fill_expectancy')}")
+        print(f"  campaign top blockers: {', '.join(rep.get('blockers', [])[:5]) or 'none'}")
+    except Exception as exc:  # noqa: BLE001 — progress printing must never break the loop
+        print(f"  campaign progress unavailable: {exc}")
 
 
 if __name__ == "__main__":
