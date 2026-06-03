@@ -143,6 +143,60 @@ BTC_PULSE_ENABLED=0
 
 ---
 
+## Make training learn faster (Feedback Accelerator)
+
+This makes the bot **learn about 10x faster** by studying almost every market it
+sees — not just the ones it bets on. It is still **pretend money only**, and it
+does **not** make the bot take risky bets. Safety rules stay exactly as strict.
+
+### Step A — Open your settings file
+```powershell
+cd C:\hermes-agent-cursor\hermes-agent-main\plugins\hermes-trading-engine
+notepad .env
+```
+
+### Step B — Add these lines at the bottom, then save
+```
+FEEDBACK_ACCELERATOR_ENABLED=1
+EXPLORATION_ENABLED=1
+EXPLORATION_TINY_SIZE_ENABLED=1
+EXPLORATION_COUNTS_FOR_READINESS=0
+SHADOW_DECISION_LOGGING_ENABLED=1
+NO_TRADE_LABELING_ENABLED=1
+ACTIVE_LEARNING_ENABLED=1
+```
+
+(If you don't want to type, run this instead — it adds them for you:)
+```powershell
+Add-Content .env "`nFEEDBACK_ACCELERATOR_ENABLED=1`nEXPLORATION_ENABLED=1`nEXPLORATION_TINY_SIZE_ENABLED=1`nEXPLORATION_COUNTS_FOR_READINESS=0`nSHADOW_DECISION_LOGGING_ENABLED=1`nNO_TRADE_LABELING_ENABLED=1`nACTIVE_LEARNING_ENABLED=1"
+```
+
+### Step C — Restart so it takes effect
+```powershell
+docker compose down
+docker compose up -d --build
+```
+
+### Step D — Check it is on
+```powershell
+docker compose logs --tail 80 hermes-training | Select-String "feedback_accel|Feedback Accelerator"
+```
+You should see a line like:
+```
+feedback_accel: target x10 decisions/tick=1000 candidates=120 exploration=True tiny=True counts_for_readiness=False
+```
+
+### What you will and won't see
+- You **will** see the number of decisions and learning samples go up a lot.
+- You **may** see a few more tiny pretend trades, but only when it's safe.
+- A "no trade" round is still **normal** — the bot only bets when the odds are good.
+- Calibration and learning quality should improve within about **1 to 3 days**.
+
+### Turn it OFF later
+Open `.env`, set `FEEDBACK_ACCELERATOR_ENABLED=0`, then run Step C again.
+
+---
+
 ## If something looks wrong, copy me these 3 outputs
 
 1. `docker compose config | Select-String "BTC_PULSE"`
