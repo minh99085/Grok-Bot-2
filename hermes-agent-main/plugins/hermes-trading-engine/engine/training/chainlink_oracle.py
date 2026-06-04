@@ -129,11 +129,14 @@ class ChainlinkBtcUsdOracle:
 
         reading = None
         try:
-            if self.spec is not None:
-                reading = self.source.read(self.spec, now)
-            if reading is None and hasattr(self.source, "history"):
+            # Prefer the THROTTLED/CACHED history path (shared with the Chainlink
+            # scanner) so we don't hammer the RPC every tick and get rate-limited;
+            # fall back to a direct read only when no cached reading exists.
+            if hasattr(self.source, "history"):
                 hist = self.source.history(self.feed_key, now=now, limit=1)
                 reading = hist[-1] if hist else None
+            if reading is None and self.spec is not None:
+                reading = self.source.read(self.spec, now)
         except Exception as exc:  # noqa: BLE001 — never raise from a read
             self.consecutive_failures += 1
             st.error = f"provider_error:{type(exc).__name__}"

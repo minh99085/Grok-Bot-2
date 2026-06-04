@@ -15,12 +15,20 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import sys
 import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+# Surface INFO logs (feature-health proof: Chainlink/news/Bregman/oracle gate) in
+# Docker logs. Without this, library logger.info() lines are suppressed at the
+# default WARNING level and the startup proof lines never appear.
+logging.basicConfig(
+    level=os.getenv("HTE_LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
 from engine.training import PolymarketPaperTrainer, TrainingConfig  # noqa: E402
 from engine.training.polymarket_trainer import FORBIDDEN_LIVE_FLAGS, _envb  # noqa: E402
