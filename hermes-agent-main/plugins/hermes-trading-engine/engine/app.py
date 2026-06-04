@@ -335,6 +335,42 @@ def api_training_btc_pulse() -> dict:
     return {"available": True, **bp}
 
 
+@app.get("/api/chainlink/status")
+def api_chainlink_status() -> dict:
+    """Chainlink BTC/USD oracle health (validated, read-only). Proves whether
+    Chainlink is initialized + reporting a fresh price. PAPER ONLY."""
+    st = _training_status() or {}
+    oracle = st.get("chainlink_oracle") or {}
+    scanner = st.get("chainlink") or {}
+    if not oracle and not scanner:
+        return {"available": False, "enabled": False,
+                "reason": "no training run yet — start the training engine."}
+    return {"available": True, "btc_usd": oracle, "scanner": scanner}
+
+
+@app.get("/api/news/status")
+def api_news_status() -> dict:
+    """Market-news evidence scanner health (PAPER ONLY, advisory, read-only)."""
+    st = _training_status() or {}
+    news = st.get("news") or {}
+    if not news:
+        return {"available": False, "news_scanner_enabled": False,
+                "reason": "no training run yet — start the training engine."}
+    return {"available": True, **news}
+
+
+@app.get("/api/research/status")
+def api_research_status() -> dict:
+    """Grok research evidence status: news packet + Chainlink + Grok config.
+    Grok is advisory only and never bypasses a risk gate. PAPER ONLY."""
+    st = _training_status() or {}
+    research = st.get("research") or {}
+    if not research:
+        return {"available": False,
+                "reason": "no training run yet — start the training engine."}
+    return {"available": True, **research}
+
+
 @app.get("/api/polymarket/training/scan")
 def api_training_scan() -> dict:
     st = _training_status() or {}

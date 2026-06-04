@@ -18,6 +18,8 @@ cancel, approve, arm, scale, or size an order. Fail closed.
 
 from __future__ import annotations
 
+import logging
+import os
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -249,6 +251,19 @@ class PolymarketPaperTrainer:
             self.scanner.chainlink = self.chainlink
             self.ranker.chainlink = self.chainlink
         self.prob = ProbabilityStack(self.cfg, learner=self.learner, chainlink=self.chainlink)
+        # Chainlink BTC/USD oracle (validated, auditable; PAPER ONLY). Reuses the
+        # Chainlink scanner's source so it shares the same read-only RPC feed.
+        try:
+            from engine.training.chainlink_oracle import ChainlinkBtcUsdOracle
+            self.chainlink_oracle = ChainlinkBtcUsdOracle(
+                source=getattr(self.chainlink, "source", None),
+                enabled=bool(getattr(self.cfg, "chainlink_enabled", False)),
+                heartbeat_seconds=getattr(self.cfg, "btc_pulse_chainlink_heartbeat_seconds", 120),
+                max_age_seconds=getattr(self.cfg, "btc_pulse_chainlink_max_age_seconds", 180),
+                registry=getattr(self.chainlink, "registry", None),
+                debug_log=bool(getattr(self.cfg, "btc_pulse_oracle_debug_log", False)))
+        except Exception:  # noqa: BLE001 — oracle must never break startup
+            self.chainlink_oracle = None
         self.policy = PaperPolicy(self.cfg)
         self.edge_engine = EdgeEngine(self.cfg)
         # Flagship Polymarket Bregman arbitrage engine (PAPER ONLY). Scans the
@@ -337,7 +352,9 @@ class PolymarketPaperTrainer:
         if bool(getattr(self.cfg, "btc_pulse_enabled", False)):
             try:
                 from .btc_pulse import BtcPulsePaperTrainer
-                self.btc_pulse = BtcPulsePaperTrainer(self.cfg, data_dir=self.data_dir)
+                self.btc_pulse = BtcPulsePaperTrainer(
+                    self.cfg, data_dir=self.data_dir,
+                    oracle=getattr(self, "chainlink_oracle", None))
             except Exception as exc:  # noqa: BLE001 — pulse must never crash training
                 self.btc_pulse = None
                 self._btc_pulse_error = f"init_failed:{exc}"
@@ -363,6 +380,21 @@ class PolymarketPaperTrainer:
             except Exception as exc:  # noqa: BLE001 — news must never crash training
                 self.news_scanner = None
                 self._news_error = f"init_failed:{exc}"
+
+        # Feature-health startup log proof (PAPER ONLY). Lets Docker logs confirm
+        # which research/strategy features are actually active this run.
+        _log = logging.getLogger("hte.training.features")
+        if self.news_scanner is not None:
+            _log.info("News scanner initialized provider_mode=%s",
+                      getattr(self.cfg, "news_provider_mode", "offline_cache"))
+            if bool(getattr(self.cfg, "news_enable_grok_packet", False)):
+                _log.info("Grok research evidence packet enabled")
+        if getattr(self, "bregman", None) is not None:
+            _log.info("Bregman scanner initialized")
+        if getattr(self, "chainlink_oracle", None) is not None and self.btc_pulse is not None:
+            _log.info("BTC Pulse oracle gate require_chainlink=%s",
+                      bool(getattr(self.cfg, "btc_pulse_require_chainlink", False)))
+        _log.info("Paper training strategy attribution enabled")
 
         self.cash = float(self.cfg.starting_bankroll)
         self.positions: list = []
@@ -447,6 +479,13 @@ class PolymarketPaperTrainer:
             "liquidity_usd": round(getattr(r, "liquidity_usd", 0.0) or 0.0),
         } for r in watch[:15]]
         self._last_scan_ts = now
+        # Chainlink BTC/USD oracle read each tick (auditable; logs price+freshness
+        # when debug enabled). Read-only; never blocks the tick.
+        if getattr(self, "chainlink_oracle", None) is not None:
+            try:
+                self.chainlink_oracle.read(now=now)
+            except Exception:  # noqa: BLE001 — oracle read never blocks a tick
+                pass
         # Market-news evidence scan (PAPER ONLY, read-only, advisory). Bounded to
         # a few top markets per tick + cached; NEVER blocks training on failure.
         if self.news_scanner is not None:
@@ -1488,7 +1527,52 @@ class PolymarketPaperTrainer:
             out["news"] = self.news_status()
         except Exception as exc:  # noqa: BLE001 — status must never crash
             out["news"] = {"news_scanner_enabled": False, "error": str(exc)}
+        try:
+            out["chainlink_oracle"] = self.chainlink_oracle_status()
+        except Exception as exc:  # noqa: BLE001 — status must never crash
+            out["chainlink_oracle"] = {"enabled": False, "error": str(exc)}
+        try:
+            out["research"] = self.research_status()
+        except Exception as exc:  # noqa: BLE001 — status must never crash
+            out["research"] = {"available": False, "error": str(exc)}
         return out
+
+    def chainlink_oracle_status(self) -> dict:
+        """Chainlink BTC/USD oracle status (validated, read-only, PAPER ONLY)."""
+        if getattr(self, "chainlink_oracle", None) is None:
+            return {"enabled": False, "initialized": False, "symbol": "BTC/USD",
+                    "source": "chainlink", "valid": False, "stale": True}
+        return self.chainlink_oracle.status()
+
+    def research_status(self) -> dict:
+        """Aggregate research-evidence status: news packet + Chainlink + Grok
+        config. Read-only; Grok stays advisory and never bypasses a gate."""
+        cfg = self.cfg
+        news = {}
+        try:
+            news = self.news_status()
+        except Exception:  # noqa: BLE001
+            news = {}
+        ora = {}
+        try:
+            ora = self.chainlink_oracle_status()
+        except Exception:  # noqa: BLE001
+            ora = {}
+        return {
+            "available": True,
+            "grok_research_only": True,
+            "grok_enabled": bool(os.getenv("XAI_API_KEY") or os.getenv("GROK_API_KEY")),
+            "research_mode": os.getenv("RESEARCH_MODE", "offline_cache"),
+            "news_enable_grok_packet": bool(getattr(cfg, "news_enable_grok_packet", True)),
+            "news_scanner_enabled": news.get("news_scanner_enabled", False),
+            "news_provider_mode": news.get("news_provider_mode"),
+            "news_items_used": news.get("news_items_used", 0),
+            "chainlink_btc_usd_valid": ora.get("valid", False),
+            "chainlink_btc_usd_price": ora.get("price"),
+            "chainlink_btc_usd_age_seconds": ora.get("age_seconds"),
+            "note": "PAPER ONLY — Grok is advisory; evidence packets are read-only "
+                    "and never include wallet/positions/orders/secrets.",
+        }
 
     # -- market-news evidence scanner (PAPER ONLY, advisory) -------------- #
     def _news_ctx(self, rec) -> dict:

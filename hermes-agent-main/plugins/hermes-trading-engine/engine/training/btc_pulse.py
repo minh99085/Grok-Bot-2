@@ -83,7 +83,7 @@ class BtcPulsePaperTrainer:
 
     def __init__(self, cfg, *, data_dir=None, clock: Optional[Callable[[], int]] = None,
                  price_fn: Optional[Callable[[], float]] = None, rng_seed: int = 1337,
-                 risk_engine=None):
+                 risk_engine=None, oracle=None):
         self.cfg = cfg
         self.data_dir = data_dir
         self._clock = clock or _now_ms
@@ -158,6 +158,21 @@ class BtcPulsePaperTrainer:
         self.near_threshold_floor = -0.03
         self.shadow_decisions = 0
 
+        # Chainlink BTC/USD oracle gate (PAPER ONLY). When required, fresh oracle
+        # data is mandatory for a paper trade; otherwise the round is recorded as
+        # an oracle-blocked no-trade observation.
+        self.oracle = oracle
+        self.require_chainlink = bool(getattr(cfg, "btc_pulse_require_chainlink", False))
+        self.oracle_source = "chainlink" if oracle is not None else "none"
+        self._oracle_status = None
+        self.oracle_counters = {
+            "oracle_required": self.require_chainlink, "oracle_fresh": False,
+            "oracle_age_seconds": None, "oracle_missing_skips": 0,
+            "oracle_stale_skips": 0, "oracle_error_skips": 0,
+            "oracle_fresh_decisions": 0, "oracle_feature_decisions": 0,
+            "last_oracle_price": None, "last_oracle_error": None,
+        }
+
         # active round
         self._round: Optional[dict] = None
 
@@ -230,6 +245,28 @@ class BtcPulsePaperTrainer:
             self._day_pnl_net = 0.0
             self.kill_switch_active = False
 
+        # Read the Chainlink BTC/USD oracle once per tick (logs every tick when
+        # debug enabled). Used both for the gate and as the reference price.
+        if self.oracle is not None:
+            try:
+                self._oracle_status = self.oracle.read(now=now / 1000.0)
+                self.oracle_counters["oracle_fresh"] = bool(
+                    getattr(self._oracle_status, "valid", False))
+                self.oracle_counters["oracle_age_seconds"] = getattr(
+                    self._oracle_status, "age_seconds", None)
+                self.oracle_counters["last_oracle_price"] = getattr(
+                    self._oracle_status, "price", None)
+                self.oracle_counters["last_oracle_error"] = getattr(
+                    self._oracle_status, "error", None)
+            except Exception as exc:  # noqa: BLE001 — never break a tick
+                self._oracle_status = None
+                self.oracle_counters["last_oracle_error"] = f"read_failed:{type(exc).__name__}"
+            logger.debug("BTC Pulse oracle gate: required=%s fresh=%s price=%s age=%s",
+                         self.require_chainlink,
+                         self.oracle_counters["oracle_fresh"],
+                         self.oracle_counters["last_oracle_price"],
+                         self.oracle_counters["oracle_age_seconds"])
+
         self._advance_price()
 
         result: dict = {"frozen": False, "event": "observe"}
@@ -244,6 +281,32 @@ class BtcPulsePaperTrainer:
     def _open_round(self, now: int) -> dict:
         self.rounds_seen += 1
         self.decisions += 1
+        # Oracle gate: when Chainlink is REQUIRED, a fresh BTC/USD reading is
+        # mandatory. Missing / stale / invalid / errored oracle => no paper trade
+        # (recorded as an oracle-blocked observation; never silently simulated).
+        if self.require_chainlink:
+            blocker = self._oracle_gate_blocker()
+            if blocker is not None:
+                self.no_trade_decisions += 1
+                self.rejected_trades += 1
+                self.rejection_reasons[blocker] = self.rejection_reasons.get(blocker, 0) + 1
+                if "stale" in blocker:
+                    self.oracle_counters["oracle_stale_skips"] += 1
+                elif "error" in blocker:
+                    self.oracle_counters["oracle_error_skips"] += 1
+                else:
+                    self.oracle_counters["oracle_missing_skips"] += 1
+                self._round = {
+                    "decision": {"round": self.rounds_seen, "oracle_blocked": True,
+                                 **self.namespace()},
+                    "traded": False, "stake": 0.0, "fill_frac": 0.0,
+                    "resolve_tick": self.ticks + self._ticks_per_round,
+                    "no_trade_reason": blocker, "shadow": False,
+                }
+                return {"frozen": False, "event": "oracle_blocked", "reason": blocker,
+                        "round": self.rounds_seen, **self.namespace()}
+            self.oracle_counters["oracle_fresh_decisions"] += 1
+            self.oracle_counters["oracle_feature_decisions"] += 1
         p_up = self._regime_p_up()
         side = "UP" if p_up >= 0.5 else "DOWN"
         p_pred = p_up if side == "UP" else (1.0 - p_up)
@@ -379,7 +442,29 @@ class BtcPulsePaperTrainer:
             return False
 
     # -- simulation helpers -------------------------------------------- #
+    def _oracle_gate_blocker(self) -> Optional[str]:
+        """Return the BTC Pulse oracle blocker (or None if the oracle is fresh)."""
+        if self.oracle is None:
+            return "chainlink_not_initialized"
+        from .chainlink_oracle import oracle_blocker
+        st = self._oracle_status if self._oracle_status is not None else self.oracle.read()
+        return oracle_blocker(st)
+
     def _advance_price(self) -> None:
+        # Prefer the Chainlink BTC/USD oracle price as the reference when it is
+        # fresh+valid (real on-chain price, not a simulated walk).
+        if self._oracle_status is not None and getattr(self._oracle_status, "valid", False):
+            px = getattr(self._oracle_status, "price", None)
+            if px and px > 0:
+                self._price = float(px)
+                self._closes.append(self._price)
+                if len(self._closes) > 1000:
+                    self._closes = self._closes[-1000:]
+                return
+        if self.require_chainlink:
+            # Chainlink required but not fresh: do NOT invent a price. Keep the
+            # last known close; the round is oracle-blocked anyway.
+            return
         if self._price_fn is not None:
             try:
                 self._price = float(self._price_fn())
@@ -504,6 +589,17 @@ class BtcPulsePaperTrainer:
             "btc_pulse_kill_switch_active": self.kill_switch_active,
             "btc_pulse_safety": self.safety,
             "btc_pulse_blockers": self.blockers(),
+            # Chainlink BTC/USD oracle gate (PAPER ONLY).
+            "btc_pulse_oracle_required": bool(self.require_chainlink),
+            "btc_pulse_oracle_source": self.oracle_source,
+            "btc_pulse_oracle_fresh": bool(self.oracle_counters["oracle_fresh"]),
+            "btc_pulse_oracle_age_seconds": self.oracle_counters["oracle_age_seconds"],
+            "btc_pulse_oracle_last_price": self.oracle_counters["last_oracle_price"],
+            "btc_pulse_oracle_last_error": self.oracle_counters["last_oracle_error"],
+            "btc_pulse_oracle_missing_skips": self.oracle_counters["oracle_missing_skips"],
+            "btc_pulse_oracle_stale_skips": self.oracle_counters["oracle_stale_skips"],
+            "btc_pulse_oracle_error_skips": self.oracle_counters["oracle_error_skips"],
+            "btc_pulse_oracle_fresh_decisions": self.oracle_counters["oracle_fresh_decisions"],
         }
 
 

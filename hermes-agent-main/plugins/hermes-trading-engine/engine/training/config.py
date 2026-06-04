@@ -329,6 +329,14 @@ class TrainingConfig:
     btc_pulse_require_positive_ev: bool = True
     btc_pulse_require_risk_gate: bool = True
     btc_pulse_require_realistic_fill: bool = True
+    # ---- BTC Pulse Chainlink BTC/USD oracle gate (PAPER ONLY) ----
+    # When required, BTC Pulse must use a FRESH Chainlink BTC/USD reading as its
+    # reference price and skips new paper trades when the oracle is missing,
+    # stale, invalid, or errored (recorded as oracle-blocked observations).
+    btc_pulse_require_chainlink: bool = False
+    btc_pulse_chainlink_heartbeat_seconds: int = 120
+    btc_pulse_chainlink_max_age_seconds: int = 180
+    btc_pulse_oracle_debug_log: bool = False
     # ---- 10x Feedback Accelerator (PAPER ONLY; default OFF) ----
     # Increases TRAINING FEEDBACK (decisions, shadow labels, no-trade labels,
     # tiny exploration trades) WITHOUT loosening any hard safety gate. Only soft
@@ -449,6 +457,10 @@ class TrainingConfig:
             0, min(int(self.btc_pulse_max_paper_trades_per_hour), 100000))
         self.btc_pulse_max_daily_paper_loss = max(
             0.0, min(float(self.btc_pulse_max_daily_paper_loss), 500.0))
+        self.btc_pulse_chainlink_heartbeat_seconds = max(
+            1, min(int(self.btc_pulse_chainlink_heartbeat_seconds), 86400))
+        self.btc_pulse_chainlink_max_age_seconds = max(
+            1, min(int(self.btc_pulse_chainlink_max_age_seconds), 86400))
         # Campaign-safe profile: if pulse is explicitly enabled it MUST stay
         # paper-only + isolated, with live + legacy autotrade hard-off. This
         # never enables a live path; it only ever tightens the pulse experiment.
@@ -742,6 +754,10 @@ class TrainingConfig:
             btc_pulse_require_positive_ev=_envb("BTC_PULSE_REQUIRE_POSITIVE_EV", True),
             btc_pulse_require_risk_gate=_envb("BTC_PULSE_REQUIRE_RISK_GATE", True),
             btc_pulse_require_realistic_fill=_envb("BTC_PULSE_REQUIRE_REALISTIC_FILL", True),
+            btc_pulse_require_chainlink=_envb("BTC_PULSE_REQUIRE_CHAINLINK", False),
+            btc_pulse_chainlink_heartbeat_seconds=_envi("CHAINLINK_BTC_USD_HEARTBEAT_SECONDS", 120),
+            btc_pulse_chainlink_max_age_seconds=_envi("CHAINLINK_BTC_USD_MAX_AGE_SECONDS", 180),
+            btc_pulse_oracle_debug_log=_envb("BTC_PULSE_ORACLE_DEBUG_LOG", False),
             feedback_accelerator_enabled=_envb("FEEDBACK_ACCELERATOR_ENABLED", False),
             feedback_accelerator_target_multiplier=_envi("FEEDBACK_ACCELERATOR_TARGET_MULTIPLIER", 10),
             exploration_tiny_size_enabled=_envb("EXPLORATION_TINY_SIZE_ENABLED", True),

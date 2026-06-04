@@ -416,6 +416,14 @@ services:
       BTC_AUTOTRADE_ENABLED: "${BTC_AUTOTRADE_ENABLED:-0}"
       BTC_PULSE_TICK_SECONDS: "${BTC_PULSE_TICK_SECONDS:-30}"
       BTC_PULSE_ROUND_SECONDS: "${BTC_PULSE_ROUND_SECONDS:-300}"
+      # ---- BTC Pulse Chainlink BTC/USD oracle gate (PAPER ONLY) ----
+      # When BTC_PULSE_REQUIRE_CHAINLINK=1, BTC Pulse uses a FRESH Chainlink
+      # BTC/USD price as its reference and skips paper trades when the oracle is
+      # missing/stale/invalid/errored (recorded as oracle-blocked). Read-only.
+      BTC_PULSE_REQUIRE_CHAINLINK: "${BTC_PULSE_REQUIRE_CHAINLINK:-1}"
+      CHAINLINK_BTC_USD_HEARTBEAT_SECONDS: "${CHAINLINK_BTC_USD_HEARTBEAT_SECONDS:-120}"
+      CHAINLINK_BTC_USD_MAX_AGE_SECONDS: "${CHAINLINK_BTC_USD_MAX_AGE_SECONDS:-180}"
+      BTC_PULSE_ORACLE_DEBUG_LOG: "${BTC_PULSE_ORACLE_DEBUG_LOG:-1}"
       # ---- 10x Feedback Accelerator (PAPER ONLY; default OFF) ----
       # This is the service that runs the training loop, so the accelerator env
       # MUST live here. Set FEEDBACK_ACCELERATOR_ENABLED=1 in your .env to turn it

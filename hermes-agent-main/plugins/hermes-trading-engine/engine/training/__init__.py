@@ -28,6 +28,8 @@ from .config import (TrainingConfig, AggressivePaperTrainingConfig,
                      FORBIDDEN_LIVE_FLAGS, MODES)
 from .btc_pulse import (BtcPulsePaperTrainer, pulse_preflight,  # noqa: F401
                         resolved_pulse_config)
+from .chainlink_oracle import (ChainlinkBtcUsdOracle,  # noqa: F401
+                               ChainlinkOracleStatus, oracle_blocker)
 from .feedback_accelerator import (  # noqa: F401
     DECISION_CLASSES, FeedbackAcceleratorMetrics, NoTradeLabel, ShadowDecision,
     apply_feedback_accelerator, counts_for_readiness, feedback_value_score,
@@ -63,6 +65,7 @@ from .polymarket_trainer import (
 
 __all__ = [
     "BtcPulsePaperTrainer", "pulse_preflight", "resolved_pulse_config",
+    "ChainlinkBtcUsdOracle", "ChainlinkOracleStatus", "oracle_blocker",
     "DECISION_CLASSES", "FeedbackAcceleratorMetrics", "NoTradeLabel", "ShadowDecision",
     "apply_feedback_accelerator", "counts_for_readiness", "feedback_value_score",
     "resolve_soft_gates", "tiny_exploration_gate", "tiny_exploration_notional",
