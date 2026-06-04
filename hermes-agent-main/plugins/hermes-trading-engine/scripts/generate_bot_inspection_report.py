@@ -1,0 +1,856 @@
+#!/usr/bin/env python3
+"""One-command bot inspection & performance report generator (PAPER ONLY).
+
+Generates a complete, redacted inspection bundle (folder + zip) for ongoing
+health/performance monitoring and external review of the Hermes Polymarket
+paper-training engine.
+
+    python scripts/generate_bot_inspection_report.py --output inspection_reports
+
+This is REPORTING / INSPECTION ONLY. It never changes trading behavior, strategy
+logic, architecture, `.env` values, or safety flags; never enables live trading,
+wallet access, or real order submission; and redacts every secret before writing.
+
+See the module-level collectors/redactor/safety/metrics/recommendations helpers
+for the building blocks; all are importable + unit-tested without Docker or net.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as _dt
+import json
+import os
+import sys
+import zipfile
+from pathlib import Path
+from typing import Any, Optional
+
+# Make sibling helper modules importable whether run as a script or imported.
+_THIS_DIR = Path(__file__).resolve().parent
+if str(_THIS_DIR) not in sys.path:
+    sys.path.insert(0, str(_THIS_DIR))
+_PLUGIN_ROOT = _THIS_DIR.parent
+if str(_PLUGIN_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PLUGIN_ROOT))
+
+import inspection_collectors as collectors  # noqa: E402
+import inspection_metrics as metrics  # noqa: E402
+import inspection_recommendations as recs  # noqa: E402
+import inspection_redactor as redactor  # noqa: E402
+import inspection_safety_audit as safety_audit  # noqa: E402
+
+SCHEMA_VERSION = "1.0"
+
+
+# ----------------------------------------------------------------------------- #
+# Classification
+# ----------------------------------------------------------------------------- #
+def classify(safety: dict, tests: dict, runtime_available: bool,
+             comparison: dict, missing_features: list,
+             warnings: list) -> str:
+    """Determine the overall classification (precedence-ordered)."""
+    if safety.get("critical"):
+        return "CRITICAL_SAFETY_FAIL"
+    tests_failed = tests.get("present") is True and tests.get("passing") is False
+    tests_missing = tests.get("present") is False
+    if not runtime_available and (tests_failed or tests_missing) and not tests.get("skipped"):
+        return "FAIL"
+    if comparison.get("available") and comparison.get("regression"):
+        return "REGRESSION"
+    clean = (
+        safety.get("status") == "OK"
+        and runtime_available
+        and (tests.get("passing") is True or tests.get("skipped"))
+        and not missing_features
+        and not warnings
+    )
+    if clean:
+        return "PASS"
+    return "PASS_WITH_WARNINGS"
+
+
+# ----------------------------------------------------------------------------- #
+# Bundle writing helpers
+# ----------------------------------------------------------------------------- #
+class Bundle:
+    """Tracks written files (relative paths) for the report manifest."""
+
+    def __init__(self, root: Path):
+        self.root = root
+        self.files: list[str] = []
+
+    def write_text(self, rel: str, text: str, redact: bool = True) -> None:
+        path = self.root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        body = redactor.redact_text(text) if redact else text
+        path.write_text(body if body is not None else "", encoding="utf-8")
+        self.files.append(rel)
+
+    def write_json(self, rel: str, obj: Any, redact: bool = True) -> None:
+        path = self.root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = redactor.redact_obj(obj) if redact else obj
+        path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+        self.files.append(rel)
+
+
+def _read_file(path: Path) -> Optional[str]:
+    try:
+        if path.exists() and path.is_file():
+            return path.read_text(encoding="utf-8", errors="replace")
+    except Exception:  # noqa: BLE001
+        return None
+    return None
+
+
+# ----------------------------------------------------------------------------- #
+# Core report generation
+# ----------------------------------------------------------------------------- #
+def generate_report(
+    output_dir: str,
+    repo_root: Optional[str] = None,
+    *,
+    skip_tests: bool = False,
+    skip_docker: bool = False,
+    skip_api: bool = False,
+    skip_artifacts: bool = False,
+    include_docker: bool = True,
+    include_api: bool = True,
+    include_artifacts: bool = True,
+    include_container_artifacts: bool = False,
+    tail_training_logs: int = 1000,
+    tail_engine_logs: int = 500,
+    history_days: int = 7,
+    baseline_path: Optional[str] = None,
+    pr: Optional[str] = None,
+    api_base_url: str = "http://localhost:8800",
+    data_dir: Optional[str] = None,
+    now: Optional[_dt.datetime] = None,
+    runner=None,
+    opener=None,
+) -> dict:
+    """Generate the inspection bundle. Returns a summary dict with paths +
+    classification. Never raises on collection failures (records them instead)."""
+    repo_root = str(Path(repo_root or _PLUGIN_ROOT).resolve())
+    now = now or _dt.datetime.now(_dt.timezone.utc)
+    ts = now.strftime("%Y%m%d_%H%M%S")
+    name = f"bot_inspection_pr{pr}_{ts}" if pr else f"bot_inspection_{ts}"
+
+    out_root = Path(output_dir)
+    out_root.mkdir(parents=True, exist_ok=True)
+    bundle_dir = out_root / name
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+    bundle = Bundle(bundle_dir)
+
+    warnings: list[str] = []
+    errors: list[str] = []
+    data_dir = data_dir or os.getenv("HTE_DATA_DIR")
+
+    # --- env / config (parsed in-memory for audit; redacted on disk) ---------- #
+    env_text = _read_file(Path(repo_root) / ".env") or ""
+    env_example_text = _read_file(Path(repo_root) / ".env.example") or ""
+    compose_text = _read_file(Path(repo_root) / "docker-compose.yml") or ""
+    dockerfile_text = _read_file(Path(repo_root) / "Dockerfile") or ""
+    req_text = _read_file(Path(repo_root) / "requirements.txt") or ""
+    req_dev_text = _read_file(Path(repo_root) / "requirements-dev.txt") or ""
+    pyproject_text = _read_file(Path(repo_root) / "pyproject.toml")
+
+    env_map = safety_audit.parse_env_assignments(env_text)
+    compose_env = safety_audit.parse_compose_environment(compose_text)
+    # effective env for feature detection (real .env wins over compose defaults)
+    eff_env = dict(compose_env)
+    eff_env.update(env_map)
+
+    # --- collectors ----------------------------------------------------------- #
+    git = collectors.collect_git(repo_root, runner=runner)
+
+    docker: dict = {"available": False, "skipped": True}
+    if include_docker and not skip_docker:
+        docker = collectors.collect_docker(repo_root, runner=runner,
+                                           tail_training=tail_training_logs,
+                                           tail_engine=tail_engine_logs)
+
+    api: dict = {}
+    if include_api and not skip_api:
+        api = collectors.collect_api(api_base_url, opener=opener)
+    api_json = collectors.api_json_map(api)
+
+    tests = collectors.collect_tests(repo_root, runner=runner, skip=skip_tests)
+
+    # --- status (local file → docker json) ------------------------------------ #
+    local_status = collectors.read_local_status(data_dir, repo_root)
+    status = local_status.get("status") or {}
+    status_source = local_status.get("source")
+    if not status:
+        d_status = collectors.extract_status_from_docker(docker)
+        if d_status:
+            status = d_status
+            status_source = "docker:hermes-training"
+    runtime_available = bool(status) or bool(
+        api_json.get("state")) or bool(api_json.get("health"))
+
+    # --- safety audit --------------------------------------------------------- #
+    safety = safety_audit.audit(env=env_map, compose_env=compose_env,
+                                status=status, api=api_json)
+
+    # --- features / metrics --------------------------------------------------- #
+    feats = metrics.extract_features(status, api_json, tests, eff_env)
+    baseline = _load_baseline(baseline_path) if baseline_path else None
+    comparison = metrics.compare_baseline(feats, baseline)
+    missing_features = metrics.detect_missing_features(feats, api, tests)
+
+    # --- artifacts ------------------------------------------------------------ #
+    artifacts: dict = {"skipped": True, "host_found": [], "host_missing": list(
+        collectors.ARTIFACT_DIRS), "any_found": False}
+    if include_artifacts and not skip_artifacts:
+        artifacts = collectors.collect_artifacts(
+            repo_root, bundle_dir / "artifacts", data_dir=data_dir,
+            include_container=include_container_artifacts, runner=runner)
+
+    # --- warnings ------------------------------------------------------------- #
+    if safety.get("warn"):
+        warnings.append("safety audit raised warnings")
+    if missing_features:
+        warnings.append(f"{len(missing_features)} missing/weak feature(s)")
+    if api and any(not v.get("ok") for v in api.values()):
+        warnings.append("one or more API endpoints unreachable")
+    if tests.get("present") is False and not tests.get("skipped"):
+        warnings.append("test suite not found")
+    if not runtime_available:
+        warnings.append("no paper-training status collected")
+
+    # --- scorecard + classification ------------------------------------------ #
+    observability = {
+        "artifacts_found": artifacts.get("any_found"),
+        "logs_collected": bool((docker.get("logs_training") or {}).get("ok")),
+        "api_ok": bool(api) and any(v.get("ok") for v in api.values()),
+    }
+    scorecard = metrics.compute_scorecard(feats, safety, tests, runtime_available,
+                                          comparison, observability)
+    classification = classify(safety, tests, runtime_available, comparison,
+                              missing_features, warnings)
+    recommendations = recs.build_recommendations(
+        safety, missing_features, tests, comparison, runtime_available)
+
+    # ------------------------------------------------------------------------- #
+    # Write bundle files
+    # ------------------------------------------------------------------------- #
+    _write_repo_context(bundle, git, env_text, env_example_text, compose_text,
+                        dockerfile_text, req_text, req_dev_text, pyproject_text)
+    if include_docker:
+        _write_docker(bundle, docker)
+    if include_api:
+        _write_api(bundle, api)
+    _write_tests(bundle, tests)
+    _write_metrics(bundle, feats, status, comparison)
+    _write_safety(bundle, safety, env_text, env_example_text, compose_text, docker, api)
+    _write_summaries(bundle, feats, comparison, missing_features, recommendations,
+                     scorecard, classification)
+
+    report_json = _build_report_json(
+        now=now, repo_root=repo_root, classification=classification, pr=pr,
+        git=git, safety=safety, runtime={"available": runtime_available,
+                                         "status_source": status_source,
+                                         "docker_available": docker.get("available")},
+        api=api, features=feats, tests=tests, metrics_summary=_metrics_summary(feats),
+        artifacts=artifacts, comparison=comparison, missing_features=missing_features,
+        warnings=warnings, errors=errors, recommendations=recommendations,
+        scorecard=scorecard, history_days=history_days, baseline_path=baseline_path,
+        files=bundle.files)
+    bundle.write_json("report.json", report_json)
+
+    report_md = _build_report_md(report_json, feats, status, docker, api, tests,
+                                 comparison, missing_features, recommendations,
+                                 scorecard, artifacts, safety)
+    bundle.write_text("report.md", report_md, redact=True)
+
+    # --- zip ------------------------------------------------------------------ #
+    zip_path = out_root / f"{name}.zip"
+    _make_zip(bundle_dir, zip_path)
+
+    return {
+        "classification": classification,
+        "score": scorecard["score"],
+        "bundle_dir": str(bundle_dir),
+        "zip_path": str(zip_path),
+        "report_json": str(bundle_dir / "report.json"),
+        "report_md": str(bundle_dir / "report.md"),
+        "warnings": warnings,
+        "files": bundle.files,
+    }
+
+
+def _load_baseline(path: str) -> Optional[dict]:
+    try:
+        p = Path(path)
+        if p.exists():
+            return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return None
+    return None
+
+
+# ----------------------------------------------------------------------------- #
+# Section writers
+# ----------------------------------------------------------------------------- #
+def _write_repo_context(bundle, git, env_text, env_example_text, compose_text,
+                        dockerfile_text, req_text, req_dev_text, pyproject_text):
+    bundle.write_text("git_status.txt", git["status"]["stdout"])
+    bundle.write_text("git_branch.txt", git["branch"]["stdout"])
+    bundle.write_text("git_log_recent.txt", git["log_recent"]["stdout"])
+    bundle.write_text("git_diff_stat.txt", git["diff_stat"]["stdout"])
+    bundle.write_text("changed_files.txt", git["changed_files"]["stdout"])
+    bundle.write_text("env_redacted.txt", redactor.redact_env_text(env_text), redact=False)
+    bundle.write_text("env_example_redacted.txt",
+                      redactor.redact_env_text(env_example_text), redact=False)
+    bundle.write_text("docker_compose_redacted.yml",
+                      redactor.redact_env_text(compose_text), redact=False)
+    bundle.write_text("dockerfile_snapshot.txt", dockerfile_text)
+    bundle.write_text("requirements_snapshot.txt", req_text)
+    bundle.write_text("requirements_dev_snapshot.txt", req_dev_text)
+    if pyproject_text is not None:
+        bundle.write_text("pyproject_snapshot.toml", pyproject_text)
+
+
+def _write_docker(bundle, docker):
+    if docker.get("skipped"):
+        bundle.write_text("docker_compose_ps.txt", "docker collection skipped.")
+        return
+    bundle.write_text("docker_compose_ps.txt", _cmd_dump(docker.get("ps")))
+    bundle.write_text("docker_compose_config.txt", _cmd_dump(docker.get("config")))
+    bundle.write_text("docker_images.txt", _cmd_dump(docker.get("images")))
+    bundle.write_text("docker_volumes.txt", _cmd_dump(docker.get("volumes")))
+    bundle.write_text("hermes_training_status.txt", _cmd_dump(docker.get("training_status")))
+    bundle.write_text("logs/hermes-training_tail1000.log",
+                      _cmd_dump(docker.get("logs_training")))
+    bundle.write_text("logs/hermes-trading-engine_tail500.log",
+                      _cmd_dump(docker.get("logs_engine")))
+
+
+def _write_api(bundle, api):
+    name_map = {
+        "health": "api/health.json", "state": "api/state.json",
+        "venues_status": "api/venues_status.json",
+        "chainlink_status": "api/chainlink_status.json",
+        "news_status": "api/news_status.json",
+        "research_status": "api/research_status.json",
+        "micro_live_status": "api/micro_live_status.json",
+        "guarded_live_status": "api/guarded_live_status.json",
+        "production_review_status": "api/production_review_status.json",
+    }
+    for key, rel in name_map.items():
+        entry = (api or {}).get(key) or {"ok": False, "error": "not collected"}
+        bundle.write_json(rel, entry)
+
+
+def _write_tests(bundle, tests):
+    name_map = {
+        "full": "test_results_full.txt", "chainlink": "test_results_chainlink.txt",
+        "btc_pulse": "test_results_btc_pulse.txt", "fast_price": "test_results_fast_price.txt",
+        "news": "test_results_news.txt", "bregman": "test_results_bregman.txt",
+        "paper_attribution": "test_results_paper_attribution.txt",
+        "inspection": "test_results_inspection.txt",
+    }
+    runs = tests.get("runs", {})
+    for key, rel in name_map.items():
+        if tests.get("skipped"):
+            bundle.write_text(rel, "tests skipped (--skip-tests).")
+            continue
+        rec = runs.get(key)
+        bundle.write_text(rel, _cmd_dump(rec) if rec else "not run.")
+
+
+def _write_metrics(bundle, feats, status, comparison):
+    pnl = (status or {}).get("pnl", {}) or {}
+    mon = (status or {}).get("monitoring", {}) or {}
+    bp = (status or {}).get("btc_pulse", {}) or {}
+    news = (status or {}).get("news", {}) or {}
+    research = (status or {}).get("research", {}) or {}
+    fast = (status or {}).get("btc_fast_price", {}) or {}
+    scan = (status or {}).get("scan_metrics", {}) or {}
+
+    bundle.write_json("metrics/paper_training_metrics.json", {
+        "equity": feats.get("equity"), "total_pnl": feats.get("total_pnl"),
+        "after_cost_pnl": feats.get("after_cost_pnl"),
+        "open_positions": feats.get("open_positions"),
+        "closed_positions": feats.get("closed_positions"),
+        "paper_trades": feats.get("paper_trades"),
+        "win_rate_traded_only": feats.get("win_rate_traded_only"),
+        "runtime_minutes": feats.get("runtime_minutes"), "raw_pnl": pnl})
+    bundle.write_json("metrics/strategy_attribution.json", {
+        "paper_attribution_enabled": feats.get("paper_attribution_enabled"),
+        "exploration_validation_separated": feats.get("exploration_validation_separated"),
+        "monitoring": mon})
+    bundle.write_json("metrics/btc_pulse.json", {k: feats.get(k) for k in feats
+                                                 if k.startswith("btc_pulse")} | {"raw": bp})
+    bundle.write_json("metrics/bregman.json", {k: feats.get(k) for k in feats
+                                               if k.startswith("bregman")})
+    bundle.write_json("metrics/news_quality.json", {
+        "news_scanner_enabled": feats.get("news_scanner_enabled"),
+        "news_provider_mode": feats.get("news_provider_mode"),
+        "news_items_fetched": feats.get("news_items_fetched"),
+        "news_items_used": feats.get("news_items_used"),
+        "news_quality_ratio": metrics._news_quality_ratio(feats), "raw": news})
+    bundle.write_json("metrics/chainlink.json", {k: feats.get(k) for k in feats
+                                                 if k.startswith("chainlink")})
+    bundle.write_json("metrics/fast_btc_price.json", {
+        "btc_fast_price_enabled": feats.get("btc_fast_price_enabled"),
+        "btc_fast_price_valid": feats.get("btc_fast_price_valid"),
+        "btc_fast_price_age_seconds": feats.get("btc_fast_price_age_seconds"),
+        "btc_fast_price_disagreement_bps": feats.get("btc_fast_price_disagreement_bps"),
+        "raw": fast})
+    bundle.write_json("metrics/grok_research.json", {
+        "grok_enabled": feats.get("grok_enabled"),
+        "grok_has_api_key": feats.get("grok_has_api_key"),
+        "grok_with_news_count": feats.get("grok_with_news_count"),
+        "grok_cache_hits": feats.get("grok_cache_hits"), "raw": research})
+    bundle.write_json("metrics/market_scan.json", {
+        "scanned_markets": feats.get("scanned_markets"),
+        "kept_markets": feats.get("kept_markets"),
+        "market_scan_limit_effective": feats.get("market_scan_limit_effective"), "raw": scan})
+    bundle.write_json("metrics/risk_and_safety.json", {
+        "live_detected": feats.get("live_detected"), "preflight_ok": feats.get("preflight_ok"),
+        "risk": (status or {}).get("risk", {})})
+    bundle.write_json("metrics/fill_realism.json", {
+        "fill_realism_enabled": feats.get("fill_realism_enabled"),
+        "fantasy_fill_rejections": feats.get("fantasy_fill_rejections")})
+    bundle.write_json("metrics/calibration.json", {
+        "brier": feats.get("brier"), "ece": feats.get("ece"),
+        "sharpe": feats.get("sharpe"), "sortino": feats.get("sortino"),
+        "calmar": feats.get("calmar"), "max_drawdown": feats.get("max_drawdown")})
+    bundle.write_json("metrics/pnl_by_strategy.json", {
+        "polymarket_after_cost_pnl": feats.get("after_cost_pnl"),
+        "btc_pulse_after_cost_pnl": feats.get("btc_pulse_after_cost_pnl"),
+        "bregman_certified_profit": feats.get("bregman_certified_profit")})
+    bundle.write_json("metrics/exploration_vs_validation.json", {
+        "exploration_validation_separated": feats.get("exploration_validation_separated"),
+        "feedback_accelerator": (status or {}).get("feedback_accelerator", {})})
+
+
+def _write_safety(bundle, safety, env_text, env_example_text, compose_text, docker, api):
+    bundle.write_json("safety/safety_audit.json", safety)
+    bundle.write_json("safety/forbidden_live_flags.json", {
+        "forbidden_live_flags": safety.get("forbidden_live_flags", {}),
+        "secret_presence": safety.get("secret_presence", {}),
+        "protective_flags": safety.get("protective_flags", {}),
+        "summary": safety.get("summary", {})})
+    # Redaction audit: prove the scrubber catches secrets (counts only).
+    sources = {
+        "env": env_text, "env_example": env_example_text, "docker_compose": compose_text,
+        "logs_training": (docker.get("logs_training") or {}).get("stdout", "") if isinstance(docker, dict) else "",
+        "api": json.dumps(api or {}),
+    }
+    audit = {}
+    for label, text in sources.items():
+        hits = redactor.scan_for_secrets(text or "")
+        residual = redactor.assert_clean(redactor.redact_text(text or ""))
+        audit[label] = {"secret_pattern_hits": hits, "residual_after_redaction": residual}
+    bundle.write_json("safety/redaction_audit.json", audit)
+
+
+def _write_summaries(bundle, feats, comparison, missing_features, recommendations,
+                     scorecard, classification):
+    bundle.write_json("performance_summary.json", {
+        "classification": classification, "scorecard": scorecard,
+        "key_metrics": _metrics_summary(feats)})
+    bundle.write_json("improvement_trend.json", comparison)
+    bundle.write_json("feature_health.json", {
+        "features": {k: v for k, v in feats.items() if not k.startswith("_")},
+        "sections_present": feats.get("_sections_present", {})})
+    bundle.write_json("missing_features.json", {"missing_features": missing_features})
+    bundle.write_json("recommendations.json", {"recommendations": recommendations})
+
+
+def _metrics_summary(feats: dict) -> dict:
+    keys = ["equity", "total_pnl", "after_cost_pnl", "closed_positions",
+            "paper_trades", "win_rate_traded_only", "brier", "ece", "sharpe",
+            "sortino", "calmar", "max_drawdown", "btc_pulse_after_cost_pnl",
+            "bregman_certified_profit"]
+    out = {k: feats.get(k) for k in keys}
+    out["news_quality_ratio"] = metrics._news_quality_ratio(feats)
+    return out
+
+
+def _cmd_dump(rec: Optional[dict]) -> str:
+    if not rec:
+        return "not collected."
+    lines = [f"$ {rec.get('cmd', '')}", f"# exit_code={rec.get('exit_code')}"]
+    if rec.get("error"):
+        lines.append(f"# error={rec.get('error')}")
+    lines.append("")
+    if rec.get("stdout"):
+        lines.append(rec["stdout"])
+    if rec.get("stderr"):
+        lines.append("\n--- stderr ---")
+        lines.append(rec["stderr"])
+    return "\n".join(lines)
+
+
+# ----------------------------------------------------------------------------- #
+# report.json + report.md
+# ----------------------------------------------------------------------------- #
+def _build_report_json(**kw) -> dict:
+    now = kw["now"]
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "generated_at": now.isoformat(),
+        "repo_root": kw["repo_root"],
+        "classification": kw["classification"],
+        "scorecard": kw["scorecard"],
+        "optional_pr_context": ({"pr": kw["pr"]} if kw["pr"] else None),
+        "history_days": kw["history_days"],
+        "baseline_path": kw["baseline_path"],
+        "git": _git_json(kw["git"]),
+        "safety": kw["safety"],
+        "runtime": kw["runtime"],
+        "api": {k: {kk: vv for kk, vv in v.items() if kk != "raw"}
+                for k, v in (kw["api"] or {}).items()},
+        "features": {k: v for k, v in kw["features"].items() if not k.startswith("_")},
+        "tests": _tests_json(kw["tests"]),
+        "metrics": kw["metrics_summary"],
+        "artifacts": kw["artifacts"],
+        "performance_comparison": kw["comparison"],
+        "missing_features": kw["missing_features"],
+        "warnings": kw["warnings"],
+        "errors": kw["errors"],
+        "recommendations": kw["recommendations"],
+        "files": kw["files"],
+    }
+
+
+def _git_json(git: dict) -> dict:
+    return {
+        "branch": (git["branch"]["stdout"] or "").strip(),
+        "status": (git["status"]["stdout"] or "").strip(),
+        "recent_log": (git["log_recent"]["stdout"] or "").strip().splitlines(),
+        "changed_files": [f for f in (git["changed_files"]["stdout"] or "").splitlines() if f],
+    }
+
+
+def _tests_json(tests: dict) -> dict:
+    out = {"skipped": tests.get("skipped"), "present": tests.get("present"),
+           "passing": tests.get("passing"), "runs": {}}
+    for name, rec in (tests.get("runs") or {}).items():
+        out["runs"][name] = {"exit_code": rec.get("exit_code"), "ok": rec.get("ok"),
+                             "summary": rec.get("summary")}
+    return out
+
+
+def _yn(v):
+    if v is True:
+        return "yes"
+    if v is False:
+        return "no"
+    if v is None:
+        return "unknown"
+    return str(v)
+
+
+def _build_report_md(rj, feats, status, docker, api, tests, comparison,
+                     missing_features, recommendations, scorecard, artifacts,
+                     safety) -> str:
+    L: list[str] = []
+    cls = rj["classification"]
+    L.append("# Hermes Polymarket Paper-Training — Bot Inspection Report")
+    L.append("")
+    L.append(f"_Generated: {rj['generated_at']} · PAPER ONLY · inspection/reporting only_")
+    if rj.get("optional_pr_context"):
+        L.append(f"_Optional PR context: #{rj['optional_pr_context']['pr']}_")
+    L.append("")
+
+    # 1. Executive Summary
+    L.append("## 1. Executive Summary")
+    L.append("")
+    L.append(f"**Classification: {cls}**")
+    L.append("")
+    L.append(f"- Bot health score: **{scorecard['score']}/100**")
+    L.append(f"- Safety: {safety.get('status')} · live_detected={_yn(safety.get('live_detected'))}")
+    L.append(f"- Paper training running: {_yn(feats.get('paper_training_running'))} · "
+             f"runtime: {feats.get('runtime_minutes')} min")
+    L.append(f"- Tests: present={_yn(tests.get('present'))} passing={_yn(tests.get('passing'))}"
+             + (" (skipped)" if tests.get("skipped") else ""))
+    if comparison.get("available"):
+        L.append(f"- Trend vs baseline: {len(comparison.get('improved', []))} improved / "
+                 f"{len(comparison.get('degraded', []))} degraded"
+                 + (" · **REGRESSION**" if comparison.get("regression") else ""))
+    else:
+        L.append("- Trend vs baseline: no baseline provided (current-state scorecard only)")
+    L.append(f"- Missing/weak features: {len(missing_features)}")
+    L.append("")
+
+    # 2. Bot Health Scorecard
+    L.append("## 2. Bot Health Scorecard")
+    L.append("")
+    L.append("| Component | Score | Max | Why |")
+    L.append("|---|---:|---:|---|")
+    for comp_name, c in scorecard["components"].items():
+        L.append(f"| {comp_name} | {c['score']} | {c['max']} | {c['reason']} |")
+    L.append(f"| **Total** | **{scorecard['score']}** | **100** | |")
+    L.append("")
+
+    # 3. Safety / Live-Execution Audit
+    L.append("## 3. Safety / Live-Execution Audit")
+    L.append("")
+    L.append(f"- Status: **{safety.get('status')}** · engine_mode={safety.get('engine_mode')}")
+    forb = safety.get("summary", {}).get("forbidden_enabled", [])
+    cred = safety.get("summary", {}).get("credentials_present", [])
+    L.append(f"- Forbidden live flags enabled: {forb or 'none'}")
+    L.append(f"- Live credential material present: {cred or 'none'}")
+    if safety.get("findings"):
+        L.append("")
+        L.append("Findings:")
+        for f in safety["findings"]:
+            L.append(f"- [{f['severity']}] `{f['flag']}` = {f.get('value')} — {f['reason']}")
+    L.append("")
+
+    # 4. Runtime Health
+    L.append("## 4. Runtime Health")
+    L.append("")
+    rt = rj["runtime"]
+    L.append(f"- Paper status collected: {_yn(rt.get('available'))} "
+             f"(source: {rt.get('status_source')})")
+    L.append(f"- Docker available: {_yn(rt.get('docker_available'))}")
+    L.append(f"- preflight_ok: {_yn(feats.get('preflight_ok'))} · "
+             f"scanned={feats.get('scanned_markets')} kept={feats.get('kept_markets')}")
+    L.append("")
+
+    # 5. Performance Improvement / Regression Analysis
+    L.append("## 5. Performance Improvement / Regression Analysis")
+    L.append("")
+    if comparison.get("available"):
+        L.append("| Metric | Current | Baseline | Δ | Direction |")
+        L.append("|---|---|---|---|---|")
+        for m, d in comparison.get("metrics", {}).items():
+            L.append(f"| {m} | {d.get('current')} | {d.get('baseline')} | "
+                     f"{d.get('delta')} | {d.get('direction')} |")
+    else:
+        L.append("No baseline provided — current-state key metrics:")
+        L.append("")
+        for k, v in rj["metrics"].items():
+            L.append(f"- {k}: {v}")
+    L.append("")
+
+    # 6-15. Feature sections
+    L.append("## 6. Chainlink / Oracle Health")
+    L.append("")
+    for k in ("chainlink_enabled", "chainlink_valid", "chainlink_stale",
+              "chainlink_age_seconds", "chainlink_price"):
+        L.append(f"- {k}: {_yn(feats.get(k))}")
+    L.append("")
+    L.append("## 7. BTC Fast Price Feed Health")
+    L.append("")
+    for k in ("btc_fast_price_enabled", "btc_fast_price_valid",
+              "btc_fast_price_age_seconds", "btc_fast_price_disagreement_bps"):
+        L.append(f"- {k}: {_yn(feats.get(k))}")
+    L.append("")
+    L.append("## 8. BTC Pulse Status")
+    L.append("")
+    for k in ("btc_pulse_enabled", "btc_pulse_frozen", "btc_pulse_oracle_gate_active",
+              "btc_pulse_paper_trades", "btc_pulse_after_cost_pnl", "btc_pulse_regime",
+              "btc_pulse_rejection_reasons"):
+        L.append(f"- {k}: {_yn(feats.get(k))}")
+    L.append("")
+    L.append("## 9. News Scanner Quality")
+    L.append("")
+    for k in ("news_scanner_enabled", "news_provider_mode", "news_items_fetched",
+              "news_items_used", "news_rejected_stale", "news_rejected_unclear_date",
+              "news_rejected_low_credibility"):
+        L.append(f"- {k}: {_yn(feats.get(k))}")
+    L.append(f"- news_quality_ratio: {metrics._news_quality_ratio(feats)}")
+    L.append("")
+    L.append("## 10. Grok / Research Status")
+    L.append("")
+    for k in ("grok_enabled", "grok_has_api_key", "grok_with_news_count", "grok_cache_hits"):
+        L.append(f"- {k}: {_yn(feats.get(k))}")
+    L.append("")
+    L.append("## 11. Bregman Paper Scanner Status")
+    L.append("")
+    for k in ("bregman_paper_enabled", "bregman_candidates_found", "bregman_certified_count",
+              "bregman_certified_profit", "bregman_false_positive_rate"):
+        L.append(f"- {k}: {_yn(feats.get(k))}")
+    L.append("")
+    L.append("## 12. Paper Training Metrics")
+    L.append("")
+    for k in ("equity", "total_pnl", "after_cost_pnl", "open_positions",
+              "closed_positions", "paper_trades", "win_rate_traded_only"):
+        L.append(f"- {k}: {_yn(feats.get(k))}")
+    L.append("")
+    L.append("## 13. Strategy Attribution")
+    L.append("")
+    L.append(f"- paper_attribution_enabled: {_yn(feats.get('paper_attribution_enabled'))}")
+    L.append(f"- exploration_validation_separated: {_yn(feats.get('exploration_validation_separated'))}")
+    L.append("")
+    L.append("## 14. Fill Realism")
+    L.append("")
+    L.append(f"- fill_realism_enabled: {_yn(feats.get('fill_realism_enabled'))}")
+    L.append(f"- fantasy_fill_rejections: {_yn(feats.get('fantasy_fill_rejections'))}")
+    L.append("")
+    L.append("## 15. Calibration Metrics")
+    L.append("")
+    for k in ("brier", "ece", "sharpe", "sortino", "calmar", "max_drawdown"):
+        L.append(f"- {k}: {_yn(feats.get(k))}")
+    L.append("")
+
+    # 16. Test Results
+    L.append("## 16. Test Results")
+    L.append("")
+    if tests.get("skipped"):
+        L.append("- Tests skipped (`--skip-tests`).")
+    else:
+        L.append("| Suite | exit | summary |")
+        L.append("|---|---|---|")
+        for name, rec in (tests.get("runs") or {}).items():
+            s = rec.get("summary", {})
+            scomp = ", ".join(f"{k}={v}" for k, v in s.items() if v is not None) or "—"
+            L.append(f"| {name} | {rec.get('exit_code')} | {scomp} |")
+    L.append("")
+
+    # 17. Docker Logs / Errors
+    L.append("## 17. Docker Logs / Errors")
+    L.append("")
+    if docker.get("skipped") or not docker.get("available"):
+        L.append("- Docker not available / skipped. See `logs/` if collected.")
+    else:
+        lt = docker.get("logs_training", {})
+        L.append(f"- hermes-training logs collected: {_yn(lt.get('ok'))} "
+                 f"(see `logs/hermes-training_tail1000.log`)")
+        le = docker.get("logs_engine", {})
+        L.append(f"- hermes-trading-engine logs collected: {_yn(le.get('ok'))} "
+                 f"(see `logs/hermes-trading-engine_tail500.log`)")
+    L.append("")
+
+    # 18. API Snapshot Summary
+    L.append("## 18. API Snapshot Summary")
+    L.append("")
+    if not api:
+        L.append("- API collection skipped.")
+    else:
+        L.append("| Endpoint | ok | status | note |")
+        L.append("|---|---|---|---|")
+        for name, e in api.items():
+            L.append(f"| {name} | {_yn(e.get('ok'))} | {e.get('status')} | {e.get('error', '')} |")
+    L.append("")
+
+    # 19. Artifacts Included
+    L.append("## 19. Artifacts Included")
+    L.append("")
+    if artifacts.get("skipped"):
+        L.append("- Artifact collection skipped.")
+    else:
+        for a in artifacts.get("host_found", []):
+            L.append(f"- {a['name']}: {'copied' if a.get('copied') else 'present (not copied)'} "
+                     f"({a.get('bytes', 0)} bytes)")
+        if artifacts.get("host_missing"):
+            L.append(f"- Missing (recorded, not fatal): {', '.join(artifacts['host_missing'])}")
+    L.append("")
+
+    # 20. Missing Features / Missing Evidence
+    L.append("## 20. Missing Features / Missing Evidence")
+    L.append("")
+    if not missing_features:
+        L.append("- None detected.")
+    else:
+        for mf in missing_features:
+            L.append(f"- [{mf['severity']}] {mf['feature']}: {mf['detail']}")
+    L.append("")
+
+    # 21. Key Problems Found
+    L.append("## 21. Key Problems Found")
+    L.append("")
+    probs = [f for f in safety.get("findings", []) if f["severity"] in ("CRITICAL", "WARN")]
+    if not probs and not rj["warnings"]:
+        L.append("- No critical problems found.")
+    else:
+        for f in probs:
+            L.append(f"- [{f['severity']}] {f['flag']}: {f['reason']}")
+        for w in rj["warnings"]:
+            L.append(f"- [WARN] {w}")
+    L.append("")
+
+    # 22. Recommended Next Fixes
+    L.append("## 22. Recommended Next Fixes")
+    L.append("")
+    if not recommendations:
+        L.append("- None — bot looks healthy.")
+    else:
+        for r in recommendations:
+            L.append(f"- **{r['priority']}** ({r['area']}): {r['action']}")
+    L.append("")
+
+    # 23. Files Included In Bundle
+    L.append("## 23. Files Included In Bundle")
+    L.append("")
+    for f in sorted(rj["files"]):
+        L.append(f"- {f}")
+    L.append("")
+    return "\n".join(L)
+
+
+def _make_zip(bundle_dir: Path, zip_path: Path) -> None:
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for p in sorted(bundle_dir.rglob("*")):
+            if p.is_file():
+                zf.write(p, p.relative_to(bundle_dir.parent))
+
+
+# ----------------------------------------------------------------------------- #
+# CLI
+# ----------------------------------------------------------------------------- #
+def _build_parser() -> argparse.ArgumentParser:
+    ap = argparse.ArgumentParser(
+        description="Generate a PAPER-ONLY bot inspection & performance report bundle.")
+    ap.add_argument("--output", default="inspection_reports",
+                    help="output directory for the bundle folder + zip")
+    ap.add_argument("--repo-root", default=None, help="repo root (default: plugin root)")
+    ap.add_argument("--pr", default=None, help="optional PR number for context only")
+    ap.add_argument("--baseline", default=None, help="path to a previous report.json baseline")
+    ap.add_argument("--history-days", type=int, default=7)
+    ap.add_argument("--api-base-url", default="http://localhost:8800")
+    ap.add_argument("--data-dir", default=None, help="HTE data dir (default: $HTE_DATA_DIR)")
+    ap.add_argument("--skip-tests", action="store_true")
+    ap.add_argument("--skip-docker", action="store_true")
+    ap.add_argument("--skip-api", action="store_true")
+    ap.add_argument("--skip-artifacts", action="store_true")
+    ap.add_argument("--include-docker", action="store_true", default=None)
+    ap.add_argument("--include-api", action="store_true", default=None)
+    ap.add_argument("--include-artifacts", action="store_true", default=None)
+    ap.add_argument("--include-container-artifacts", action="store_true",
+                    help="also try docker compose cp of container artifact paths")
+    ap.add_argument("--tail-training-logs", type=int, default=1000)
+    ap.add_argument("--tail-engine-logs", type=int, default=500)
+    return ap
+
+
+def main(argv=None) -> int:
+    args = _build_parser().parse_args(argv)
+    result = generate_report(
+        output_dir=args.output,
+        repo_root=args.repo_root,
+        skip_tests=args.skip_tests,
+        skip_docker=args.skip_docker,
+        skip_api=args.skip_api,
+        skip_artifacts=args.skip_artifacts,
+        include_docker=True if args.include_docker is None else args.include_docker,
+        include_api=True if args.include_api is None else args.include_api,
+        include_artifacts=True if args.include_artifacts is None else args.include_artifacts,
+        include_container_artifacts=args.include_container_artifacts,
+        tail_training_logs=args.tail_training_logs,
+        tail_engine_logs=args.tail_engine_logs,
+        history_days=args.history_days,
+        baseline_path=args.baseline,
+        pr=args.pr,
+        api_base_url=args.api_base_url,
+        data_dir=args.data_dir,
+    )
+    print(f"Classification : {result['classification']}")
+    print(f"Health score   : {result['score']}/100")
+    print(f"Bundle folder  : {result['bundle_dir']}")
+    print(f"Zip bundle     : {result['zip_path']}")
+    if result["warnings"]:
+        print("Warnings       : " + "; ".join(result["warnings"]))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -99,6 +99,49 @@ commands also work against `hermes-trading-engine` (both build from the same
 image). A convenience wrapper that runs every check above is at
 `scripts/docker_test_check.sh` (`bash scripts/docker_test_check.sh [service]`).
 
+### Bot inspection & performance report (long-term monitoring)
+
+One command produces a complete, **redacted**, PAPER-ONLY inspection bundle
+(folder + zip) answering "is the bot improving, is training correct, what's
+missing, are safety gates locked?". It is reporting/inspection ONLY — it never
+changes trading behavior, flags, `.env` values, wallets, or live execution, and
+every secret is scrubbed before anything is written.
+
+```bash
+python scripts/generate_bot_inspection_report.py --output inspection_reports
+```
+
+Outputs (timestamped):
+
+```
+inspection_reports/bot_inspection_YYYYMMDD_HHMMSS/        # folder
+inspection_reports/bot_inspection_YYYYMMDD_HHMMSS.zip     # zip to upload
+# with --pr 34: inspection_reports/bot_inspection_pr34_YYYYMMDD_HHMMSS.zip
+```
+
+Common variants:
+
+```bash
+python scripts/generate_bot_inspection_report.py --output inspection_reports --skip-tests
+python scripts/generate_bot_inspection_report.py --output inspection_reports --include-docker --include-api --include-artifacts
+python scripts/generate_bot_inspection_report.py --output inspection_reports --history-days 7
+python scripts/generate_bot_inspection_report.py --output inspection_reports --baseline inspection_reports/previous/report.json
+python scripts/generate_bot_inspection_report.py --pr 34 --output inspection_reports   # PR is context only
+```
+
+The bundle includes `report.md` + `report.json`, performance/feature/recommendation
+summaries, redacted repo/config snapshots, docker status + logs, API snapshots,
+test results, per-strategy metric snapshots, a live-execution safety audit, and any
+present artifact folders. Missing pieces (no Docker, unreachable API, absent
+folders, no tests) are recorded — never fatal. Run inside the container with
+`docker compose exec -T hermes-training python scripts/generate_bot_inspection_report.py --output /data/inspection_reports`.
+
+Inspection unit tests (no Docker/network needed):
+
+```bash
+python -m pytest tests -k "inspection"
+```
+
 ### Safe runtime defaults
 The engine boots with the safest possible configuration:
 

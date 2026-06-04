@@ -7,4 +7,5 @@ shadow_artifacts/
 replay_artifacts/
 guarded_live_artifacts/
 polymarket_training_reports/
+inspection_reports/
 *.sqlite3
