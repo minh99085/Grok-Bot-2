@@ -10,9 +10,18 @@ WORKDIR /app
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
+# Test-only deps (pytest). Installed on top of the runtime requirements so the
+# suite runs inside the container with no manual `pip install`. Does not change
+# runtime behavior — nothing in engine/ imports these.
+COPY requirements-dev.txt /app/requirements-dev.txt
+RUN pip install --no-cache-dir -r /app/requirements-dev.txt
+
 COPY engine /app/engine
 COPY web /app/web
 COPY scripts /app/scripts
+# Ship the test suite (+ conftest.py and tests/fixtures) at /app/tests so that
+# `python -m pytest` and targeted `pytest tests -k "..."` work in the container.
+COPY tests /app/tests
 
 RUN mkdir -p /data
 EXPOSE 8800

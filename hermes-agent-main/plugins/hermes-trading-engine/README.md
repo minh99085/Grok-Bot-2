@@ -71,6 +71,34 @@ Fractions are of current paper **equity**.
 **Kill switch:** `docker compose exec hermes-trading-engine touch /data/KILL_SWITCH`
 halts every order path immediately; delete the file to resume.
 
+### Running the test suite inside Docker
+
+The container image bundles the `tests/` directory at `/app/tests` and installs
+`pytest` from `requirements-dev.txt`, so the suite runs hermetically with **no
+manual `pip install`**. After `docker compose up --build`:
+
+```bash
+# Full suite
+docker compose exec hermes-training python -m pytest
+
+# Targeted subsets (-k matches test/file names)
+docker compose exec hermes-training python -m pytest tests -k "chainlink"
+docker compose exec hermes-training python -m pytest tests -k "btc_pulse"
+docker compose exec hermes-training python -m pytest tests -k "news"
+docker compose exec hermes-training python -m pytest tests -k "bregman"
+```
+
+The status command keeps working alongside the tests (paper-only, unchanged):
+
+```bash
+docker compose exec hermes-training python scripts/polymarket_training_status.py
+```
+
+These run inside the **already-running** `hermes-training` container. The same
+commands also work against `hermes-trading-engine` (both build from the same
+image). A convenience wrapper that runs every check above is at
+`scripts/docker_test_check.sh` (`bash scripts/docker_test_check.sh [service]`).
+
 ### Safe runtime defaults
 The engine boots with the safest possible configuration:
 
