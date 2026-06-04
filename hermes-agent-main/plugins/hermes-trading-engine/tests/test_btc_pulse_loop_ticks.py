@@ -61,6 +61,29 @@ def test_risk_rejection_blocks_paper_trade():
     assert t.rejection_reasons.get("risk_rejected", 0) >= 1
 
 
+def test_kill_switch_trips_on_net_daily_loss():
+    cfg = TrainingConfig(btc_pulse_enabled=True)
+    t = BtcPulsePaperTrainer(cfg, clock=lambda: 1_700_000_000_000, price_fn=lambda: 100000.0)
+    t.tick(now_ms=1_700_000_000_000)
+    t.max_daily_loss = 10.0
+    t._day_pnl_net = -10.0       # net daily loss reached the cap
+    reason = t._gate({"ev_frac": 0.0, "entry": 0.52})
+    assert reason == "drawdown_kill_switch"
+
+
+def test_drawdown_kill_switch_resets_after_a_day():
+    # The daily drawdown limit must LIFT after 24h (paper). Otherwise it latches
+    # forever and stops all further pulse trades.
+    cfg = TrainingConfig(btc_pulse_enabled=True, btc_pulse_min_ev_threshold=5.0)
+    t = BtcPulsePaperTrainer(cfg, clock=lambda: 1_700_000_000_000, price_fn=lambda: 100000.0)
+    t.tick(now_ms=1_700_000_000_000)        # set the day anchor
+    t._day_pnl_net = -100.0                  # simulate a tripped kill switch
+    t.kill_switch_active = True
+    t.tick(now_ms=1_700_000_000_000 + 86_400_001)   # one day + 1ms later
+    assert t.kill_switch_active is False
+    assert t._day_pnl_net == 0.0
+
+
 def test_resolves_rounds_and_updates_isolated_learner():
     cfg = TrainingConfig(btc_pulse_enabled=True, btc_pulse_min_ev_threshold=-1.0)
     t = BtcPulsePaperTrainer(cfg, clock=lambda: 1_700_000_000_000,

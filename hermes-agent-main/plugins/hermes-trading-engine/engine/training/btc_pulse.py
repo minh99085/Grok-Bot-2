@@ -142,9 +142,10 @@ class BtcPulsePaperTrainer:
         self._start_equity = self.equity
         self._peak_equity = self.equity
         self.max_drawdown = 0.0
-        self._day_loss = 0.0
+        self._day_pnl_net = 0.0
         self._trades_this_hour = 0
         self._hour_anchor_ms: Optional[int] = None
+        self._day_anchor_ms: Optional[int] = None
         self.last_tick_ts: Optional[int] = None
         self.last_error: Optional[str] = None
         self.kill_switch_active = False
@@ -219,6 +220,15 @@ class BtcPulsePaperTrainer:
         if now - self._hour_anchor_ms >= 3_600_000:
             self._hour_anchor_ms = now
             self._trades_this_hour = 0
+        # Daily reset: the drawdown kill-switch is a DAILY paper-loss limit, so it
+        # must lift each day (otherwise it latches forever and stops all further
+        # pulse paper trades). PAPER ONLY — never touches a live path.
+        if self._day_anchor_ms is None:
+            self._day_anchor_ms = now
+        if now - self._day_anchor_ms >= 86_400_000:
+            self._day_anchor_ms = now
+            self._day_pnl_net = 0.0
+            self.kill_switch_active = False
 
         self._advance_price()
 
@@ -312,10 +322,11 @@ class BtcPulsePaperTrainer:
             self.realistic_fill_pnl = round(self.realistic_fill_pnl + pnl, 4)
             self.after_cost_pnl = round(self.after_cost_pnl + pnl - cost, 4)
             self.equity = round(self.equity + pnl - cost, 4)
-            if pnl - cost < 0:
-                self._day_loss = round(self._day_loss + (cost - pnl), 4)
+            # Track NET daily PnL (wins offset losses) — a true "daily loss"
+            # limit, not a sum-of-losing-rounds counter that trips too easily.
+            self._day_pnl_net = round(self._day_pnl_net + (pnl - cost), 4)
             self._update_drawdown()
-            if self._day_loss >= self.max_daily_loss:
+            if self._day_pnl_net <= -self.max_daily_loss:
                 self.kill_switch_active = True
 
         # isolated learner update (pulse namespace ONLY)
@@ -327,7 +338,7 @@ class BtcPulsePaperTrainer:
     def _gate(self, decision: dict) -> Optional[str]:
         if self.kill_switch_active:
             return "drawdown_kill_switch"
-        if self._day_loss >= self.max_daily_loss:
+        if self._day_pnl_net <= -self.max_daily_loss:
             self.kill_switch_active = True
             return "drawdown_kill_switch"
         if self.max_trades_per_hour > 0 and self._trades_this_hour >= self.max_trades_per_hour:
@@ -361,7 +372,7 @@ class BtcPulsePaperTrainer:
                 spread=0.01, data_age_s=1.0, ambiguity_score=0.0, mode="paper",
                 rationale="btc_pulse paper experiment", meta=self.namespace())
             ctx = RiskContext(equity=self.equity, total_exposure=0.0,
-                              market_exposure=0.0, open_orders=0, day_pnl=-self._day_loss)
+                              market_exposure=0.0, open_orders=0, day_pnl=self._day_pnl_net)
             decision_obj = self.risk.evaluate(proposal, ctx)
             return bool(getattr(decision_obj, "approved", False))
         except Exception:  # noqa: BLE001 — fail closed (no trade) on any gate error
@@ -485,6 +496,8 @@ class BtcPulsePaperTrainer:
             "btc_pulse_realistic_fill_pnl": self.realistic_fill_pnl,
             "btc_pulse_after_cost_pnl": self.after_cost_pnl,
             "btc_pulse_equity": self.equity,
+            "btc_pulse_day_pnl_net": round(self._day_pnl_net, 4),
+            "btc_pulse_max_daily_loss": self.max_daily_loss,
             "btc_pulse_transfer_gate_status": self.transfer_gate_status(),
             "btc_pulse_last_tick_ts": self.last_tick_ts,
             "btc_pulse_last_error": self.last_error,
