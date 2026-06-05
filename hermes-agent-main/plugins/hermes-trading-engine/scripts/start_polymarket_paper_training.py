@@ -71,6 +71,30 @@ def _synthetic_catalog(n: int = 60) -> list:
     return out
 
 
+def clear_stale_stop_sentinel(stop_path, keep: bool = False) -> bool:
+    """Clear a STALE stop sentinel on an explicit start.
+
+    Without this, a leftover ``polymarket_training.stop`` in the persisted data
+    volume (from a previous ``stop`` or run) makes a fresh start exit at tick 0;
+    under ``restart: unless-stopped`` that becomes an infinite restart loop.
+    Returns True if a sentinel was cleared. PAPER ONLY — only clears a stop flag
+    at startup; never enables live trading. A ``stop`` issued AFTER startup still
+    writes the sentinel and the run loop honours it."""
+    try:
+        exists = stop_path.exists()
+    except OSError:  # noqa: BLE001
+        return False
+    if keep or not exists:
+        return False
+    try:
+        stop_path.unlink()
+        print(f"cleared stale stop sentinel ({stop_path}) — explicit start overrides it.")
+        return True
+    except OSError as exc:  # noqa: BLE001 — best effort; never block startup
+        print(f"warning: could not remove stale stop sentinel {stop_path}: {exc}")
+        return False
+
+
 def run(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Start the Polymarket PAPER training engine (PAPER ONLY).")
     ap.add_argument("--minutes", type=float, default=0.0, help="wall-clock minutes to run (0 = use --max-ticks)")
@@ -81,6 +105,10 @@ def run(argv=None) -> int:
     ap.add_argument("--from-json", default=None, help="path to a JSON catalog (offline)")
     ap.add_argument("--realtime", action="store_true", help="sleep between ticks (live loop)")
     ap.add_argument("--dry-run", action="store_true", help="preflight + 1 synthetic tick + report, then exit")
+    ap.add_argument("--keep-stop-sentinel", action="store_true",
+                    help="do NOT clear a pre-existing stop sentinel on start (legacy "
+                         "behavior; by default an explicit start clears a stale "
+                         "/data/polymarket_training.stop so it doesn't exit at tick 0)")
     ap.add_argument("--report", action="store_true", help="write a training report when finished")
     ap.add_argument("--mode", choices=["disabled", "observe_only", "paper_train"],
                     default="paper_train", help="training mode (PAPER ONLY either way)")
@@ -278,6 +306,10 @@ def run(argv=None) -> int:
     trainer = PolymarketPaperTrainer(cfg, data_dir=data_dir)
     dd = trainer.data_dir
     stop_path = dd / "polymarket_training.stop"
+    # An explicit start overrides any stale stop sentinel left in the data volume
+    # so `docker compose up` doesn't immediately exit at tick 0 and loop under
+    # restart: unless-stopped. PAPER ONLY (see clear_stale_stop_sentinel).
+    clear_stale_stop_sentinel(stop_path, keep=getattr(args, "keep_stop_sentinel", False))
     _profile_name = ("campaign_safe" if (args.campaign_safe_profile or cfg.campaign_safe_profile)
                      else ("aggressive" if args.aggressive_paper else "default"))
     print(f"mode: {cfg.mode} (PAPER ONLY)"
