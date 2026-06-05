@@ -32,6 +32,7 @@ from typing import Optional
 
 from ..arbitrage.bregman_projection import (ProjectionResult, bregman_project,
                                             incoherence, local_incoherence)
+from ..arbitrage.candidate import generate_candidates
 from ..arbitrage.certificate import Certificate, FeeModel, certify_group
 from ..arbitrage.constraint_graph import Constraint, ConstraintGraph
 
@@ -79,6 +80,7 @@ class BregmanResult:
     opportunities: list = field(default_factory=list)
     projection: Optional[ProjectionResult] = None
     incoherence: dict = field(default_factory=dict)
+    candidate_bundles: list = field(default_factory=list)  # CandidateBundle telemetry
 
     def tradeable(self) -> list:
         """Certified + fill-feasible opportunities only."""
@@ -131,6 +133,7 @@ class BregmanResult:
             "incoherence": dict(self.incoherence),
             "projection": self.projection.to_dict() if self.projection else None,
             "opportunities": [o.to_dict() for o in self.opportunities],
+            "candidate_bundles": [b.to_dict() for b in self.candidate_bundles],
         }
 
 
@@ -187,11 +190,15 @@ class BregmanStrategy:
                 # Looked mispriced but no executable certificate => false positive.
                 false_positives += 1
 
+        candidate_bundles = generate_candidates(
+            graph, fee_model=self.fee_model, profit_floor=self.profit_floor,
+            max_size=self.max_size)
         result = BregmanResult(
             candidates=candidates, certified=certified,
             certified_profit=round(certified_profit, 6),
             false_positives=false_positives, fill_feasible=fill_feasible,
-            opportunities=opportunities, projection=proj, incoherence=incoh)
+            opportunities=opportunities, projection=proj, incoherence=incoh,
+            candidate_bundles=candidate_bundles)
         logger.info("bregman eval: candidates=%d certified=%d profit=%.4f "
                     "false_positives=%d fill_feasible=%d max_violation=%.4g",
                     candidates, certified, result.certified_profit,

@@ -72,6 +72,17 @@ QUANT_RESPONSIBILITIES: dict[str, str] = {
 # --------------------------------------------------------------------------- #
 # helpers
 # --------------------------------------------------------------------------- #
+def coherence_confidence_band(point: float, half_width: float) -> tuple:
+    """Symmetric confidence band ``(lo, hi)`` around an after-cost candidate profit.
+
+    ``half_width`` is the executable-price (spread-driven) uncertainty on the
+    estimate. Pure + deterministic; used by Bregman candidate generation so every
+    candidate carries an uncertainty band, never a bare point estimate."""
+    p = float(point)
+    w = abs(float(half_width))
+    return (round(p - w, 8), round(p + w, 8))
+
+
 def _num(v: Any) -> Optional[float]:
     if isinstance(v, bool):
         return 1.0 if v else 0.0
