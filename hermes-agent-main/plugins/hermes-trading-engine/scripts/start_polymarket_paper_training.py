@@ -364,6 +364,16 @@ def run(argv=None) -> int:
             "exploration_pnl separated from validation_pnl; news/grok=evidence_weight_only")
     cfg.mode = args.mode  # start-paper explicitly drives paper training
     data_dir = Path(args.data_dir) if args.data_dir else None
+    # Apply persisted dashboard control overrides BEFORE constructing the trainer
+    # so on/off toggles survive restarts (PAPER ONLY; never enables a live path).
+    from engine import control as _control
+    _ov_dir = data_dir if data_dir is not None else Path(
+        _os.getenv("HTE_DATA_DIR", "."))
+    _startup_overrides = _control.read_overrides(_ov_dir)
+    _applied = _control.apply_to_config(cfg, _startup_overrides)
+    if _applied:
+        logging.getLogger("hte.training.start").info(
+            "applied control overrides at startup: %s", _applied)
     trainer = PolymarketPaperTrainer(cfg, data_dir=data_dir)
     dd = trainer.data_dir
     stop_path = dd / "polymarket_training.stop"
@@ -418,6 +428,12 @@ def run(argv=None) -> int:
                 except Exception:  # noqa: BLE001
                     pass
             break
+        # Honor live dashboard control toggles (PAPER ONLY). Off is always applied;
+        # the BTC pulse supports live freeze/unfreeze, others apply on restart.
+        try:
+            _control.apply_runtime(trainer, _control.read_overrides(dd))
+        except Exception:  # noqa: BLE001 — control must never break a tick
+            pass
         trainer.run_tick(provider())
         ticks += 1
         st = trainer.status()

@@ -1023,7 +1023,26 @@ async function renderPmTraining() {
 renderPmTraining();
 setInterval(renderPmTraining, 5000);
 
-// SystemsStatusPanel — simple "what's running right now" overview (read-only).
+// SystemsStatusPanel — "what's running right now" overview + on/off controls.
+async function setControl(key, state) {
+  try {
+    await fetch(`/api/control/${encodeURIComponent(key)}/${encodeURIComponent(state)}`,
+                { method: "POST" });
+  } catch (_) { /* ignore; board re-polls */ }
+  renderSystems();
+}
+window.setControl = setControl;
+
+function controlButtons(s) {
+  if (!s.controllable) return "";
+  const ov = s.override == null ? "auto" : s.override;
+  const btn = (state, lbl) =>
+    `<button class="sys-btn ${ov === state ? "active " + state : ""}" ` +
+    `onclick="setControl('${s.control_key}','${state}')">${lbl}</button>`;
+  return `<span class="sys-ctrl" title="live: ${s.control_live || "restart"}">` +
+    btn("on", "ON") + btn("off", "OFF") + btn("auto", "AUTO") + `</span>`;
+}
+
 async function renderSystems() {
   const grid = $("systems-grid");
   if (!grid) return;
@@ -1044,6 +1063,7 @@ async function renderSystems() {
         `<span class="sys-name">${esc(s.label)}</span>` +
         `<span class="sys-detail" title="${esc(s.detail)}">${esc(s.detail)}</span>` +
       `</span>` +
+      controlButtons(s) +
     `</div>`
   ).join("");
 }

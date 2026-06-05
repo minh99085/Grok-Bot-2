@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Hermes Trading Engine · Paper</title>
   <!-- ?v=15 cache-buster -->
-  <link rel="stylesheet" href="/static/styles.css?v=16" />
+  <link rel="stylesheet" href="/static/styles.css?v=17" />
   <style>
     .hero-stats { display: flex; flex-wrap: wrap; gap: 10px 22px; margin-top: 12px; }
     .hero-stats > div { display: flex; flex-direction: column; }
@@ -48,9 +48,18 @@
     .sys-dot.on { background: var(--green); box-shadow: 0 0 0 3px rgba(47,209,127,.18); }
     .sys-dot.warn { background: var(--gold); box-shadow: 0 0 0 3px rgba(230,180,60,.16); }
     .sys-dot.off { background: #5a5a6a; }
-    .sys-text { display: flex; flex-direction: column; min-width: 0; }
+    .sys-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
     .sys-name { font-size: 12px; color: var(--text); font-weight: 600; }
     .sys-detail { font-size: 9px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* per-subsystem on/off/auto control buttons on the status board */
+    .sys-ctrl { display: inline-flex; gap: 2px; flex: 0 0 auto; }
+    .sys-btn { font-size: 9px; font-weight: 700; letter-spacing: .3px; cursor: pointer;
+      border: 1px solid var(--line); background: var(--panel); color: var(--dim);
+      border-radius: 5px; padding: 3px 6px; line-height: 1; transition: all .15s; }
+    .sys-btn:hover { color: var(--text); border-color: #6a6a7a; }
+    .sys-btn.active.on { background: rgba(47,209,127,.18); color: var(--green); border-color: var(--green); }
+    .sys-btn.active.off { background: rgba(229,80,80,.16); color: var(--red); border-color: var(--red); }
+    .sys-btn.active.auto { background: var(--panel-2); color: var(--text); border-color: #6a6a7a; }
   </style>
 </head>
 <body>
@@ -288,6 +297,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=16"></script>
+  <script src="/static/app.js?v=17"></script>
 </body>
 </html>

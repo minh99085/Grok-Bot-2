@@ -428,6 +428,26 @@ def api_running_status() -> dict:
     add("clob", "Polymarket CLOB feed", "on" if clob_on else "off",
         "read-only order-book subscription" if clob_on else "disabled")
 
+    # Overlay dashboard control overrides so the board + buttons reflect intent
+    # immediately (the training loop applies the live effect within ~1 tick).
+    from engine import control
+    overrides = control.read_overrides(_engine.s.data_dir)
+    for s in systems:
+        key = s.get("key")
+        meta = control.CONTROLLABLE.get(key)
+        s["controllable"] = bool(meta)
+        s["control_key"] = key if meta else None
+        s["control_live"] = meta.get("live") if meta else None
+        ov = overrides.get(key)
+        s["override"] = ov
+        if ov == "off":
+            s["state"] = "off"
+            if "overridden off" not in s["detail"]:
+                s["detail"] = s["detail"] + " \u00b7 overridden off"
+        elif ov == "on" and s["state"] == "off":
+            s["state"] = "warn"
+            s["detail"] = s["detail"] + " \u00b7 enabling (pending)"
+
     running = sum(1 for s in systems if s["state"] == "on")
     return {"mode": "paper", "generated_at": int(_time.time()),
             "running_count": running, "total": len(systems), "systems": systems}
@@ -660,6 +680,61 @@ def api_grok_toggle(flag: str) -> dict:
         return _engine.brain.set_active(on)
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": str(exc)}
+
+
+@app.get("/api/control/overrides")
+def api_control_overrides() -> dict:
+    """Current per-subsystem control overrides + the controllable catalog (PAPER)."""
+    from engine import control
+    ov = control.read_overrides(_engine.s.data_dir)
+    catalog = [{"key": k, "label": v["label"], "live": v["live"]}
+               for k, v in control.CONTROLLABLE.items()]
+    return {"mode": "paper", "overrides": ov, "controllable": catalog}
+
+
+@app.post("/api/control/{key}/{state}")
+def api_control_set(key: str, state: str) -> JSONResponse:
+    """Set a paper subsystem to on/off/auto from the dashboard status board.
+
+    PAPER ONLY: this can disable any subsystem (always safe) or re-enable a
+    paper/advisory subsystem — it can NEVER enable live trading, wallet access,
+    or real order submission. Live effects: Grok toggles immediately; Polymarket
+    training writes start/stop sentinels; the BTC pulse is toggled live by the
+    training loop; others apply on the next training start.
+    """
+    from engine import control
+    try:
+        overrides = control.write_override(_engine.s.data_dir, key, state)
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+
+    norm = str(state).lower()
+    applied = "override_written"
+    meta = control.CONTROLLABLE.get(key, {})
+    try:
+        if meta.get("live") == "grok" and norm in ("on", "off"):
+            _engine.brain.set_active(norm == "on")
+            applied = "live"
+        elif meta.get("live") == "start_stop":
+            if norm == "off":
+                (_engine.s.data_dir / "polymarket_training.stop").write_text(
+                    "stop", encoding="utf-8")
+                applied = "live"
+            elif norm == "on":
+                refused = _training_start_refusals()
+                if refused:
+                    return JSONResponse(
+                        {"ok": False, "error": "unsafe_config", "refused": refused},
+                        status_code=409)
+                (_engine.s.data_dir / "polymarket_training.start").write_text(
+                    "paper_train", encoding="utf-8")
+                applied = "live"
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"ok": True, "key": key, "state": norm,
+                             "overrides": overrides, "applied": applied,
+                             "warning": str(exc)})
+    return JSONResponse({"ok": True, "key": key, "state": norm, "execution": "paper",
+                         "overrides": overrides, "applied": applied})
 
 
 @app.get("/favicon.ico")
