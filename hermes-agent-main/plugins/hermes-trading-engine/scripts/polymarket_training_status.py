@@ -127,11 +127,19 @@ def _print_bregman_scan(st: dict) -> None:
           f"arbitrage_disabled={b.get('arbitrage_disabled')}")
     if b.get("disabled_reason"):
         print(f"    disabled_reason: {b.get('disabled_reason')}")
-    print(f"    scanned={b.get('constraint_groups_scanned')} "
+    print(f"    discovered={b.get('groups_discovered')} "
+          f"scanned={b.get('constraint_groups_scanned')} "
           f"skipped={b.get('groups_skipped')} "
+          f"malformed={b.get('malformed_groups_rejected')} "
           f"candidates={b.get('candidate_arbitrages')} "
           f"certified={b.get('certified_arbitrages')} "
           f"exec_depth_certified={b.get('executable_depth_certified')}")
+    if b.get("group_type_counts"):
+        print(f"    group_types: {b.get('group_type_counts')}")
+    if b.get("metadata_coverage") is not None:
+        print(f"    metadata_coverage={b.get('metadata_coverage')} "
+              f"book_coverage={b.get('book_coverage')} "
+              f"avg_outcomes/group={b.get('avg_outcomes_per_group')}")
     skips: dict = {}
     for s in (b.get("skipped_groups") or []):
         skips[s.get("reason")] = skips.get(s.get("reason"), 0) + 1

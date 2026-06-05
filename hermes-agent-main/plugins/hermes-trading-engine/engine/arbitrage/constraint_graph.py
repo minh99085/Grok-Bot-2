@@ -333,9 +333,10 @@ def build_constraint_graph(markets: Iterable[dict], *, min_depth_usd: float = 1.
                 skip(mid, SKIP_NO_RELATION, relation)
                 continue
             graph.add_outcomes(parsed)
-            getattr(graph, builder)(*([p.id for p in parsed]
-                                      if builder != "add_complement"
-                                      else [parsed[0].id, parsed[1].id]))
+            if builder == "add_complement":
+                graph.add_complement(parsed[0].id, parsed[1].id)
+            else:
+                getattr(graph, builder)([p.id for p in parsed])
             continue
 
         # --- Polymarket binary shape ---

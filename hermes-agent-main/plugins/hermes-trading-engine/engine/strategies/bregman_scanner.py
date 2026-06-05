@@ -41,7 +41,7 @@ import time
 from typing import Optional, Sequence
 
 from engine.arbitrage.certificate import FeeModel
-from engine.arbitrage.constraint_graph import build_constraint_graph
+from engine.arbitrage.constraint_discovery import discover_constraints
 from engine.strategies.bregman import BregmanResult, BregmanStrategy
 
 logger = logging.getLogger("hte.strategies.bregman_scanner")
@@ -63,6 +63,7 @@ class BregmanPaperScanner:
             fee_model=fee_model, profit_floor=float(profit_floor),
             decay_half_life_s=self.decay_half_life_s)
         self.last_result: Optional[BregmanResult] = None
+        self.last_discovery = None
         self.last_telemetry: dict = {}
         self.scans = 0
         if not self.enabled:
@@ -82,11 +83,16 @@ class BregmanPaperScanner:
             self.last_telemetry = tel
             return tel
 
-        graph, skipped = build_constraint_graph(markets, min_depth_usd=self.min_depth_usd)
+        fee_bps = float(getattr(self.strategy.fee_model, "taker_fee_bps", 0.0))
+        disc = discover_constraints(markets, now_ms=int(now * 1000),
+                                    fee_bps=fee_bps, min_depth_usd=self.min_depth_usd)
+        graph, skipped = disc.graph, disc.skipped
+        self.last_discovery = disc
         result = self.strategy.evaluate(graph, now=now)
         self.last_result = result
         self.scans += 1
         diag = result.audit_diagnostics(half_life_s=self.decay_half_life_s)
+        dm = disc.metrics
 
         tel = {
             "enabled": True,
@@ -94,8 +100,15 @@ class BregmanPaperScanner:
             "arbitrage_disabled": False,
             "disabled_reason": None,
             "constraint_groups_scanned": int(diag["constraint_groups_scanned"]),
+            "groups_discovered": int(dm["groups_discovered"]),
             "groups_skipped": len(skipped),
             "skipped_groups": skipped,
+            "group_type_counts": dm["group_type_counts"],
+            "avg_outcomes_per_group": dm["avg_outcomes_per_group"],
+            "malformed_groups_rejected": dm["malformed_groups_rejected"],
+            "metadata_coverage": dm["metadata_coverage"],
+            "book_coverage": dm["book_coverage"],
+            "skip_reasons": dm["skip_reasons"],
             "incoherent_groups": int(diag["incoherent_groups"]),
             "candidate_arbitrages": int(diag["candidate_arbitrages"]),
             "certified_arbitrages": int(diag["certified_arbitrages"]),
@@ -107,6 +120,7 @@ class BregmanPaperScanner:
             "execution_atomicity_risk": bool(diag["execution_atomicity_risk"]),
             "opportunity_decay_half_life_s": diag["opportunity_decay_half_life_s"],
             "certified_profit": result.certified_profit,
+            "normalized_quotes": len(disc.normalized_quotes),
             "markets_seen": len(markets),
             "scan_ts": round(now, 3),
             "scans": self.scans,
@@ -130,8 +144,16 @@ class BregmanPaperScanner:
             "arbitrage_disabled": True,
             "disabled_reason": self.disabled_reason,
             "constraint_groups_scanned": 0,
+            "groups_discovered": 0,
             "groups_skipped": 0,
             "skipped_groups": [],
+            "group_type_counts": {},
+            "avg_outcomes_per_group": 0.0,
+            "malformed_groups_rejected": 0,
+            "metadata_coverage": 0.0,
+            "book_coverage": 0.0,
+            "skip_reasons": {},
+            "normalized_quotes": 0,
             "incoherent_groups": 0,
             "candidate_arbitrages": 0,
             "certified_arbitrages": 0,
