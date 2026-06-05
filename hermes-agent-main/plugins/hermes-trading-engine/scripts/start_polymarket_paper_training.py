@@ -110,6 +110,11 @@ def run(argv=None) -> int:
                          "behavior; by default an explicit start clears a stale "
                          "/data/polymarket_training.stop so it doesn't exit at tick 0)")
     ap.add_argument("--report", action="store_true", help="write a training report when finished")
+    ap.add_argument("--probability-ensemble", action="store_true",
+                    help="opt in to the calibrated probability ensemble + calibration "
+                         "rollback guardrails (engine.models.probability_ensemble). "
+                         "Sets PROBABILITY_ENSEMBLE_ENABLED=1 for the calibration layer; "
+                         "default OFF preserves current probability behavior. PAPER ONLY.")
     ap.add_argument("--mode", choices=["disabled", "observe_only", "paper_train"],
                     default="paper_train", help="training mode (PAPER ONLY either way)")
     ap.add_argument("--data-dir", default=None, help="data dir for status + campaign state")
@@ -301,6 +306,17 @@ def run(argv=None) -> int:
         print("  hard gates LOCKED: no live, RiskEngine required, fresh book + valid "
               "token + realistic fill required, clean-label guard on, exploration "
               "is NOT live-readiness proof until cleanly resolved.\n")
+    # Opt-in probability ensemble + calibration guardrails (default OFF; behavior
+    # preserved). Exposed via env so the calibration layer can read it without a
+    # structural change to the trainer. PAPER ONLY.
+    if getattr(args, "probability_ensemble", False):
+        import os as _os
+        _os.environ["PROBABILITY_ENSEMBLE_ENABLED"] = "1"
+    logging.getLogger("hte.training.start").info(
+        "modeling config: probability_ensemble=%s calibration=auto(Platt/isotonic/"
+        "temperature/shrink) rollback_guard=available conformal_bands=available "
+        "grok_news=evidence_only",
+        "on" if getattr(args, "probability_ensemble", False) else "off")
     cfg.mode = args.mode  # start-paper explicitly drives paper training
     data_dir = Path(args.data_dir) if args.data_dir else None
     trainer = PolymarketPaperTrainer(cfg, data_dir=data_dir)

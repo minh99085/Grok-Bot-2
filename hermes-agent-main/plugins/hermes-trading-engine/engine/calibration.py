@@ -43,17 +43,40 @@ class Calibrator:
         cal = (ups + self.shrink * p) / (n + self.shrink)
         return min(0.98, max(0.02, cal))
 
+    def _ece(self, pairs: list, bins: int = 10) -> float:
+        """Expected calibration error: |mean(p) - mean(outcome)| per bin,
+        sample-weighted. Lower is better; 0 = perfectly calibrated."""
+        if not pairs:
+            return 0.0
+        buckets: list[list] = [[] for _ in range(bins)]
+        for pr, o in pairs:
+            b = min(bins - 1, max(0, int(float(pr) * bins)))
+            buckets[b].append((float(pr), int(o)))
+        n = len(pairs)
+        err = 0.0
+        for bk in buckets:
+            if not bk:
+                continue
+            mp = sum(p for p, _ in bk) / len(bk)
+            mo = sum(o for _, o in bk) / len(bk)
+            err += (len(bk) / n) * abs(mp - mo)
+        return err
+
     def stats(self) -> dict:
         data = self._data()
         n = len(data)
         if n == 0:
-            return {"samples": 0, "brier_raw": None, "brier_cal": None, "calibrated": False}
+            return {"samples": 0, "brier_raw": None, "brier_cal": None,
+                    "ece_raw": None, "ece_cal": None, "calibrated": False}
         brier_raw = sum((pr - o) ** 2 for pr, o in data) / n
         # calibrated Brier (uses the current mapping on each stored raw prob)
-        brier_cal = sum((self.calibrate(pr) - o) ** 2 for pr, o in data) / n
+        cal = [(self.calibrate(pr), o) for pr, o in data]
+        brier_cal = sum((c - o) ** 2 for c, o in cal) / n
         return {
             "samples": n,
             "brier_raw": round(brier_raw, 4),
             "brier_cal": round(brier_cal, 4),
+            "ece_raw": round(self._ece([(pr, o) for pr, o in data]), 4),
+            "ece_cal": round(self._ece(cal), 4),
             "calibrated": n >= self.min_samples,
         }

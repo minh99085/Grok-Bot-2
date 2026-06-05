@@ -124,6 +124,21 @@ def extract_features(status: dict | None, api: dict | None = None,
         "sortino": _first(_get(status, "quality", "sortino"), pnl.get("sortino")),
         "calmar": _first(_get(status, "quality", "calmar"), pnl.get("calmar")),
         "max_drawdown": _first(pnl.get("max_drawdown"), mon.get("max_drawdown")),
+        # --- calibration guardrails ---
+        "calibration_method": _first(_get(status, "calibration", "method"),
+                                     _get(status, "quality", "calibration_method")),
+        "ece_raw": _first(_get(status, "calibration", "ece_raw"),
+                          _get(status, "quality", "ece_raw")),
+        "ece_cal": _first(_get(status, "calibration", "ece_cal"),
+                          _get(status, "quality", "ece_cal")),
+        "calibration_rollbacks": _first(_get(status, "calibration", "rollbacks"),
+                                        _get(status, "quality", "calibration_rollbacks")),
+        "conformal_band_width": _first(_get(status, "calibration", "conformal_band_width"),
+                                       _get(status, "quality", "conformal_band_width")),
+        "leakage_ok": _first(_get(status, "calibration", "leakage_ok"),
+                             _get(status, "quality", "leakage_ok")),
+        "probability_ensemble_enabled": _first(_get(status, "calibration", "ensemble_enabled"),
+                                               _get(status, "quality", "ensemble_enabled")),
         # --- safety ---
         "live_detected": safety.get("live_detected"),
         "preflight_ok": safety.get("ok"),
@@ -203,6 +218,9 @@ def extract_features(status: dict | None, api: dict | None = None,
         feats.get("fantasy_fill_rejections"),
         _first(feats.get("fill_attempts"),
                _sum_opt(feats.get("fantasy_fill_rejections"), feats.get("paper_trades"))))
+    # Derived: calibration improved when calibrated ECE beats raw ECE.
+    _er, _ec = _num(feats.get("ece_raw")), _num(feats.get("ece_cal"))
+    feats["calibration_improved"] = (_ec < _er) if (_er is not None and _ec is not None) else None
     # Helpful raw-section presence flags for the report narrative.
     feats["_sections_present"] = {
         "pnl": bool(pnl), "scan_metrics": bool(scan), "btc_pulse": bool(bp),
@@ -513,6 +531,9 @@ BENCHMARK_SPECS: list[BenchmarkSpec] = [
     ("max_drawdown", "max_drawdown", "lower", 0.15, 0.25, "Max drawdown (fraction of equity)."),
     ("brier", "brier", "lower", 0.25, 0.33, "Brier score (probability calibration)."),
     ("ece", "ece", "lower", 0.05, 0.10, "Expected calibration error."),
+    ("ece_cal", "ece_cal", "lower", 0.05, 0.10, "Calibrated ECE (post-calibration)."),
+    ("calibration_improved", "calibration_improved", "bool", True, False,
+     "Calibrated ECE beats raw ECE."),
     ("fill_realism_rejection_rate", "fill_realism_rejection_rate", "lower", 0.5, 0.8,
      "Realistic-fill (fantasy-fill) rejection rate; very high => feed/book problem."),
     ("exploration_validation_separated", "exploration_validation_separated", "bool", True, False,

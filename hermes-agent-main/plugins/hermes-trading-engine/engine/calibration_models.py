@@ -423,6 +423,11 @@ class InstitutionalCalibrator:
     intercept: float = 0.0
     _buckets: list[dict] = field(default_factory=list)
     _metrics: dict = field(default_factory=dict)
+    # Guardrail / observability state.
+    rollbacks: int = 0
+    _fit_calls: int = 0
+    _last_method: Optional[str] = None
+    _last_signature: Optional[tuple] = None
 
     # -- fitting -------------------------------------------------------------
     def fit(self, pairs: list[Pair]) -> "InstitutionalCalibrator":
@@ -439,9 +444,74 @@ class InstitutionalCalibrator:
             "calibrated": {"brier": brier(cal), "log_loss": log_loss(cal),
                            "ece": ece(cal, self.bins)},
         }
-        logger.info("calibrator fitted method=%s n=%d slope=%.3f ece_raw=%.4f "
-                    "ece_cal=%.4f", self.fitted_method, len(pairs), self.slope,
-                    self._metrics["raw"]["ece"], self._metrics["calibrated"]["ece"])
+        # Structured logging WITHOUT per-tick spam: INFO only when the chosen
+        # method changes (or the first fit); routine refits log at DEBUG. This
+        # fixes the "repeated isotonic fitting logs" without losing visibility.
+        self._fit_calls += 1
+        _msg = ("calibrator fitted method=%s n=%d slope=%.3f ece_raw=%.4f ece_cal=%.4f")
+        _args = (self.fitted_method, len(pairs), self.slope,
+                 self._metrics["raw"]["ece"], self._metrics["calibrated"]["ece"])
+        if self._fit_calls == 1 or self._last_method != self.fitted_method:
+            logger.info(_msg, *_args)
+        else:
+            logger.debug(_msg, *_args)
+        self._last_method = self.fitted_method
+        return self
+
+    @staticmethod
+    def _signature(pairs: list[Pair]) -> tuple:
+        """Cheap data signature to detect whether a refit is even needed."""
+        pairs = pairs or []
+        n = len(pairs)
+        s_p = round(sum(float(p) for p, _ in pairs), 4)
+        s_y = sum(int(y) for _, y in pairs)
+        return (n, s_p, s_y)
+
+    def maybe_fit(self, pairs: list[Pair]) -> bool:
+        """Fit only when the data actually changed since the last fit.
+
+        Avoids redundant isotonic/Platt refits (CPU + log spam) when the trainer
+        re-evaluates with an unchanged prediction set. Returns True if a fit ran.
+        """
+        sig = self._signature(pairs)
+        if sig == self._last_signature and self._fit_calls > 0:
+            logger.debug("calibrator refit skipped (unchanged data sig=%s)", sig)
+            return False
+        self.fit(pairs)
+        self._last_signature = sig
+        return True
+
+    def fit_with_rollback(self, pairs: list[Pair],
+                          validation_pairs: Optional[list[Pair]] = None,
+                          *, tol: float = 0.0) -> "InstitutionalCalibrator":
+        """Refit, but roll back to the previous model if the new one degrades
+        BOTH calibrated ECE and Brier on the validation set (or in-sample when no
+        validation set is given). Increments ``rollbacks`` on a revert. This is
+        the calibration guardrail that prevents a worse calibrator going live.
+        """
+        prev_model, prev_method = self._model, self.fitted_method
+        prev_metrics = dict(self._metrics)
+        prev_slope, prev_intercept = self.slope, self.intercept
+        prev_buckets = list(self._buckets)
+
+        self.fit(pairs)
+        eval_pairs = validation_pairs if validation_pairs else pairs
+        if not eval_pairs or prev_method == "identity" or not prev_metrics:
+            return self  # nothing trustworthy to compare against yet
+
+        new_cal = [(self._model.transform(p), y) for p, y in eval_pairs]
+        prev_cal = [(prev_model.transform(p), y) for p, y in eval_pairs]
+        new_ece, new_brier = ece(new_cal, self.bins), brier(new_cal)
+        old_ece, old_brier = ece(prev_cal, self.bins), brier(prev_cal)
+        if new_ece > old_ece + tol and new_brier > old_brier + tol:
+            # revert to the previously-good calibrator
+            self._model, self.fitted_method = prev_model, prev_method
+            self.slope, self.intercept = prev_slope, prev_intercept
+            self._buckets, self._metrics = prev_buckets, prev_metrics
+            self.rollbacks += 1
+            logger.warning("calibration rollback #%d: kept %s (candidate degraded "
+                           "ece %.4f->%.4f brier %.4f->%.4f)", self.rollbacks,
+                           prev_method, old_ece, new_ece, old_brier, new_brier)
         return self
 
     def _select_model(self, pairs: list[Pair]) -> _Model:
@@ -506,6 +576,7 @@ class InstitutionalCalibrator:
             "effective_sample_size": self.effective_sample_size,
             "slope": self.slope,
             "intercept": self.intercept,
+            "rollbacks": self.rollbacks,
             "reliability_buckets": self.reliability_buckets(),
             "metrics": self.metrics(),
             "params": self._model.params(),
