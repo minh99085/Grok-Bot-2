@@ -23,6 +23,7 @@ import csv as _csv
 import json
 import math
 import sys
+from typing import Optional
 
 import httpx
 import numpy as np
@@ -369,6 +370,114 @@ def _verdict(rep) -> str:
                  "positive as a hypothesis. Order-book/funding signals are wired LIVE but can't be "
                  "backtested here (no free historical L2/funding).")
     return "\n".join(lines)
+
+
+# =========================================================================== #
+# Institutional validation: risk-adjusted ratios, combinatorial purged CV,
+# and significance gates (PURE, deterministic, stdlib-only — ADDITIVE).
+#
+# Quant scope — *Backtesting & Robustness*: tools to decide whether an observed
+# paper improvement is real before it is trusted. Walk-forward windows + bootstrap
+# CIs live in engine.replay.robustness; this section adds the leakage-controlled
+# cross-validation splitter and the Sharpe/Sortino/Calmar significance gate.
+# =========================================================================== #
+def sharpe_ratio(returns) -> Optional[float]:
+    """Annualization-free Sharpe (mean/std) of a return list. None if degenerate."""
+    xs = [float(x) for x in (returns or [])]
+    if len(xs) < 2:
+        return None
+    mu = sum(xs) / len(xs)
+    var = sum((x - mu) ** 2 for x in xs) / (len(xs) - 1)
+    sd = var ** 0.5
+    return round(mu / sd, 6) if sd > 0 else None
+
+
+def sortino_ratio(returns, *, target: float = 0.0) -> Optional[float]:
+    """Sortino ratio: mean excess return over downside deviation. None if no
+    downside (or too few samples)."""
+    xs = [float(x) for x in (returns or [])]
+    if len(xs) < 2:
+        return None
+    mu = sum(xs) / len(xs)
+    downside = [min(0.0, x - target) for x in xs]
+    dd = (sum(d * d for d in downside) / len(xs)) ** 0.5
+    return round((mu - target) / dd, 6) if dd > 0 else None
+
+
+def calmar_ratio(returns) -> Optional[float]:
+    """Calmar ratio: cumulative return over max drawdown of the equity curve."""
+    xs = [float(x) for x in (returns or [])]
+    if not xs:
+        return None
+    curve = [1.0]
+    for x in xs:
+        curve.append(curve[-1] * (1.0 + x))
+    mdd = max_drawdown(curve)
+    total = curve[-1] - 1.0
+    return round(total / mdd, 6) if mdd > 0 else None
+
+
+def combinatorial_purged_cv(n: int, *, k: int = 6, test_groups: int = 2,
+                            embargo: int = 0):
+    """Combinatorial Purged Cross-Validation splits (López de Prado).
+
+    Partition ``n`` ordered observations into ``k`` contiguous groups and, for
+    every combination of ``test_groups`` test groups, build a train set from the
+    remaining groups with **purging** (drop train observations adjacent to a test
+    group) and an **embargo** of ``embargo`` observations after each test group.
+    Deterministic; returns ``[{test_idx, train_idx, test_group_ids}, ...]``.
+    """
+    from itertools import combinations
+    if n <= 0 or k <= 1 or test_groups <= 0 or test_groups >= k:
+        return []
+    bounds = [(i * n // k, (i + 1) * n // k) for i in range(k)]
+    splits = []
+    for combo in combinations(range(k), test_groups):
+        test_idx: list[int] = []
+        for g in combo:
+            test_idx.extend(range(bounds[g][0], bounds[g][1]))
+        test_set = set(test_idx)
+        # purge: drop any train index within `embargo`+1 of a test boundary.
+        purge = set()
+        for g in combo:
+            lo, hi = bounds[g]
+            for j in range(max(0, lo - 1), lo):
+                purge.add(j)
+            for j in range(hi, min(n, hi + embargo + 1)):
+                purge.add(j)
+        train_idx = [i for i in range(n) if i not in test_set and i not in purge]
+        splits.append({"test_group_ids": list(combo),
+                       "test_idx": test_idx, "train_idx": train_idx})
+    return splits
+
+
+def significance_gate(baseline: dict, candidate: dict, *,
+                      thresholds: Optional[dict] = None) -> dict:
+    """Require a candidate to BEAT a baseline on Sharpe/Sortino/Calmar by margins.
+
+    ``baseline`` / ``candidate`` are ``{"sharpe":..,"sortino":..,"calmar":..}``.
+    ``thresholds`` are minimum required *improvements* (default 0.2/0.2/0.2). A
+    metric missing on either side is treated as not-improved. Returns
+    ``{passed, per_metric}`` where ``passed`` requires ALL configured metrics to
+    clear their margin. Pure + deterministic.
+    """
+    thr = {"sharpe": 0.2, "sortino": 0.2, "calmar": 0.2}
+    thr.update(thresholds or {})
+    per: dict[str, dict] = {}
+    all_pass = True
+    for metric, margin in thr.items():
+        b, c = baseline.get(metric), candidate.get(metric)
+        if b is None or c is None:
+            per[metric] = {"baseline": b, "candidate": c, "delta": None,
+                           "required": margin, "passed": False}
+            all_pass = False
+            continue
+        delta = float(c) - float(b)
+        ok = delta >= float(margin)
+        per[metric] = {"baseline": round(float(b), 6), "candidate": round(float(c), 6),
+                       "delta": round(delta, 6), "required": margin, "passed": ok}
+        all_pass = all_pass and ok
+    return {"passed": bool(all_pass), "per_metric": per}
 
 
 if __name__ == "__main__":

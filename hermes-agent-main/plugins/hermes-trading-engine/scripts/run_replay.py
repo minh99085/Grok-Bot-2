@@ -71,6 +71,11 @@ def main(argv=None) -> int:
     ap.add_argument("--campaign-profile", default=None,
                     help="tag this replay's validation evidence with a campaign profile id "
                          "and write it to <out>/campaign_evidence.json (offline, no live)")
+    ap.add_argument("--robustness", action="store_true",
+                    help="after the replay, print an institutional robustness block: "
+                         "risk-adjusted ratios (Sharpe/Sortino/Calmar), a seeded bootstrap "
+                         "CI on per-step returns, and an exploration/validation/"
+                         "production-readiness split (offline, read-only).")
     args = ap.parse_args(argv)
 
     if args.baseline_report:
@@ -153,8 +158,52 @@ def main(argv=None) -> int:
               f"score={ov.get('overfit_score')} "
               f"sharpe IS/OOS={iv.get('sharpe')}/{ov_oos.get('sharpe')} "
               f"brier IS/OOS={iv.get('brier')}/{ov_oos.get('brier')}")
+    if args.robustness:
+        _print_robustness(report)
     print(f"  artifacts     : {out_dir}")
     return 0 if report["status"] == "finished" else 4
+
+
+def _step_returns(report: dict) -> list:
+    """Best-effort per-step return series from the replay report (read-only)."""
+    m = report.get("metrics", {}) or {}
+    for key in ("step_returns", "returns", "period_returns"):
+        seq = m.get(key) or report.get(key)
+        if isinstance(seq, list) and seq:
+            return [float(x) for x in seq]
+    curve = m.get("equity_curve") or report.get("equity_curve")
+    if isinstance(curve, list) and len(curve) > 1:
+        out = []
+        for a, b in zip(curve, curve[1:]):
+            if a:
+                out.append((float(b) - float(a)) / float(a))
+        return out
+    return []
+
+
+def _print_robustness(report: dict) -> None:
+    """Print the institutional robustness block (offline, read-only, deterministic)."""
+    from engine.backtest import calmar_ratio, sharpe_ratio, sortino_ratio
+    from engine.replay.robustness import bootstrap_ci
+    from engine.strategies.strategy_attribution import production_readiness
+
+    rets = _step_returns(report)
+    counts = report.get("counts", {}) or {}
+    n_fills = int(counts.get("fills", 0) or 0)
+    ratios = {"sharpe": sharpe_ratio(rets), "sortino": sortino_ratio(rets),
+              "calmar": calmar_ratio(rets)}
+    ci = bootstrap_ci(rets, n_boot=1000, alpha=0.05, seed=42) if rets else {
+        "point": 0.0, "lo": 0.0, "hi": 0.0, "n": 0}
+    readiness = production_readiness(
+        validation={"n_validation": n_fills, "validation_pnl": report.get("metrics", {}).get("total_pnl")},
+        exploration={"note": "exploration excluded from readiness verdict"},
+        significance=None, ablations=None, overfit=bool((report.get("overfit") or {}).get("overfit")))
+    print("== Robustness (offline; exploration excluded from readiness) ==")
+    print(f"  returns       : n={len(rets)} "
+          f"sharpe={ratios['sharpe']} sortino={ratios['sortino']} calmar={ratios['calmar']}")
+    print(f"  bootstrap mean: point={ci['point']} ci95=[{ci['lo']}, {ci['hi']}] n={ci['n']}")
+    print(f"  readiness     : production_ready={readiness['production_ready']} "
+          f"reasons={readiness['blocking_reasons']}")
 
 
 if __name__ == "__main__":

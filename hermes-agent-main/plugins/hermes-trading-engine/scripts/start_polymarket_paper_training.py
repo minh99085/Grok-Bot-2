@@ -130,6 +130,13 @@ def run(argv=None) -> int:
                          "separates exploration PnL from validation PnL. Sets "
                          "STRATEGY_ROUTER_ENABLED=1; default OFF preserves current behavior. "
                          "PAPER ONLY.")
+    ap.add_argument("--robustness-validation", action="store_true",
+                    help="opt in to institutional robustness validation for paper metrics "
+                         "(engine.replay.robustness + engine.backtest: walk-forward, "
+                         "combinatorial purged CV, bootstrap CIs, ablations, and "
+                         "Sharpe/Sortino/Calmar significance gates). Reports exploration "
+                         "separately from validation + production-readiness. Sets "
+                         "ROBUSTNESS_VALIDATION_ENABLED=1; default OFF. PAPER ONLY.")
     ap.add_argument("--mode", choices=["disabled", "observe_only", "paper_train"],
                     default="paper_train", help="training mode (PAPER ONLY either way)")
     ap.add_argument("--data-dir", default=None, help="data dir for status + campaign state")
@@ -331,6 +338,12 @@ def run(argv=None) -> int:
         _os.environ["BREGMAN_PRIMARY_STRATEGY"] = "1"
     if getattr(args, "strategy_router", False):
         _os.environ["STRATEGY_ROUTER_ENABLED"] = "1"
+    if getattr(args, "robustness_validation", False):
+        _os.environ["ROBUSTNESS_VALIDATION_ENABLED"] = "1"
+        logging.getLogger("hte.training.start").info(
+            "robustness validation: walk_forward+CPCV+bootstrap_CI+ablations+"
+            "significance_gates(Sharpe/Sortino/Calmar); exploration reported "
+            "separately from validation + production-readiness")
     logging.getLogger("hte.training.start").info(
         "modeling config: probability_ensemble=%s bregman_primary=%s strategy_router=%s "
         "calibration=auto(Platt/isotonic/temperature/shrink) rollback_guard=available "

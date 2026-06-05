@@ -219,6 +219,13 @@ def extract_features(status: dict | None, api: dict | None = None,
         "bregman_executable_depth_ok": _first(
             _get(status, "bregman", "executable_depth_ok"),
             mon.get("bregman_executable_depth_ok")),
+        # --- backtesting / robustness validation ---
+        "walkforward_passed": _first(mon.get("walkforward_passed"),
+                                     _get(status, "robustness", "walkforward_passed")),
+        "significance_passed": _first(mon.get("significance_passed"),
+                                      _get(status, "robustness", "significance_passed")),
+        "production_ready": _first(mon.get("production_ready"),
+                                   _get(status, "robustness", "production_ready")),
         # --- tests ---
         "tests_present": tests.get("present"),
         "tests_passing": tests.get("passing"),
@@ -561,6 +568,12 @@ BENCHMARK_SPECS: list[BenchmarkSpec] = [
      "Realistic-fill modeling is enabled."),
     ("bregman_executable_depth_ok", "bregman_executable_depth_ok", "bool", True, False,
      "Certified Bregman legs pass executable-depth proof before sizing up."),
+    ("significance_passed", "significance_passed", "bool", True, False,
+     "Sharpe/Sortino/Calmar improvement clears required significance thresholds."),
+    ("walkforward_passed", "walkforward_passed", "bool", True, False,
+     "Walk-forward / purged-CV validation passed (not a single-slice artifact)."),
+    ("production_ready", "production_ready", "bool", True, False,
+     "Production-readiness gate passed (validation-only; exploration excluded)."),
 ]
 
 
@@ -732,11 +745,13 @@ QUANT_RESPONSIBILITIES: dict[str, dict] = {
     "robustness": {
         "owner": "Quant validation",
         "responsibilities": [
-            "Exploration-vs-validation separation; regime/stress checks",
-            "Risk-adjusted performance (Sharpe/Sortino/Calmar)",
+            "Exploration-vs-validation-vs-production separation; regime/stress",
+            "Walk-forward + combinatorial purged CV; bootstrap CIs; ablations",
+            "Risk-adjusted performance (Sharpe/Sortino/Calmar) significance gates",
         ],
         "evidence_features": ["exploration_validation_separated", "sharpe",
-                              "sortino", "calmar"],
+                              "sortino", "calmar", "walkforward_passed",
+                              "significance_passed", "production_ready"],
     },
     "clobv2_execution": {
         "owner": "Execution (CLOB v2, paper)",

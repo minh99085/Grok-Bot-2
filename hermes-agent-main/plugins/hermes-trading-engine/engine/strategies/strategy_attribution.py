@@ -1,4 +1,4 @@
-"""Per-strategy PnL attribution with exploration/validation separation (pure).
+"""Per-strategy PnL attribution, ablations + production-readiness (pure).
 
 Exploration trades (Tier-4 tiny paper bets) must NEVER count as live-readiness
 validation evidence. This module keeps a clean split:
@@ -7,14 +7,21 @@ validation evidence. This module keeps a clean split:
 * ``exploration_pnl`` — PnL from exploration-only trades (Tier 4).
 * ``by_strategy`` / ``by_tier`` — attribution breakdowns.
 
+It also provides **ablation attribution** (how much each component — Bregman /
+Chainlink / fast BTC / news / Grok / calibration — contributes vs a leave-it-out
+run) and a **three-bucket readiness report** that keeps exploration, validation,
+and production-readiness strictly separate.
+
 Pure, deterministic, no I/O. PAPER ONLY.
 
 Quant responsibilities
 ----------------------
-* Quant researcher — defines what counts as validation vs exploration.
-* Quant developer — owns this attribution accounting (typed, tested).
-* Trader/monitoring — reads validation-only PnL for readiness; never conflates
-  exploration PnL with validated edge.
+* Quant analyst — enumerates the ablation components to test.
+* Quant researcher — defines validation vs exploration + the readiness gate
+  (significance + positive ablations + no overfit).
+* Quant developer — owns this attribution/ablation accounting (typed, tested).
+* Trader/monitoring — reads validation-only + production-ready signals; never
+  conflates exploration PnL with validated edge.
 """
 
 from __future__ import annotations
@@ -95,3 +102,93 @@ def split_exploration_validation(records: Iterable[Mapping]) -> dict:
         attr.record(r.get("strategy", "unknown"), r.get("pnl"),
                     tier=r.get("tier"), is_exploration=bool(r.get("is_exploration")))
     return attr.summary()
+
+
+# --------------------------------------------------------------------------- #
+# Ablation attribution
+# --------------------------------------------------------------------------- #
+ABLATION_COMPONENTS = (
+    "bregman", "chainlink", "fast_btc", "news", "grok", "calibration",
+)
+
+
+def ablation_report(baseline_metric: float, ablated: Mapping[str, float], *,
+                    metric_name: str = "metric",
+                    min_contribution: float = 0.0) -> dict:
+    """Quantify each component's contribution via leave-one-out ablation (pure).
+
+    ``baseline_metric`` is the full-system score; ``ablated[component]`` is the
+    score with that component REMOVED. Contribution = baseline - ablated (a
+    positive value means the component helps). A component is flagged
+    ``necessary`` when its contribution clears ``min_contribution``. Components
+    with a negative contribution are flagged ``harmful`` (candidate to drop).
+    """
+    base = float(baseline_metric)
+    rows: dict[str, dict] = {}
+    for comp, score in (ablated or {}).items():
+        try:
+            contrib = base - float(score)
+        except (TypeError, ValueError):
+            continue
+        rows[comp] = {
+            "ablated_metric": round(float(score), 8),
+            "contribution": round(contrib, 8),
+            "necessary": contrib > float(min_contribution),
+            "harmful": contrib < 0.0,
+        }
+    ranked = sorted(rows.items(), key=lambda kv: kv[1]["contribution"], reverse=True)
+    return {
+        "metric_name": metric_name,
+        "baseline_metric": round(base, 8),
+        "components": rows,
+        "ranking": [c for c, _ in ranked],
+        "necessary": [c for c, r in rows.items() if r["necessary"]],
+        "harmful": [c for c, r in rows.items() if r["harmful"]],
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Three-bucket readiness report (exploration vs validation vs production)
+# --------------------------------------------------------------------------- #
+def production_readiness(*, validation: Mapping, exploration: Optional[Mapping] = None,
+                        significance: Optional[Mapping] = None,
+                        ablations: Optional[Mapping] = None,
+                        overfit: Optional[bool] = None,
+                        min_validation_trades: int = 50) -> dict:
+    """Combine evidence into THREE strictly-separated buckets (pure).
+
+    * ``exploration`` — reported but NEVER part of the readiness verdict.
+    * ``validation`` — validation-only PnL/trade evidence.
+    * ``production_ready`` — True only when validation has enough trades AND the
+      significance gate passed AND no required ablation is harmful AND overfit is
+      not flagged. Returns a structured report with the gating reasons.
+    """
+    val = dict(validation or {})
+    n_val = int(val.get("n_validation", val.get("trades", 0)) or 0)
+    reasons: list[str] = []
+
+    if n_val < int(min_validation_trades):
+        reasons.append(f"insufficient_validation_trades({n_val}<{min_validation_trades})")
+    sig_pass = bool((significance or {}).get("passed", False))
+    if significance is not None and not sig_pass:
+        reasons.append("significance_gate_failed")
+    harmful = list((ablations or {}).get("harmful", []))
+    if harmful:
+        reasons.append(f"harmful_components:{','.join(harmful)}")
+    if overfit:
+        reasons.append("overfit_flagged")
+
+    production_ready = (n_val >= int(min_validation_trades)
+                        and (significance is None or sig_pass)
+                        and not harmful and not overfit)
+    return {
+        "exploration": dict(exploration or {}),
+        "validation": val,
+        "significance": dict(significance or {}),
+        "ablations": dict(ablations or {}),
+        "overfit": bool(overfit) if overfit is not None else None,
+        "production_ready": bool(production_ready),
+        "blocking_reasons": reasons,
+        # Hard contract: exploration is excluded from the readiness verdict.
+        "exploration_excluded_from_readiness": True,
+    }
