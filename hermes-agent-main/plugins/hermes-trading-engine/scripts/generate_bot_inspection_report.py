@@ -209,6 +209,11 @@ def generate_report(
     consistency = metrics.detect_inconsistencies(feats, status, api_json)
     quant_responsibilities = metrics.build_quant_responsibilities(feats)
     final_validation = metrics.build_final_validation(feats)
+    ledger_reconciliation = _reconcile_equities(feats, status, api_json, data_dir)
+    if not ledger_reconciliation.get("ok", True):
+        warnings.append(
+            f"EQUITY RECONCILIATION FAILED (> {ledger_reconciliation.get('tolerance_pct')}%): "
+            f"{ledger_reconciliation.get('failed_pairs')}")
 
     # --- artifacts ------------------------------------------------------------ #
     artifacts: dict = {"skipped": True, "host_found": [], "host_missing": list(
@@ -286,6 +291,7 @@ def generate_report(
     bundle.write_json("quant_responsibilities.json", quant_responsibilities)
     bundle.write_json("final_validation.json", final_validation)
     bundle.write_json("algorithmic_edge_audit.json", algo_audit)
+    bundle.write_json("ledger_reconciliation.json", ledger_reconciliation)
 
     report_json = _build_report_json(
         now=now, repo_root=repo_root, classification=classification, pr=pr,
@@ -298,7 +304,7 @@ def generate_report(
         scorecard=scorecard, history_days=history_days, baseline_path=baseline_path,
         files=bundle.files, benchmarks=benchmarks, consistency=consistency,
         quant_responsibilities=quant_responsibilities, final_validation=final_validation,
-        algorithmic_edge_audit=algo_audit)
+        algorithmic_edge_audit=algo_audit, ledger_reconciliation=ledger_reconciliation)
     bundle.write_json("report.json", report_json)
 
     report_md = _build_report_md(report_json, feats, status, docker, api, tests,
@@ -328,7 +334,37 @@ def generate_report(
         "files": bundle.files,
         "algorithmic_edge_audit_ok": bool(algo_audit["ok"]),
         "algorithmic_edge_audit_missing": list(algo_audit["missing_core_fields"]),
+        "equity_reconciled": bool(ledger_reconciliation.get("ok", True)),
     }
+
+
+def _reconcile_equities(feats: dict, status: dict | None, api: dict | None,
+                        data_dir) -> dict:
+    """Reconcile dashboard / paper-training / report / ledger equity within 1%.
+
+    Uses the canonical ledger reconciliation so the report FAILS (warns loudly +
+    feeds the audit) when equity surfaces disagree beyond tolerance. Read-only."""
+    from engine.ledger import CanonicalLedger, reconcile_equity
+    paper_eq = metrics._num(feats.get("equity"))
+    dash_eq = metrics._num(feats.get("dashboard_equity"))
+    report_eq = paper_eq  # the report's headline equity mirrors paper-training
+    ledger_eq = None
+    try:
+        if data_dir:
+            p = Path(data_dir) / "paper_ledger.json"
+            if p.exists():
+                raw = json.loads(p.read_text(encoding="utf-8"))
+                if isinstance(raw, dict) and "equity" in raw:
+                    ledger_eq = metrics._num(raw.get("equity"))
+                elif isinstance(raw, dict) and "entries" in raw:
+                    ledger_eq = CanonicalLedger.from_entries(
+                        raw.get("entries", []),
+                        starting_balance=float(raw.get("starting_balance", 0.0))).equity()
+    except Exception:  # noqa: BLE001
+        ledger_eq = None
+    return reconcile_equity({"dashboard": dash_eq, "paper_training": paper_eq,
+                             "report": report_eq, "ledger": ledger_eq},
+                            tolerance_pct=1.0)
 
 
 def _status_age_s(status: dict | None, now) -> Optional[float]:
@@ -588,6 +624,7 @@ def _build_report_json(**kw) -> dict:
         "quant_responsibilities": kw["quant_responsibilities"],
         "final_validation": kw.get("final_validation"),
         "algorithmic_edge_audit": kw.get("algorithmic_edge_audit"),
+        "ledger_reconciliation": kw.get("ledger_reconciliation"),
         "warnings": kw["warnings"],
         "errors": kw["errors"],
         "recommendations": kw["recommendations"],

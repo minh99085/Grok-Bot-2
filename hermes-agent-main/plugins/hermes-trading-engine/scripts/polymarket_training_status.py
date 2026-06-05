@@ -147,6 +147,30 @@ def _print_bregman_scan(st: dict) -> None:
         print(f"    skip_reasons: {skips}")
 
 
+def _print_ledger(dd: Path) -> None:
+    """Print the canonical paper-ledger summary if present (read-only)."""
+    p = Path(dd) / "paper_ledger.json"
+    if not p.exists():
+        return
+    try:
+        from engine.ledger import CanonicalLedger
+        raw = json.loads(p.read_text(encoding="utf-8"))
+        led = CanonicalLedger.from_entries(
+            raw.get("entries", []), starting_balance=float(raw.get("starting_balance", 0.0)))
+        s = led.summary()
+    except Exception:  # noqa: BLE001
+        return
+    print("=" * 56)
+    print(f"  CANONICAL LEDGER: equity={s['equity']} realized={s['realized_pnl']} "
+          f"unrealized={s['unrealized_pnl']} after_cost={s['after_cost_pnl']}")
+    print(f"    entries={s['n_entries']} trades={s['n_trades']} decisions={s['n_decisions']}")
+    cal, rm = s["calibration"], s["risk_metrics"]
+    print(f"    brier={cal['brier']} ece={cal['ece']} sharpe={rm['sharpe']} "
+          f"sortino={rm['sortino']} calmar={rm['calmar']} max_dd={rm['max_drawdown']} "
+          f"cvar={rm['cvar']}")
+    print(f"    exposure_by_strategy={s['strategy_exposure']}")
+
+
 def _data_dir() -> Path:
     try:
         from engine.config import Settings
@@ -326,6 +350,7 @@ def run(argv=None) -> int:
               f"risk_required={hl.get('exploration_requires_risk_gate')} "
               f"fill_required={hl.get('exploration_requires_realistic_fill')} "
               f"fresh_book_required={hl.get('exploration_min_book_freshness_required')}")
+    _print_ledger(dd)
     _print_bregman_scan(st)
     _print_benchmarks(st)
     _print_execution_monitoring(st)

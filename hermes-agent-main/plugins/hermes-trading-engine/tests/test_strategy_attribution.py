@@ -41,6 +41,21 @@ def test_missing_bregman_fields():
 
 
 # --- attribution_audit edges + splits ---------------------------------------
+def test_attribution_from_canonical_ledger():
+    from engine.ledger import CanonicalLedger
+    from engine.strategies.strategy_attribution import attribution_from_ledger
+    led = CanonicalLedger(starting_balance=500.0)
+    led.record(ts=1.0, market="m1", strategy="bregman", traded=True,
+               realized_pnl=2.0, after_cost_pnl=1.8)
+    led.record(ts=2.0, market="m2", strategy="btc_pulse", traded=True,
+               realized_pnl=-0.5, after_cost_pnl=-0.6, is_exploration=True)
+    out = attribution_from_ledger(led)
+    assert out["by_strategy"]["bregman"]["after_cost_pnl"] == 1.8
+    assert out["validation_pnl"] == 1.8
+    assert out["exploration_pnl"] == -0.6
+    assert out["exploration_excluded_from_validation"] is True
+
+
 def test_attribution_audit_basic():
     recs = [{"strategy": "bregman", "pnl": 2.0, "after_cost_pnl": 1.6,
              "edge_entry": 0.05, "edge_realized": 0.04, "is_open": False}]

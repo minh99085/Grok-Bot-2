@@ -74,6 +74,27 @@ def fractional_kelly_size(*, edge: float, price: float, bankroll: float,
     return round(max(0.0, f) * bank, 8)
 
 
+def exposure_summary(positions: Sequence, *, key: str = "strategy",
+                     notional_attr: str = "notional", open_attr: str = "open") -> dict:
+    """Aggregate OPEN notional exposure by ``key`` (e.g. strategy/market/event).
+
+    ``positions`` may be dicts or objects; only open positions contribute. Used by
+    the canonical ledger so exposure is computed from the same source. Pure."""
+    out: dict = {}
+
+    def _get(p, name, default=None):
+        if isinstance(p, dict):
+            return p.get(name, default)
+        return getattr(p, name, default)
+
+    for p in positions or []:
+        if not bool(_get(p, open_attr, False)):
+            continue
+        k = _get(p, key, "?")
+        out[k] = round(out.get(k, 0.0) + _f(_get(p, notional_attr, 0.0)), 8)
+    return out
+
+
 def value_at_risk(returns: Sequence[float], alpha: float = 0.95) -> float:
     """Historical VaR at confidence ``alpha`` as a (typically negative) return.
 

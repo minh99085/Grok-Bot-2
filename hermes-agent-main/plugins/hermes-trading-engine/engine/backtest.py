@@ -417,6 +417,24 @@ def calmar_ratio(returns) -> Optional[float]:
     return round(total / mdd, 6) if mdd > 0 else None
 
 
+def metrics_from_returns(returns) -> dict:
+    """Bundle risk-adjusted ratios + max drawdown from a return series (pure).
+
+    Single source used by the canonical ledger so reports/dashboard/backtests all
+    agree. Returns ``{sharpe, sortino, calmar, max_drawdown}`` (None when the
+    sample is too small / degenerate)."""
+    xs = [float(x) for x in (returns or [])]
+    curve = [1.0]
+    for x in xs:
+        curve.append(curve[-1] * (1.0 + x))
+    return {
+        "sharpe": sharpe_ratio(xs),
+        "sortino": sortino_ratio(xs),
+        "calmar": calmar_ratio(xs),
+        "max_drawdown": round(max_drawdown(curve), 6) if len(curve) > 1 else 0.0,
+    }
+
+
 def combinatorial_purged_cv(n: int, *, k: int = 6, test_groups: int = 2,
                             embargo: int = 0):
     """Combinatorial Purged Cross-Validation splits (López de Prado).

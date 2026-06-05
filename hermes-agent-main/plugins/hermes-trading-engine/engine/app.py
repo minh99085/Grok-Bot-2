@@ -468,6 +468,59 @@ def api_running_status() -> dict:
             "running_count": running, "total": len(systems), "systems": systems}
 
 
+def _load_ledger():
+    """Load the canonical paper ledger (entries or summary) if present (read-only)."""
+    import json as _json
+    p = _engine.s.data_dir / "paper_ledger.json"
+    if not p.exists():
+        return None
+    try:
+        return _json.loads(p.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+@app.get("/api/ledger")
+def api_ledger() -> dict:
+    """Canonical paper-ledger summary (read-only, PAPER): equity, attribution,
+    calibration (Brier/ECE), confidence + no-trade buckets, risk metrics, exposure."""
+    raw = _load_ledger()
+    if raw is None:
+        return {"mode": "paper", "available": False,
+                "reason": "no paper_ledger.json yet"}
+    from engine.ledger import CanonicalLedger
+    if isinstance(raw, dict) and "entries" in raw:
+        led = CanonicalLedger.from_entries(
+            raw.get("entries", []), starting_balance=float(raw.get("starting_balance", 0.0)))
+        return {"mode": "paper", "available": True, **led.summary()}
+    return {"mode": "paper", "available": True, **(raw if isinstance(raw, dict) else {})}
+
+
+@app.get("/api/ledger/reconciliation")
+def api_ledger_reconciliation() -> dict:
+    """Reconcile dashboard / paper-training / ledger equity within 1% (read-only).
+
+    ``ok=False`` means the surfaces disagree beyond tolerance — the report fails."""
+    from engine.ledger import reconcile_equity
+    dash = _snapshot() or {}
+    dash_eq = (dash.get("portfolio") or {}).get("equity")
+    st = _training_status() or {}
+    paper_eq = (st.get("pnl") or {}).get("equity")
+    raw = _load_ledger()
+    ledger_eq = None
+    if isinstance(raw, dict):
+        if "equity" in raw:
+            ledger_eq = raw.get("equity")
+        elif "entries" in raw:
+            from engine.ledger import CanonicalLedger
+            ledger_eq = CanonicalLedger.from_entries(
+                raw.get("entries", []),
+                starting_balance=float(raw.get("starting_balance", 0.0))).equity()
+    rec = reconcile_equity({"dashboard": dash_eq, "paper_training": paper_eq,
+                            "ledger": ledger_eq}, tolerance_pct=1.0)
+    return {"mode": "paper", **rec}
+
+
 @app.get("/api/bregman/scan")
 def api_bregman_scan() -> dict:
     """Paper Bregman scan telemetry (read-only, PAPER).

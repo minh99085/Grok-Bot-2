@@ -108,6 +108,24 @@ class PnLAttribution:
         }
 
 
+def attribution_from_ledger(ledger) -> dict:
+    """Per-strategy attribution computed from the canonical ledger (pure).
+
+    Bridges :class:`engine.ledger.CanonicalLedger` to the attribution view so the
+    report/dashboard/backtests all attribute PnL from the same source. Returns the
+    ledger's per-strategy attribution plus the validation/exploration split."""
+    attr = ledger.attribution()
+    exploration = round(sum(r.get("exploration_pnl", 0.0) for r in attr.values()), 8)
+    validation = round(sum(r.get("validation_pnl", 0.0) for r in attr.values()), 8)
+    return {
+        "by_strategy": attr,
+        "strategy_exposure": ledger.strategy_exposure(),
+        "exploration_pnl": exploration,
+        "validation_pnl": validation,
+        "exploration_excluded_from_validation": True,
+    }
+
+
 def attribution_audit(records: Iterable[Mapping], *, rejected_trades: int = 0,
                       open_exposure: float = 0.0) -> dict:
     """Decision-grade per-strategy attribution for the Algorithmic Edge Audit.

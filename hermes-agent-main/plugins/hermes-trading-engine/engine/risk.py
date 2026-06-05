@@ -621,6 +621,20 @@ def per_event_exposure_ok(*, new_notional: float, event_exposure: float,
             <= max_event_frac * eq + 1e-9)
 
 
+def risk_throttle_state(drawdown: float, *, soft: float = 0.10,
+                        hard: float = 0.20) -> str:
+    """Label the current risk-throttle state for the canonical ledger (pure).
+
+    ``"none"`` below the soft drawdown band, ``"throttled"`` inside the band, and
+    ``"halt"`` at/above the hard floor. Read-only; never relaxes the RiskEngine."""
+    dd = max(0.0, float(drawdown or 0.0))
+    if dd >= max(float(soft) + 1e-9, float(hard)):
+        return "halt"
+    if dd > float(soft):
+        return "throttled"
+    return "none"
+
+
 def correlated_exposure_ok(*, new_notional: float, cluster_exposure: float,
                            equity: float, max_cluster_frac: float = 0.30) -> bool:
     """True if adding ``new_notional`` keeps the correlated cluster within cap."""
