@@ -571,3 +571,53 @@ def canary_caps_check(*, notional: float, caps=None, **exposures) -> tuple:
     from engine.micro_live.canary import CanaryCaps
     caps = caps or CanaryCaps()
     return caps.check(notional=notional, **exposures)
+
+
+# --------------------------------------------------------------------------- #
+# Sizing + tail-risk helpers (ADDITIVE, read-only).
+#
+# These delegate to the pure :mod:`engine.portfolio` optimizer so the trainer can
+# size positions with fractional Kelly and throttle on CVaR / drawdown BEFORE the
+# proposal reaches the mandatory RiskEngine gate above. They can only ever
+# produce a SMALLER size — the RiskEngine still independently caps every order.
+# Quant scope — *Risk Management & Portfolio Optimization*.
+# --------------------------------------------------------------------------- #
+def kelly_position_size(*, edge: float, price: float, equity: float,
+                        fraction: float = 0.25, cap_frac: float = 0.10) -> float:
+    """Fractional-Kelly stake (USD) for a binary edge; 0 for non-positive edge."""
+    from engine.portfolio import fractional_kelly_size
+    return fractional_kelly_size(edge=edge, price=price, bankroll=equity,
+                                 fraction=fraction, cap_frac=cap_frac)
+
+
+def portfolio_cvar(returns, alpha: float = 0.95) -> float:
+    """Conditional VaR (Expected Shortfall) of a realized-return sample (<=0)."""
+    from engine.portfolio import cvar
+    return cvar(returns, alpha=alpha)
+
+
+def drawdown_throttle_factor(drawdown: float, *, soft: float = 0.10,
+                             hard: float = 0.20) -> float:
+    """Size multiplier in [0,1] that decays to a hard halt across a DD band."""
+    from engine.portfolio import drawdown_throttle
+    return drawdown_throttle(drawdown, soft=soft, hard=hard)
+
+
+def per_event_exposure_ok(*, new_notional: float, event_exposure: float,
+                          equity: float, max_event_frac: float = 0.25) -> bool:
+    """True if adding ``new_notional`` keeps the event within its exposure cap."""
+    eq = max(0.0, float(equity or 0.0))
+    if eq <= 0:
+        return float(new_notional or 0.0) <= 0
+    return (float(event_exposure or 0.0) + float(new_notional or 0.0)
+            <= max_event_frac * eq + 1e-9)
+
+
+def correlated_exposure_ok(*, new_notional: float, cluster_exposure: float,
+                           equity: float, max_cluster_frac: float = 0.30) -> bool:
+    """True if adding ``new_notional`` keeps the correlated cluster within cap."""
+    eq = max(0.0, float(equity or 0.0))
+    if eq <= 0:
+        return float(new_notional or 0.0) <= 0
+    return (float(cluster_exposure or 0.0) + float(new_notional or 0.0)
+            <= max_cluster_frac * eq + 1e-9)

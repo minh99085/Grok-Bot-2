@@ -213,6 +213,12 @@ def extract_features(status: dict | None, api: dict | None = None,
                                     _get(status, "pnl", "validation_trades")),
         # --- cross-surface equity (for consistency checks) ---
         "dashboard_equity": _dashboard_equity(api),
+        # --- risk / portfolio ---
+        "cvar": _first(pnl.get("cvar"), pnl.get("cvar_95"), mon.get("cvar")),
+        "kelly_fraction": _first(csafe.get("kelly_fraction"), _get(status, "pnl", "kelly_fraction")),
+        "bregman_executable_depth_ok": _first(
+            _get(status, "bregman", "executable_depth_ok"),
+            mon.get("bregman_executable_depth_ok")),
         # --- tests ---
         "tests_present": tests.get("present"),
         "tests_passing": tests.get("passing"),
@@ -538,6 +544,8 @@ BENCHMARK_SPECS: list[BenchmarkSpec] = [
     ("sortino", "sortino", "higher", 1.5, 0.0, "Sortino ratio (downside-only)."),
     ("calmar", "calmar", "higher", 1.0, 0.0, "Calmar ratio (return / max drawdown)."),
     ("max_drawdown", "max_drawdown", "lower", 0.15, 0.25, "Max drawdown (fraction of equity)."),
+    ("cvar", "cvar", "higher", -0.10, -0.25,
+     "Conditional VaR / Expected Shortfall of paper returns (closer to 0 is better)."),
     ("brier", "brier", "lower", 0.25, 0.33, "Brier score (probability calibration)."),
     ("ece", "ece", "lower", 0.05, 0.10, "Expected calibration error."),
     ("ece_cal", "ece_cal", "lower", 0.05, 0.10, "Calibrated ECE (post-calibration)."),
@@ -551,6 +559,8 @@ BENCHMARK_SPECS: list[BenchmarkSpec] = [
      "Per-strategy paper attribution is available."),
     ("fill_realism_enabled", "fill_realism_enabled", "bool", True, False,
      "Realistic-fill modeling is enabled."),
+    ("bregman_executable_depth_ok", "bregman_executable_depth_ok", "bool", True, False,
+     "Certified Bregman legs pass executable-depth proof before sizing up."),
 ]
 
 
@@ -704,9 +714,12 @@ QUANT_RESPONSIBILITIES: dict[str, dict] = {
         "owner": "Risk / portfolio",
         "responsibilities": [
             "Deterministic RiskEngine gate on every paper order",
-            "Exposure/daily-loss caps; drawdown control",
+            "Exposure/daily-loss caps; correlated + per-event exposure",
+            "CVaR + drawdown throttles; fractional-Kelly sizing",
+            "Prefer guaranteed after-cost arbitrage over probabilistic edge",
         ],
-        "evidence_features": ["preflight_ok", "open_positions", "max_drawdown"],
+        "evidence_features": ["preflight_ok", "open_positions", "max_drawdown",
+                              "cvar", "kelly_fraction"],
     },
     "backtest_simulation": {
         "owner": "Simulation / backtest",
@@ -729,9 +742,12 @@ QUANT_RESPONSIBILITIES: dict[str, dict] = {
         "owner": "Execution (CLOB v2, paper)",
         "responsibilities": [
             "Read-only CLOB v2 book freshness; realistic-fill modeling",
-            "Reject fantasy fills; never submit real orders (paper)",
+            "Reject fantasy fills; available-depth + spread/slippage/fee modeling",
+            "Certified arbs size up only when every leg passes executable depth",
+            "Never submit real orders (paper)",
         ],
-        "evidence_features": ["fill_realism_enabled", "fill_realism_rejection_rate"],
+        "evidence_features": ["fill_realism_enabled", "fill_realism_rejection_rate",
+                              "fantasy_fill_rejections", "bregman_executable_depth_ok"],
     },
     "monitoring": {
         "owner": "MLOps / monitoring",

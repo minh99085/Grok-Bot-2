@@ -56,6 +56,9 @@ class Certificate:
     portfolio: dict = field(default_factory=dict)   # outcome_id -> shares to BUY
     atoms_checked: int = 0
     fill_feasible: bool = False
+    executable_depth_ok: bool = False       # EVERY leg passes executable-depth
+    min_leg_depth: float = 0.0              # shares available on the thinnest leg
+    legs_depth: dict = field(default_factory=dict)  # outcome_id -> ask_depth
     deterministic: bool = True
     reason: str = ""
 
@@ -76,12 +79,15 @@ def _worst_case_payoff(portfolio: Mapping[str, float],
 
 def certify_group(graph: ConstraintGraph, constraint: Constraint, *,
                   fee_model: Optional[FeeModel] = None, profit_floor: float = 0.005,
-                  max_size: float = 1e9) -> Certificate:
+                  max_size: float = 1e9, min_leg_depth: float = 0.0) -> Certificate:
     """Certify (or reject) a buy-set arbitrage for one constraint.
 
     ``profit_floor`` is the minimum required after-fee profit per set. ``max_size``
     caps the certified set count; the depth-feasible size is the min ask depth
-    across legs. Deterministic + sound (worst-case over feasible atoms).
+    across legs. ``min_leg_depth`` requires EVERY leg to have at least that many
+    shares of executable depth — a certified arb may only size up when all legs
+    pass this executable-depth proof; otherwise the size (and certification) is
+    zero. Deterministic + sound (worst-case over feasible atoms).
     """
     fee_model = fee_model or FeeModel()
     ids = list(constraint.outcome_ids)
@@ -101,11 +107,26 @@ def certify_group(graph: ConstraintGraph, constraint: Constraint, *,
     fee = fee_model.set_fee(buy_prices)
     profit_per_set = worst_payoff - cost - fee
 
-    # depth-feasible size = min ask depth across legs (shares), capped.
-    depth = min((float(o.ask_depth) for o in outcomes), default=0.0)
-    size = max(0.0, min(depth, float(max_size)))
-    certified = profit_per_set > profit_floor and size > 0
-    fill_feasible = size > 0
+    # Per-leg executable depth: every leg must clear min_leg_depth (and be > 0)
+    # before any size is allowed. The certifiable set count is the THINNEST leg.
+    legs_depth = {o.id: float(o.ask_depth) for o in outcomes}
+    depth = min(legs_depth.values(), default=0.0)
+    executable_depth_ok = depth > 0 and depth >= float(min_leg_depth)
+    size = max(0.0, min(depth, float(max_size))) if executable_depth_ok else 0.0
+    worst_case_proof = profit_per_set > profit_floor
+    certified = worst_case_proof and executable_depth_ok and size > 0
+    fill_feasible = size > 0 and executable_depth_ok
+
+    if certified:
+        reason = "certified"
+    elif not worst_case_proof:
+        reason = "no_positive_worst_case_profit"
+    elif depth <= 0:
+        reason = "no_depth"
+    elif not executable_depth_ok:
+        reason = "insufficient_executable_depth"
+    else:
+        reason = "no_depth"
 
     cert = Certificate(
         certified=bool(certified), relation=constraint.type.value, outcome_ids=ids,
@@ -115,9 +136,9 @@ def certify_group(graph: ConstraintGraph, constraint: Constraint, *,
         size=round(size, 6),
         total_after_fee_profit=round(profit_per_set * size, 6) if certified else 0.0,
         portfolio=portfolio, atoms_checked=len(atoms), fill_feasible=fill_feasible,
-        reason="certified" if certified else (
-            "no_depth" if (profit_per_set > profit_floor and size <= 0)
-            else "no_positive_worst_case_profit"))
+        executable_depth_ok=bool(executable_depth_ok),
+        min_leg_depth=round(depth, 6), legs_depth=legs_depth,
+        reason=reason)
     if cert.certified:
         logger.info("bregman certificate: %s legs=%s profit/set=%.4f size=%.2f total=%.4f",
                     cert.relation, ids, cert.after_fee_profit_per_set, cert.size,
@@ -126,3 +147,24 @@ def certify_group(graph: ConstraintGraph, constraint: Constraint, *,
         logger.debug("bregman not certified: %s legs=%s reason=%s profit/set=%.4f",
                      cert.relation, ids, cert.reason, cert.after_fee_profit_per_set)
     return cert
+
+
+def certified_trade_size(cert: Optional[Certificate], *, equity: float = 0.0,
+                         max_frac: float = 0.50) -> float:
+    """Set count a certified arbitrage may trade — **0 unless fully certified**.
+
+    A Bregman arb may size LARGER (depth-bounded set count, optionally capped by
+    ``max_frac`` of equity worth of cost) ONLY when the certificate proves a
+    positive worst-case after-fee profit AND every leg passes executable depth.
+    Any non-certified / non-executable / fantasy certificate sizes to 0. This is
+    the risk-side enforcement of "no certified proof means no trade". Pure.
+    """
+    if cert is None or not cert.certified or not cert.executable_depth_ok:
+        return 0.0
+    size = max(0.0, float(cert.size))
+    eq = max(0.0, float(equity or 0.0))
+    cost_per_set = float(cert.cost_per_set or 0.0)
+    if eq > 0 and cost_per_set > 0 and max_frac > 0:
+        equity_bounded = (max_frac * eq) / cost_per_set
+        size = min(size, equity_bounded)
+    return round(max(0.0, size), 6)
