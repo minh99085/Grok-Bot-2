@@ -181,6 +181,19 @@ def is_fantasy_fill(*, requested_size: float, ask, ask_depth: float = 0.0,
                        bid=bid, levels=levels, model=model).fantasy
 
 
+# Non-null required fields for the fill-realism section of the canonical
+# AlgorithmicEdgeAudit. ``fantasy_fills_rejected`` being null means realism is
+# not wired — a hard audit failure (paper PnL cannot be trusted).
+FILL_REALISM_AUDIT_REQUIRED: tuple = ("fantasy_fills_rejected",)
+
+
+def missing_fill_realism_fields(section) -> list:
+    """Return the required fill-realism audit fields that are None/absent."""
+    section = section or {}
+    return [f"fill_realism.{k}" for k in FILL_REALISM_AUDIT_REQUIRED
+            if section.get(k) is None]
+
+
 def fill_audit_fields(result: FillResult, *, fee_adjusted_ev: Optional[float] = None,
                       clob_v2_executable: Optional[bool] = None) -> dict:
     """Map a :class:`FillResult` to the Algorithmic Edge Audit "fill realism"

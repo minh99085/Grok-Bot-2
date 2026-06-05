@@ -453,6 +453,37 @@ def api_running_status() -> dict:
             "running_count": running, "total": len(systems), "systems": systems}
 
 
+@app.get("/api/algorithmic-edge-audit")
+def api_algorithmic_edge_audit() -> dict:
+    """Canonical Algorithmic Edge Audit (read-only, PAPER).
+
+    Readiness is CAPPED here so the bot can never report algorithmic readiness
+    when the edge engine is inactive: < 40 if Bregman is disabled or scans zero
+    groups, < 50 if pytest is not green, < 60 if fill realism / after-cost PnL is
+    missing. ``ok`` is False whenever a hard failure is present.
+    """
+    import sys as _sys
+    from pathlib import Path as _Path
+    _scripts = str(_Path(__file__).resolve().parent.parent / "scripts")
+    if _scripts not in _sys.path:
+        _sys.path.insert(0, _scripts)
+    try:
+        import inspection_metrics as _m  # type: ignore
+    except Exception as exc:  # noqa: BLE001
+        return {"available": False, "error": f"inspection_metrics unavailable: {exc}"}
+    st = _training_status() or {}
+    feats = _m.extract_features(st, api={}, tests={}, env={})
+    audit = _m.build_algorithmic_edge_audit(feats, st)
+    return {"mode": "paper", "available": bool(st),
+            "ok": audit.get("ok"), "bregman_enabled": audit.get("bregman_enabled"),
+            "readiness_cap": audit.get("readiness_cap"),
+            "readiness_score": audit.get("capped_readiness_score"),
+            "raw_readiness_score": audit.get("raw_readiness_score"),
+            "hard_failures": audit.get("hard_failures"),
+            "required_field_violations": audit.get("required_field_violations"),
+            "top_blockers": audit.get("top_5_blockers"), "sections": audit.get("sections")}
+
+
 @app.get("/api/execution/monitoring")
 def api_execution_monitoring() -> dict:
     """Execution + final-validation monitoring fields (read-only, PAPER).

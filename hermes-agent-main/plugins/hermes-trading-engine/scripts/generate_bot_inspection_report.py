@@ -250,9 +250,12 @@ def generate_report(
         feats, status, scorecard=scorecard, benchmarks=benchmarks,
         recommendations=None, status_age_s=_status_age_s(status, now))
     if not algo_audit["ok"]:
-        detail = ", ".join(algo_audit["missing_core_fields"]
-                           or (["status stale"] if algo_audit["stale"] else ["no status"]))
-        warnings.append(f"ALGORITHMIC EDGE AUDIT INCOMPLETE: {detail}")
+        detail = ", ".join(algo_audit.get("hard_failures")
+                           or algo_audit.get("required_field_violations")
+                           or ["incomplete"])
+        cap = algo_audit.get("readiness_cap")
+        warnings.append(
+            f"ALGORITHMIC EDGE AUDIT INCOMPLETE (readiness capped <= {cap}): {detail}")
 
     recommendations = recs.build_recommendations(
         safety, missing_features, tests, comparison, runtime_available,
@@ -644,12 +647,19 @@ def _append_algorithmic_edge_audit_md(L: list, audit: dict) -> None:
     L.append(f"**Audit status: {banner}** "
              f"(`{audit.get('status')}`; stale={audit.get('stale')})")
     L.append("")
+    L.append(f"- Bregman edge engine enabled: **{audit.get('bregman_enabled')}**")
+    L.append(f"- Readiness cap: **{audit.get('readiness_cap')}** "
+             f"(raw {audit.get('raw_readiness_score')} \u2192 capped "
+             f"**{audit.get('capped_readiness_score')}**)")
+    if audit.get("hard_failures"):
+        L.append(f"- Hard failures: `{', '.join(audit['hard_failures'])}`")
+    if audit.get("required_field_violations"):
+        L.append(f"- Missing required fields: `{', '.join(audit['required_field_violations'])}`")
+    L.append("")
     if not ok:
-        miss = audit.get("missing_core_fields") or []
-        L.append("> **This report is NOT decision-grade.** Missing/stale core "
-                 "fields must be emitted by the training status writer.")
-        if miss:
-            L.append(f"> Missing core fields: `{', '.join(miss)}`")
+        L.append("> **This report is NOT decision-grade and readiness is capped.** "
+                 "The algorithmic edge engine is inactive or unverifiable; resolve the "
+                 "hard failures above before trusting any readiness number.")
         L.append("")
     for key, title in _AUDIT_SECTION_TITLES.items():
         sec = (audit.get("sections") or {}).get(key, {})

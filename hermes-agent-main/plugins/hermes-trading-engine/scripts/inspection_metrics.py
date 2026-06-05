@@ -201,6 +201,8 @@ def extract_features(status: dict | None, api: dict | None = None,
         # --- bregman ---
         "bregman_paper_enabled": _first(csafe.get("realistic_fill_enabled"),
                                         mon.get("bregman_enabled")),
+        "bregman_enabled": _first(_get(status, "bregman", "enabled"),
+                                  mon.get("bregman_enabled")),
         "bregman_candidates_found": _first(mon.get("bregman_opportunities"),
                                            camp_ev.get("bregman_candidates")),
         "bregman_certified_count": _first(camp_ev.get("bregman_certified"),
@@ -1039,44 +1041,93 @@ def build_algorithmic_edge_audit(feats: dict | None, status: dict | None = None,
                                        mon.get("kill_switch_reasons"), risk.get("kill_switch")),
     }
 
-    # 7) Training / readiness
-    prod_score = None
+    # 6b) Execution (CLOB v2)
+    sections["execution"] = {
+        "clob_v2_executable": _first(breg.get("clob_v2_executable"),
+                                     mon.get("clob_v2_executable"),
+                                     feats.get("bregman_executable_depth_ok")),
+        "execution_atomicity_risk": _first(breg.get("execution_atomicity_risk"),
+                                           breg.get("atomicity_risk")),
+        "latency_ms": _num(_first(mon.get("latency_ms"), breg.get("latency_ms"))),
+        "stale_data_events": _num(mon.get("stale_data_events")),
+        "rejected_bad_fills": _num(_first(pnl.get("fantasy_fill_rejections"),
+                                          mon.get("fantasy_fill_rejections"))),
+    }
+
+    # 7) Training / readiness (raw score; the canonical model applies the caps)
+    raw_score = None
     if scorecard and scorecard.get("score") is not None:
-        prod_score = _num(scorecard.get("score"))
+        raw_score = _num(scorecard.get("score"))
     elif feats.get("production_ready") is not None:
-        prod_score = 100.0 if feats.get("production_ready") else 0.0
+        raw_score = 100.0 if feats.get("production_ready") else 0.0
     sections["training_readiness"] = {
         "exploration_pnl": _num(_first(pnl.get("exploration_pnl"), attr.get("exploration_pnl"))),
         "validation_pnl": _num(_first(pnl.get("validation_pnl"), attr.get("validation_pnl"))),
         "paper_only": True,
-        "production_readiness_score": prod_score,
+        "production_readiness_score": raw_score,
         "production_ready": feats.get("production_ready"),
     }
 
-    # --- core-field presence + staleness => loud failure --------------------
-    missing_core = [f"{sec}.{field}" for sec, field in CORE_AUDIT_FIELDS
-                    if sections.get(sec, {}).get(field) is None]
+    # --- canonical typed model: hard failures + readiness caps --------------
+    from engine.edge_audit import AlgorithmicEdgeAudit
     stale = bool(status_age_s is not None and float(status_age_s) > float(max_status_age_s))
     no_status = not status
-    ok = (not missing_core) and (not stale) and (not no_status)
-    audit_status = "complete" if ok else "incomplete"
+    scans = sections["bregman"]["constraint_groups_scanned"]
+    bregman_enabled = bool(_first(
+        feats.get("bregman_enabled"),
+        (scans is not None and scans > 0) or None,
+        False))
+    # dashboard vs paper-training equity mismatch percent
+    paper_eq, dash_eq = _num(feats.get("equity")), _num(feats.get("dashboard_equity"))
+    equity_mismatch_pct = None
+    if paper_eq is not None and dash_eq is not None:
+        denom = max(abs(paper_eq), abs(dash_eq), 1.0)
+        equity_mismatch_pct = round(abs(paper_eq - dash_eq) / denom * 100.0, 4)
 
-    # --- top-5 blockers (decision-grade, deterministic ordering) ------------
-    blockers: list[str] = []
-    if no_status:
-        blockers.append("no training status available (run paper training)")
-    for f in missing_core:
-        blockers.append(f"missing core field: {f}")
-    if stale:
-        blockers.append(f"status stale ({status_age_s:.0f}s > {max_status_age_s:.0f}s)")
+    readiness_section = dict(sections["training_readiness"])
+    model = AlgorithmicEdgeAudit(
+        strategy_attribution=sections["strategy_attribution"], bregman=sections["bregman"],
+        fill_realism=sections["fill_realism"], calibration=sections["calibration"],
+        risk=sections["risk"], execution=sections["execution"], readiness=readiness_section,
+        bregman_enabled=bregman_enabled, tests_passing=feats.get("tests_passing"),
+        equity_mismatch_pct=equity_mismatch_pct, raw_readiness_score=raw_score,
+        stale=stale, status_age_s=status_age_s, no_status=no_status)
+
+    hard_failures = model.hard_failures()
+    required_violations = model.required_field_violations()
+    readiness_cap = model.readiness_cap()
+    capped_score = model.capped_readiness_score()
+    ok = model.ok()
+    # The reported readiness can NEVER exceed the cap when the edge engine is
+    # inactive — overwrite the section with the capped value.
+    sections["training_readiness"]["production_readiness_score"] = capped_score
+    sections["training_readiness"]["raw_readiness_score"] = raw_score
+    sections["training_readiness"]["readiness_cap"] = readiness_cap
+
+    # Back-compat: keep the legacy CORE_AUDIT_FIELDS "missing" list too.
+    missing_core = [f"{sec}.{fld}" for sec, fld in CORE_AUDIT_FIELDS
+                    if sections.get(sec, {}).get(fld) is None]
+
+    # --- top-5 blockers (hard failures first, deterministic) ----------------
+    _HF_TEXT = {
+        "no_training_status": "no training status available (run paper training)",
+        "bregman_disabled": "Bregman edge engine DISABLED (readiness capped < 40)",
+        "bregman_zero_groups_scanned": "Bregman scanned 0 constraint groups (capped < 40)",
+        "fill_realism_null": "fill realism not wired (capped < 60)",
+        "after_cost_pnl_null": "after-cost PnL missing (capped < 60)",
+        "missing_certified_arbitrage_fields": "certified-arbitrage fields missing",
+        "pytest_failed": "full pytest not green (capped < 50)",
+        "dashboard_equity_mismatch_gt_1pct":
+            f"dashboard vs paper equity mismatch {equity_mismatch_pct}% > 1%",
+        "status_stale": f"status stale ({status_age_s}s > {max_status_age_s}s)",
+    }
+    blockers: list[str] = [_HF_TEXT.get(h, h) for h in hard_failures]
+    for f in required_violations:
+        if f not in (b for b in blockers):
+            blockers.append(f"missing required field: {f}")
     ac = sections["strategy_attribution"]["after_cost_pnl"]
     if ac is not None and ac < 0:
         blockers.append(f"after-cost PnL negative ({ac})")
-    frr = sections["fill_realism"]["fill_realism_rejection_rate"]
-    if frr is not None and frr > 0.8:
-        blockers.append(f"fill-realism rejection rate very high ({frr})")
-    if sections["training_readiness"]["production_ready"] is False:
-        blockers.append("not production-ready")
     for b in (benchmarks or {}).get("failing", []):
         blockers.append(f"benchmark failing: {b}")
 
@@ -1084,24 +1135,37 @@ def build_algorithmic_edge_audit(feats: dict | None, status: dict | None = None,
     rec_texts: list[str] = []
     for r in (recommendations or []):
         if isinstance(r, dict):
-            rec_texts.append(str(r.get("recommendation") or r.get("text") or r))
+            rec_texts.append(str(r.get("recommendation") or r.get("action") or r.get("text") or r))
         else:
             rec_texts.append(str(r))
-    if missing_core:
-        rec_texts.insert(0, "emit the missing core audit fields from the training "
+    if "bregman_disabled" in hard_failures or "bregman_zero_groups_scanned" in hard_failures:
+        rec_texts.insert(0, "enable + run the Bregman edge engine so it scans "
+                            "constraint groups (readiness is capped until it does)")
+    if required_violations:
+        rec_texts.insert(0, "emit the missing required audit fields from the training "
                             "status writer so the report is decision-grade")
 
     return {
-        "status": audit_status,
+        "status": "complete" if ok else "incomplete",
         "ok": bool(ok),
         "stale": stale,
         "status_age_s": status_age_s,
         "max_status_age_s": max_status_age_s,
+        "bregman_enabled": bregman_enabled,
+        "tests_passing": feats.get("tests_passing"),
+        "equity_mismatch_pct": equity_mismatch_pct,
+        "hard_failures": hard_failures,
+        "required_field_violations": required_violations,
         "missing_core_fields": missing_core,
+        "readiness_cap": readiness_cap,
+        "raw_readiness_score": raw_score,
+        "capped_readiness_score": capped_score,
         "sections": sections,
         "top_5_blockers": blockers[:5],
         "top_5_recommendations": rec_texts[:5],
-        "note": "PAPER-only audit; fails loudly when a core field is missing or status is stale.",
+        "note": ("PAPER-only audit; fails loudly + caps readiness when the edge "
+                 "engine is inactive (Bregman off / 0 scans), pytest is red, fill "
+                 "realism or after-cost PnL is missing, or equity mismatches > 1%."),
     }
 
 

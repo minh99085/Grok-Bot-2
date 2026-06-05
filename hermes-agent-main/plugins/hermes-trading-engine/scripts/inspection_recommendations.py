@@ -68,15 +68,31 @@ def build_recommendations(safety: dict, missing_features: list, tests: dict,
         recs.append({"priority": priority, "area": area, "action": action})
 
     # P0 — mandatory Algorithmic Edge Audit incomplete (not decision-grade).
+    _HARD_FAIL_RECS = {
+        "bregman_disabled": "Enable + run the Bregman edge engine (readiness is "
+                            "capped < 40 while it is disabled).",
+        "bregman_zero_groups_scanned": "Feed the Bregman engine markets so it scans "
+                                       "constraint groups (0 scanned → readiness < 40).",
+        "fill_realism_null": "Wire fill realism (fantasy-fill rejections) so paper "
+                             "PnL is trustworthy (readiness capped < 60).",
+        "after_cost_pnl_null": "Emit after-cost PnL from the trainer (readiness "
+                               "capped < 60 while it is null).",
+        "missing_certified_arbitrage_fields": "Emit certified-arbitrage fields "
+                                              "(certified + executable-depth counts).",
+        "pytest_failed": "Fix the failing pytest suite (readiness capped < 50).",
+        "dashboard_equity_mismatch_gt_1pct": "Reconcile dashboard vs paper-training "
+                                             "equity (>1% mismatch).",
+        "status_stale": "Refresh the training run — status is stale.",
+        "no_training_status": "Start paper training so the audit has live status.",
+    }
     if audit and not audit.get("ok", True):
-        for f in audit.get("missing_core_fields", []):
-            add("P0", "audit", f"Emit missing core audit field '{f}' from the "
+        for h in audit.get("hard_failures", []):
+            add("P0", "audit", _HARD_FAIL_RECS.get(h, f"Resolve audit hard failure: {h}."))
+        for f in audit.get("required_field_violations", audit.get("missing_core_fields", [])):
+            add("P0", "audit", f"Emit missing required audit field '{f}' from the "
                                "training status writer (report not decision-grade).")
-        if audit.get("stale"):
-            add("P0", "audit", "Training status is stale — refresh the run before "
-                               "trusting the algorithmic edge audit.")
-        if not audit.get("missing_core_fields") and not audit.get("stale"):
-            add("P0", "audit", "Algorithmic Edge Audit incomplete (no status).")
+        if not audit.get("hard_failures") and not audit.get("required_field_violations"):
+            add("P0", "audit", "Algorithmic Edge Audit incomplete.")
 
     # P0 — safety / broken runtime.
     if safety.get("critical"):

@@ -58,12 +58,14 @@ def _print_edge_audit(st: dict) -> None:
     print("=" * 56)
     banner = "PASS" if audit.get("ok") else "FAIL (not decision-grade)"
     print(f"  ALGORITHMIC EDGE AUDIT: {banner}")
-    if not audit.get("ok"):
-        miss = audit.get("missing_core_fields") or []
-        if miss:
-            print(f"    missing core fields: {', '.join(miss)}")
-        if audit.get("stale"):
-            print("    status is STALE")
+    print(f"    bregman_enabled={audit.get('bregman_enabled')} "
+          f"readiness_cap={audit.get('readiness_cap')} "
+          f"readiness={audit.get('capped_readiness_score')} "
+          f"(raw {audit.get('raw_readiness_score')})")
+    if audit.get("hard_failures"):
+        print(f"    hard_failures: {', '.join(audit['hard_failures'])}")
+    if audit.get("required_field_violations"):
+        print(f"    missing required: {', '.join(audit['required_field_violations'])}")
     for b in (audit.get("top_5_blockers") or [])[:5]:
         print(f"    blocker: {b}")
 

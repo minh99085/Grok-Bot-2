@@ -81,3 +81,28 @@ def test_report_includes_final_validation(tmp_path):
     assert report["final_validation"]["checks"]["after_cost_pnl"] == 2.0
     md = (bundle / "report.md").read_text()
     assert "Final Validation (Execution & Readiness)" in md
+
+
+def test_report_caps_readiness_when_bregman_inactive(tmp_path):
+    # status with NO bregman activity -> edge engine inactive -> readiness capped,
+    # audit not ok, and the report warns loudly (cannot report fake readiness).
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(parents=True)
+    (data_dir / "polymarket_training.json").write_text(json.dumps({
+        "mode": "paper", "runtime_seconds": 3600,
+        "pnl": {"equity": 510.0, "total_pnl": 2.0},
+        "safety": {"ok": True, "live_detected": False},
+    }), encoding="utf-8")
+    out = tmp_path / "inspection_reports"
+    res = gen.generate_report(
+        output_dir=str(out), repo_root=str(tmp_path), data_dir=str(data_dir),
+        skip_tests=True, include_docker=False, include_api=False,
+        include_artifacts=False, runner=make_runner(), opener=unreachable_opener)
+    report = json.loads((Path(res["bundle_dir"]) / "report.json").read_text())
+    audit = report["algorithmic_edge_audit"]
+    assert audit["ok"] is False
+    assert "bregman_disabled" in audit["hard_failures"]
+    assert audit["readiness_cap"] <= 39
+    score = audit["capped_readiness_score"]
+    assert score is None or score <= 39
+    assert any("ALGORITHMIC EDGE AUDIT INCOMPLETE" in w for w in res["warnings"])

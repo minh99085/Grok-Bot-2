@@ -32,11 +32,11 @@ def _full_status():
                 "realized_pnl": 6.0, "unrealized_pnl": 2.0, "max_drawdown": 0.08,
                 "exploration_pnl": 1.0, "validation_pnl": 7.0},
         "scan_metrics": {"scanned": 500, "kept": 40},
-        "bregman": {"constraint_groups_scanned": 30, "incoherent_groups": 4,
+        "bregman": {"enabled": True, "constraint_groups_scanned": 30, "incoherent_groups": 4,
                     "candidate_arbitrages": 4, "certified_arbitrages": 2,
                     "executable_depth_certified": 1, "expected_min_profit": 0.02,
                     "worst_case_payoff": 1.0, "execution_atomicity_risk": True,
-                    "opportunity_decay_half_life_s": 300.0},
+                    "opportunity_decay_half_life_s": 300.0, "clob_v2_executable": True},
         "btc_pulse": {"btc_pulse_regime": "trending_up", "btc_pulse_after_cost_pnl": 0.5,
                       "trend_persistence": 0.7, "oracle_disagreement_bps": 12.0},
         "chainlink_oracle": {"price": 67000.0, "age_seconds": 30},
@@ -81,7 +81,77 @@ def test_audit_fails_loudly_on_missing_core_field():
     assert audit["ok"] is False
     assert audit["status"] == "incomplete"
     assert "bregman.certified_arbitrages" in audit["missing_core_fields"]
-    assert any("missing core field" in b for b in audit["top_5_blockers"])
+    assert "missing_certified_arbitrage_fields" in audit["hard_failures"]
+    assert "bregman_zero_groups_scanned" in audit["hard_failures"]
+
+
+# --- hard failures + readiness caps (the core of this change) ---------------
+def test_bregman_disabled_caps_readiness_below_40():
+    st = _full_status()
+    st["bregman"]["enabled"] = False
+    st["bregman"]["constraint_groups_scanned"] = 0
+    feats = metrics.extract_features(st)
+    feats["bregman_enabled"] = False
+    feats["bregman_candidates_found"] = 0
+    audit = metrics.build_algorithmic_edge_audit(feats, st, scorecard={"score": 95})
+    assert audit["ok"] is False
+    assert audit["readiness_cap"] == 39
+    assert audit["capped_readiness_score"] <= 39
+    assert "bregman_disabled" in audit["hard_failures"]
+    assert "bregman_zero_groups_scanned" in audit["hard_failures"]
+
+
+def test_pytest_red_caps_readiness_below_50():
+    feats = metrics.extract_features(_full_status())
+    feats["tests_passing"] = False
+    audit = metrics.build_algorithmic_edge_audit(feats, _full_status(), scorecard={"score": 95})
+    assert audit["readiness_cap"] == 49
+    assert audit["capped_readiness_score"] <= 49
+    assert "pytest_failed" in audit["hard_failures"]
+    assert audit["ok"] is False
+
+
+def test_missing_fill_realism_caps_readiness_below_60():
+    st = _full_status()
+    st["pnl"].pop("fantasy_fill_rejections", None)
+    feats = metrics.extract_features(st)
+    feats["fantasy_fill_rejections"] = None
+    feats["tests_passing"] = True
+    audit = metrics.build_algorithmic_edge_audit(feats, st, scorecard={"score": 95})
+    assert audit["readiness_cap"] == 59
+    assert audit["capped_readiness_score"] <= 59
+    assert "fill_realism_null" in audit["hard_failures"]
+
+
+def test_missing_after_cost_pnl_caps_readiness_below_60():
+    st = _full_status()
+    st["pnl"].pop("after_cost_pnl", None)
+    feats = metrics.extract_features(st)
+    feats["after_cost_pnl"] = None
+    feats["tests_passing"] = True
+    audit = metrics.build_algorithmic_edge_audit(feats, st, scorecard={"score": 95})
+    assert audit["readiness_cap"] == 59
+    assert "after_cost_pnl_null" in audit["hard_failures"]
+
+
+def test_equity_mismatch_above_1pct_is_hard_failure():
+    feats = metrics.extract_features(_full_status())
+    feats["tests_passing"] = True
+    feats["equity"] = 500.0
+    feats["dashboard_equity"] = 400.0  # 20% mismatch
+    audit = metrics.build_algorithmic_edge_audit(feats, _full_status(), scorecard={"score": 95})
+    assert "dashboard_equity_mismatch_gt_1pct" in audit["hard_failures"]
+    assert audit["ok"] is False
+
+
+def test_capped_score_never_exceeds_cap_even_when_raw_high():
+    st = _full_status()
+    st["bregman"]["constraint_groups_scanned"] = 0
+    feats = metrics.extract_features(st)
+    feats["bregman_enabled"] = False
+    feats["bregman_candidates_found"] = 0
+    audit = metrics.build_algorithmic_edge_audit(feats, st, scorecard={"score": 100})
+    assert audit["capped_readiness_score"] < 40
 
 
 def test_audit_fails_loudly_on_stale_status():

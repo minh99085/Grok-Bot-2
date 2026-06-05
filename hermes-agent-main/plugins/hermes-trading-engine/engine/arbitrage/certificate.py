@@ -86,6 +86,21 @@ class Certificate:
         }
 
 
+# Non-null required fields for the Bregman-diagnostics section of the canonical
+# AlgorithmicEdgeAudit. Missing certified-arbitrage fields make the audit
+# non-decision-grade (the edge engine's output cannot be verified).
+BREGMAN_AUDIT_REQUIRED: tuple = (
+    "constraint_groups_scanned", "candidate_arbitrages", "certified_arbitrages",
+    "executable_depth_certified",
+)
+
+
+def missing_bregman_fields(section) -> list:
+    """Return the required Bregman-diagnostics audit fields that are None/absent."""
+    section = section or {}
+    return [f"bregman.{k}" for k in BREGMAN_AUDIT_REQUIRED if section.get(k) is None]
+
+
 def atomicity_risk(cert: "Certificate", *, venue_supports_atomic_multileg: bool = False) -> dict:
     """Assess whether a certified arb can be executed atomically risk-free (pure).
 

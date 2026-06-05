@@ -41,6 +41,20 @@ def _num(v) -> Optional[float]:
     return f
 
 
+# Non-null required fields for the strategy-attribution section of the canonical
+# AlgorithmicEdgeAudit. A missing field here makes the audit non-decision-grade.
+ATTRIBUTION_AUDIT_REQUIRED: tuple = (
+    "gross_pnl", "after_cost_pnl", "win_rate",
+)
+
+
+def missing_attribution_fields(section: Mapping) -> list:
+    """Return the required strategy-attribution audit fields that are None/absent."""
+    section = section or {}
+    return [f"strategy_attribution.{k}" for k in ATTRIBUTION_AUDIT_REQUIRED
+            if section.get(k) is None]
+
+
 @dataclass
 class AttributionRecord:
     strategy: str
