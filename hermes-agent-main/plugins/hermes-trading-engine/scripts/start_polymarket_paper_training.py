@@ -414,6 +414,23 @@ def run(argv=None) -> int:
         print(f"dry-run complete · recommendation={out['recommendation']} · report={out['run_dir']}")
         return 0
 
+    # Paper-only Bregman scan loop — the edge engine's activation path. Runs every
+    # market refresh cycle, independent of BTC Pulse / Grok / news. ON by default
+    # in paper mode; only disabled by explicit config (with a logged reason).
+    from engine.strategies.bregman_scanner import scanner_from_env
+    bregman_scanner = scanner_from_env()
+    logging.getLogger("hte.training.start").info(
+        "bregman paper scanner: enabled=%s reason=%s (independent of pulse/grok/news)",
+        bregman_scanner.enabled, bregman_scanner.disabled_reason)
+    bregman_scan_path = dd / "bregman_scan.json"
+
+    def _run_bregman_scan(markets) -> None:
+        try:
+            tel = bregman_scanner.scan(markets or [])
+            bregman_scan_path.write_text(json.dumps(tel, default=str), encoding="utf-8")
+        except Exception as exc:  # noqa: BLE001 — scan must never break the trainer
+            logging.getLogger("hte.training.start").debug("bregman scan failed: %s", exc)
+
     deadline = time.time() + args.minutes * 60.0 if args.minutes > 0 else None
     max_hours_deadline = (time.time() + args.max_hours * 3600.0
                           if args.continue_until_thresholds else None)
@@ -434,13 +451,21 @@ def run(argv=None) -> int:
             _control.apply_runtime(trainer, _control.read_overrides(dd))
         except Exception:  # noqa: BLE001 — control must never break a tick
             pass
-        trainer.run_tick(provider())
+        cat = provider()
+        _run_bregman_scan(cat)  # paper Bregman scan every refresh cycle
+        trainer.run_tick(cat)
         ticks += 1
         st = trainer.status()
         print(f"tick {ticks}: scanned={st['scan_metrics']['scanned']} "
               f"open={st['pnl']['open_positions']} equity={st['pnl']['equity']} "
               f"closed={st['pnl']['trades_closed']}")
         _print_campaign_progress(trainer)
+        _bt = bregman_scanner.last_telemetry or {}
+        print(f"  bregman: paper_enabled={_bt.get('bregman_paper_enabled')} "
+              f"scanned={_bt.get('constraint_groups_scanned')} "
+              f"skipped={_bt.get('groups_skipped')} "
+              f"candidates={_bt.get('candidate_arbitrages')} "
+              f"certified={_bt.get('certified_arbitrages')}")
         bp = st.get("btc_pulse") or {}
         if bp.get("btc_pulse_enabled"):
             print(f"  btc_pulse: frozen={bp.get('btc_pulse_frozen')} "

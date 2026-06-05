@@ -298,15 +298,30 @@ def api_markets_universe() -> dict:
 
 
 def _training_status() -> dict | None:
-    """Read the persisted Polymarket PAPER training status (read-only)."""
+    """Read the persisted Polymarket PAPER training status (read-only).
+
+    Merges the paper Bregman scan telemetry (``bregman_scan.json``) into the
+    ``bregman`` block so the dashboard, audit, and report all see the live edge
+    engine activation (scanned groups, certified arbs, typed skips)."""
     path = _engine.s.data_dir / "polymarket_training.json"
     if not path.exists():
         return None
     try:
         import json as _json
-        return _json.loads(path.read_text(encoding="utf-8"))
+        st = _json.loads(path.read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001
         return None
+    try:
+        import json as _json
+        bp = _engine.s.data_dir / "bregman_scan.json"
+        if bp.exists():
+            tel = _json.loads(bp.read_text(encoding="utf-8")) or {}
+            merged = dict(st.get("bregman") or {})
+            merged.update(tel)
+            st["bregman"] = merged
+    except Exception:  # noqa: BLE001
+        pass
+    return st
 
 
 @app.get("/api/polymarket/training/status")
@@ -451,6 +466,24 @@ def api_running_status() -> dict:
     running = sum(1 for s in systems if s["state"] == "on")
     return {"mode": "paper", "generated_at": int(_time.time()),
             "running_count": running, "total": len(systems), "systems": systems}
+
+
+@app.get("/api/bregman/scan")
+def api_bregman_scan() -> dict:
+    """Paper Bregman scan telemetry (read-only, PAPER).
+
+    The edge engine's activation path runs every market refresh cycle independent
+    of BTC Pulse / Grok / news. Reports whether the scanner is enabled, how many
+    constraint groups were scanned/skipped (with typed reasons), and the certified
+    arbitrage counts. Never trades."""
+    st = _training_status() or {}
+    b = st.get("bregman") or {}
+    if not b:
+        return {"mode": "paper", "available": False,
+                "reason": "no bregman scan yet — start paper training",
+                "bregman_paper_enabled": None, "arbitrage_disabled": None,
+                "constraint_groups_scanned": 0}
+    return {"mode": "paper", "available": True, **b}
 
 
 @app.get("/api/algorithmic-edge-audit")

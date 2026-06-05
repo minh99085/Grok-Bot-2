@@ -100,6 +100,45 @@ def _print_execution_monitoring(st: dict) -> None:
     print(f"    kill_switch_reasons  : {_f(mon.get('kill_switch_reasons'), st.get('kill_switch_reasons'), default=[])}")
 
 
+def _merge_bregman_scan(dd: Path, st: dict) -> None:
+    """Merge the paper Bregman scan telemetry (``bregman_scan.json``) into the
+    status under ``st['bregman']`` so the CLI, audit, and report all agree. The
+    scan loop is the edge engine's activation path (independent of pulse/grok/news).
+    """
+    try:
+        p = Path(dd) / "bregman_scan.json"
+        if not p.exists():
+            return
+        tel = json.loads(p.read_text(encoding="utf-8")) or {}
+    except Exception:  # noqa: BLE001
+        return
+    merged = dict(st.get("bregman") or {})
+    merged.update(tel)
+    st["bregman"] = merged
+
+
+def _print_bregman_scan(st: dict) -> None:
+    """Print the paper Bregman scan activation + telemetry (read-only)."""
+    b = st.get("bregman") or {}
+    if not b:
+        return
+    print("=" * 56)
+    print(f"  BREGMAN PAPER SCAN: enabled={b.get('bregman_paper_enabled')} "
+          f"arbitrage_disabled={b.get('arbitrage_disabled')}")
+    if b.get("disabled_reason"):
+        print(f"    disabled_reason: {b.get('disabled_reason')}")
+    print(f"    scanned={b.get('constraint_groups_scanned')} "
+          f"skipped={b.get('groups_skipped')} "
+          f"candidates={b.get('candidate_arbitrages')} "
+          f"certified={b.get('certified_arbitrages')} "
+          f"exec_depth_certified={b.get('executable_depth_certified')}")
+    skips: dict = {}
+    for s in (b.get("skipped_groups") or []):
+        skips[s.get("reason")] = skips.get(s.get("reason"), 0) + 1
+    if skips:
+        print(f"    skip_reasons: {skips}")
+
+
 def _data_dir() -> Path:
     try:
         from engine.config import Settings
@@ -131,6 +170,7 @@ def run(argv=None) -> int:
         print(f"no training status at {path} — start training first.")
         return 0
     st = json.loads(path.read_text(encoding="utf-8"))
+    _merge_bregman_scan(dd, st)
     if args.json:
         print(json.dumps(st, indent=2, default=str))
         return 0
@@ -271,6 +311,7 @@ def run(argv=None) -> int:
               f"risk_required={hl.get('exploration_requires_risk_gate')} "
               f"fill_required={hl.get('exploration_requires_realistic_fill')} "
               f"fresh_book_required={hl.get('exploration_min_book_freshness_required')}")
+    _print_bregman_scan(st)
     _print_benchmarks(st)
     _print_execution_monitoring(st)
     _print_edge_audit(st)

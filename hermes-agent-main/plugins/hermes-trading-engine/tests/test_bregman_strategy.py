@@ -3,8 +3,32 @@
 from __future__ import annotations
 
 from engine.arbitrage.certificate import FeeModel
-from engine.arbitrage.constraint_graph import ConstraintGraph, Outcome
+from engine.arbitrage.constraint_graph import (
+    ConstraintGraph,
+    Outcome,
+    build_constraint_graph,
+)
 from engine.strategies.bregman import BregmanResult, BregmanStrategy
+
+
+def test_evaluate_graph_built_from_markets_certifies_arb():
+    # The activation path: markets -> graph -> evaluate. An underpriced complement
+    # (0.40 + 0.40 = 0.80) must be detected + certified from market dicts.
+    markets = [
+        {"id": "arb", "active": True, "enableOrderBook": True, "relation": "complement",
+         "outcomes": [{"id": "arb:y", "price": 0.40, "ask": 0.40, "ask_depth": 100},
+                      {"id": "arb:n", "price": 0.40, "ask": 0.40, "ask_depth": 100}]},
+        {"id": "fair", "active": True, "enableOrderBook": True, "relation": "complement",
+         "outcomes": [{"id": "fair:y", "price": 0.50, "ask": 0.50, "ask_depth": 100},
+                      {"id": "fair:n", "price": 0.50, "ask": 0.50, "ask_depth": 100}]},
+    ]
+    graph, skipped = build_constraint_graph(markets)
+    assert skipped == []
+    res = BregmanStrategy().evaluate(graph, now=0.0)
+    assert res.candidates >= 1
+    assert res.certified >= 1
+    diag = res.audit_diagnostics()
+    assert diag["constraint_groups_scanned"] == 2
 
 
 def _mixed_graph():

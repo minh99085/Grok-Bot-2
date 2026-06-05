@@ -164,3 +164,20 @@ def test_decision_serializes():
     out = d.to_dict()
     assert out["tier"] == 1
     assert out["selected"]["source"] == "bregman"
+
+
+def test_router_consumes_bregman_scanner_certified_opportunities():
+    # End-to-end: the paper scanner certifies an underpriced complement, and the
+    # router routes it as Tier-1 (Bregman outranks all). No pulse/grok/news.
+    from engine.strategies.bregman_scanner import BregmanPaperScanner
+    markets = [{"id": "m", "active": True, "enableOrderBook": True, "relation": "complement",
+                "outcomes": [{"id": "m:y", "price": 0.40, "ask": 0.40, "ask_depth": 100},
+                             {"id": "m:n", "price": 0.40, "ask": 0.40, "ask_depth": 100}]}]
+    scanner = BregmanPaperScanner()
+    tel = scanner.scan(markets, now=0.0)
+    assert tel["certified_arbitrages"] >= 1
+    opps = scanner.tradeable_signals(now=0.0)
+    assert opps, "scanner should expose certified tradeable opportunities"
+    d = _router().route(bregman=opps)
+    assert d.tier == int(Tier.BREGMAN)
+    assert d.selected.source == "bregman"

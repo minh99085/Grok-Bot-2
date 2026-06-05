@@ -225,3 +225,153 @@ class ConstraintGraph:
             if not (0.0 <= float(o.price) <= 1.0):
                 issues.append(f"outcome {oid} price {o.price} not in [0,1]")
         return issues
+
+
+# --------------------------------------------------------------------------- #
+# Market -> constraint-graph ingestion (PAPER ONLY).
+#
+# Typed skip reasons: every market that cannot form a valid constraint group is
+# recorded with one of these so the scan is fully auditable (no silent drops).
+# --------------------------------------------------------------------------- #
+SKIP_MARKET_INACTIVE = "market_inactive"
+SKIP_NO_ORDERBOOK = "no_orderbook"
+SKIP_INSUFFICIENT_OUTCOMES = "insufficient_outcomes"
+SKIP_NON_NUMERIC_PRICE = "non_numeric_price"
+SKIP_MISSING_QUOTES = "missing_quotes"
+SKIP_NO_DEPTH = "no_depth"
+SKIP_DEGENERATE_PRICE = "degenerate_price"
+SKIP_NO_RELATION = "no_relationship"
+
+SKIP_REASONS = frozenset({
+    SKIP_MARKET_INACTIVE, SKIP_NO_ORDERBOOK, SKIP_INSUFFICIENT_OUTCOMES,
+    SKIP_NON_NUMERIC_PRICE, SKIP_MISSING_QUOTES, SKIP_NO_DEPTH,
+    SKIP_DEGENERATE_PRICE, SKIP_NO_RELATION,
+})
+
+_RELATION_BUILDERS = {
+    "complement": "add_complement", "mece": "add_mece", "range": "add_range",
+}
+
+
+def _to_float(v) -> Optional[float]:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_active(m: dict) -> bool:
+    if m.get("closed") or m.get("archived"):
+        return False
+    if m.get("active") is False:
+        return False
+    if m.get("acceptingOrders") is False:
+        return False
+    return True
+
+
+def build_constraint_graph(markets: Iterable[dict], *, min_depth_usd: float = 1.0
+                           ) -> "tuple[ConstraintGraph, list[dict]]":
+    """Build a :class:`ConstraintGraph` from market dicts (PAPER ONLY, pure).
+
+    Accepts two shapes per market:
+
+    * **Explicit**: ``{"id", "outcomes": [{"id","price","ask","ask_depth","bid"?}],
+      "relation": "complement"|"mece"|"range"}`` — used by tests + cross-market
+      groups.
+    * **Polymarket binary** (polymarket-client v2 gamma shape): ``outcomePrices``
+      (2 strings) + ``clobTokenIds`` + ``bestBid``/``bestAsk`` + ``topDepthUsd``
+      → a YES/NO ``COMPLEMENT`` (NO ask ≈ ``1 - bestBid``; depth ``usd/price``).
+
+    Returns ``(graph, skipped)`` where every skipped market carries a typed
+    ``reason`` from :data:`SKIP_REASONS` (no silent drops). Deterministic; never
+    performs I/O, never trades.
+    """
+    graph = ConstraintGraph()
+    skipped: list[dict] = []
+
+    def skip(mid: str, reason: str, detail: str = "") -> None:
+        skipped.append({"market_id": str(mid), "reason": reason, "detail": detail})
+
+    for m in markets or []:
+        mid = m.get("id") or m.get("market_id") or "?"
+        if not _is_active(m):
+            skip(mid, SKIP_MARKET_INACTIVE, "closed/archived/inactive")
+            continue
+
+        explicit = m.get("outcomes")
+        if explicit is not None:
+            if not isinstance(explicit, list) or len(explicit) < 2:
+                skip(mid, SKIP_INSUFFICIENT_OUTCOMES, f"{len(explicit or [])} outcomes")
+                continue
+            parsed: list[Outcome] = []
+            bad = None
+            for idx, o in enumerate(explicit):
+                price = _to_float(o.get("price"))
+                ask = _to_float(o.get("ask")) if o.get("ask") is not None else price
+                depth = _to_float(o.get("ask_depth"))
+                if price is None or ask is None:
+                    bad = SKIP_NON_NUMERIC_PRICE
+                    break
+                if not (0.0 < price < 1.0):
+                    bad = SKIP_DEGENERATE_PRICE
+                    break
+                if depth is None or depth <= 0:
+                    bad = SKIP_NO_DEPTH
+                    break
+                parsed.append(Outcome(
+                    id=str(o.get("id") or f"{mid}:{idx}"), market_id=str(mid),
+                    label=str(o.get("label", "")), price=price, ask=ask,
+                    bid=_to_float(o.get("bid")), ask_depth=depth))
+            if bad:
+                skip(mid, bad)
+                continue
+            relation = str(m.get("relation") or
+                           ("complement" if len(parsed) == 2 else "mece")).lower()
+            builder = _RELATION_BUILDERS.get(relation)
+            if builder is None:
+                skip(mid, SKIP_NO_RELATION, relation)
+                continue
+            graph.add_outcomes(parsed)
+            getattr(graph, builder)(*([p.id for p in parsed]
+                                      if builder != "add_complement"
+                                      else [parsed[0].id, parsed[1].id]))
+            continue
+
+        # --- Polymarket binary shape ---
+        if not m.get("enableOrderBook", True):
+            skip(mid, SKIP_NO_ORDERBOOK)
+            continue
+        prices = m.get("outcomePrices") or []
+        tokens = m.get("clobTokenIds") or []
+        if len(prices) < 2 or len(tokens) < 2:
+            skip(mid, SKIP_INSUFFICIENT_OUTCOMES, f"{len(prices)} prices / {len(tokens)} tokens")
+            continue
+        p_yes, p_no = _to_float(prices[0]), _to_float(prices[1])
+        if p_yes is None or p_no is None:
+            skip(mid, SKIP_NON_NUMERIC_PRICE)
+            continue
+        if not (0.0 < p_yes < 1.0) or not (0.0 < p_no < 1.0):
+            skip(mid, SKIP_DEGENERATE_PRICE)
+            continue
+        best_bid, best_ask = _to_float(m.get("bestBid")), _to_float(m.get("bestAsk"))
+        if best_bid is None or best_ask is None or best_ask <= 0 or best_bid <= 0:
+            skip(mid, SKIP_MISSING_QUOTES)
+            continue
+        depth_usd = _to_float(m.get("topDepthUsd")) or 0.0
+        if depth_usd < min_depth_usd:
+            skip(mid, SKIP_NO_DEPTH, f"${depth_usd}")
+            continue
+        yes_ask = best_ask
+        no_ask = max(_PMIN, min(_PMAX, 1.0 - best_bid))  # buy NO ≈ 1 - YES bid
+        graph.add_outcomes([
+            Outcome(id=str(tokens[0]), market_id=str(mid), label="YES", price=p_yes,
+                    ask=yes_ask, ask_depth=depth_usd / max(yes_ask, _PMIN)),
+            Outcome(id=str(tokens[1]), market_id=str(mid), label="NO", price=p_no,
+                    ask=no_ask, ask_depth=depth_usd / max(no_ask, _PMIN)),
+        ])
+        graph.add_complement(str(tokens[0]), str(tokens[1]))
+
+    logger.info("build_constraint_graph: scanned=%d skipped=%d",
+                len(graph.constraints()), len(skipped))
+    return graph, skipped
