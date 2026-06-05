@@ -166,6 +166,36 @@ def test_decision_serializes():
     assert out["selected"]["source"] == "bregman"
 
 
+def test_executable_bregman_outranks_pulse_but_theoretical_does_not():
+    from engine.arbitrage.certificate import CertificateStatus
+
+    class _StatusCert:
+        def __init__(self, status):
+            self.status = status
+            self.size = 10.0
+            self.fill_feasible = True
+            self.certified = True
+            self.executable = (status == CertificateStatus.EXECUTABLE_AFTER_COST_CERTIFIED)
+
+    class _Opp2:
+        def __init__(self, status, edge=0.05):
+            self.certificate = _StatusCert(status)
+            self.edge = edge
+            self.outcome_ids = ["a", "b"]
+
+    r = _router()
+    disloc = r.dislocation_signal(edge=0.5, size=5, fill_ok=True, regime="trending_up")
+    # executable Bregman -> Tier 1 wins over the BTC Pulse dislocation
+    d_exec = r.route(bregman=[_Opp2(CertificateStatus.EXECUTABLE_AFTER_COST_CERTIFIED)],
+                     dislocation=disloc)
+    assert d_exec.tier == int(Tier.BREGMAN)
+    # theoretical-only Bregman is NOT Tier-1 eligible -> pulse (Tier 2) is selected
+    d_theo = r.route(bregman=[_Opp2(CertificateStatus.CERTIFIED_THEORETICAL_NOT_EXECUTABLE)],
+                     dislocation=disloc)
+    assert d_theo.tier == int(Tier.DISLOCATION)
+    assert any(s.source == "bregman" for s in d_theo.rejected)
+
+
 def test_router_consumes_bregman_scanner_certified_opportunities():
     # End-to-end: the paper scanner certifies an underpriced complement, and the
     # router routes it as Tier-1 (Bregman outranks all). No pulse/grok/news.
@@ -173,11 +203,13 @@ def test_router_consumes_bregman_scanner_certified_opportunities():
     markets = [{"id": "m", "active": True, "enableOrderBook": True, "relation": "complement",
                 "outcomes": [{"id": "m:y", "price": 0.40, "ask": 0.40, "ask_depth": 100},
                              {"id": "m:n", "price": 0.40, "ask": 0.40, "ask_depth": 100}]}]
-    scanner = BregmanPaperScanner()
+    # atomic-capable venue -> certified opps are EXECUTABLE_AFTER_COST_CERTIFIED
+    scanner = BregmanPaperScanner(venue_supports_atomic_multileg=True)
     tel = scanner.scan(markets, now=0.0)
     assert tel["certified_arbitrages"] >= 1
     opps = scanner.tradeable_signals(now=0.0)
     assert opps, "scanner should expose certified tradeable opportunities"
+    assert opps[0].executable is True
     d = _router().route(bregman=opps)
     assert d.tier == int(Tier.BREGMAN)
     assert d.selected.source == "bregman"

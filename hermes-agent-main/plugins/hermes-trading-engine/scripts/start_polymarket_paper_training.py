@@ -391,6 +391,10 @@ def run(argv=None) -> int:
     if cfg.btc_pulse_enabled:
         print("  BTC Pulse: enabled=true frozen=false paper_only=true "
               "isolated_learning=true live_enabled=false legacy_autotrade=false")
+        logging.getLogger("hte.training.start").info(
+            "btc_pulse after-cost shadow gate ON: trades only on classified regime + "
+            "positive after-cost EV + explainable disagreement + fresh market + fill "
+            "realism + non-degrading calibration; else shadow-only. Bregman stays Tier 1.")
     # double-check the trainer's own runtime gate agrees
     if not trainer.preflight()["ok"]:
         print("\033[91m*** REFUSING: trainer preflight failed. ***\033[0m")

@@ -151,6 +151,21 @@ class BtcPulsePaperTrainer:
         self.last_error: Optional[str] = None
         self.kill_switch_active = False
 
+        # After-cost SHADOW GATE (PAPER ONLY, default ON): the pulse may place a
+        # paper trade only when the regime is classified, after-cost EV is positive,
+        # disagreement is explainable, the market is fresh, fill realism passes, and
+        # calibration is not degrading — otherwise it logs shadow decisions only.
+        from engine.strategies.btc_pulse import PulseThresholdLearner, RegimeExpectancy
+        self.gate_enabled = bool(getattr(cfg, "btc_pulse_shadow_gate_enabled", True))
+        self.regime_expectancy = RegimeExpectancy()
+        self.pulse_threshold = PulseThresholdLearner()
+        self._last_brier: Optional[float] = None
+        self.gate_shadow_decisions = 0
+        self.last_gate: Optional[dict] = None
+        self.max_market_stale_s = float(getattr(cfg, "btc_pulse_max_market_stale_s", 120.0))
+        self.gate_dd_soft = float(getattr(cfg, "btc_pulse_dd_soft", 0.10))
+        self.gate_dd_hard = float(getattr(cfg, "btc_pulse_dd_hard", 0.20))
+
         # feedback acceleration (PAPER ONLY): record a shadow decision on
         # near-threshold no-trade rounds so every round yields a learning sample.
         # NEVER forces a trade when the signal is off or EV is clearly negative.
@@ -386,6 +401,27 @@ class BtcPulsePaperTrainer:
             "ts": now, **self.namespace(),
         }
 
+        # Hard after-cost SHADOW GATE: demote to shadow-only unless the pulse
+        # proves a positive after-cost edge under a classified regime.
+        if self.gate_enabled:
+            gate = self._evaluate_shadow_gate(ev_frac)
+            self.last_gate = gate.to_dict()
+            decision["regime"] = self.regime
+            if not gate.allow_trade:
+                label = gate.reasons[0] if gate.reasons else "shadow"
+                self.no_trade_decisions += 1
+                self.rejection_reasons[label] = self.rejection_reasons.get(label, 0) + 1
+                # The gate's shadow is tracked in its OWN counter; the legacy
+                # feedback-acceleration ``shadow_decisions`` keeps its meaning.
+                self.gate_shadow_decisions += 1
+                self._round = {
+                    "decision": decision, "traded": False, "stake": 0.0, "fill_frac": 0.0,
+                    "resolve_tick": self.ticks + self._ticks_per_round,
+                    "no_trade_reason": label, "shadow": True, "regime": self.regime}
+                return {"frozen": False, "event": "shadow_decision", "reason": label,
+                        "gate_reasons": list(gate.reasons), "regime": self.regime,
+                        "round": self.rounds_seen, **self.namespace()}
+
         reject = self._gate(decision)
         if reject is not None:
             self.no_trade_decisions += 1
@@ -447,6 +483,12 @@ class BtcPulsePaperTrainer:
             # realistic-fill PnL already reflects fill_frac; after-cost subtracts
             # a tiny simulated taker cost so profit is never a fantasy fill.
             cost = round(filled * 0.002, 4)
+            after_cost_delta = round(pnl - cost, 6)
+            # Learn regime-specific after-cost expectancy + tighten the per-regime
+            # threshold after losses (so a losing regime is demoted to shadow).
+            regime = rnd.get("regime") or dec.get("regime") or self.regime
+            self.regime_expectancy.update(regime, after_cost_delta)
+            self.pulse_threshold.update(regime, after_cost_delta)
             self.realistic_fill_pnl = round(self.realistic_fill_pnl + pnl, 4)
             self.after_cost_pnl = round(self.after_cost_pnl + pnl - cost, 4)
             self.equity = round(self.equity + pnl - cost, 4)
@@ -571,6 +613,42 @@ class BtcPulsePaperTrainer:
         except Exception:  # noqa: BLE001
             return 0.5
 
+    def _recent_returns(self, n: int = 30) -> list:
+        """Short-horizon return series from recent closes (for regime classification)."""
+        cs = self._closes[-(n + 1):]
+        return [cs[i] / cs[i - 1] - 1.0 for i in range(1, len(cs)) if cs[i - 1] > 0]
+
+    def _calibration_degrading(self) -> bool:
+        """True when the rolling Brier score is worsening (calibration drift)."""
+        b = self._calibration().get("brier")
+        if b is None:
+            return False
+        prev = self._last_brier
+        self._last_brier = b
+        return prev is not None and b > prev + 1e-4
+
+    def _evaluate_shadow_gate(self, ev_frac: float):
+        """Build inputs + run the pure after-cost shadow gate (PAPER ONLY)."""
+        from engine.strategies.btc_pulse import (PulseGateInputs, classify_regime,
+                                                 evaluate_pulse_gate)
+        regime = classify_regime(self._recent_returns())
+        self.regime = regime    # directional regime (oracle/fast blockers handled earlier)
+        expected = self.regime_expectancy.expected_after_cost(regime)
+        if expected is None:
+            expected = round(ev_frac - 0.002, 6)   # immediate after-cost EV estimate
+        inp = PulseGateInputs(
+            regime=regime, expected_after_cost_value=expected,
+            min_after_cost_ev=self.pulse_threshold.threshold(regime),
+            disagreement_bps=self.fast_counters.get("last_oracle_disagreement_bps"),
+            max_disagreement_bps=self.max_disagreement_bps,
+            market_stale_s=self.oracle_counters.get("oracle_age_seconds"),
+            max_stale_s=self.max_market_stale_s,
+            fill_realism_ok=(self._simulate_fill() > 0.0),
+            calibration_degrading=self._calibration_degrading(),
+            drawdown=(self.max_drawdown / self._start_equity) if self._start_equity else 0.0,
+            dd_soft=self.gate_dd_soft, dd_hard=self.gate_dd_hard)
+        return evaluate_pulse_gate(inp)
+
     def _simulate_fill(self) -> float:
         # realistic partial-fill model: full fill for a tight book, small chance
         # of a partial fill. Deterministic given the seed.
@@ -650,6 +728,10 @@ class BtcPulsePaperTrainer:
             "btc_pulse_decisions": self.decisions,
             "btc_pulse_no_trade_decisions": self.no_trade_decisions,
             "btc_pulse_shadow_decisions": self.shadow_decisions,
+            "btc_pulse_gate_enabled": bool(self.gate_enabled),
+            "btc_pulse_gate_shadow_decisions": self.gate_shadow_decisions,
+            "btc_pulse_last_gate": self.last_gate,
+            "btc_pulse_regime_expectancy": self.regime_expectancy.to_dict(),
             "btc_pulse_feedback_acceleration_enabled": bool(self.accel_enabled),
             "btc_pulse_paper_trades": self.paper_trades,
             "btc_pulse_paper_trades_opened": self.paper_trades,

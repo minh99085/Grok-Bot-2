@@ -160,12 +160,17 @@ class BregmanStrategy:
 
     def __init__(self, *, fee_model: Optional[FeeModel] = None,
                  profit_floor: float = 0.005, max_size: float = 1e9,
-                 incoherence_tol: float = 1e-3, decay_half_life_s: float = 300.0):
+                 incoherence_tol: float = 1e-3, decay_half_life_s: float = 300.0,
+                 venue_supports_atomic_multileg: bool = False):
         self.fee_model = fee_model or FeeModel()
         self.profit_floor = float(profit_floor)
         self.max_size = float(max_size)
         self.incoherence_tol = float(incoherence_tol)
         self.decay_half_life_s = float(decay_half_life_s)
+        # Polymarket CLOB v2 has no atomic multi-order fill -> multi-leg arbs are
+        # CERTIFIED_THEORETICAL_NOT_EXECUTABLE by default (only EXECUTABLE on an
+        # atomic-capable venue). Never enables a live path.
+        self.venue_supports_atomic_multileg = bool(venue_supports_atomic_multileg)
 
     def evaluate(self, graph: ConstraintGraph, *, now: Optional[float] = None) -> BregmanResult:
         """Run project -> detect -> certify and return the result with metrics."""
@@ -189,8 +194,10 @@ class BregmanStrategy:
         # false positives rather than silently ignored.
         for c in graph.constraints():
             local = local_incoherence(x_market, proj.x, c.outcome_ids)
-            cert = certify_group(graph, c, fee_model=self.fee_model,
-                                 profit_floor=self.profit_floor, max_size=self.max_size)
+            cert = certify_group(
+                graph, c, fee_model=self.fee_model, profit_floor=self.profit_floor,
+                max_size=self.max_size,
+                venue_supports_atomic_multileg=self.venue_supports_atomic_multileg)
             is_candidate = local > self.incoherence_tol or cert.certified
             opp = BregmanOpportunity(
                 relation=c.type.value, outcome_ids=list(c.outcome_ids),

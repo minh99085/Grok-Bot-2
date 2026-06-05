@@ -283,6 +283,13 @@ def run(argv=None) -> int:
         print(f"    ev_positive={bp.get('btc_pulse_ev_positive_count')} "
               f"ev_negative_rejected={bp.get('btc_pulse_ev_negative_rejected_count')} "
               f"rejection_reasons={bp.get('btc_pulse_rejection_reasons')}")
+        _gate = bp.get("btc_pulse_last_gate") or {}
+        print(f"    SHADOW GATE: enabled={bp.get('btc_pulse_gate_enabled')} "
+              f"mode={_gate.get('mode')} "
+              f"shadow_decisions={bp.get('btc_pulse_gate_shadow_decisions')} "
+              f"regime={bp.get('btc_pulse_regime')} reasons={_gate.get('reasons')}")
+        if bp.get("btc_pulse_regime_expectancy"):
+            print(f"    regime_expectancy={bp.get('btc_pulse_regime_expectancy')}")
         print(f"    last_tick_ts={bp.get('btc_pulse_last_tick_ts')} "
               f"last_error={bp.get('btc_pulse_last_error')} "
               f"blockers={bp.get('btc_pulse_blockers')}")

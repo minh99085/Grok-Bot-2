@@ -55,3 +55,27 @@ def test_blocked_regimes_frozenset_contains_core():
 
 def test_case_insensitive_regime():
     assert pulse_block_reason("CHOP") == "regime_chop"
+
+
+# --- shadow-gate regime classification + integration ------------------------
+def test_classify_regime_used_by_gate():
+    from engine.strategies.btc_pulse import classify_regime
+    assert classify_regime([0.02] * 12) == "trending_up"
+    assert classify_regime([0.01, -0.01] * 8) == "chop"
+    assert classify_regime([]) == "unknown"
+
+
+def test_flat_price_pulse_is_demoted_to_shadow():
+    from types import SimpleNamespace
+    from engine.training.btc_pulse import BtcPulsePaperTrainer
+    cfg = SimpleNamespace(btc_pulse_enabled=True, starting_bankroll=500.0,
+                          risk_engine_enabled=True)
+    t = BtcPulsePaperTrainer(cfg, clock=lambda: 1_700_000_000_000,
+                             price_fn=lambda: 100000.0, rng_seed=5)
+    for i in range(80):
+        t.tick(now_ms=1_700_000_000_000 + i * 30_000)
+    st = t.status()
+    assert st["btc_pulse_paper_trades"] == 0          # losing/chop -> never trades
+    assert st["btc_pulse_gate_enabled"] is True
+    assert st["btc_pulse_gate_shadow_decisions"] >= 1  # demoted to shadow
+    assert st["btc_pulse_last_gate"]["mode"] == "shadow"

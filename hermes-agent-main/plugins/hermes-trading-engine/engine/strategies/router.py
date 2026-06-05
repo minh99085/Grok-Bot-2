@@ -134,17 +134,28 @@ class StrategyRouter:
     # -- signal builders -----------------------------------------------------
     @staticmethod
     def bregman_signal(opportunity: Any) -> StrategySignal:
-        """Build a Tier-1 signal from a certified BregmanOpportunity."""
+        """Build a Tier-1 signal from a Bregman opportunity.
+
+        Tier-1 eligibility requires the certificate's **executable** status
+        (``EXECUTABLE_AFTER_COST_CERTIFIED``) when a status is present; a
+        theoretical-only certificate never wins Tier 1. Falls back to the legacy
+        ``certified`` flag when no status is attached."""
         cert = getattr(opportunity, "certificate", None)
         size = float(getattr(cert, "size", 0.0)) if cert is not None else 0.0
         fill = bool(getattr(cert, "fill_feasible", False)) if cert is not None else False
-        certified = bool(getattr(cert, "certified", False)) if cert is not None else False
+        status = getattr(cert, "status", "") if cert is not None else ""
+        if status:
+            eligible = bool(getattr(cert, "executable", False))
+        else:
+            eligible = bool(getattr(cert, "certified", False)) if cert is not None else False
         return StrategySignal(
             tier=Tier.BREGMAN, source="bregman",
             edge=float(getattr(opportunity, "edge", 0.0)), size=size,
-            fill_ok=fill, certified=certified,
-            reason="certified" if certified else "uncertified",
-            meta={"outcome_ids": list(getattr(opportunity, "outcome_ids", []))})
+            fill_ok=fill, certified=eligible,
+            reason=("executable_certified" if eligible else
+                    (status or "uncertified")),
+            meta={"outcome_ids": list(getattr(opportunity, "outcome_ids", [])),
+                  "certificate_status": status})
 
     @staticmethod
     def dislocation_signal(*, edge: float, size: float, fill_ok: bool,

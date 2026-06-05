@@ -26,6 +26,9 @@ def _trainer(vig=0.0):
         btc_pulse_require_positive_ev=True, btc_pulse_min_ev_threshold=0.0,
         pulse_vig=vig, starting_bankroll=500.0, risk_engine_enabled=True,
         btc_pulse_tick_seconds=30, btc_pulse_round_seconds=300,
+        # this test exercises the opened/resolved accounting, not the after-cost
+        # shadow gate (which would correctly shadow a no-edge random walk).
+        btc_pulse_shadow_gate_enabled=False,
     )
     return BtcPulsePaperTrainer(cfg, rng_seed=1337)
 

@@ -52,7 +52,8 @@ class BregmanPaperScanner:
 
     def __init__(self, *, enabled: bool = True, disabled_reason: Optional[str] = None,
                  fee_model: Optional[FeeModel] = None, profit_floor: float = 0.005,
-                 min_depth_usd: float = 1.0, decay_half_life_s: float = 300.0):
+                 min_depth_usd: float = 1.0, decay_half_life_s: float = 300.0,
+                 venue_supports_atomic_multileg: bool = False):
         self.enabled = bool(enabled)
         self.disabled_reason = disabled_reason if not self.enabled else None
         if not self.enabled and not self.disabled_reason:
@@ -61,7 +62,8 @@ class BregmanPaperScanner:
         self.decay_half_life_s = float(decay_half_life_s)
         self.strategy = BregmanStrategy(
             fee_model=fee_model, profit_floor=float(profit_floor),
-            decay_half_life_s=self.decay_half_life_s)
+            decay_half_life_s=self.decay_half_life_s,
+            venue_supports_atomic_multileg=bool(venue_supports_atomic_multileg))
         self.last_result: Optional[BregmanResult] = None
         self.last_discovery = None
         self.last_telemetry: dict = {}
