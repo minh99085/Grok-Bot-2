@@ -1,0 +1,227 @@
+"""Market constraint graph for Bregman coherence arbitrage (PAPER ONLY, pure).
+
+A constraint graph holds binary prediction-market *outcomes* (each with a
+market-implied probability and order-book ask/bid + depth) and the logical
+*constraints* relating them:
+
+* ``COMPLEMENT``                 — exactly one of {a, b} is true (sum == 1).
+* ``MUTUALLY_EXCLUSIVE``         — at most one is true (sum <= 1).
+* ``COLLECTIVELY_EXHAUSTIVE``    — at least one is true (sum >= 1).
+* ``MECE`` / ``RANGE``           — exactly one of a partition is true (sum == 1).
+* ``HIERARCHY``                  — children imply the parent (child <= parent).
+* ``CROSS_MARKET_EQUIV``         — equal probability across markets (a == b).
+* ``CROSS_MARKET_IMPLIES``       — implication across markets (a <= b).
+
+The graph compiles to projection *primitives* (sum / equal / implies) consumed by
+:mod:`engine.arbitrage.bregman_projection`, and enumerates feasible 0/1 *atoms*
+(world states) for the relations whose worst-case payoff is certifiable.
+
+Quant responsibilities (this module)
+------------------------------------
+See :data:`QUANT_RESPONSIBILITIES`. Researcher/analyst define relationships;
+developer encodes them here; trader consumes only certified outputs.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Iterable, Optional
+
+logger = logging.getLogger("hte.arbitrage.graph")
+
+_PMIN, _PMAX = 1e-6, 1.0 - 1e-6
+
+QUANT_RESPONSIBILITIES: dict[str, str] = {
+    "quant_analyst": "Defines which market relationships hold (MECE/complement/"
+                     "range/hierarchy/cross-market) and audits universe quality.",
+    "quant_researcher": "Validates the coherence model + projection assumptions; "
+                        "sets incoherence/edge thresholds.",
+    "quant_developer": "Owns this graph + projection + certificate code; type-safe, "
+                       "deterministic, tested.",
+    "trader": "Consumes ONLY certified, fill-feasible opportunities; never trades "
+              "an uncertified candidate.",
+}
+
+
+class RelationType(str, Enum):
+    COMPLEMENT = "complement"
+    MUTUALLY_EXCLUSIVE = "mutually_exclusive"
+    COLLECTIVELY_EXHAUSTIVE = "collectively_exhaustive"
+    MECE = "mece"
+    RANGE = "range"
+    HIERARCHY = "hierarchy"
+    CROSS_MARKET_EQUIV = "cross_market_equiv"
+    CROSS_MARKET_IMPLIES = "cross_market_implies"
+
+
+# Relations whose worst-case payoff is enumerable + certifiable as a buy-set arb.
+EXACTLY_ONE_RELATIONS = frozenset({
+    RelationType.COMPLEMENT, RelationType.MECE, RelationType.RANGE})
+
+
+@dataclass
+class Outcome:
+    """A single binary outcome (e.g. a market's YES or a range bucket)."""
+
+    id: str
+    market_id: str = ""
+    label: str = ""
+    price: float = 0.0          # market-implied probability (mid)
+    ask: Optional[float] = None  # price to BUY one share (pays $1 if true)
+    bid: Optional[float] = None  # price to SELL one share
+    ask_depth: float = 0.0       # shares available at the ask
+    bid_depth: float = 0.0
+
+    def buy_price(self) -> float:
+        return float(self.ask if self.ask is not None else self.price)
+
+    def sell_price(self) -> float:
+        return float(self.bid if self.bid is not None else self.price)
+
+
+@dataclass
+class Constraint:
+    """A logical relationship over a set of outcome ids."""
+
+    type: RelationType
+    outcome_ids: list[str]
+    op: str = "=="              # for sum-type relations: <=, >=, ==
+    rhs: float = 1.0
+    parent_id: Optional[str] = None  # hierarchy parent
+    meta: dict = field(default_factory=dict)
+
+
+@dataclass
+class Primitive:
+    """A projection primitive with a closed-form KL projection."""
+
+    kind: str                  # "sum" | "equal" | "implies"
+    ids: list[str]
+    op: str = "=="             # for "sum"
+    rhs: float = 1.0
+
+
+class ConstraintGraph:
+    """Holds outcomes + constraints; compiles primitives + feasible atoms."""
+
+    def __init__(self) -> None:
+        self._outcomes: dict[str, Outcome] = {}
+        self._constraints: list[Constraint] = []
+
+    # -- construction --------------------------------------------------------
+    def add_outcome(self, outcome: Outcome) -> Outcome:
+        self._outcomes[outcome.id] = outcome
+        return outcome
+
+    def add_outcomes(self, outcomes: Iterable[Outcome]) -> None:
+        for o in outcomes:
+            self.add_outcome(o)
+
+    def get(self, outcome_id: str) -> Optional[Outcome]:
+        return self._outcomes.get(outcome_id)
+
+    def outcomes(self) -> list[Outcome]:
+        return list(self._outcomes.values())
+
+    def constraints(self) -> list[Constraint]:
+        return list(self._constraints)
+
+    def add_constraint(self, constraint: Constraint) -> Constraint:
+        self._constraints.append(constraint)
+        return constraint
+
+    # convenience builders
+    def add_complement(self, a: str, b: str) -> Constraint:
+        return self.add_constraint(Constraint(RelationType.COMPLEMENT, [a, b], "==", 1.0))
+
+    def add_mece(self, ids: list[str]) -> Constraint:
+        return self.add_constraint(Constraint(RelationType.MECE, list(ids), "==", 1.0))
+
+    def add_range(self, ids: list[str]) -> Constraint:
+        return self.add_constraint(Constraint(RelationType.RANGE, list(ids), "==", 1.0))
+
+    def add_mutually_exclusive(self, ids: list[str]) -> Constraint:
+        return self.add_constraint(
+            Constraint(RelationType.MUTUALLY_EXCLUSIVE, list(ids), "<=", 1.0))
+
+    def add_collectively_exhaustive(self, ids: list[str]) -> Constraint:
+        return self.add_constraint(
+            Constraint(RelationType.COLLECTIVELY_EXHAUSTIVE, list(ids), ">=", 1.0))
+
+    def add_hierarchy(self, parent: str, children: list[str]) -> Constraint:
+        return self.add_constraint(
+            Constraint(RelationType.HIERARCHY, list(children), parent_id=parent))
+
+    def add_cross_market_equiv(self, a: str, b: str) -> Constraint:
+        return self.add_constraint(Constraint(RelationType.CROSS_MARKET_EQUIV, [a, b]))
+
+    def add_cross_market_implies(self, a: str, b: str) -> Constraint:
+        return self.add_constraint(Constraint(RelationType.CROSS_MARKET_IMPLIES, [a, b]))
+
+    # -- compilation ---------------------------------------------------------
+    def price_vector(self) -> dict[str, float]:
+        """Map outcome id -> market-implied probability (clipped to (0,1))."""
+        return {oid: min(_PMAX, max(_PMIN, float(o.price)))
+                for oid, o in self._outcomes.items()}
+
+    def to_primitives(self) -> list[Primitive]:
+        """Compile constraints into projection primitives (sum/equal/implies)."""
+        prims: list[Primitive] = []
+        for c in self._constraints:
+            t = c.type
+            if t in (RelationType.COMPLEMENT, RelationType.MECE, RelationType.RANGE):
+                prims.append(Primitive("sum", list(c.outcome_ids), "==", 1.0))
+            elif t == RelationType.MUTUALLY_EXCLUSIVE:
+                prims.append(Primitive("sum", list(c.outcome_ids), "<=", 1.0))
+            elif t == RelationType.COLLECTIVELY_EXHAUSTIVE:
+                prims.append(Primitive("sum", list(c.outcome_ids), ">=", 1.0))
+            elif t == RelationType.CROSS_MARKET_EQUIV:
+                prims.append(Primitive("equal", list(c.outcome_ids)))
+            elif t == RelationType.CROSS_MARKET_IMPLIES:
+                prims.append(Primitive("implies", list(c.outcome_ids[:2])))
+            elif t == RelationType.HIERARCHY and c.parent_id:
+                for child in c.outcome_ids:
+                    prims.append(Primitive("implies", [child, c.parent_id]))
+        return prims
+
+    def certifiable_constraints(self) -> list[Constraint]:
+        """Constraints whose worst-case payoff can be enumerated + certified."""
+        return [c for c in self._constraints if c.type in EXACTLY_ONE_RELATIONS]
+
+    def feasible_atoms(self, constraint: Constraint) -> list[dict[str, int]]:
+        """Enumerate feasible 0/1 world states over a constraint's outcomes.
+
+        Returns ``[]`` for relations that are not finitely enumerable here
+        (collectively-exhaustive, hierarchy) — those are not buy-set certifiable.
+        """
+        ids = list(constraint.outcome_ids)
+        t = constraint.type
+        if t in EXACTLY_ONE_RELATIONS:  # exactly one true
+            return [{j: (1 if j == i else 0) for j in ids} for i in ids]
+        if t == RelationType.MUTUALLY_EXCLUSIVE:  # at most one true (+ all-zero)
+            atoms = [{j: (1 if j == i else 0) for j in ids} for i in ids]
+            atoms.append({j: 0 for j in ids})
+            return atoms
+        if t == RelationType.CROSS_MARKET_EQUIV:  # a == b
+            return [{ids[0]: 1, ids[1]: 1}, {ids[0]: 0, ids[1]: 0}]
+        if t == RelationType.CROSS_MARKET_IMPLIES:  # a -> b
+            a, b = ids[0], ids[1]
+            return [{a: 0, b: 0}, {a: 0, b: 1}, {a: 1, b: 1}]
+        return []
+
+    # -- validation ----------------------------------------------------------
+    def validate(self) -> list[str]:
+        """Return a list of structural issues (empty = clean)."""
+        issues: list[str] = []
+        for c in self._constraints:
+            for oid in c.outcome_ids:
+                if oid not in self._outcomes:
+                    issues.append(f"constraint {c.type.value} references unknown outcome {oid}")
+            if c.parent_id and c.parent_id not in self._outcomes:
+                issues.append(f"hierarchy references unknown parent {c.parent_id}")
+        for oid, o in self._outcomes.items():
+            if not (0.0 <= float(o.price) <= 1.0):
+                issues.append(f"outcome {oid} price {o.price} not in [0,1]")
+        return issues

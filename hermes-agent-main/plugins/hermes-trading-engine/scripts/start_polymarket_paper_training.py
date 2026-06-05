@@ -115,6 +115,12 @@ def run(argv=None) -> int:
                          "rollback guardrails (engine.models.probability_ensemble). "
                          "Sets PROBABILITY_ENSEMBLE_ENABLED=1 for the calibration layer; "
                          "default OFF preserves current probability behavior. PAPER ONLY.")
+    ap.add_argument("--bregman-primary", action="store_true",
+                    help="opt in to Bregman coherence arbitrage as the primary strategy "
+                         "(engine.strategies.bregman): project market probs, certify a "
+                         "cost/depth-aware worst-case profit, trade ONLY certified "
+                         "opportunities. Sets BREGMAN_PRIMARY_STRATEGY=1; default OFF "
+                         "preserves current behavior. PAPER ONLY.")
     ap.add_argument("--mode", choices=["disabled", "observe_only", "paper_train"],
                     default="paper_train", help="training mode (PAPER ONLY either way)")
     ap.add_argument("--data-dir", default=None, help="data dir for status + campaign state")
@@ -309,14 +315,18 @@ def run(argv=None) -> int:
     # Opt-in probability ensemble + calibration guardrails (default OFF; behavior
     # preserved). Exposed via env so the calibration layer can read it without a
     # structural change to the trainer. PAPER ONLY.
+    import os as _os
     if getattr(args, "probability_ensemble", False):
-        import os as _os
         _os.environ["PROBABILITY_ENSEMBLE_ENABLED"] = "1"
+    if getattr(args, "bregman_primary", False):
+        _os.environ["BREGMAN_PRIMARY_STRATEGY"] = "1"
     logging.getLogger("hte.training.start").info(
-        "modeling config: probability_ensemble=%s calibration=auto(Platt/isotonic/"
-        "temperature/shrink) rollback_guard=available conformal_bands=available "
-        "grok_news=evidence_only",
-        "on" if getattr(args, "probability_ensemble", False) else "off")
+        "modeling config: probability_ensemble=%s bregman_primary=%s "
+        "calibration=auto(Platt/isotonic/temperature/shrink) rollback_guard=available "
+        "conformal_bands=available grok_news=evidence_only "
+        "bregman=certify_before_trade",
+        "on" if getattr(args, "probability_ensemble", False) else "off",
+        "on" if getattr(args, "bregman_primary", False) else "off")
     cfg.mode = args.mode  # start-paper explicitly drives paper training
     data_dir = Path(args.data_dir) if args.data_dir else None
     trainer = PolymarketPaperTrainer(cfg, data_dir=data_dir)

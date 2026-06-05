@@ -190,6 +190,10 @@ def extract_features(status: dict | None, api: dict | None = None,
                                            camp_ev.get("after_cost_expectancy")),
         "bregman_false_positive_rate": _first(mon.get("bregman_false_positive_rate"),
                                               camp_ev.get("bregman_false_positives")),
+        "bregman_fill_feasible": _first(mon.get("bregman_fill_feasible"),
+                                        _get(status, "bregman", "fill_feasible")),
+        "bregman_opportunity_decay": _first(mon.get("bregman_opportunity_decay"),
+                                            _get(status, "bregman", "opportunity_decay")),
         # --- attribution / fill realism / scan ---
         "market_scan_limit_effective": _first(scan.get("scan_limit"), scan.get("scanned")),
         "paper_attribution_enabled": _first(csafe.get("realistic_fill_enabled"), True if pnl else None),
@@ -221,6 +225,9 @@ def extract_features(status: dict | None, api: dict | None = None,
     # Derived: calibration improved when calibrated ECE beats raw ECE.
     _er, _ec = _num(feats.get("ece_raw")), _num(feats.get("ece_cal"))
     feats["calibration_improved"] = (_ec < _er) if (_er is not None and _ec is not None) else None
+    # Derived: Bregman certified ratio = certified / candidates.
+    feats["bregman_certified_ratio"] = _ratio(feats.get("bregman_certified_count"),
+                                              feats.get("bregman_candidates_found"))
     # Helpful raw-section presence flags for the report narrative.
     feats["_sections_present"] = {
         "pnl": bool(pnl), "scan_metrics": bool(scan), "btc_pulse": bool(bp),
@@ -521,6 +528,8 @@ BENCHMARK_SPECS: list[BenchmarkSpec] = [
      "After-cost paper PnL/expectancy (net of fees+slippage)."),
     ("bregman_certified_profit", "bregman_certified_profit", "higher", 0.0, -1.0,
      "Certified Bregman opportunity profit (paper)."),
+    ("bregman_false_positive_rate", "bregman_false_positive_rate", "lower", 0.2, 0.5,
+     "Bregman false-positive rate (incoherent but not certifiable)."),
     ("btc_pulse_after_cost_pnl", "btc_pulse_after_cost_pnl", "higher", 0.0, -5.0,
      "BTC Pulse after-cost paper PnL."),
     ("win_rate_traded_only", "win_rate_traded_only", "higher", 0.5, 0.4,
