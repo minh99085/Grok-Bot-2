@@ -345,6 +345,10 @@ def run(argv=None) -> int:
             "significance_gates(Sharpe/Sortino/Calmar); exploration reported "
             "separately from validation + production-readiness")
     logging.getLogger("hte.training.start").info(
+        "algorithmic edge audit: generated reports include a mandatory decision-grade "
+        "audit (strategy attribution, Bregman/BTC-Pulse/calibration/fill-realism/risk "
+        "diagnostics, readiness) that fails loudly on missing/stale core fields")
+    logging.getLogger("hte.training.start").info(
         "modeling config: probability_ensemble=%s bregman_primary=%s strategy_router=%s "
         "calibration=auto(Platt/isotonic/temperature/shrink) rollback_guard=available "
         "conformal_bands=available grok_news=evidence_only "

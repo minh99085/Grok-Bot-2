@@ -833,6 +833,231 @@ def build_final_validation(feats: dict | None = None) -> dict:
     }
 
 
+# ----------------------------------------------------------------------------- #
+# Algorithmic Edge Audit (mandatory, decision-grade)
+# ----------------------------------------------------------------------------- #
+# Core fields that MUST be present (and the status fresh) for the audit to be
+# decision-grade. If any is missing or the status is stale, the audit fails loud.
+CORE_AUDIT_FIELDS: list[tuple] = [
+    ("strategy_attribution", "gross_pnl"),
+    ("strategy_attribution", "after_cost_pnl"),
+    ("strategy_attribution", "win_rate"),
+    ("bregman", "constraint_groups_scanned"),
+    ("bregman", "certified_arbitrages"),
+    ("fill_realism", "fantasy_fills_rejected"),
+    ("calibration", "brier"),
+    ("risk", "max_drawdown"),
+    ("training_readiness", "production_readiness_score"),
+]
+
+
+def build_algorithmic_edge_audit(feats: dict | None, status: dict | None = None, *,
+                                 scorecard: dict | None = None,
+                                 benchmarks: dict | None = None,
+                                 recommendations: list | None = None,
+                                 status_age_s: Optional[float] = None,
+                                 max_status_age_s: float = 3600.0) -> dict:
+    """Build the mandatory, decision-grade **Algorithmic Edge Audit** (pure).
+
+    Produces seven sections — strategy attribution, Bregman arbitrage
+    diagnostics, BTC Pulse diagnostics, calibration diagnostics, fill realism,
+    risk metrics, and training/readiness — each populated from already-collected
+    status/features (``None`` when a field is not yet produced by the bot).
+
+    The audit **fails loudly** (``ok=False``, ``status="incomplete"``) if any
+    :data:`CORE_AUDIT_FIELDS` value is missing OR the underlying status is stale
+    (``status_age_s > max_status_age_s``). It never trades and has no side effects.
+    """
+    feats = feats or {}
+    status = status or {}
+    pnl = _get(status, "pnl", default={}) or {}
+    scan = _get(status, "scan_metrics", default={}) or {}
+    breg = _get(status, "bregman", default={}) or {}
+    bp = _get(status, "btc_pulse", default={}) or {}
+    cl = _get(status, "chainlink_oracle", default={}) or {}
+    fast = _get(status, "btc_fast_price", default={}) or {}
+    cal = _get(status, "calibration", default={}) or {}
+    mon = _get(status, "monitoring", default={}) or {}
+    risk = _get(status, "risk", default={}) or {}
+    attr = _get(status, "attribution", default={}) or {}
+
+    sections: dict = {}
+
+    # 1) Strategy attribution
+    sections["strategy_attribution"] = {
+        "trades_by_strategy": _first(attr.get("trades_by_strategy"), attr.get("by_strategy")),
+        "gross_pnl": _num(_first(pnl.get("gross_pnl"), pnl.get("total_pnl"),
+                                 feats.get("total_pnl"))),
+        "after_cost_pnl": _num(_first(feats.get("after_cost_pnl"), pnl.get("after_cost_pnl"))),
+        "win_rate": _num(_first(feats.get("win_rate"), pnl.get("win_rate"))),
+        "avg_edge_at_entry": _num(_first(attr.get("avg_edge_at_entry"),
+                                         pnl.get("avg_edge_at_entry"))),
+        "avg_realized_edge": _num(_first(attr.get("avg_realized_edge"),
+                                         pnl.get("avg_realized_edge"))),
+        "rejected_trades": _num(_first(pnl.get("rejected_trades"), risk.get("rejected"),
+                                       attr.get("rejected_trades"))),
+        "open_exposure": _num(_first(pnl.get("open_exposure"), pnl.get("open_notional"),
+                                     feats.get("open_positions"))),
+        "realized_pnl": _num(_first(pnl.get("realized_pnl"), attr.get("realized_pnl"))),
+        "unrealized_pnl": _num(_first(pnl.get("unrealized_pnl"), attr.get("unrealized_pnl"))),
+    }
+
+    # 2) Bregman arbitrage diagnostics
+    sections["bregman"] = {
+        "constraint_groups_scanned": _num(_first(
+            breg.get("constraint_groups_scanned"), breg.get("groups_scanned"),
+            feats.get("bregman_candidates_found"))),
+        "incoherent_groups": _num(_first(breg.get("incoherent_groups"),
+                                         breg.get("incoherent"))),
+        "candidate_arbitrages": _num(_first(breg.get("candidate_arbitrages"),
+                                            feats.get("bregman_candidates_found"))),
+        "certified_arbitrages": _num(_first(breg.get("certified_arbitrages"),
+                                            feats.get("bregman_certified_count"))),
+        "executable_depth_certified": _num(_first(
+            breg.get("executable_depth_certified"), breg.get("executable_certified"))),
+        "rejected_fees_spread_depth_slippage": _num(_first(
+            breg.get("rejected_fees_spread_depth_slippage"), breg.get("rejected"))),
+        "expected_min_profit": _num(_first(breg.get("expected_min_profit"),
+                                           feats.get("bregman_certified_profit"))),
+        "worst_case_payoff": _num(breg.get("worst_case_payoff")),
+        "execution_atomicity_risk": _first(breg.get("execution_atomicity_risk"),
+                                           breg.get("atomicity_risk")),
+        "opportunity_decay_s": _num(_first(breg.get("opportunity_decay_half_life_s"),
+                                           feats.get("bregman_opportunity_decay"))),
+    }
+
+    # 3) BTC Pulse diagnostics
+    sections["btc_pulse"] = {
+        "chainlink_anchor_price": _num(cl.get("price")),
+        "fast_btc_price": _num(fast.get("price")),
+        "feed_disagreement_bps": _num(_first(bp.get("oracle_disagreement_bps"),
+                                             fast.get("disagreement_bps"))),
+        "market_stale_time_s": _num(_first(bp.get("market_stale_time_s"),
+                                           cl.get("age_seconds"), fast.get("age_seconds"))),
+        "volatility_regime": _first(bp.get("btc_pulse_regime"), bp.get("regime")),
+        "trend_persistence": _num(bp.get("trend_persistence")),
+        "trade_trigger_reason": _first(bp.get("trigger_reason"), bp.get("trade_trigger_reason")),
+        "rejected_trigger_reason": _first(bp.get("reject_reason"), bp.get("blockers")),
+        "after_cost_expectancy": _num(_first(bp.get("btc_pulse_after_cost_pnl"),
+                                             bp.get("after_cost_expectancy"))),
+    }
+
+    # 4) Calibration diagnostics
+    sections["calibration"] = {
+        "brier": _num(_first(cal.get("brier"), feats.get("brier"))),
+        "ece": _num(_first(cal.get("ece"), feats.get("ece"))),
+        "calibration_drift": _num(_first(cal.get("drift"), cal.get("calibration_drift"))),
+        "isotonic_logistic_status": _first(cal.get("method"), feats.get("calibration_method")),
+        "probability_rollback_status": _first(cal.get("rollbacks"),
+                                              feats.get("calibration_rollbacks")),
+        "confidence_bucket_performance": cal.get("confidence_buckets"),
+        "no_trade_bucket_performance": _first(cal.get("no_trade_bucket"),
+                                              cal.get("no_trade_performance")),
+    }
+
+    # 5) Fill realism
+    sections["fill_realism"] = {
+        "fantasy_fills_rejected": _num(_first(pnl.get("fantasy_fill_rejections"),
+                                              mon.get("fantasy_fill_rejections"),
+                                              feats.get("fantasy_fill_rejections"))),
+        "spread_paid": _num(_first(pnl.get("spread_paid"), mon.get("spread_paid"))),
+        "estimated_slippage": _num(_first(pnl.get("estimated_slippage"),
+                                          mon.get("estimated_slippage"))),
+        "partial_fill_assumptions": _first(pnl.get("partial_fill_assumptions"),
+                                           mon.get("partial_fill_assumptions")),
+        "available_depth_at_decision": _num(_first(pnl.get("available_depth"),
+                                                   mon.get("available_depth_at_decision"))),
+        "fee_adjusted_ev": _num(_first(pnl.get("fee_adjusted_ev"), mon.get("fee_adjusted_ev"))),
+        "clob_v2_executable": _first(breg.get("clob_v2_executable"),
+                                     mon.get("clob_v2_executable")),
+        "fill_realism_rejection_rate": _num(feats.get("fill_realism_rejection_rate")),
+    }
+
+    # 6) Risk metrics
+    sections["risk"] = {
+        "sharpe": _num(feats.get("sharpe")),
+        "sortino": _num(feats.get("sortino")),
+        "calmar": _num(feats.get("calmar")),
+        "max_drawdown": _num(_first(feats.get("max_drawdown"), pnl.get("max_drawdown"),
+                                    risk.get("max_drawdown"))),
+        "exposure_by_market": _first(risk.get("exposure_by_market"), attr.get("exposure_by_market")),
+        "exposure_by_event": _first(risk.get("exposure_by_event"), attr.get("exposure_by_event")),
+        "exposure_by_strategy": _first(risk.get("exposure_by_strategy"),
+                                       attr.get("exposure_by_strategy")),
+        "cvar": _num(feats.get("cvar")),
+        "kelly_fraction": _num(feats.get("kelly_fraction")),
+        "risk_throttles_activated": _first(risk.get("throttles_activated"),
+                                           mon.get("risk_throttles_activated")),
+        "kill_switch_triggers": _first(risk.get("kill_switch_triggers"),
+                                       mon.get("kill_switch_reasons"), risk.get("kill_switch")),
+    }
+
+    # 7) Training / readiness
+    prod_score = None
+    if scorecard and scorecard.get("score") is not None:
+        prod_score = _num(scorecard.get("score"))
+    elif feats.get("production_ready") is not None:
+        prod_score = 100.0 if feats.get("production_ready") else 0.0
+    sections["training_readiness"] = {
+        "exploration_pnl": _num(_first(pnl.get("exploration_pnl"), attr.get("exploration_pnl"))),
+        "validation_pnl": _num(_first(pnl.get("validation_pnl"), attr.get("validation_pnl"))),
+        "paper_only": True,
+        "production_readiness_score": prod_score,
+        "production_ready": feats.get("production_ready"),
+    }
+
+    # --- core-field presence + staleness => loud failure --------------------
+    missing_core = [f"{sec}.{field}" for sec, field in CORE_AUDIT_FIELDS
+                    if sections.get(sec, {}).get(field) is None]
+    stale = bool(status_age_s is not None and float(status_age_s) > float(max_status_age_s))
+    no_status = not status
+    ok = (not missing_core) and (not stale) and (not no_status)
+    audit_status = "complete" if ok else "incomplete"
+
+    # --- top-5 blockers (decision-grade, deterministic ordering) ------------
+    blockers: list[str] = []
+    if no_status:
+        blockers.append("no training status available (run paper training)")
+    for f in missing_core:
+        blockers.append(f"missing core field: {f}")
+    if stale:
+        blockers.append(f"status stale ({status_age_s:.0f}s > {max_status_age_s:.0f}s)")
+    ac = sections["strategy_attribution"]["after_cost_pnl"]
+    if ac is not None and ac < 0:
+        blockers.append(f"after-cost PnL negative ({ac})")
+    frr = sections["fill_realism"]["fill_realism_rejection_rate"]
+    if frr is not None and frr > 0.8:
+        blockers.append(f"fill-realism rejection rate very high ({frr})")
+    if sections["training_readiness"]["production_ready"] is False:
+        blockers.append("not production-ready")
+    for b in (benchmarks or {}).get("failing", []):
+        blockers.append(f"benchmark failing: {b}")
+
+    # --- top-5 next recommended code changes --------------------------------
+    rec_texts: list[str] = []
+    for r in (recommendations or []):
+        if isinstance(r, dict):
+            rec_texts.append(str(r.get("recommendation") or r.get("text") or r))
+        else:
+            rec_texts.append(str(r))
+    if missing_core:
+        rec_texts.insert(0, "emit the missing core audit fields from the training "
+                            "status writer so the report is decision-grade")
+
+    return {
+        "status": audit_status,
+        "ok": bool(ok),
+        "stale": stale,
+        "status_age_s": status_age_s,
+        "max_status_age_s": max_status_age_s,
+        "missing_core_fields": missing_core,
+        "sections": sections,
+        "top_5_blockers": blockers[:5],
+        "top_5_recommendations": rec_texts[:5],
+        "note": "PAPER-only audit; fails loudly when a core field is missing or status is stale.",
+    }
+
+
 def build_quant_responsibilities(feats: dict | None = None) -> dict:
     """Return the quant responsibilities matrix annotated with observability
     coverage from the current features (``covered`` / ``gap``)."""

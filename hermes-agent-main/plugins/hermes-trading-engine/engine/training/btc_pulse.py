@@ -740,6 +740,45 @@ def pulse_block_reason(regime, after_cost_ev=None, fill_realism_ok=True, *,
     return None
 
 
+def pulse_audit_fields(block, *, chainlink=None, fast=None):
+    """Map a BTC Pulse status block to Algorithmic Edge Audit fields (pure).
+
+    Surfaces the Chainlink anchor price, fast BTC price, feed disagreement (bps),
+    market stale time, volatility regime, trend persistence, the trade-trigger
+    reason, the rejected-trigger reason, and after-cost expectancy. Read-only;
+    defensive against missing sub-blocks.
+    """
+    block = block or {}
+    chainlink = chainlink or {}
+    fast = fast or {}
+    return {
+        "chainlink_anchor_price": chainlink.get("price"),
+        "fast_btc_price": fast.get("price"),
+        "feed_disagreement_bps": _first_present(
+            block.get("oracle_disagreement_bps"), block.get("feed_disagreement_bps"),
+            fast.get("disagreement_bps")),
+        "market_stale_time_s": _first_present(
+            block.get("market_stale_time_s"), chainlink.get("age_seconds"),
+            fast.get("age_seconds")),
+        "volatility_regime": block.get("btc_pulse_regime", block.get("regime")),
+        "trend_persistence": block.get("trend_persistence"),
+        "trade_trigger_reason": _first_present(
+            block.get("trigger_reason"), block.get("trade_trigger_reason")),
+        "rejected_trigger_reason": _first_present(
+            block.get("reject_reason"), block.get("rejected_trigger_reason"),
+            block.get("blockers")),
+        "after_cost_expectancy": _first_present(
+            block.get("btc_pulse_after_cost_pnl"), block.get("after_cost_expectancy")),
+    }
+
+
+def _first_present(*vals):
+    for v in vals:
+        if v is not None:
+            return v
+    return None
+
+
 def resolved_pulse_config(cfg) -> dict:
     """Compact resolved BTC Pulse config for preflight printing (read-only)."""
     return {

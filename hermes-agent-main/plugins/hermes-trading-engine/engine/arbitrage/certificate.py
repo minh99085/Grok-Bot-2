@@ -70,6 +70,21 @@ class Certificate:
         """True when the arbitrage requires buying more than one leg."""
         return len(self.outcome_ids) > 1
 
+    def audit_diagnostics(self) -> dict:
+        """Per-certificate diagnostics for the Algorithmic Edge Audit (pure)."""
+        return {
+            "certified": bool(self.certified),
+            "executable_depth_ok": bool(self.executable_depth_ok),
+            "n_legs": len(self.outcome_ids),
+            "worst_case_payoff_per_set": self.worst_case_payoff_per_set,
+            "expected_min_profit": self.after_fee_profit_per_set if self.certified else 0.0,
+            "cost_per_set": self.cost_per_set,
+            "fee_per_set": self.fee_per_set,
+            "min_leg_depth": self.min_leg_depth,
+            "size": self.size,
+            "rejection_reason": None if self.certified else self.reason,
+        }
+
 
 def atomicity_risk(cert: "Certificate", *, venue_supports_atomic_multileg: bool = False) -> dict:
     """Assess whether a certified arb can be executed atomically risk-free (pure).

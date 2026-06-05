@@ -179,3 +179,22 @@ def is_fantasy_fill(*, requested_size: float, ask, ask_depth: float = 0.0,
     """Convenience boolean: would this fill be a fantasy (unfillable) fill? Pure."""
     return assess_fill(requested_size=requested_size, ask=ask, ask_depth=ask_depth,
                        bid=bid, levels=levels, model=model).fantasy
+
+
+def fill_audit_fields(result: FillResult, *, fee_adjusted_ev: Optional[float] = None,
+                      clob_v2_executable: Optional[bool] = None) -> dict:
+    """Map a :class:`FillResult` to the Algorithmic Edge Audit "fill realism"
+    fields (pure): fantasy rejection, spread paid, estimated slippage, partial-fill
+    assumption, available depth at decision time, fee-adjusted EV, CLOB v2 status.
+    """
+    return {
+        "fantasy_fill_rejected": bool(result.fantasy),
+        "spread_paid": result.spread_frac,
+        "estimated_slippage": result.slippage_frac,
+        "partial_fill": result.filled_size + 1e-12 < result.requested_size,
+        "available_depth_at_decision": result.meta.get("available_depth"),
+        "fee_adjusted_ev": fee_adjusted_ev,
+        "clob_v2_executable": (None if clob_v2_executable is None
+                               else bool(clob_v2_executable)),
+        "reason": result.reason,
+    }

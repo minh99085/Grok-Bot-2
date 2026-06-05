@@ -244,9 +244,24 @@ def generate_report(
                                           comparison, observability)
     classification = classify(safety, tests, runtime_available, comparison,
                               missing_features, warnings)
+
+    # --- mandatory Algorithmic Edge Audit (decision-grade; fails loud) ------ #
+    algo_audit = metrics.build_algorithmic_edge_audit(
+        feats, status, scorecard=scorecard, benchmarks=benchmarks,
+        recommendations=None, status_age_s=_status_age_s(status, now))
+    if not algo_audit["ok"]:
+        detail = ", ".join(algo_audit["missing_core_fields"]
+                           or (["status stale"] if algo_audit["stale"] else ["no status"]))
+        warnings.append(f"ALGORITHMIC EDGE AUDIT INCOMPLETE: {detail}")
+
     recommendations = recs.build_recommendations(
         safety, missing_features, tests, comparison, runtime_available,
-        benchmarks=benchmarks, consistency=consistency)
+        benchmarks=benchmarks, consistency=consistency, audit=algo_audit)
+    # Fill the audit's top-5 next code changes from the final recommendations.
+    algo_audit["top_5_recommendations"] = (
+        (["emit the missing core audit fields from the training status writer"]
+         if algo_audit["missing_core_fields"] else [])
+        + [r.get("action", "") for r in recommendations])[:5]
 
     # ------------------------------------------------------------------------- #
     # Write bundle files
@@ -267,6 +282,7 @@ def generate_report(
     bundle.write_json("consistency.json", {"checks": consistency})
     bundle.write_json("quant_responsibilities.json", quant_responsibilities)
     bundle.write_json("final_validation.json", final_validation)
+    bundle.write_json("algorithmic_edge_audit.json", algo_audit)
 
     report_json = _build_report_json(
         now=now, repo_root=repo_root, classification=classification, pr=pr,
@@ -278,13 +294,15 @@ def generate_report(
         warnings=warnings, errors=errors, recommendations=recommendations,
         scorecard=scorecard, history_days=history_days, baseline_path=baseline_path,
         files=bundle.files, benchmarks=benchmarks, consistency=consistency,
-        quant_responsibilities=quant_responsibilities, final_validation=final_validation)
+        quant_responsibilities=quant_responsibilities, final_validation=final_validation,
+        algorithmic_edge_audit=algo_audit)
     bundle.write_json("report.json", report_json)
 
     report_md = _build_report_md(report_json, feats, status, docker, api, tests,
                                  comparison, missing_features, recommendations,
                                  scorecard, artifacts, safety, benchmarks,
-                                 consistency, quant_responsibilities, final_validation)
+                                 consistency, quant_responsibilities, final_validation,
+                                 algo_audit)
     bundle.write_text("report.md", report_md, redact=True)
 
     # --- zip ------------------------------------------------------------------ #
@@ -305,7 +323,30 @@ def generate_report(
         "report_md": str(bundle_dir / "report.md"),
         "warnings": warnings,
         "files": bundle.files,
+        "algorithmic_edge_audit_ok": bool(algo_audit["ok"]),
+        "algorithmic_edge_audit_missing": list(algo_audit["missing_core_fields"]),
     }
+
+
+def _status_age_s(status: dict | None, now) -> Optional[float]:
+    """Best-effort age (seconds) of the training status snapshot for staleness.
+
+    Reads an epoch timestamp from common status fields; returns None when no
+    timestamp is present (staleness then cannot be asserted)."""
+    if not status:
+        return None
+    ts = metrics._first(status.get("generated_at"), status.get("ts"),
+                        status.get("updated_at"), status.get("timestamp"))
+    val = metrics._num(ts)
+    if val is None:
+        return None
+    # Treat large values as ms epochs.
+    if val > 1e12:
+        val /= 1000.0
+    try:
+        return max(0.0, now.timestamp() - val)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _load_baseline(path: str) -> Optional[dict]:
@@ -543,6 +584,7 @@ def _build_report_json(**kw) -> dict:
         "consistency": kw["consistency"],
         "quant_responsibilities": kw["quant_responsibilities"],
         "final_validation": kw.get("final_validation"),
+        "algorithmic_edge_audit": kw.get("algorithmic_edge_audit"),
         "warnings": kw["warnings"],
         "errors": kw["errors"],
         "recommendations": kw["recommendations"],
@@ -578,14 +620,80 @@ def _yn(v):
     return str(v)
 
 
+_AUDIT_SECTION_TITLES = {
+    "strategy_attribution": "1. Strategy Attribution",
+    "bregman": "2. Bregman Arbitrage Diagnostics",
+    "btc_pulse": "3. BTC Pulse Diagnostics",
+    "calibration": "4. Calibration Diagnostics",
+    "fill_realism": "5. Fill Realism",
+    "risk": "6. Risk Metrics",
+    "training_readiness": "7. Training / Readiness",
+}
+
+
+def _append_algorithmic_edge_audit_md(L: list, audit: dict) -> None:
+    """Render the mandatory Algorithmic Edge Audit section into the MD report."""
+    L.append("## 0. Algorithmic Edge Audit (MANDATORY)")
+    L.append("")
+    if not audit:
+        L.append("> **FAIL — audit not computed.**")
+        L.append("")
+        return
+    ok = audit.get("ok")
+    banner = "PASS" if ok else "FAIL"
+    L.append(f"**Audit status: {banner}** "
+             f"(`{audit.get('status')}`; stale={audit.get('stale')})")
+    L.append("")
+    if not ok:
+        miss = audit.get("missing_core_fields") or []
+        L.append("> **This report is NOT decision-grade.** Missing/stale core "
+                 "fields must be emitted by the training status writer.")
+        if miss:
+            L.append(f"> Missing core fields: `{', '.join(miss)}`")
+        L.append("")
+    for key, title in _AUDIT_SECTION_TITLES.items():
+        sec = (audit.get("sections") or {}).get(key, {})
+        L.append(f"### {title}")
+        L.append("")
+        if not sec:
+            L.append("- (no data)")
+            L.append("")
+            continue
+        L.append("| Field | Value |")
+        L.append("|---|---|")
+        for fk, fv in sec.items():
+            L.append(f"| {fk} | {fv} |")
+        L.append("")
+    blockers = audit.get("top_5_blockers") or []
+    L.append("### Top 5 Algorithmic Blockers")
+    L.append("")
+    if blockers:
+        for b in blockers:
+            L.append(f"- {b}")
+    else:
+        L.append("- None detected.")
+    L.append("")
+    nexts = audit.get("top_5_recommendations") or []
+    L.append("### Top 5 Next Recommended Code Changes")
+    L.append("")
+    if nexts:
+        for r in nexts:
+            L.append(f"- {r}")
+    else:
+        L.append("- None.")
+    L.append("")
+
+
 def _build_report_md(rj, feats, status, docker, api, tests, comparison,
                      missing_features, recommendations, scorecard, artifacts,
                      safety, benchmarks=None, consistency=None,
-                     quant_responsibilities=None, final_validation=None) -> str:
+                     quant_responsibilities=None, final_validation=None,
+                     algorithmic_edge_audit=None) -> str:
     benchmarks = benchmarks or {}
     consistency = consistency or []
     quant_responsibilities = quant_responsibilities or {}
     final_validation = final_validation or {}
+    algorithmic_edge_audit = algorithmic_edge_audit or {}
     L: list[str] = []
     cls = rj["classification"]
     L.append("# Hermes Polymarket Paper-Training — Bot Inspection Report")
@@ -594,6 +702,9 @@ def _build_report_md(rj, feats, status, docker, api, tests, comparison,
     if rj.get("optional_pr_context"):
         L.append(f"_Optional PR context: #{rj['optional_pr_context']['pr']}_")
     L.append("")
+
+    # 0. Algorithmic Edge Audit (MANDATORY, decision-grade)
+    _append_algorithmic_edge_audit_md(L, algorithmic_edge_audit)
 
     # 1. Executive Summary
     L.append("## 1. Executive Summary")
@@ -916,6 +1027,10 @@ def _build_parser() -> argparse.ArgumentParser:
                     help="also try docker compose cp of container artifact paths")
     ap.add_argument("--tail-training-logs", type=int, default=1000)
     ap.add_argument("--tail-engine-logs", type=int, default=500)
+    ap.add_argument("--fail-on-incomplete-audit", action="store_true",
+                    help="exit non-zero when the mandatory Algorithmic Edge Audit is "
+                         "incomplete (missing core fields or stale status). Use in CI to "
+                         "block trusting a non-decision-grade report.")
     return ap
 
 
@@ -944,8 +1059,16 @@ def main(argv=None) -> int:
     print(f"Health score   : {result['score']}/100")
     print(f"Bundle folder  : {result['bundle_dir']}")
     print(f"Zip bundle     : {result['zip_path']}")
+    audit_ok = result.get("algorithmic_edge_audit_ok", True)
+    print(f"Edge audit     : {'PASS' if audit_ok else 'FAIL (incomplete/stale)'}")
+    if not audit_ok and result.get("algorithmic_edge_audit_missing"):
+        print("Missing fields : " + ", ".join(result["algorithmic_edge_audit_missing"]))
     if result["warnings"]:
         print("Warnings       : " + "; ".join(result["warnings"]))
+    if args.fail_on_incomplete_audit and not audit_ok:
+        print("FAIL: Algorithmic Edge Audit incomplete (--fail-on-incomplete-audit).",
+              file=sys.stderr)
+        return 5
     return 0
 
 

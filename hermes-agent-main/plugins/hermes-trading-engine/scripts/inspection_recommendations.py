@@ -53,17 +53,30 @@ _BENCHMARK_RECS = {
 def build_recommendations(safety: dict, missing_features: list, tests: dict,
                           comparison: dict | None, runtime_available: bool,
                           benchmarks: dict | None = None,
-                          consistency: list | None = None) -> list[dict]:
+                          consistency: list | None = None,
+                          audit: dict | None = None) -> list[dict]:
     """Return a sorted list of ``{priority, area, action}`` recommendations."""
     safety = safety or {}
     tests = tests or {}
     comparison = comparison or {}
     benchmarks = benchmarks or {}
     consistency = consistency or []
+    audit = audit or {}
     recs: list[dict] = []
 
     def add(priority: str, area: str, action: str):
         recs.append({"priority": priority, "area": area, "action": action})
+
+    # P0 — mandatory Algorithmic Edge Audit incomplete (not decision-grade).
+    if audit and not audit.get("ok", True):
+        for f in audit.get("missing_core_fields", []):
+            add("P0", "audit", f"Emit missing core audit field '{f}' from the "
+                               "training status writer (report not decision-grade).")
+        if audit.get("stale"):
+            add("P0", "audit", "Training status is stale — refresh the run before "
+                               "trusting the algorithmic edge audit.")
+        if not audit.get("missing_core_fields") and not audit.get("stale"):
+            add("P0", "audit", "Algorithmic Edge Audit incomplete (no status).")
 
     # P0 — safety / broken runtime.
     if safety.get("critical"):

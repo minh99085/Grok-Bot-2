@@ -43,6 +43,31 @@ def _print_benchmarks(st: dict) -> None:
         print("  CONSISTENCY: OK (dashboard/paper equity, live flags, cost accounting)")
 
 
+def _print_edge_audit(st: dict) -> None:
+    """Print the mandatory Algorithmic Edge Audit summary (read-only).
+
+    Reuses the inspection audit builder so the CLI and the generated report agree.
+    Fails loudly (prints FAIL + missing core fields) when not decision-grade.
+    """
+    try:
+        import inspection_metrics as m
+    except Exception:  # noqa: BLE001
+        return
+    feats = m.extract_features(st, api={}, tests={}, env={})
+    audit = m.build_algorithmic_edge_audit(feats, st)
+    print("=" * 56)
+    banner = "PASS" if audit.get("ok") else "FAIL (not decision-grade)"
+    print(f"  ALGORITHMIC EDGE AUDIT: {banner}")
+    if not audit.get("ok"):
+        miss = audit.get("missing_core_fields") or []
+        if miss:
+            print(f"    missing core fields: {', '.join(miss)}")
+        if audit.get("stale"):
+            print("    status is STALE")
+    for b in (audit.get("top_5_blockers") or [])[:5]:
+        print(f"    blocker: {b}")
+
+
 def _print_execution_monitoring(st: dict) -> None:
     """Print execution + final-validation monitoring fields (read-only).
 
@@ -243,6 +268,7 @@ def run(argv=None) -> int:
               f"fresh_book_required={hl.get('exploration_min_book_freshness_required')}")
     _print_benchmarks(st)
     _print_execution_monitoring(st)
+    _print_edge_audit(st)
     return 0
 
 

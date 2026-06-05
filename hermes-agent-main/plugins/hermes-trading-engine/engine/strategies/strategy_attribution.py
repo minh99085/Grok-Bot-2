@@ -94,6 +94,60 @@ class PnLAttribution:
         }
 
 
+def attribution_audit(records: Iterable[Mapping], *, rejected_trades: int = 0,
+                      open_exposure: float = 0.0) -> dict:
+    """Decision-grade per-strategy attribution for the Algorithmic Edge Audit.
+
+    Each record may carry ``strategy, pnl, after_cost_pnl, edge_entry,
+    edge_realized, is_open, is_exploration``. Returns trades-by-strategy, gross +
+    after-cost PnL, win rate, average edge at entry / realized, rejected trades,
+    open exposure, and the realized/unrealized split. Pure + deterministic.
+    """
+    recs = list(records or [])
+    by_strategy: dict = {}
+    gross = after_cost = 0.0
+    realized = unrealized = 0.0
+    wins = decided = 0
+    edge_entry: list[float] = []
+    edge_realized: list[float] = []
+    for r in recs:
+        strat = r.get("strategy", "unknown")
+        pnl = _num(r.get("pnl")) or 0.0
+        ac = _num(r.get("after_cost_pnl"))
+        by_strategy[strat] = by_strategy.get(strat, 0) + 1
+        gross += pnl
+        after_cost += (ac if ac is not None else pnl)
+        if bool(r.get("is_open")):
+            unrealized += pnl
+        else:
+            realized += pnl
+            decided += 1
+            if pnl > 0:
+                wins += 1
+        ee, er = _num(r.get("edge_entry")), _num(r.get("edge_realized"))
+        if ee is not None:
+            edge_entry.append(ee)
+        if er is not None:
+            edge_realized.append(er)
+
+    def _avg(xs):
+        return round(sum(xs) / len(xs), 8) if xs else None
+
+    return {
+        "trades_by_strategy": dict(by_strategy),
+        "total_trades": len(recs),
+        "gross_pnl": round(gross, 8),
+        "after_cost_pnl": round(after_cost, 8),
+        "win_rate": round(wins / decided, 6) if decided else None,
+        "avg_edge_at_entry": _avg(edge_entry),
+        "avg_realized_edge": _avg(edge_realized),
+        "rejected_trades": int(rejected_trades),
+        "open_exposure": round(float(open_exposure), 8),
+        "realized_pnl": round(realized, 8),
+        "unrealized_pnl": round(unrealized, 8),
+    }
+
+
 def split_exploration_validation(records: Iterable[Mapping]) -> dict:
     """Split a list of ``{strategy, pnl, tier?, is_exploration?}`` records into a
     PnLAttribution summary. Convenience wrapper around :class:`PnLAttribution`."""

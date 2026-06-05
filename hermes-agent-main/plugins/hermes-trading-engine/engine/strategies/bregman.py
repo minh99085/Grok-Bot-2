@@ -84,6 +84,44 @@ class BregmanResult:
         """Certified + fill-feasible opportunities only."""
         return [o for o in self.opportunities if o.tradeable]
 
+    def audit_diagnostics(self, *, half_life_s: float = 300.0) -> dict:
+        """Decision-grade Bregman diagnostics for the Algorithmic Edge Audit (pure).
+
+        Reports constraint groups scanned, incoherent groups, candidate vs
+        certified arbitrages, executable-depth-certified count, the count rejected
+        for fee/spread/depth/slippage reasons, expected minimum profit, worst-case
+        payoff, execution atomicity risk, and the opportunity-decay half-life.
+        """
+        scanned = len(self.opportunities)
+        incoherent = sum(1 for o in self.opportunities
+                         if float(o.local_incoherence) > 0.0)
+        exec_certified = sum(1 for o in self.opportunities
+                             if o.certificate.certified and o.certificate.executable_depth_ok)
+        reject_reasons: dict = {}
+        for o in self.opportunities:
+            if not o.certificate.certified and float(o.local_incoherence) > 0.0:
+                reject_reasons[o.certificate.reason] = \
+                    reject_reasons.get(o.certificate.reason, 0) + 1
+        certified_profits = [o.certificate.after_fee_profit_per_set
+                             for o in self.opportunities if o.certificate.certified]
+        worst_payoffs = [o.certificate.worst_case_payoff_per_set
+                         for o in self.opportunities if o.certificate.certified]
+        atomicity_risk = any(len(o.outcome_ids) > 1
+                             for o in self.opportunities if o.certificate.certified)
+        return {
+            "constraint_groups_scanned": scanned,
+            "incoherent_groups": incoherent,
+            "candidate_arbitrages": self.candidates,
+            "certified_arbitrages": self.certified,
+            "executable_depth_certified": exec_certified,
+            "rejected_fees_spread_depth_slippage": sum(reject_reasons.values()),
+            "rejection_reasons": reject_reasons,
+            "expected_min_profit": round(min(certified_profits), 6) if certified_profits else 0.0,
+            "worst_case_payoff": round(min(worst_payoffs), 6) if worst_payoffs else 0.0,
+            "execution_atomicity_risk": bool(atomicity_risk),
+            "opportunity_decay_half_life_s": float(half_life_s),
+        }
+
     def to_dict(self) -> dict:
         return {
             "candidates": self.candidates, "certified": self.certified,
