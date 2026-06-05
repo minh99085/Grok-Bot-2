@@ -208,6 +208,7 @@ def generate_report(
     benchmarks = metrics.build_benchmarks(feats)
     consistency = metrics.detect_inconsistencies(feats, status, api_json)
     quant_responsibilities = metrics.build_quant_responsibilities(feats)
+    final_validation = metrics.build_final_validation(feats)
 
     # --- artifacts ------------------------------------------------------------ #
     artifacts: dict = {"skipped": True, "host_found": [], "host_missing": list(
@@ -265,6 +266,7 @@ def generate_report(
     bundle.write_json("metrics/benchmarks.json", benchmarks)
     bundle.write_json("consistency.json", {"checks": consistency})
     bundle.write_json("quant_responsibilities.json", quant_responsibilities)
+    bundle.write_json("final_validation.json", final_validation)
 
     report_json = _build_report_json(
         now=now, repo_root=repo_root, classification=classification, pr=pr,
@@ -276,13 +278,13 @@ def generate_report(
         warnings=warnings, errors=errors, recommendations=recommendations,
         scorecard=scorecard, history_days=history_days, baseline_path=baseline_path,
         files=bundle.files, benchmarks=benchmarks, consistency=consistency,
-        quant_responsibilities=quant_responsibilities)
+        quant_responsibilities=quant_responsibilities, final_validation=final_validation)
     bundle.write_json("report.json", report_json)
 
     report_md = _build_report_md(report_json, feats, status, docker, api, tests,
                                  comparison, missing_features, recommendations,
                                  scorecard, artifacts, safety, benchmarks,
-                                 consistency, quant_responsibilities)
+                                 consistency, quant_responsibilities, final_validation)
     bundle.write_text("report.md", report_md, redact=True)
 
     # --- zip ------------------------------------------------------------------ #
@@ -540,6 +542,7 @@ def _build_report_json(**kw) -> dict:
         "benchmarks": kw["benchmarks"],
         "consistency": kw["consistency"],
         "quant_responsibilities": kw["quant_responsibilities"],
+        "final_validation": kw.get("final_validation"),
         "warnings": kw["warnings"],
         "errors": kw["errors"],
         "recommendations": kw["recommendations"],
@@ -578,10 +581,11 @@ def _yn(v):
 def _build_report_md(rj, feats, status, docker, api, tests, comparison,
                      missing_features, recommendations, scorecard, artifacts,
                      safety, benchmarks=None, consistency=None,
-                     quant_responsibilities=None) -> str:
+                     quant_responsibilities=None, final_validation=None) -> str:
     benchmarks = benchmarks or {}
     consistency = consistency or []
     quant_responsibilities = quant_responsibilities or {}
+    final_validation = final_validation or {}
     L: list[str] = []
     cls = rj["classification"]
     L.append("# Hermes Polymarket Paper-Training — Bot Inspection Report")
@@ -853,8 +857,26 @@ def _build_report_md(rj, feats, status, docker, api, tests, comparison,
                      f"{spec.get('coverage')} | {resp} |")
     L.append("")
 
-    # 26. Files Included In Bundle
-    L.append("## 26. Files Included In Bundle")
+    # 26. Final Validation (Execution & Readiness)
+    L.append("## 26. Final Validation (Execution & Readiness)")
+    L.append("")
+    if not final_validation:
+        L.append("- Not available.")
+    else:
+        fv = final_validation
+        L.append(f"- validation_ready: **{fv.get('validation_ready')}** "
+                 f"(exploration excluded from the verdict)")
+        if fv.get("blocking_reasons"):
+            L.append(f"- blocking_reasons: {', '.join(fv['blocking_reasons'])}")
+        L.append("")
+        L.append("| Check | Value |")
+        L.append("|---|---|")
+        for k, v in (fv.get("checks", {}) or {}).items():
+            L.append(f"| {k} | {v} |")
+    L.append("")
+
+    # 27. Files Included In Bundle
+    L.append("## 27. Files Included In Bundle")
     L.append("")
     for f in sorted(rj["files"]):
         L.append(f"- {f}")

@@ -66,6 +66,33 @@ class Certificate:
         d = dict(self.__dict__)
         return d
 
+    def is_multi_leg(self) -> bool:
+        """True when the arbitrage requires buying more than one leg."""
+        return len(self.outcome_ids) > 1
+
+
+def atomicity_risk(cert: "Certificate", *, venue_supports_atomic_multileg: bool = False) -> dict:
+    """Assess whether a certified arb can be executed atomically risk-free (pure).
+
+    A certificate proves a *worst-case* profit assuming ALL legs are acquired. On a
+    venue without atomic multi-order fills (Polymarket CLOB v2), a multi-leg arb
+    carries **leg-in risk**: you may fill some legs and not others. This helper
+    reports that risk so the execution layer logs (but does not mark executable)
+    any certified opportunity whose atomic execution cannot be guaranteed.
+    """
+    multi = cert.is_multi_leg()
+    atomic_ok = bool(cert.certified) and (not multi or bool(venue_supports_atomic_multileg))
+    return {
+        "certified": bool(cert.certified),
+        "multi_leg": multi,
+        "n_legs": len(cert.outcome_ids),
+        "venue_supports_atomic_multileg": bool(venue_supports_atomic_multileg),
+        "atomic_risk_free_guaranteed": atomic_ok,
+        "reason": ("atomic_ok" if atomic_ok else
+                   ("not_certified" if not cert.certified else
+                    "multi_leg_non_atomic_venue")),
+    }
+
 
 def _worst_case_payoff(portfolio: Mapping[str, float],
                        atoms: Sequence[Mapping[str, int]]) -> float:

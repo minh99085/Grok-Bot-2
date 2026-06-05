@@ -43,6 +43,36 @@ def _print_benchmarks(st: dict) -> None:
         print("  CONSISTENCY: OK (dashboard/paper equity, live flags, cost accounting)")
 
 
+def _print_execution_monitoring(st: dict) -> None:
+    """Print execution + final-validation monitoring fields (read-only).
+
+    Surfaces Bregman opportunity decay, rejected bad fills, latency, stale-data,
+    calibration rollbacks, kill-switch reasons, and after-cost PnL — the signals
+    needed to trust paper execution. Best-effort; missing fields show as '-'.
+    """
+    pnl = st.get("pnl", {}) or {}
+    mon = st.get("monitoring", {}) or {}
+    breg = st.get("bregman", {}) or {}
+    cal = st.get("calibration", {}) or {}
+    bp = st.get("btc_pulse", {}) or {}
+
+    def _f(*vals, default="-"):
+        for v in vals:
+            if v is not None:
+                return v
+        return default
+
+    print("=" * 56)
+    print("  EXECUTION MONITORING (paper):")
+    print(f"    after_cost_pnl       : {_f(pnl.get('after_cost_pnl'), pnl.get('after_cost'), bp.get('btc_pulse_after_cost_pnl'))}")
+    print(f"    bregman_opp_decay    : {_f(breg.get('opportunity_decay'), mon.get('bregman_opportunity_decay'))}")
+    print(f"    rejected_bad_fills   : {_f(pnl.get('fantasy_fill_rejections'), mon.get('fantasy_fill_rejections'))}")
+    print(f"    latency_ms           : {_f(mon.get('latency_ms'), breg.get('latency_ms'))}")
+    print(f"    stale_data_events    : {_f(mon.get('stale_data_events'))}")
+    print(f"    calibration_rollbacks: {_f(cal.get('rollbacks'), mon.get('calibration_rollbacks'))}")
+    print(f"    kill_switch_reasons  : {_f(mon.get('kill_switch_reasons'), st.get('kill_switch_reasons'), default=[])}")
+
+
 def _data_dir() -> Path:
     try:
         from engine.config import Settings
@@ -212,6 +242,7 @@ def run(argv=None) -> int:
               f"fill_required={hl.get('exploration_requires_realistic_fill')} "
               f"fresh_book_required={hl.get('exploration_min_book_freshness_required')}")
     _print_benchmarks(st)
+    _print_execution_monitoring(st)
     return 0
 
 

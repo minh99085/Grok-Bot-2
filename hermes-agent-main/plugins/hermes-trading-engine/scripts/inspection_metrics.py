@@ -783,6 +783,56 @@ QUANT_RESPONSIBILITIES: dict[str, dict] = {
 }
 
 
+def build_final_validation(feats: dict | None = None) -> dict:
+    """Final-validation summary: execution monitoring + readiness verdict (pure).
+
+    Aggregates the signals needed to trust paper execution — after-cost PnL,
+    Bregman opportunity decay / certified profit / executable-depth, rejected bad
+    (fantasy) fills, fill-realism rejection rate, calibration rollbacks, and the
+    walk-forward / significance / production-readiness gates — into one block with
+    a conservative ``validation_ready`` verdict. Exploration is excluded from the
+    verdict. Read-only; never trades.
+    """
+    feats = feats or {}
+
+    def g(k):
+        return feats.get(k)
+
+    checks = {
+        "after_cost_pnl": _num(g("after_cost_pnl")),
+        "bregman_opportunity_decay": g("bregman_opportunity_decay"),
+        "bregman_certified_profit": _num(g("bregman_certified_profit")),
+        "bregman_executable_depth_ok": g("bregman_executable_depth_ok"),
+        "rejected_bad_fills": _num(g("fantasy_fill_rejections")),
+        "fill_realism_rejection_rate": _num(g("fill_realism_rejection_rate")),
+        "calibration_rollbacks": _num(g("calibration_rollbacks")),
+        "walkforward_passed": g("walkforward_passed"),
+        "significance_passed": g("significance_passed"),
+        "production_ready": g("production_ready"),
+        "live_detected": g("live_detected"),
+    }
+    reasons: list[str] = []
+    ac = checks["after_cost_pnl"]
+    if ac is not None and ac < 0:
+        reasons.append("after_cost_pnl_negative")
+    if checks["production_ready"] is False:
+        reasons.append("not_production_ready")
+    if checks["significance_passed"] is False:
+        reasons.append("significance_not_passed")
+    if checks["live_detected"]:
+        reasons.append("live_detected")
+    validation_ready = (checks["production_ready"] is True
+                        and ac is not None and ac >= 0
+                        and not checks["live_detected"])
+    return {
+        "checks": checks,
+        "blocking_reasons": reasons,
+        "validation_ready": bool(validation_ready),
+        "exploration_excluded": True,
+        "note": "PAPER-only; exploration excluded from the readiness verdict.",
+    }
+
+
 def build_quant_responsibilities(feats: dict | None = None) -> dict:
     """Return the quant responsibilities matrix annotated with observability
     coverage from the current features (``covered`` / ``gap``)."""

@@ -432,6 +432,55 @@ def api_running_status() -> dict:
             "running_count": running, "total": len(systems), "systems": systems}
 
 
+@app.get("/api/execution/monitoring")
+def api_execution_monitoring() -> dict:
+    """Execution + final-validation monitoring fields (read-only, PAPER).
+
+    Surfaces the signals an operator needs to trust paper execution: Bregman
+    opportunity decay, rejected bad (fantasy) fills, latency, stale-data counts,
+    calibration rollbacks, kill-switch reasons, and after-cost PnL. Aggregated
+    best-effort from the training status; never changes a flag or places a trade.
+    """
+    import time as _time
+
+    st = _training_status() or {}
+    pnl = st.get("pnl", {}) or {}
+    mon = st.get("monitoring", {}) or {}
+    breg = st.get("bregman", {}) or {}
+    cal = st.get("calibration", {}) or {}
+    bp = st.get("btc_pulse", {}) or {}
+    fast = st.get("btc_fast_price", {}) or {}
+    cl = st.get("chainlink_oracle", {}) or {}
+
+    def _first(*vals):
+        for v in vals:
+            if v is not None:
+                return v
+        return None
+
+    kill_reasons = _first(mon.get("kill_switch_reasons"),
+                          st.get("kill_switch_reasons"), []) or []
+    stale = _first(mon.get("stale_data_events"), fast.get("stale_events"),
+                   cl.get("stale_events"))
+
+    fields = {
+        "after_cost_pnl": _first(pnl.get("after_cost_pnl"), pnl.get("after_cost"),
+                                 bp.get("btc_pulse_after_cost_pnl")),
+        "bregman_opportunity_decay": _first(breg.get("opportunity_decay"),
+                                            mon.get("bregman_opportunity_decay")),
+        "rejected_bad_fills": _first(pnl.get("fantasy_fill_rejections"),
+                                     mon.get("fantasy_fill_rejections")),
+        "latency_ms": _first(mon.get("latency_ms"), breg.get("latency_ms")),
+        "stale_data_events": stale,
+        "calibration_rollbacks": _first(cal.get("rollbacks"), mon.get("calibration_rollbacks")),
+        "kill_switch_reasons": list(kill_reasons),
+        "bregman_executable_depth_ok": _first(breg.get("executable_depth_ok"),
+                                              mon.get("bregman_executable_depth_ok")),
+    }
+    return {"mode": "paper", "polymarket_only": True, "available": bool(st),
+            "generated_at": int(_time.time()), "monitoring": fields}
+
+
 @app.get("/api/polymarket/training/btc_pulse")
 def api_training_btc_pulse() -> dict:
     """BTC 5-min Pulse PAPER-ONLY isolated experiment status (read-only).

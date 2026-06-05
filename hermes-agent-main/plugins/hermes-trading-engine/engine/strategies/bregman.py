@@ -169,3 +169,35 @@ class BregmanStrategy:
             if o.decayed_edge(now=now, half_life_s=self.decay_half_life_s) >= min_decayed_edge:
                 out.append(o)
         return out
+
+    def plan_execution(self, opportunity: BregmanOpportunity, books: dict, *,
+                       decision_ts_ms: int, sets: Optional[float] = None,
+                       planner=None):
+        """Build a PAPER-ONLY CLOB v2 execution plan for one opportunity.
+
+        ``books`` maps each leg ``outcome_id`` to an
+        :class:`engine.simulation.fill_model.OrderBook` snapshot. The plan marks
+        ``executable`` only when the opportunity is certified AND the multi-leg
+        fill can be guaranteed atomically risk-free; otherwise the certified
+        opportunity is logged but not executable. Pure (delegates to the planner).
+        """
+        from engine.execution.clob_v2 import ClobV2ExecutionPlanner, ExecLeg
+        from engine.simulation.fill_model import OrderBook
+
+        planner = planner or ClobV2ExecutionPlanner()
+        cert = opportunity.certificate
+        n_sets = float(sets) if sets is not None else float(cert.size or 1.0)
+        legs = []
+        for oid in opportunity.outcome_ids:
+            book = books.get(oid) if isinstance(books, dict) else None
+            if book is None:
+                book = OrderBook(ts_ms=decision_ts_ms, asks=[], bids=[])
+            legs.append(ExecLeg(id=oid, book=book, side="buy", size=n_sets))
+        plan = planner.plan(
+            legs, decision_ts_ms=decision_ts_ms, sets=n_sets,
+            worst_case_payoff_per_set=float(cert.worst_case_payoff_per_set or 1.0),
+            certified=bool(cert.certified and cert.fill_feasible))
+        if plan.certified and not plan.executable:
+            logger.info("bregman opportunity certified but NOT executable (logged only): "
+                        "legs=%s reason=%s", opportunity.outcome_ids, plan.reason)
+        return plan
