@@ -528,6 +528,14 @@ def run(argv=None) -> int:
         ticks += 1
         st = trainer.status()
         _write_paper_ledger(st)   # canonical ledger snapshot (equity reconciles)
+        # Pass-2: certified Bregman execution funnel (discovery -> certify -> open).
+        try:
+            metrics_dir.mkdir(parents=True, exist_ok=True)
+            (metrics_dir / "bregman_execution.json").write_text(
+                json.dumps(trainer.bregman_summary().get("execution", {}), default=str),
+                encoding="utf-8")
+        except Exception:  # noqa: BLE001 — metrics must never break a tick
+            pass
         print(f"tick {ticks}: scanned={st['scan_metrics']['scanned']} "
               f"open={st['pnl']['open_positions']} equity={st['pnl']['equity']} "
               f"closed={st['pnl']['trades_closed']}")

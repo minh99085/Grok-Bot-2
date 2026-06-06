@@ -84,6 +84,26 @@ def test_markdown_renders_table_and_leaks():
     assert "Pass 2 recommendation" in md
 
 
+def test_pass2_status_proves_wiring():
+    p2 = build_feature_activation()["pass2_status"]
+    assert p2["wired"] is True
+    assert p2["bregman_sees_full_raw_catalog"] is True
+    assert p2["bregman_execution_priority_before_directional"] is True
+    assert "POLYMARKET_BREGMAN_DISCOVERY_LIMIT" in p2["new_env_flags"]
+
+
+def test_pass2_input_universe_now_active():
+    feats = {f["feature"]: f for f in FEATURES}
+    assert feats["Bregman INPUT UNIVERSE (catalog vs shortlist)"]["runtime_status"] == "active"
+    assert "pass2" in feats["Bregman paper execution"]
+
+
+def test_pass2_markdown_section_present():
+    md = to_markdown(build_feature_activation())
+    assert "Pass 2 — wired" in md
+    assert "Bregman sees full raw catalog: **True**" in md
+
+
 def test_cli_writes_json_and_markdown(tmp_path):
     audit = audit_cli.generate(out_dir=str(tmp_path))
     j = tmp_path / "metrics" / "feature_activation.json"

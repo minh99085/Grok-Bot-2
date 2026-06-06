@@ -165,6 +165,14 @@ class TrainingConfig:
     bregman_execution_enabled: bool = True
     bregman_min_profit_usd: float = 0.001
     bregman_target_capital_usd: float = 50.0
+    # ---- Pass-2: raw-catalog Bregman discovery + per-tick budget caps ----
+    # Bregman groups are discovered over the FULL eligible catalog (capped to bound
+    # cost), and execution is bounded per tick. Safe defaults; never loosened here.
+    bregman_discovery_limit: int = 1000          # max eligible raw markets grouped
+    bregman_max_bundles_per_tick: int = 3
+    bregman_max_open_bundles: int = 10
+    bregman_max_capital_per_tick_usd: float = 100.0
+    bregman_min_roi: float = 0.002               # min after-cost ROI per certified set
     # ---- portfolio risk + aggressive sizing (PAPER ONLY; hard-clamped) ----
     # Additive caps that only ever TIGHTEN the mandatory TrainingRiskGate/RiskEngine.
     max_event_exposure_usd: float = 20.0
@@ -702,6 +710,11 @@ class TrainingConfig:
             bregman_execution_enabled=_envb("POLYMARKET_BREGMAN_EXECUTION_ENABLED", True),
             bregman_min_profit_usd=_envf("POLYMARKET_BREGMAN_MIN_PROFIT_USD", 0.001),
             bregman_target_capital_usd=_envf("POLYMARKET_BREGMAN_TARGET_CAPITAL_USD", 50.0),
+            bregman_discovery_limit=_envi("POLYMARKET_BREGMAN_DISCOVERY_LIMIT", 1000),
+            bregman_max_bundles_per_tick=_envi("POLYMARKET_BREGMAN_MAX_BUNDLES_PER_TICK", 3),
+            bregman_max_open_bundles=_envi("POLYMARKET_BREGMAN_MAX_OPEN_BUNDLES", 10),
+            bregman_max_capital_per_tick_usd=_envf("POLYMARKET_BREGMAN_MAX_CAPITAL_PER_TICK", 100.0),
+            bregman_min_roi=_envf("POLYMARKET_BREGMAN_MIN_ROI", 0.002),
             max_event_exposure_usd=_envf("POLYMARKET_MAX_EVENT_EXPOSURE_USD", 20.0),
             max_category_exposure_usd=_envf("POLYMARKET_MAX_CATEGORY_EXPOSURE_USD", 40.0),
             max_bregman_bundle_exposure_usd=_envf("POLYMARKET_MAX_BREGMAN_BUNDLE_EXPOSURE_USD", 30.0),

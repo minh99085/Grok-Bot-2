@@ -433,6 +433,11 @@ class PolymarketPaperTrainer:
         self.bregman_opportunity_count = 0
         self.bregman_sets_opened = 0
         self.bregman_rejected = 0
+        # Pass-2: raw-catalog Bregman funnel (discovery -> dedup -> certify -> open).
+        self.bregman_reject_reasons: dict = {}
+        self.bregman_open_bundles = 0
+        self.directional_skipped_due_to_bregman = 0
+        self.bregman_exec_metrics: dict = {}
         self.started_ts = time.time()
         # final monitoring + kill-switch state (PAPER ONLY). Aggressive mode
         # auto-downgrades to conservative when a kill-switch metric trips; it
@@ -547,6 +552,13 @@ class PolymarketPaperTrainer:
                      int(getattr(self.cfg, "paper_decision_budget",
                                  self.cfg.trade_candidate_limit)))
         candidates = watch[:budget]
+        # PASS-2: raw-catalog Bregman discovery — group over the FULL eligible
+        # catalog (after safety filters), NOT the directional shortlist, so
+        # complete-set arbitrage that never reaches the shortlist is still found.
+        # Capped to bound cost; falls back to candidates when eligible is absent.
+        disc_limit = int(getattr(self.cfg, "bregman_discovery_limit", 1000))
+        eligible = getattr(scan, "eligible", None) or records
+        self._bregman_records = eligible[:disc_limit]
         opened = 0
         evaluated = 0
         # FLAGSHIP PRIORITY: certified Bregman arbitrage is evaluated + opened
@@ -556,16 +568,21 @@ class PolymarketPaperTrainer:
             # Controlled experiments: split the remaining paper trade-slot budget
             # across variants (Bregman FIRST when certified opps exist). The slot
             # sum never exceeds the budget, so combined hard caps still bind.
-            tradable = self._bregman_tradable(candidates, now)
+            tradable = self._bregman_tradable(self._bregman_records, now)
             cap_slots = max(0, min(int(budget), int(self.cfg.max_open_trades))
                             - len(self.open_positions()))
             alloc = self.experiments.allocate(cap_slots, bregman_available=bool(tradable))
             self.experiments.begin_tick(alloc)
             bregman_opened = self._open_bregman_sets(
-                tradable, candidates, now, cap=alloc.get(BREGMAN_VARIANT))
+                tradable, self._bregman_records, now, cap=alloc.get(BREGMAN_VARIANT))
         else:
-            bregman_opened = self._run_bregman(candidates, now)
+            bregman_opened = self._run_bregman(self._bregman_records, now)
         opened += bregman_opened
+        # Directional runs AFTER Bregman (Tier 2): count candidates skipped because
+        # certified Bregman already consumed the open slots this tick.
+        slots_left_after_bregman = int(self.cfg.max_open_trades) - len(self.open_positions())
+        if bregman_opened > 0 and slots_left_after_bregman <= 0:
+            self.directional_skipped_due_to_bregman += len(candidates)
         for rec in candidates:
             if len(self.open_positions()) >= self.cfg.max_open_trades:
                 break
@@ -615,12 +632,65 @@ class PolymarketPaperTrainer:
             return []
         try:
             groups = group_markets(records, chainlink=self.chainlink, now=now)
-            certs = self.bregman.certify_all(groups, now=now)
         except Exception:  # noqa: BLE001 — Bregman must never break a training tick
             self.bregman_log = []
             return []
+        raw_n = len(groups)
+        groups, dropped = self._dedup_bregman_groups(groups)
+        try:
+            certs = self.bregman.certify_all(groups, now=now)
+        except Exception:  # noqa: BLE001
+            self.bregman_log = []
+            return []
+        # Funnel: count rejections by explicit certifier reason (read-only telemetry).
+        for c in certs:
+            if not c.is_opportunity:
+                reason = c.no_trade_reason or (
+                    c.failure_modes[0] if getattr(c, "failure_modes", None) else "rejected")
+                self._breg_reason(reason)
         self.bregman_log = [c.to_dict() for c in certs]
+        self.bregman_exec_metrics = {
+            "raw_catalog_markets_scanned": len(records),
+            "raw_groups_discovered": raw_n,
+            "duplicate_groups_dropped": dropped,
+            "unique_groups_certified": len(groups),
+            "certified_opportunities": sum(1 for c in certs if c.is_opportunity),
+            "rejected_by_reason": dict(self.bregman_reject_reasons),
+            "grouping_method": "group_markets",
+            "groups_from_graph_used": False,
+            "groups_from_graph_reason": "groups_from_graph() not present on this branch; "
+                                        "using group_markets() over the full eligible catalog",
+            "evaluated_before_directional": True,
+        }
         return certs
+
+    def _breg_reason(self, reason: str) -> None:
+        self.bregman_reject_reasons[reason] = self.bregman_reject_reasons.get(reason, 0) + 1
+
+    def _open_bregman_bundle_count(self) -> int:
+        """Distinct open Bregman bundles (by group_key) currently held in PAPER."""
+        keys = {getattr(p, "group_key", None) for p in self.open_positions()
+                if getattr(p, "strategy", "") == "bregman"}
+        keys.discard(None)
+        return len(keys)
+
+    def _dedup_bregman_groups(self, groups: list) -> "tuple[list, int]":
+        """De-duplicate Bregman groups by (group_type, sorted market ids, sorted
+        outcome set) so a group is never certified/executed twice. Pure."""
+        seen: set = set()
+        out: list = []
+        dropped = 0
+        for g in groups:
+            legs = getattr(g, "legs", []) or []
+            key = (getattr(g, "group_type", ""),
+                   tuple(sorted(str(getattr(l, "market_id", "")) for l in legs)),
+                   tuple(sorted(str(getattr(l, "outcome", "")) for l in legs)))
+            if key in seen:
+                dropped += 1
+                continue
+            seen.add(key)
+            out.append(g)
+        return out, dropped
 
     def _bregman_tradable(self, records: list, now: float) -> list:
         """Certify + rank tradable Bregman opportunities (read-only). Used to know
@@ -639,17 +709,52 @@ class PolymarketPaperTrainer:
                 or not getattr(self.cfg, "bregman_execution_enabled", True)):
             return 0
         rec_by_id = {r.market_id: r for r in records}
+        max_bundles = int(getattr(self.cfg, "bregman_max_bundles_per_tick", 3))
+        max_open = int(getattr(self.cfg, "bregman_max_open_bundles", 10))
+        max_cap = float(getattr(self.cfg, "bregman_max_capital_per_tick_usd", 100.0))
+        min_roi = float(getattr(self.cfg, "bregman_min_roi", 0.002))
         opened = 0
+        capital = 0.0
+        open_bundles = self._open_bregman_bundle_count()
         for opp in tradable:
             if cap is not None and opened >= cap:
                 break
-            # never act on a synthesized leg price (binary NO leg is derived)
+            if opened >= max_bundles:
+                self._breg_reason("max_bundles_per_tick")
+                break
+            if open_bundles + opened >= max_open:
+                self._breg_reason("max_open_bundles")
+                break
+            # never act on a synthesized leg price (binary NO leg is derived); a
+            # synthetic YES/NO bundle is not all-leg-real-executable.
             if opp.group_type == "binary_yes_no":
+                self._breg_reason("synthetic_binary_not_executable")
                 continue
+            # completeness: only execute a verified mutually-exclusive + exhaustive set.
+            cert = getattr(opp, "certificate", None)
+            if cert is not None and not bool(getattr(cert, "full_hedge", True)):
+                self._breg_reason("incomplete_or_uncertain_exhaustive_set")
+                continue
+            roi = (opp.profit_lower_bound / opp.required_capital
+                   if opp.required_capital > 0 else 0.0)
+            if roi < min_roi:
+                self._breg_reason("roi_below_min")
+                continue
+            if capital + opp.required_capital > max_cap:
+                self._breg_reason("capital_cap_per_tick")
+                break
             if len(self.open_positions()) >= self.cfg.max_open_trades:
                 break
             if self._open_bregman(opp, rec_by_id, now):
                 opened += 1
+                capital += float(opp.required_capital)
+        self.bregman_open_bundles = self._open_bregman_bundle_count()
+        if self.bregman_exec_metrics:
+            self.bregman_exec_metrics["opened_bregman_bundles"] = (
+                self.bregman_exec_metrics.get("opened_bregman_bundles", 0) + opened)
+            self.bregman_exec_metrics["bregman_capital_committed"] = round(
+                self.bregman_exec_metrics.get("bregman_capital_committed", 0.0) + capital, 4)
+            self.bregman_exec_metrics["rejected_by_reason"] = dict(self.bregman_reject_reasons)
         return opened
 
     def _run_bregman(self, records: list, now: float) -> int:
@@ -771,6 +876,15 @@ class PolymarketPaperTrainer:
             "sets_opened": self.bregman_sets_opened,
             "rejected": self.bregman_rejected,
             "last_scan_metrics": _m.bregman_metrics(self.bregman_log),
+            # Pass-2: raw-catalog discovery -> dedup -> certify -> open funnel.
+            "execution": {
+                **self.bregman_exec_metrics,
+                "open_bregman_bundles": self._open_bregman_bundle_count(),
+                "rejected_by_reason": dict(self.bregman_reject_reasons),
+                "evaluated_before_directional": True,
+                "directional_skipped_due_to_bregman": self.directional_skipped_due_to_bregman,
+                "sees_full_raw_catalog": True,
+            },
         }
 
     # -- portfolio risk + analytics -----------------------------------------

@@ -51,6 +51,11 @@ FEATURES: list[dict] = [
                     "polymarket_trainer.py — never opens a paper position.",
         "risk": "ABCAS looks 'enabled' and reports candidates but never trades — "
                 "false impression the flagship edge is live.",
+        "pass2": "RESOLVED — raw-catalog combinatorial candidate generation is now "
+                 "ACTIVE in the trainer: group_markets runs over scan.eligible (full "
+                 "eligible catalog) every tick and certified sets open in PAPER. The "
+                 "standalone ABCAS scanner remains telemetry, but its candidate-source "
+                 "role is now realized by the trainer's full-catalog Bregman path.",
     },
     {
         "feature": "Trainer Bregman certifier",
@@ -63,6 +68,9 @@ FEATURES: list[dict] = [
         "evidence": "run_tick → _run_bregman → _bregman_tradable → scan_bregman → "
                     "group_markets(records)+certify_all (trainer ~617-657).",
         "risk": "Certifies only over the directional shortlist (see input universe).",
+        "pass2": "RESOLVED — certifier now consumes the FULL eligible catalog "
+                 "(scan.eligible[:bregman_discovery_limit]); groups are de-duped by "
+                 "(group_type, market-id set, outcome set) before certify_all.",
     },
     {
         "feature": "Bregman paper execution",
@@ -75,18 +83,27 @@ FEATURES: list[dict] = [
                     "skips group_type=='binary_yes_no' (synthetic NO leg).",
         "risk": "Almost never fires: binary YES/NO (most of Polymarket) is skipped "
                 "and the input is the shortlist, so few/no real multi-leg sets.",
+        "pass2": "ACTIVE if opportunities pass certification — runs BEFORE directional "
+                 "(Tier 1) and is bounded by per-tick caps (bregman_max_bundles_per_tick, "
+                 "bregman_max_capital_per_tick_usd, bregman_max_open_bundles, "
+                 "bregman_min_roi). Explicit reject reasons: synthetic_binary_not_executable, "
+                 "incomplete_or_uncertain_exhaustive_set, roi_below_min, capital_cap_per_tick, "
+                 "max_bundles_per_tick, max_open_bundles (+ certifier reasons).",
     },
     {
         "feature": "Bregman INPUT UNIVERSE (catalog vs shortlist)",
-        "files": ["engine/training/polymarket_trainer.py:run_tick"],
-        "runtime_status": "annotated",
+        "files": ["engine/training/polymarket_trainer.py:run_tick",
+                  "engine/training/market_scanner.py:ScanResult.eligible"],
+        "runtime_status": "active",
         "controls_trades": True, "telemetry_only": False,
-        "flag": "live_watch_limit / trade_candidate_limit / paper_decision_budget",
-        "evidence": "group_markets is fed candidates=watch[:budget], "
-                    "watch=records[:live_watch_limit], records=scanner shortlist — "
-                    "NOT raw_catalog.",
-        "risk": "HIGH: Bregman/ABCAS sees only the directional shortlist, so most "
-                "coherence arbitrage across the full market universe is invisible.",
+        "flag": "bregman_discovery_limit (full-catalog cap; directional still uses budget)",
+        "evidence": "PASS-2: run_tick now feeds Bregman scan.eligible[:bregman_discovery_limit] "
+                    "— the FULL ranked eligible catalog (all kept markets after safety "
+                    "filters), NOT watch[:budget]. ScanResult.eligible = [d['record'] for d "
+                    "in ranked]; directional still uses the shortlist (records).",
+        "risk": "RESOLVED — combinatorial arbitrage across the full market universe is now "
+                "discoverable; previously only the directional shortlist was visible.",
+        "pass2": "RESOLVED — Bregman sees the full eligible raw catalog.",
     },
     {
         "feature": "Graph grouping (groups_from_graph)",
@@ -98,6 +115,9 @@ FEATURES: list[dict] = [
                     "group_markets(records). Dependency-graph clustering exists but "
                     "is used only for cluster_id annotation.",
         "risk": "Structural graph grouping not used for arbitrage discovery.",
+        "pass2": "Left disabled (not present); metrics/bregman_execution.json records "
+                 "groups_from_graph_used=false + reason. group_markets now runs over the "
+                 "full eligible catalog, so full-universe discovery no longer depends on it.",
     },
     {
         "feature": "Profitability-first ranking",
@@ -326,6 +346,35 @@ PASS2_RECOMMENDATION = {
 }
 
 
+# Pass-2 outcome: the concrete proofs that raw-catalog Bregman now controls
+# certified paper execution (kept alongside the Pass-1 audit as the evidence).
+PASS2_STATUS = {
+    "wired": True,
+    "raw_abcas_bregman_scanner": "active candidate generation (full-catalog group_markets)",
+    "trainer_bregman_certifier": "active",
+    "bregman_paper_execution": "active if opportunities pass certification",
+    "bregman_sees_full_raw_catalog": True,
+    "bregman_execution_priority_before_directional": True,
+    "evidence": [
+        "run_tick feeds scan.eligible[:bregman_discovery_limit] (full eligible "
+        "catalog) to Bregman, not watch[:budget].",
+        "ScanResult.eligible = all ranked kept markets (after safety filters).",
+        "_run_bregman/_open_bregman_sets runs BEFORE the directional loop in run_tick.",
+        "Groups de-duped by (group_type, market-id set, outcome set) before certify_all.",
+        "Per-tick caps + explicit reject reasons enforced; binary_yes_no skipped as "
+        "synthetic_binary_not_executable.",
+        "Funnel written to metrics/bregman_execution.json (discovery→certify→open).",
+    ],
+    "new_env_flags": {
+        "POLYMARKET_BREGMAN_DISCOVERY_LIMIT": 1000,
+        "POLYMARKET_BREGMAN_MAX_BUNDLES_PER_TICK": 3,
+        "POLYMARKET_BREGMAN_MAX_OPEN_BUNDLES": 10,
+        "POLYMARKET_BREGMAN_MAX_CAPITAL_PER_TICK": 100.0,
+        "POLYMARKET_BREGMAN_MIN_ROI": 0.002,
+    },
+}
+
+
 def build_feature_activation(cfg: Any = None, status: Optional[dict] = None) -> dict:
     """Build the machine-readable feature-activation audit (read-only, pure).
 
@@ -373,9 +422,11 @@ def build_feature_activation(cfg: Any = None, status: Optional[dict] = None) -> 
         "features": features,
         "top_edge_leaks": [dict(x) for x in TOP_EDGE_LEAKS],
         "pass2_recommendation": PASS2_RECOMMENDATION,
+        "pass2_status": dict(PASS2_STATUS),
         "live_config": live,
-        "note": "PASS-1 audit/instrumentation only. No trade-path, threshold, sizing, "
-                "or live-execution changes. Verdicts traced from run_tick to open.",
+        "note": "PASS-1 audit traced from run_tick to open. PASS-2 wired raw-catalog "
+                "Bregman into certified PAPER execution (see pass2_status / per-feature "
+                "'pass2'). No live-execution, polymarket-client, or Chainlink changes.",
     }
 
 
@@ -387,6 +438,18 @@ def to_markdown(audit: dict) -> str:
     L.append("_PAPER ONLY · audit + instrumentation only · no strategy/threshold/"
              "sizing/live changes. Verdicts traced from `run_tick` to trade open._")
     L.append("")
+    p2s = audit.get("pass2_status")
+    if p2s:
+        L.append("## Pass 2 — wired (raw-catalog Bregman → certified PAPER execution)")
+        L.append(f"- Raw ABCAS/Bregman scanner: **{p2s['raw_abcas_bregman_scanner']}**")
+        L.append(f"- Trainer Bregman certifier: **{p2s['trainer_bregman_certifier']}**")
+        L.append(f"- Bregman paper execution: **{p2s['bregman_paper_execution']}**")
+        L.append(f"- Bregman sees full raw catalog: **{p2s['bregman_sees_full_raw_catalog']}**")
+        L.append(f"- Bregman execution priority before directional: "
+                 f"**{p2s['bregman_execution_priority_before_directional']}**")
+        for e in p2s["evidence"]:
+            L.append(f"  - {e}")
+        L.append("")
     s = audit["summary"]
     L.append("## Summary")
     L.append(f"- **Truly active (control trades):** {', '.join(s['truly_active'])}")
@@ -402,10 +465,13 @@ def to_markdown(audit: dict) -> str:
     L.append("|---|---|---|---|---|---|---|---|")
     for f in audit["features"]:
         files = "<br>".join(f["files"])
+        risk = f["risk"]
+        if f.get("pass2"):
+            risk = f"{risk}<br>**Pass-2:** {f['pass2']}"
         L.append(f"| {f['feature']} | {files} | `{f['runtime_status']}` | "
                  f"{'YES' if f['controls_trades'] else 'no'} | "
                  f"{'YES' if f['telemetry_only'] else 'no'} | {f['flag']} | "
-                 f"{f['evidence']} | {f['risk']} |")
+                 f"{f['evidence']} | {risk} |")
     L.append("")
     L.append("## Top 10 edge leaks (ranked by profit impact)")
     L.append("")

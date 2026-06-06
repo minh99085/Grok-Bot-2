@@ -43,7 +43,8 @@ class ScanResult:
     scanned: int = 0
     kept: int = 0
     shortlisted: int = 0
-    records: list = field(default_factory=list)        # MarketRecord (kept)
+    records: list = field(default_factory=list)        # MarketRecord (top shortlist)
+    eligible: list = field(default_factory=list)        # MarketRecord (ALL eligible/kept, ranked)
     shortlist: list = field(default_factory=list)      # ranked dicts (top shortlist)
     reject_reasons: dict = field(default_factory=dict)
     groups: list = field(default_factory=list)         # EventGroup (over kept)
@@ -168,6 +169,10 @@ class MarketScanner:
                 category_target=int(getattr(self.cfg, "category_sample_target", 50)),
                 now=now)
         recs = [d["record"] for d in shortlist]
+        # FULL eligible catalog (after safety filters, ranked, NOT shortlist-truncated)
+        # so the raw Bregman/ABCAS path can discover complete-set arbitrage that never
+        # reaches the directional shortlist. Selection only — never an order.
+        eligible_recs = [d["record"] for d in ranked]
 
         # --- institutional feature extraction over the shortlist ---
         features: list = []
@@ -213,7 +218,7 @@ class MarketScanner:
         latency_ms = (time.time() - t0) * 1000.0
         res = ScanResult(
             scanned=len(raw_catalog), kept=len(kept), shortlisted=len(shortlist),
-            records=recs, shortlist=shortlist, reject_reasons=reasons,
+            records=recs, eligible=eligible_recs, shortlist=shortlist, reject_reasons=reasons,
             groups=groups, features=features, graph=graph,
             feature_coverage=cov["coverage"], null_rate=cov["null_rate"],
             stale_rate=round(stale_rate, 4), group_coverage=gm.get("group_coverage", 0.0),
