@@ -191,6 +191,18 @@ def generate_report(
         if d_status:
             status = d_status
             status_source = "docker:hermes-training"
+    # Merge the ABCAS/Bregman paper-scan telemetry into status["bregman"] so the
+    # audit + validation contract see constraint groups scanned (not the raw file).
+    try:
+        if data_dir:
+            _bs = Path(data_dir) / "bregman_scan.json"
+            if _bs.exists():
+                _tel = json.loads(_bs.read_text(encoding="utf-8")) or {}
+                merged = dict(status.get("bregman") or {})
+                merged.update(_tel)
+                status["bregman"] = merged
+    except Exception:  # noqa: BLE001
+        pass
     runtime_available = bool(status) or bool(
         api_json.get("state")) or bool(api_json.get("health"))
 

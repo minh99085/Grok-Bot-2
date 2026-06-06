@@ -260,6 +260,31 @@ def _to_float(v) -> Optional[float]:
         return None
 
 
+def parse_list_field(v):
+    """Robustly parse a Polymarket list field (PAPER ingestion normalization).
+
+    Polymarket gamma encodes ``outcomePrices`` / ``clobTokenIds`` as JSON STRINGS
+    (e.g. ``'["0.41","0.59"]'``), not lists — the #1 cause of ``non_numeric_price``
+    / ``insufficient_outcomes`` skips. Accepts a list (returned as-is), a JSON
+    string, or a comma-separated string; returns ``[]`` on failure. Pure."""
+    if isinstance(v, list):
+        return v
+    if isinstance(v, (int, float)):
+        return [v]
+    if isinstance(v, str):
+        s = v.strip()
+        if not s:
+            return []
+        try:
+            import json as _json
+            out = _json.loads(s)
+            return out if isinstance(out, list) else [out]
+        except Exception:  # noqa: BLE001
+            return [x.strip().strip('"').strip("'") for x in s.strip("[]").split(",")
+                    if x.strip()]
+    return []
+
+
 def _is_active(m: dict) -> bool:
     if m.get("closed") or m.get("archived"):
         return False

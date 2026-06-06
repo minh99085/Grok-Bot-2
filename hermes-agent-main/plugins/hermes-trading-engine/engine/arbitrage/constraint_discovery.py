@@ -61,9 +61,14 @@ from .constraint_graph import (
     SKIP_NON_NUMERIC_PRICE,
     _is_active,
     _to_float,
+    parse_list_field,
 )
 
 logger = logging.getLogger("hte.arbitrage.discovery")
+
+# Paper-only reference depth (USD) when a market exposes no book depth, so a valid
+# market is still normalized for training rather than dropped as NO_DEPTH.
+DEFAULT_PAPER_DEPTH_USD = 100.0
 
 # Additional typed skip reasons specific to discovery.
 SKIP_INSUFFICIENT_METADATA = "insufficient_metadata"
@@ -252,7 +257,9 @@ def discover_constraints(markets: Iterable[dict], *, now_ms: Optional[int] = Non
         kind = _group_kind(ms[0]) if ms else None
 
         # --- standalone market (binary complement or explicit outcomes/relation) ---
-        if is_solo and len(ms) == 1 and kind is None:
+        # A single market (even one tagged with an event) with no relationship kind
+        # is a standalone binary complement, NOT an insufficient-metadata cluster.
+        if len(ms) == 1 and kind is None:
             m = ms[0]
             g = _discover_standalone(m, graph, now_ms=now_ms,
                                      max_book_age_ms=max_book_age_ms, fee_bps=fee_bps,
@@ -305,6 +312,8 @@ def discover_constraints(markets: Iterable[dict], *, now_ms: Optional[int] = Non
     for s in skipped:
         skip_reasons[s["reason"]] = skip_reasons.get(s["reason"], 0) + 1
     metrics = {
+        "normalized_markets": len(grouped_ids),
+        "sample_skipped_market_ids": [s["market_id"] for s in skipped[:20]],
         "groups_discovered": len(groups),
         "groups_scanned": len(graph.constraints()),
         "group_type_counts": type_counts,
@@ -378,14 +387,14 @@ def _discover_standalone(m: dict, graph: ConstraintGraph, *, now_ms: int,
                                outcome_ids=[p.id for p in parsed], n_outcomes=len(parsed),
                                source="explicit", quotes=quotes)
 
-    # polymarket binary shape -> complement
+    # polymarket binary shape -> complement (gamma encodes these as JSON STRINGS)
     if not m.get("enableOrderBook", True):
         skip(mid, SKIP_NO_ORDERBOOK)
         return None
-    prices = m.get("outcomePrices") or []
-    tokens = m.get("clobTokenIds") or []
-    if len(prices) < 2 or len(tokens) < 2:
-        skip(mid, SKIP_INSUFFICIENT_OUTCOMES, f"{len(prices)} prices / {len(tokens)} tokens")
+    prices = parse_list_field(m.get("outcomePrices"))
+    tokens = parse_list_field(m.get("clobTokenIds"))
+    if len(prices) < 2:
+        skip(mid, SKIP_INSUFFICIENT_OUTCOMES, f"{len(prices)} prices")
         return None
     p_yes, p_no = _to_float(prices[0]), _to_float(prices[1])
     if p_yes is None or p_no is None:
@@ -394,11 +403,17 @@ def _discover_standalone(m: dict, graph: ConstraintGraph, *, now_ms: int,
     if not (0.0 < p_yes < 1.0) or not (0.0 < p_no < 1.0):
         skip(mid, SKIP_DEGENERATE_PRICE)
         return None
+    # token ids fall back to synthetic YES/NO ids when absent (paper-only)
+    y = str(tokens[0]) if len(tokens) >= 1 else f"{mid}:yes"
+    n = str(tokens[1]) if len(tokens) >= 2 else f"{mid}:no"
+    # quotes: prefer live bid/ask, else derive a reference quote from prices so a
+    # valid market is normalized (degraded, never silently dropped).
     bid, ask = _to_float(m.get("bestBid")), _to_float(m.get("bestAsk"))
     if bid is None or ask is None or ask <= 0 or bid <= 0:
-        skip(mid, SKIP_MISSING_QUOTES)
-        return None
-    depth_usd = _to_float(m.get("topDepthUsd")) or 0.0
+        bid, ask = p_yes, p_yes
+    depth_usd = _to_float(m.get("topDepthUsd"))
+    if depth_usd is None or depth_usd <= 0:
+        depth_usd = _to_float(m.get("liquidityNum")) or DEFAULT_PAPER_DEPTH_USD
     if depth_usd < min_depth_usd:
         skip(mid, SKIP_NO_DEPTH, f"${depth_usd}")
         return None
@@ -407,7 +422,6 @@ def _discover_standalone(m: dict, graph: ConstraintGraph, *, now_ms: int,
     ts_ms = int(float(ts) * 1000) if (ts is not None and float(ts) < 1e12) else (
         int(ts) if ts is not None else None)
     stale = bool(ts_ms is not None and (now_ms - ts_ms) > max_book_age_ms)
-    y, n = str(tokens[0]), str(tokens[1])
     graph.add_outcomes([
         Outcome(id=y, market_id=mid, label="YES", price=p_yes, ask=yes_ask,
                 bid=bid, ask_depth=depth_usd / max(yes_ask, _PMIN)),

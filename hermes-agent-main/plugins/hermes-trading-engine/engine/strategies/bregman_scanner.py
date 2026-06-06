@@ -96,11 +96,23 @@ class BregmanPaperScanner:
         diag = result.audit_diagnostics(half_life_s=self.decay_half_life_s)
         dm = disc.metrics
 
+        import os as _os
+        abcas_mode = ("aggressive_paper"
+                      if str(_os.getenv("AGGRESSIVE_PAPER_TRAINING", "")).strip().lower()
+                      in ("1", "true", "yes", "on") else "paper")
         tel = {
             "enabled": True,
             "bregman_paper_enabled": True,
             "arbitrage_disabled": False,
             "disabled_reason": None,
+            # --- ABCAS (Adaptive Bregman Combinatorial Arbitrage System) branding ---
+            "abcas_enabled": True,
+            "abcas_mode": abcas_mode,
+            "normalized_markets": int(dm.get("normalized_markets", 0)),
+            "constraint_groups_discovered": int(dm["groups_discovered"]),
+            "sample_skipped_market_ids": dm.get("sample_skipped_market_ids", []),
+            "abcas_feedback_samples": int(diag["constraint_groups_scanned"])
+            + len(skipped),
             "constraint_groups_scanned": int(diag["constraint_groups_scanned"]),
             "groups_discovered": int(dm["groups_discovered"]),
             "groups_skipped": len(skipped),
@@ -145,6 +157,12 @@ class BregmanPaperScanner:
             "bregman_paper_enabled": False,
             "arbitrage_disabled": True,
             "disabled_reason": self.disabled_reason,
+            "abcas_enabled": False,
+            "abcas_mode": "disabled",
+            "normalized_markets": 0,
+            "constraint_groups_discovered": 0,
+            "sample_skipped_market_ids": [],
+            "abcas_feedback_samples": 0,
             "constraint_groups_scanned": 0,
             "groups_discovered": 0,
             "groups_skipped": 0,

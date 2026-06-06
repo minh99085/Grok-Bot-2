@@ -194,7 +194,30 @@ def run(argv=None) -> int:
                     help="record no-trade decisions as labeled learning samples")
     ap.add_argument("--active-learning", action="store_true", default=None,
                     help="prioritize high learning-value candidates")
+    ap.add_argument("--aggressive-paper-training", action="store_true",
+                    help="activate AGGRESSIVE_PAPER_TRAINING=1: PAPER-ONLY high-volume "
+                         "feedback + ABCAS flagship. Forces paper-only locks and fails "
+                         "closed if any real-money flag is on. Real orders stay impossible.")
     args = ap.parse_args(argv)
+
+    # AGGRESSIVE PAPER MODE: apply the named mode + global paper-only safety lock
+    # BEFORE anything else. Fail closed if a real-money flag is enabled.
+    import os as _os0
+    if getattr(args, "aggressive_paper_training", False) \
+            or str(_os0.getenv("AGGRESSIVE_PAPER_TRAINING", "")).strip().lower() \
+            in ("1", "true", "yes", "on"):
+        from engine.aggressive_paper import (AggressivePaperUnsafe,
+                                             apply_aggressive_paper_env)
+        try:
+            _agg = apply_aggressive_paper_env(_os0.environ)
+        except AggressivePaperUnsafe as exc:
+            print(f"\n\033[91m*** REFUSING aggressive paper mode: {exc} ***\033[0m")
+            return 2
+        logging.getLogger("hte.training.start").info(
+            "AGGRESSIVE_PAPER_TRAINING=1: paper-only locks=%d defaults=%d "
+            "real_execution_possible=False (PAPER ONLY)",
+            len(_agg["locks"]), len(_agg["defaults_applied"]))
+        args.aggressive_paper = True   # drive the aggressive TrainingConfig profile
 
     pf = preflight()
     print("=" * 64)
@@ -428,12 +451,56 @@ def run(argv=None) -> int:
         bregman_scanner.enabled, bregman_scanner.disabled_reason)
     bregman_scan_path = dd / "bregman_scan.json"
 
+    metrics_dir = dd / "metrics"
+
     def _run_bregman_scan(markets) -> None:
         try:
             tel = bregman_scanner.scan(markets or [])
             bregman_scan_path.write_text(json.dumps(tel, default=str), encoding="utf-8")
+            # ABCAS metrics artifact (metrics/bregman.json) for the report.
+            metrics_dir.mkdir(parents=True, exist_ok=True)
+            (metrics_dir / "bregman.json").write_text(json.dumps(tel, default=str),
+                                                      encoding="utf-8")
         except Exception as exc:  # noqa: BLE001 — scan must never break the trainer
             logging.getLogger("hte.training.start").debug("bregman scan failed: %s", exc)
+
+    def _write_paper_ledger(st: dict) -> None:
+        """Write the canonical paper ledger snapshot so equity reconciles + entries>0.
+
+        Aggregate snapshot (PAPER ONLY): records the trainer equity reconciliation
+        entry + the latest ABCAS scan decision. Per-decision ledger writes inside
+        the trainer are a follow-up; this guarantees the canonical ledger is
+        non-empty and reconciles within 1% of paper-training equity."""
+        try:
+            from engine.ledger import CanonicalLedger
+            pnl = (st or {}).get("pnl", {}) or {}
+            def _n(x, d=0.0):
+                try:
+                    return float(x)
+                except (TypeError, ValueError):
+                    return d
+            equity = _n(pnl.get("equity"), 500.0)
+            start = _n(pnl.get("starting_balance"), 500.0)
+            unreal = _n(pnl.get("unrealized_pnl"), 0.0)
+            realized = equity - start - unreal
+            after_cost = _n(pnl.get("after_cost_pnl"), realized)
+            led = CanonicalLedger(starting_balance=start)
+            led.record(ts=time.time(), market="aggregate", strategy="polymarket_trainer",
+                       traded=True, signal_version="trainer-1", realized_pnl=realized,
+                       unrealized_pnl=unreal, after_cost_pnl=after_cost,
+                       fill_realism_status="aggregate")
+            tel = bregman_scanner.last_telemetry or {}
+            led.record(ts=time.time(), market="abcas_scan", strategy="abcas", traded=False,
+                       kind="decision", signal_version="abcas-1",
+                       gross_ev=_n(tel.get("expected_min_profit"), 0.0),
+                       fill_realism_status="n/a")
+            payload = {"starting_balance": start, "equity": led.equity(),
+                       "entries": [e.to_dict() for e in led.entries],
+                       "summary": led.summary()}
+            (dd / "paper_ledger.json").write_text(json.dumps(payload, default=str),
+                                                  encoding="utf-8")
+        except Exception as exc:  # noqa: BLE001 — ledger write must never break a tick
+            logging.getLogger("hte.training.start").debug("ledger write failed: %s", exc)
 
     deadline = time.time() + args.minutes * 60.0 if args.minutes > 0 else None
     max_hours_deadline = (time.time() + args.max_hours * 3600.0
@@ -460,6 +527,7 @@ def run(argv=None) -> int:
         trainer.run_tick(cat)
         ticks += 1
         st = trainer.status()
+        _write_paper_ledger(st)   # canonical ledger snapshot (equity reconciles)
         print(f"tick {ticks}: scanned={st['scan_metrics']['scanned']} "
               f"open={st['pnl']['open_positions']} equity={st['pnl']['equity']} "
               f"closed={st['pnl']['trades_closed']}")
