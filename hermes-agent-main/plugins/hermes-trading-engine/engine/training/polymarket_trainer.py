@@ -458,6 +458,14 @@ class PolymarketPaperTrainer:
         self.bregman_open_bundles = 0
         self.directional_skipped_due_to_bregman = 0
         self.bregman_exec_metrics: dict = {}
+        # Pass-4: strategy-priority ladder (Bregman Tier-1 reservation) telemetry.
+        self._bregman_certified_realistic_count = 0
+        self._bregman_open_markets: set = set()
+        self._bregman_open_events: set = set()
+        self._dir_reserved_slots = 0
+        self._dir_reserved_capital = 0.0
+        self._bregman_reserve_active = False
+        self.priority_metrics: dict = {}
         # Pass-3: paper execution-realism funnel (PAPER ONLY).
         self.shadow_opportunities: list = []     # logged, never counted as PnL
         self.realism_counts: dict = {
@@ -591,6 +599,8 @@ class PolymarketPaperTrainer:
         self._bregman_records = eligible[:disc_limit]
         opened = 0
         evaluated = 0
+        # PASS-4: directional open-slots available at tick start (before Bregman).
+        dir_slots_before = max(0, int(self.cfg.max_open_trades) - len(self.open_positions()))
         # FLAGSHIP PRIORITY: certified Bregman arbitrage is evaluated + opened
         # BEFORE any directional trade (it outranks directional only when its
         # certified profit lower bound is positive after all costs).
@@ -608,20 +618,25 @@ class PolymarketPaperTrainer:
         else:
             bregman_opened = self._run_bregman(self._bregman_records, now)
         opened += bregman_opened
-        # Directional runs AFTER Bregman (Tier 2): count candidates skipped because
-        # certified Bregman already consumed the open slots this tick.
-        slots_left_after_bregman = int(self.cfg.max_open_trades) - len(self.open_positions())
-        if bregman_opened > 0 and slots_left_after_bregman <= 0:
-            self.directional_skipped_due_to_bregman += len(candidates)
+        # PASS-4 STRATEGY PRIORITY: Bregman (Tier 1) has already had first claim on
+        # slots + capital. Compute the reservation + collision state, then run
+        # directional (Tier 2) ONLY against the non-reserved capacity. Reserved
+        # capacity is released to directional only when NO certified-realistic
+        # Bregman opportunity exists this tick.
+        self._begin_directional_phase(dir_slots_before, bregman_opened)
         for rec in candidates:
-            if len(self.open_positions()) >= self.cfg.max_open_trades:
+            ok, block_reason = self._directional_admit(rec)
+            if block_reason == "global_capacity":
                 break
+            if not ok:
+                continue           # reserved for Bregman / collision (counted)
             res = self._consider(rec, now)
             evaluated += 1
             if res.get("opened"):
                 opened += 1
-            if len(self.open_positions()) >= self.cfg.max_open_trades:
-                break
+        if bregman_opened > 0 and len(self.open_positions()) >= self.cfg.max_open_trades:
+            self.directional_skipped_due_to_bregman += len(candidates)
+        self._finalize_priority_metrics()
         # decision funnel + feedback-loop sample yield
         self.metrics.record_decisions(evaluated=evaluated, traded=opened,
                                        feedback_samples=evaluated)
@@ -724,12 +739,49 @@ class PolymarketPaperTrainer:
 
     def _bregman_tradable(self, records: list, now: float) -> list:
         """Certify + rank tradable Bregman opportunities (read-only). Used to know
-        Bregman availability before allocating the experiment budget."""
+        Bregman availability before allocating the experiment budget.
+
+        PASS-4: sorted by conservative after-cost QUALITY (not discovery order):
+        positive after-cost lower-bound profit, then after-cost ROI, fill realism,
+        lower avg spread, higher min depth, fresher books, lower ambiguity, then
+        lower capital requirement — so the best certified arbs open first."""
         certs = self.scan_bregman(records, now)
-        tradable = sorted([c for c in certs if c.is_opportunity],
-                          key=lambda o: o.profit_lower_bound, reverse=True)
+        tradable = [c for c in certs if c.is_opportunity]
+        tradable.sort(key=self._bregman_quality_key, reverse=True)
         self.bregman_opportunity_count += len(tradable)
+        # PASS-4: certified-realistic count drives Bregman slot/capital reservation.
+        self._bregman_certified_realistic_count = len(tradable)
         return tradable
+
+    @staticmethod
+    def _bregman_quality_key(o) -> tuple:
+        """Conservative after-cost quality ordering for certified Bregman opps.
+        Higher tuple sorts first (reverse=True). Lower-is-better fields are negated."""
+        cap = float(getattr(o, "required_capital", 0.0) or 0.0)
+        plb = float(getattr(o, "profit_lower_bound", 0.0) or 0.0)
+        roi = (plb / cap) if cap > 0 else 0.0
+        fill_q = float(getattr(o, "fill_feasibility", 0.0) or 0.0)
+        legs = getattr(o, "legs", []) or []
+        spreads = [float(getattr(l, "spread", 0.0) or 0.0) for l in legs
+                   if getattr(l, "spread", None) is not None]
+        depths = [float(getattr(l, "depth_usd", 0.0) or 0.0) for l in legs]
+        ages = [float(getattr(l, "book_age_s", 0.0) or 0.0) for l in legs
+                if getattr(l, "book_age_s", None) is not None]
+        amb = max((float(getattr(l, "ambiguity_score", 0.0) or 0.0) for l in legs),
+                  default=0.0)
+        avg_spread = (sum(spreads) / len(spreads)) if spreads else 0.0
+        min_depth = min(depths) if depths else 0.0
+        max_age = max(ages) if ages else 0.0
+        return (
+            1 if plb > 0 else 0,        # positive after-cost lower-bound profit first
+            round(roi, 6),              # after-cost ROI
+            round(fill_q, 6),           # fill realism quality
+            -round(avg_spread, 6),      # lower avg spread better
+            round(min_depth, 4),        # higher min depth better
+            -round(max_age, 4),         # fresher books better
+            -round(amb, 6),             # lower ambiguity better
+            -round(cap, 4),             # lower capital better when ROI ties
+        )
 
     def _open_bregman_sets(self, tradable: list, records: list, now: float, *,
                            cap: Optional[int] = None) -> int:
@@ -1162,6 +1214,87 @@ class PolymarketPaperTrainer:
         h = hashlib.sha256(f"{market_id}:{self.tick_count}".encode()).digest()
         return (int.from_bytes(h[:4], "big") % 1000) / 1000.0 < self.cfg.exploration_rate
 
+    # -- PASS-4: Bregman-first strategy priority + slot/capital reservation -----
+    @staticmethod
+    def _rec_event_key(rec) -> str:
+        ev = getattr(rec, "event_id", None) or getattr(rec, "group_key", None) or ""
+        return str(ev)
+
+    def _begin_directional_phase(self, dir_slots_before: int, bregman_opened: int) -> None:
+        """Compute the Bregman reservation + collision state BEFORE directional
+        execution. Reserved slots/capital are held for Bregman whenever a
+        certified-realistic opportunity existed this tick; released to directional
+        only when none did (and the release flags allow it). PAPER ONLY."""
+        cfg = self.cfg
+        priority = bool(getattr(cfg, "bregman_priority_enabled", True))
+        certified_realistic = int(self._bregman_certified_realistic_count)
+        bregman_active = certified_realistic > 0
+        release_slots = (not bregman_active) and bool(
+            getattr(cfg, "directional_can_use_unused_bregman_slots", True))
+        release_cap = (not bregman_active) and bool(
+            getattr(cfg, "directional_can_use_unused_bregman_capital", True))
+        self._dir_reserved_slots = (int(getattr(cfg, "bregman_reserve_open_slots", 3))
+                                    if (priority and not release_slots) else 0)
+        self._dir_reserved_capital = (float(getattr(cfg, "bregman_reserve_capital_usd", 100.0))
+                                      if (priority and not release_cap) else 0.0)
+        self._bregman_reserve_active = (self._dir_reserved_slots > 0
+                                        or self._dir_reserved_capital > 0)
+        # collision sets from CURRENTLY-OPEN Bregman legs (structured exposure)
+        breg = [p for p in self.open_positions() if p.strategy == "bregman"]
+        self._bregman_open_markets = {p.market_id for p in breg}
+        self._bregman_open_events = {p.group_key for p in breg if getattr(p, "group_key", None)}
+        hard_cap = int(cfg.max_open_trades)
+        open_n = len(self.open_positions())
+        self.priority_metrics = {
+            "bregman_priority_enabled": priority,
+            "bregman_evaluated_before_directional": True,
+            "bregman_reserved_slots": self._dir_reserved_slots,
+            "bregman_reserved_capital_usd": round(self._dir_reserved_capital, 4),
+            "bregman_certified_before_directional_count": certified_realistic,
+            "bregman_opened_before_directional_count": int(bregman_opened),
+            "directional_slots_before_bregman": int(dir_slots_before),
+            "directional_slots_after_bregman": max(0, hard_cap - self._dir_reserved_slots - open_n),
+            "directional_trades_blocked_by_bregman_reservation": 0,
+            "directional_trades_blocked_by_bregman_market_collision": 0,
+            "directional_trades_blocked_by_bregman_event_collision": 0,
+            "unused_bregman_slots_released_to_directional": (
+                int(getattr(cfg, "bregman_reserve_open_slots", 3)) if release_slots else 0),
+            "unused_bregman_capital_released_to_directional": (
+                round(float(getattr(cfg, "bregman_reserve_capital_usd", 100.0)), 4)
+                if release_cap else 0.0),
+            "exploration_blocked_from_reserved_bregman_capacity": 0,
+        }
+
+    def _directional_admit(self, rec) -> "tuple[bool, str]":
+        """Admission gate for a directional candidate AFTER Bregman. Enforces the
+        Bregman slot reservation + market/event collision blocks. Returns
+        ``(ok, block_reason)``; ``global_capacity`` means stop the loop."""
+        open_n = len(self.open_positions())
+        hard_cap = int(self.cfg.max_open_trades)
+        if open_n >= hard_cap:
+            return False, "global_capacity"
+        if open_n >= (hard_cap - self._dir_reserved_slots):
+            self.priority_metrics["directional_trades_blocked_by_bregman_reservation"] += 1
+            return False, "bregman_reservation"
+        if (bool(getattr(self.cfg, "block_directional_on_bregman_markets", True))
+                and getattr(rec, "market_id", None) in self._bregman_open_markets):
+            self.priority_metrics["directional_trades_blocked_by_bregman_market_collision"] += 1
+            return False, "bregman_market_collision"
+        if (bool(getattr(self.cfg, "block_directional_on_bregman_events", True))
+                and self._rec_event_key(rec) in self._bregman_open_events):
+            self.priority_metrics["directional_trades_blocked_by_bregman_event_collision"] += 1
+            return False, "bregman_event_collision"
+        return True, ""
+
+    def _finalize_priority_metrics(self) -> None:
+        pm = self.priority_metrics
+        if not pm:
+            return
+        pm["directional_slots_after_bregman"] = max(
+            0, int(self.cfg.max_open_trades) - self._dir_reserved_slots
+            - len(self.open_positions()))
+        pm["bregman_open_bundles"] = self._open_bregman_bundle_count()
+
     def _directional_realism(self, rec, est, edge, proposal):
         """Classify a directional candidate's fill realism (PAPER ONLY).
 
@@ -1257,6 +1390,20 @@ class PolymarketPaperTrainer:
             self.learner.record_decision(traded=False, reason="variant_budget_exhausted")
             return {"opened": False, "reason": "variant_budget_exhausted"}
 
+        # PASS-4: exploration (Tier 3) must NOT consume Bregman-reserved capacity.
+        # When a certified-realistic Bregman opportunity reserved slots/capital this
+        # tick, exploration is held back unless explicitly allowed by config.
+        if (exploratory and getattr(self, "_bregman_reserve_active", False)
+                and not bool(getattr(self.cfg,
+                                     "exploration_can_use_bregman_reserved_capacity", False))):
+            self.rejection_count += 1
+            self.priority_metrics["exploration_blocked_from_reserved_bregman_capacity"] = (
+                self.priority_metrics.get(
+                    "exploration_blocked_from_reserved_bregman_capacity", 0) + 1)
+            self.learner.record_decision(
+                traded=False, reason="exploration_blocked_bregman_reserved")
+            return {"opened": False, "reason": "exploration_blocked_bregman_reserved"}
+
         proposal = self.policy.build_proposal(edge, est, rec)
         proposal.experiment_id = self.experiments.experiment_id
         proposal.strategy_variant = variant
@@ -1285,6 +1432,20 @@ class PolymarketPaperTrainer:
             proposal.qty = round(notional / proposal.price, 4) if proposal.price > 0 else 0.0
             proposal.sizing_method = "exploration"
             self.exploration_count += 1
+        # PASS-4: directional must not spend Bregman-reserved capital. The effective
+        # directional exposure ceiling is tightened by the reserved capital so a
+        # pending certified Bregman bundle keeps its budget.
+        reserved_cap = float(getattr(self, "_dir_reserved_capital", 0.0) or 0.0)
+        if reserved_cap > 0:
+            effective_cap = float(self.cfg.max_total_exposure_usd) - reserved_cap
+            if self.total_exposure() + float(proposal.notional_usd) > effective_cap + 1e-9:
+                self.rejection_count += 1
+                self.priority_metrics["directional_trades_blocked_by_bregman_reservation"] = (
+                    self.priority_metrics.get(
+                        "directional_trades_blocked_by_bregman_reservation", 0) + 1)
+                self.learner.record_decision(
+                    traded=False, reason="bregman_capital_reservation")
+                return {"opened": False, "reason": "bregman_capital_reservation"}
         proposal_id = f"prop-{uuid.uuid4().hex[:12]}"
         decision = self.risk.evaluate(
             proposal, fresh_book=est.fresh_book,
@@ -1526,6 +1687,56 @@ class PolymarketPaperTrainer:
             "bregman_requires_all_executable_legs": bool(
                 getattr(self.cfg, "bregman_require_executable_all_legs", True)),
             "shadow_examples": self.shadow_opportunities[-20:],
+        }
+
+    def strategy_priority_report(self) -> dict:
+        """Pass-4 Strategy Priority: proves Bregman (Tier 1) gets first claim on
+        slots + capital before directional (Tier 2) and exploration (Tier 3).
+        Read-only telemetry derived from the latest tick's allocation."""
+        pm = dict(self.priority_metrics)
+        bx = dict(self.bregman_exec_metrics)
+        opened = pm.get("bregman_opened_before_directional_count", 0)
+        certified = pm.get("bregman_certified_before_directional_count", 0)
+        why_zero = ""
+        if opened == 0:
+            if certified == 0:
+                why_zero = ("no certified-realistic Bregman opportunity this tick "
+                            "(see metrics/bregman_execution.json rejected_by_reason)")
+            else:
+                why_zero = ("certified opportunities existed but did not open "
+                            "(per-tick caps or execution-time realism gate)")
+        return {
+            "schema": "strategy_priority/1.0", "paper_only": True,
+            "tier1": "certified Bregman/ABCAS complete-set arbitrage",
+            "tier2": "high-confidence directional", "tier3": "exploration/active-learning",
+            "bregman_priority_enabled": pm.get("bregman_priority_enabled",
+                                               bool(getattr(self.cfg, "bregman_priority_enabled", True))),
+            "bregman_evaluated_before_directional": pm.get("bregman_evaluated_before_directional", True),
+            "bregman_reserved_slots": pm.get("bregman_reserved_slots", 0),
+            "bregman_reserved_capital_usd": pm.get("bregman_reserved_capital_usd", 0.0),
+            "bregman_groups_discovered": bx.get("raw_groups_discovered", 0),
+            "bregman_certified_before_directional_count": certified,
+            "bregman_realistic_executable_count": certified,
+            "bregman_opened_before_directional_count": opened,
+            "bregman_zero_open_reason": why_zero,
+            "directional_consumed_capacity_before_bregman": False,
+            "directional_slots_before_bregman": pm.get("directional_slots_before_bregman", 0),
+            "directional_slots_after_bregman": pm.get("directional_slots_after_bregman", 0),
+            "directional_trades_blocked_by_bregman_reservation": pm.get(
+                "directional_trades_blocked_by_bregman_reservation", 0),
+            "directional_trades_blocked_by_bregman_market_collision": pm.get(
+                "directional_trades_blocked_by_bregman_market_collision", 0),
+            "directional_trades_blocked_by_bregman_event_collision": pm.get(
+                "directional_trades_blocked_by_bregman_event_collision", 0),
+            "unused_bregman_slots_released_to_directional": pm.get(
+                "unused_bregman_slots_released_to_directional", 0),
+            "unused_bregman_capital_released_to_directional": pm.get(
+                "unused_bregman_capital_released_to_directional", 0.0),
+            "exploration_blocked_from_reserved_bregman_capacity": pm.get(
+                "exploration_blocked_from_reserved_bregman_capacity", 0),
+            "directional_secondary_after_bregman": True,
+            "exploration_tertiary_after_exploit": True,
+            "paper_realism_enforced": True,
         }
 
     def baseline_report(self) -> dict:
@@ -2122,6 +2333,7 @@ class PolymarketPaperTrainer:
             "subscription": self.subs.health.to_dict(),
             "pnl": self.pnl_summary(),
             "paper_realism": self.paper_realism_report(),
+            "strategy_priority": self.strategy_priority_report(),
             "risk": self.risk.status(),
             "broker": self.broker.status(),
             "baselines": self.baselines.results(),

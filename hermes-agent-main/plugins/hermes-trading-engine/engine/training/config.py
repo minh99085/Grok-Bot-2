@@ -185,6 +185,19 @@ class TrainingConfig:
     bregman_max_open_bundles: int = 10
     bregman_max_capital_per_tick_usd: float = 100.0
     bregman_min_roi: float = 0.002               # min after-cost ROI per certified set
+    # ---- Pass-4: Bregman-FIRST strategy priority + slot/capital reservation ----
+    # Certified, realistic, after-cost-positive Bregman complete-set arbitrage gets
+    # first claim on open slots + capital each tick. Directional is secondary;
+    # exploration tertiary. Reserved capacity is released to directional ONLY when
+    # no certified-realistic Bregman opportunity exists this tick.
+    bregman_priority_enabled: bool = True
+    bregman_reserve_open_slots: int = 3
+    bregman_reserve_capital_usd: float = 100.0
+    directional_can_use_unused_bregman_slots: bool = True
+    directional_can_use_unused_bregman_capital: bool = True
+    block_directional_on_bregman_markets: bool = True
+    block_directional_on_bregman_events: bool = True
+    exploration_can_use_bregman_reserved_capacity: bool = False
     # ---- portfolio risk + aggressive sizing (PAPER ONLY; hard-clamped) ----
     # Additive caps that only ever TIGHTEN the mandatory TrainingRiskGate/RiskEngine.
     max_event_exposure_usd: float = 20.0
@@ -735,6 +748,19 @@ class TrainingConfig:
             bregman_max_open_bundles=_envi("POLYMARKET_BREGMAN_MAX_OPEN_BUNDLES", 10),
             bregman_max_capital_per_tick_usd=_envf("POLYMARKET_BREGMAN_MAX_CAPITAL_PER_TICK", 100.0),
             bregman_min_roi=_envf("POLYMARKET_BREGMAN_MIN_ROI", 0.002),
+            bregman_priority_enabled=_envb("POLYMARKET_BREGMAN_PRIORITY_ENABLED", True),
+            bregman_reserve_open_slots=_envi("POLYMARKET_BREGMAN_RESERVE_OPEN_SLOTS", 3),
+            bregman_reserve_capital_usd=_envf("POLYMARKET_BREGMAN_RESERVE_CAPITAL_USD", 100.0),
+            directional_can_use_unused_bregman_slots=_envb(
+                "POLYMARKET_DIRECTIONAL_CAN_USE_UNUSED_BREGMAN_SLOTS", True),
+            directional_can_use_unused_bregman_capital=_envb(
+                "POLYMARKET_DIRECTIONAL_CAN_USE_UNUSED_BREGMAN_CAPITAL", True),
+            block_directional_on_bregman_markets=_envb(
+                "POLYMARKET_BLOCK_DIRECTIONAL_ON_BREGMAN_MARKETS", True),
+            block_directional_on_bregman_events=_envb(
+                "POLYMARKET_BLOCK_DIRECTIONAL_ON_BREGMAN_EVENTS", True),
+            exploration_can_use_bregman_reserved_capacity=_envb(
+                "POLYMARKET_EXPLORATION_CAN_USE_BREGMAN_RESERVED_CAPACITY", False),
             max_event_exposure_usd=_envf("POLYMARKET_MAX_EVENT_EXPOSURE_USD", 20.0),
             max_category_exposure_usd=_envf("POLYMARKET_MAX_CATEGORY_EXPOSURE_USD", 40.0),
             max_bregman_bundle_exposure_usd=_envf("POLYMARKET_MAX_BREGMAN_BUNDLE_EXPOSURE_USD", 30.0),

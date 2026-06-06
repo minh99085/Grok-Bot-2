@@ -89,6 +89,11 @@ FEATURES: list[dict] = [
                  "bregman_min_roi). Explicit reject reasons: synthetic_binary_not_executable, "
                  "incomplete_or_uncertain_exhaustive_set, roi_below_min, capital_cap_per_tick, "
                  "max_bundles_per_tick, max_open_bundles (+ certifier reasons).",
+        "pass4": "FIRST-PRIORITY — certified-realistic opps reserve open slots "
+                 "(bregman_reserve_open_slots) + capital (bregman_reserve_capital_usd) "
+                 "before directional; directional is admission-gated (_directional_admit) "
+                 "and blocked on Bregman markets/events; opps sorted by after-cost quality. "
+                 "Reserve released to directional only when no certified-realistic opp exists.",
     },
     {
         "feature": "Bregman INPUT UNIVERSE (catalog vs shortlist)",
@@ -415,6 +420,42 @@ PASS3_STATUS = {
 }
 
 
+# Pass-4 outcome: Bregman-FIRST strategy priority. Certified, realistic,
+# after-cost-positive complete-set arbitrage gets first claim on slots + capital;
+# directional is secondary, exploration tertiary. Proof that the bot prefers
+# certified arbitrage over directional prediction.
+PASS4_STATUS = {
+    "bregman_priority_enabled": True,
+    "raw_abcas_bregman_scanner_controls_candidate_generation": True,
+    "trainer_bregman_certifier_active": True,
+    "bregman_execution_before_directional": True,
+    "directional_secondary_after_bregman": True,
+    "exploration_tertiary_after_exploit": True,
+    "paper_realism_still_enforced": True,
+    "reservation": {
+        "POLYMARKET_BREGMAN_RESERVE_OPEN_SLOTS": 3,
+        "POLYMARKET_BREGMAN_RESERVE_CAPITAL_USD": 100.0,
+        "POLYMARKET_DIRECTIONAL_CAN_USE_UNUSED_BREGMAN_SLOTS": True,
+        "POLYMARKET_DIRECTIONAL_CAN_USE_UNUSED_BREGMAN_CAPITAL": True,
+        "POLYMARKET_BLOCK_DIRECTIONAL_ON_BREGMAN_MARKETS": True,
+        "POLYMARKET_BLOCK_DIRECTIONAL_ON_BREGMAN_EVENTS": True,
+        "POLYMARKET_EXPLORATION_CAN_USE_BREGMAN_RESERVED_CAPACITY": False,
+    },
+    "metrics": ["metrics/strategy_priority.json", "metrics/bregman_execution.json",
+                "metrics/paper_realism.json"],
+    "evidence": [
+        "run_tick: dir_slots_before -> _run_bregman/_open_bregman_sets (Tier 1) -> "
+        "_begin_directional_phase -> directional loop with _directional_admit gate.",
+        "Reserved slots/capital held whenever a certified-realistic Bregman opp "
+        "exists this tick; released to directional only when none does.",
+        "_directional_admit blocks directional on Bregman markets/events + the "
+        "reserved-slot boundary; exploration blocked from reserved capacity.",
+        "Certified opps sorted by after-cost ROI/fill-quality/spread/depth/"
+        "freshness/ambiguity/capital before opening (_bregman_quality_key).",
+    ],
+}
+
+
 def build_feature_activation(cfg: Any = None, status: Optional[dict] = None) -> dict:
     """Build the machine-readable feature-activation audit (read-only, pure).
 
@@ -464,6 +505,7 @@ def build_feature_activation(cfg: Any = None, status: Optional[dict] = None) -> 
         "pass2_recommendation": PASS2_RECOMMENDATION,
         "pass2_status": dict(PASS2_STATUS),
         "pass3_status": dict(PASS3_STATUS),
+        "pass4_status": dict(PASS4_STATUS),
         "live_config": live,
         "note": "PASS-1 audit traced from run_tick to open. PASS-2 wired raw-catalog "
                 "Bregman into certified PAPER execution (see pass2_status / per-feature "
@@ -490,6 +532,21 @@ def to_markdown(audit: dict) -> str:
                  f"**{p2s['bregman_execution_priority_before_directional']}**")
         for e in p2s["evidence"]:
             L.append(f"  - {e}")
+        L.append("")
+    p4 = audit.get("pass4_status")
+    if p4:
+        L.append("## Pass 4 — Bregman-first strategy priority")
+        L.append(f"- Bregman priority enabled: **{p4['bregman_priority_enabled']}**")
+        L.append(f"- Raw ABCAS/Bregman scanner controls candidate generation: "
+                 f"**{p4['raw_abcas_bregman_scanner_controls_candidate_generation']}**")
+        L.append(f"- Trainer Bregman certifier active: **{p4['trainer_bregman_certifier_active']}**")
+        L.append(f"- Bregman execution before directional: "
+                 f"**{p4['bregman_execution_before_directional']}**")
+        L.append(f"- Directional secondary after Bregman: "
+                 f"**{p4['directional_secondary_after_bregman']}**")
+        L.append(f"- Exploration tertiary after exploit strategies: "
+                 f"**{p4['exploration_tertiary_after_exploit']}**")
+        L.append(f"- Paper realism still enforced: **{p4['paper_realism_still_enforced']}**")
         L.append("")
     p3 = audit.get("pass3_status")
     if p3:
@@ -528,6 +585,8 @@ def to_markdown(audit: dict) -> str:
             risk = f"{risk}<br>**Pass-2:** {f['pass2']}"
         if f.get("pass3"):
             risk = f"{risk}<br>**Pass-3:** {f['pass3']}"
+        if f.get("pass4"):
+            risk = f"{risk}<br>**Pass-4:** {f['pass4']}"
         L.append(f"| {f['feature']} | {files} | `{f['runtime_status']}` | "
                  f"{'YES' if f['controls_trades'] else 'no'} | "
                  f"{'YES' if f['telemetry_only'] else 'no'} | {f['flag']} | "

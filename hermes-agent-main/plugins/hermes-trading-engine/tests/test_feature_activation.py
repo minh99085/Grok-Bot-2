@@ -122,6 +122,22 @@ def test_pass3_markdown_section_present():
     assert "Readiness excludes unrealistic fills: **True**" in md
 
 
+def test_pass4_status_proves_priority():
+    p4 = build_feature_activation()["pass4_status"]
+    assert p4["bregman_priority_enabled"] is True
+    assert p4["bregman_execution_before_directional"] is True
+    assert p4["directional_secondary_after_bregman"] is True
+    assert p4["exploration_tertiary_after_exploit"] is True
+    assert p4["paper_realism_still_enforced"] is True
+    assert p4["reservation"]["POLYMARKET_BREGMAN_RESERVE_OPEN_SLOTS"] == 3
+
+
+def test_pass4_markdown_section_present():
+    md = to_markdown(build_feature_activation())
+    assert "Pass 4 — Bregman-first strategy priority" in md
+    assert "Bregman execution before directional: **True**" in md
+
+
 def test_cli_writes_json_and_markdown(tmp_path):
     audit = audit_cli.generate(out_dir=str(tmp_path))
     j = tmp_path / "metrics" / "feature_activation.json"

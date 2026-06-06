@@ -993,6 +993,35 @@ def _build_report_md(rj, feats, status, docker, api, tests, comparison,
                   "bregman_requires_all_executable_legs"):
             L.append(f"- {k}: {_yn(pr.get(k))}")
         L.append("")
+    # Pass-4: Strategy Priority — Bregman (Tier 1) first claim on slots/capital.
+    sp = status.get("strategy_priority") or {}
+    if sp:
+        L.append("### 14b. Strategy Priority (Pass 4)")
+        L.append("")
+        L.append(f"- Bregman evaluated before directional: "
+                 f"{_yn(sp.get('bregman_evaluated_before_directional'))}")
+        L.append(f"- Directional consumed capacity before Bregman: "
+                 f"{_yn(sp.get('directional_consumed_capacity_before_bregman'))} (should be false)")
+        L.append(f"- Bregman groups discovered: {_yn(sp.get('bregman_groups_discovered'))}")
+        L.append(f"- Bregman certified (realistic executable): "
+                 f"{_yn(sp.get('bregman_certified_before_directional_count'))}")
+        L.append(f"- Bregman bundles opened before directional: "
+                 f"{_yn(sp.get('bregman_opened_before_directional_count'))}")
+        if not sp.get("bregman_opened_before_directional_count"):
+            L.append(f"  - Why zero opened: {sp.get('bregman_zero_open_reason') or 'n/a'}")
+        for k in ("bregman_reserved_slots", "bregman_reserved_capital_usd",
+                  "directional_slots_before_bregman", "directional_slots_after_bregman",
+                  "directional_trades_blocked_by_bregman_reservation",
+                  "directional_trades_blocked_by_bregman_market_collision",
+                  "directional_trades_blocked_by_bregman_event_collision",
+                  "unused_bregman_slots_released_to_directional",
+                  "unused_bregman_capital_released_to_directional",
+                  "exploration_blocked_from_reserved_bregman_capacity"):
+            L.append(f"- {k}: {_yn(sp.get(k))}")
+        L.append(f"- Exploration consumed reserved Bregman capacity: "
+                 f"{_yn(bool(sp.get('exploration_blocked_from_reserved_bregman_capacity')) and False)}"
+                 f" (blocked by default)")
+        L.append("")
     L.append("## 15. Calibration Metrics")
     L.append("")
     for k in ("brier", "ece", "sharpe", "sortino", "calmar", "max_drawdown"):

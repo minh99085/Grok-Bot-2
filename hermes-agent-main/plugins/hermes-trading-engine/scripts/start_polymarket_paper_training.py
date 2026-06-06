@@ -537,6 +537,9 @@ def run(argv=None) -> int:
                 encoding="utf-8")
             (metrics_dir / "paper_realism.json").write_text(
                 json.dumps(trainer.paper_realism_report(), default=str), encoding="utf-8")
+            # Pass-4: strategy-priority ladder (Bregman Tier-1 reservation).
+            (metrics_dir / "strategy_priority.json").write_text(
+                json.dumps(trainer.strategy_priority_report(), default=str), encoding="utf-8")
         except Exception:  # noqa: BLE001 — metrics must never break a tick
             pass
         print(f"tick {ticks}: scanned={st['scan_metrics']['scanned']} "
