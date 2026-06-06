@@ -2370,6 +2370,165 @@ class PolymarketPaperTrainer:
             **summ,
         }
 
+    # -- PASS-8: unified inspection artifacts (observability only) --------------
+    def trade_ledger_summary(self) -> dict:
+        """Per-strategy opened-trade/bundle ledger (PAPER ONLY, read-only)."""
+        rows: list = []
+        bundles: dict = {}
+        for p in self.positions:
+            notional = round(float(p.entry_price) * float(p.qty), 4)
+            readiness_eligible = bool(getattr(p, "is_realistic", True) and not p.exploration)
+            row = {
+                "open_tick": p.open_tick, "strategy": p.strategy,
+                "strategy_tier": ("tier1_bregman" if p.strategy == "bregman"
+                                  else ("tier3_exploration" if p.exploration
+                                        else "tier2_directional")),
+                "market_id": p.market_id, "event_id": getattr(p, "group_key", ""),
+                "cluster_id": getattr(p, "cluster_id", ""), "outcome": p.outcome,
+                "side": "BUY", "size": round(float(p.qty), 4),
+                "fill_price": round(float(p.entry_price), 6), "notional_usd": notional,
+                "execution_realism_status": getattr(p, "execution_realism_status", ""),
+                "fill_source": getattr(p, "fill_source", ""),
+                "was_reference_price_fill": bool(getattr(p, "was_reference_price_fill", False)),
+                "after_cost_edge": round(float(p.net_edge), 6),
+                "readiness_eligible": readiness_eligible,
+                "closed": p.closed, "realized_pnl": round(float(p.realized_pnl), 4),
+                "pnl_bucket": ("bregman_realistic" if p.strategy == "bregman"
+                               else ("exploration" if p.exploration
+                                     else "directional_realistic")),
+            }
+            rows.append(row)
+            if p.strategy == "bregman":
+                b = bundles.setdefault(getattr(p, "group_key", ""), {
+                    "bundle_id": getattr(p, "group_key", ""), "legs": 0,
+                    "leg_market_ids": [], "leg_outcomes": [], "total_cost": 0.0,
+                    "capital_required": 0.0, "all_legs_executable": True})
+                b["legs"] += 1
+                b["leg_market_ids"].append(p.market_id)
+                b["leg_outcomes"].append(p.outcome)
+                b["total_cost"] = round(b["total_cost"] + notional, 4)
+                b["capital_required"] = round(b["capital_required"] + notional, 4)
+                if getattr(p, "execution_realism_status", "") != "realistic_executable":
+                    b["all_legs_executable"] = False
+        return {
+            "total_opened": len(rows),
+            "bregman_legs": sum(1 for r in rows if r["strategy"] == "bregman"),
+            "directional_trades": sum(1 for r in rows
+                                      if r["strategy"] != "bregman" and not r.get("strategy_tier") == "tier3_exploration"),
+            "exploration_trades": sum(1 for r in rows if r["strategy_tier"] == "tier3_exploration"),
+            "bregman_bundles": list(bundles.values()),
+            "trades": rows[-50:],   # bounded tail
+        }
+
+    def rejection_waterfall(self) -> dict:
+        """Ranked rejection-reason aggregation across the whole pipeline + a
+        per-strategy breakdown (deterministic; read-only)."""
+        breg = self.bregman_summary().get("execution", {}) or {}
+        pr = self.profitability_ranking_report()
+        pe = self.paper_realism_report()
+        sp = self.strategy_priority_report()
+        al = self.active_learning_report()
+        cr = self.correlation_risk_report()
+        breg_reasons = dict(breg.get("rejected_by_reason", {}) or {})
+        reasons: dict = {}
+
+        def add(name, n):
+            if n:
+                reasons[name] = reasons.get(name, 0) + int(n)
+
+        for k, v in breg_reasons.items():
+            add(f"bregman_{k}", v)
+        add("negative_after_cost", pr.get("candidates_rejected_negative_after_cost", 0))
+        add("shadow_theoretical_only", pr.get("candidates_shadow_theoretical_only", 0))
+        add("stale_book", pe.get("stale_book_rejection_count", 0))
+        add("missing_ask", pe.get("missing_ask_rejection_count", 0))
+        add("thin_depth", pe.get("thin_depth_rejection_count", 0))
+        add("wide_spread", pe.get("wide_spread_rejection_count", 0))
+        add("ambiguous_settlement", pe.get("ambiguity_rejection_count", 0))
+        add("offline_stub", pe.get("offline_stub_rejection_count", 0))
+        add("strategy_priority_no_slot", sp.get("directional_trades_blocked_by_bregman_reservation", 0))
+        add("bregman_market_collision", sp.get("directional_trades_blocked_by_bregman_market_collision", 0))
+        add("bregman_event_collision", sp.get("directional_trades_blocked_by_bregman_event_collision", 0))
+        add("same_market_duplicate", cr.get("blocked_same_market", 0))
+        add("same_condition_duplicate", cr.get("blocked_same_condition", 0))
+        add("same_event_duplicate", cr.get("blocked_same_event", 0))
+        add("same_cluster_duplicate", cr.get("blocked_same_cluster", 0))
+        add("shadowed_unknown_cluster", cr.get("shadowed_unknown_cluster", 0))
+        add("exploration_rejected_by_realism", al.get("exploration_rejected_by_realism", 0))
+        add("exploration_rejected_by_budget", al.get("exploration_rejected_by_budget", 0))
+        add("exploration_rejected_by_collision", al.get("exploration_rejected_by_collision", 0))
+        add("exploration_rejected_by_diversity", al.get("exploration_rejected_by_diversity", 0))
+        ranked = sorted(reasons.items(), key=lambda kv: kv[1], reverse=True)
+        return {
+            "ranked_reasons": [{"reason": k, "count": v} for k, v in ranked],
+            "total_rejections": sum(reasons.values()),
+            "by_strategy": {
+                "bregman": {k: v for k, v in reasons.items() if k.startswith("bregman_")},
+                "directional": {k: v for k, v in reasons.items() if k in (
+                    "negative_after_cost", "stale_book", "missing_ask", "thin_depth",
+                    "wide_spread", "ambiguous_settlement", "offline_stub",
+                    "strategy_priority_no_slot", "bregman_market_collision",
+                    "bregman_event_collision", "same_market_duplicate",
+                    "same_condition_duplicate", "same_event_duplicate",
+                    "same_cluster_duplicate")},
+                "exploration": {k: v for k, v in reasons.items()
+                                if k.startswith("exploration_")},
+                "shadow": {k: v for k, v in reasons.items() if k in (
+                    "shadow_theoretical_only", "shadowed_unknown_cluster")},
+            },
+        }
+
+    def data_quality_report(self) -> dict:
+        """Market-coverage / data-quality stats so a low trade count can be
+        attributed to lack of edge vs lack of data (read-only)."""
+        sm = self.metrics.to_dict() if hasattr(self.metrics, "to_dict") else {}
+        cr = self.correlation_risk_report()
+        pr = self.profitability_ranking_report()
+        return {
+            "catalog_load_success": bool(sm.get("scanned", 0)),
+            "markets_loaded": sm.get("scanned", 0),
+            "markets_eligible": sm.get("kept", 0),
+            "markets_shortlisted": sm.get("shortlisted", 0),
+            "stale_rate": sm.get("stale_rate", None),
+            "null_rate": sm.get("null_rate", None),
+            "feature_coverage": sm.get("feature_coverage", None),
+            "candidates_with_cluster_metadata": cr.get("candidates_with_cluster_id", 0),
+            "candidates_missing_cluster_metadata": cr.get("candidates_missing_cluster_id", 0),
+            "candidates_with_profitability_annotation": pr.get("candidates_annotated", 0),
+            "candidates_missing_profitability_annotation": pr.get(
+                "candidates_missing_profitability_data", 0),
+            "chainlink_enabled": bool(self.chainlink is not None),
+            "research_mode": os.getenv("RESEARCH_MODE", "offline_cache"),
+            "grok_enabled": bool(os.getenv("XAI_API_KEY") or os.getenv("GROK_API_KEY")),
+        }
+
+    def inspection_summary(self) -> dict:
+        """PASS-8: one unified machine-readable inspection summary aggregating every
+        prior-pass output + feature-activation proof + deterministic recommendations."""
+        from .inspection_summary import build_inspection_summary
+        from engine.feature_activation import build_feature_activation
+        feature_audit = build_feature_activation(self.cfg, status=None)
+        return build_inspection_summary(self.status(), feature_audit,
+                                        trade_ledger=self.trade_ledger_summary(),
+                                        rejection_waterfall=self.rejection_waterfall(),
+                                        data_quality=self.data_quality_report())
+
+    def write_inspection_artifacts(self, out_dir) -> dict:
+        """Write metrics/inspection_summary.json + reports/paper_training_inspection.md.
+        Returns the summary dict. Never raises into the training loop."""
+        from pathlib import Path as _Path
+        from .inspection_summary import to_markdown
+        summary = self.inspection_summary()
+        out = _Path(out_dir)
+        (out / "metrics").mkdir(parents=True, exist_ok=True)
+        (out / "reports").mkdir(parents=True, exist_ok=True)
+        import json as _json
+        (out / "metrics" / "inspection_summary.json").write_text(
+            _json.dumps(summary, indent=2, default=str), encoding="utf-8")
+        (out / "reports" / "paper_training_inspection.md").write_text(
+            to_markdown(summary), encoding="utf-8")
+        return summary
+
     def baseline_report(self) -> dict:
         """Quantitative baseline: deterministic algorithm inventory + the full
         institutional metric suite computed from this run's closed paper trades.

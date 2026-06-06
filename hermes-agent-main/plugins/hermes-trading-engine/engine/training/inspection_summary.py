@@ -1,0 +1,447 @@
+"""Unified paper-training inspection summary (PASS-8 — observability only).
+
+Aggregates every prior-pass output (Bregman funnel, strategy priority, paper
+realism, profitability ranking, active learning, correlation risk) plus the
+feature-activation audit into ONE machine-readable summary + a human-readable
+markdown report + deterministic recommendations + a compact console line.
+
+PAPER ONLY. Pure + deterministic: no I/O, no trading, no thresholds changed.
+"""
+
+from __future__ import annotations
+
+from typing import Optional
+
+SCHEMA_VERSION = "inspection_summary/1.0"
+
+REQUIRED_SECTIONS = [
+    "Executive Summary", "Feature Activation", "Bregman / ABCAS Funnel",
+    "Strategy Priority", "Paper Execution Realism", "Profitability Ranking",
+    "Active Learning / Exploration", "Correlation / Cluster Risk",
+    "Candidate Rejection Waterfall", "Opened Paper Trades / Bundles",
+    "Readiness / Real Edge Score", "Data Quality / Market Coverage",
+    "Recommendations",
+]
+
+# feature -> runtime evidence metric path; used to avoid false "active" claims.
+_FEATURE_EVIDENCE = {
+    "Raw ABCAS/Bregman scanner": ("bregman_funnel", "raw_groups_discovered"),
+    "Full-catalog Bregman grouping": ("bregman_funnel", "raw_catalog_markets_scanned"),
+    "Trainer Bregman certifier": ("bregman_funnel", "unique_groups_certified"),
+    "Bregman paper execution": ("bregman_funnel", "bundles_opened"),
+    "Bregman-first priority": ("strategy_priority", "bregman_evaluated_before_directional"),
+    "Strict PaperExecutionPolicy": ("paper_realism", "realistic_trade_count"),
+    "Profitability-first ranking": ("profitability_ranking", "candidates_annotated"),
+    "Profitability governor": ("profitability_ranking", "profitability_governor_hard_rejects"),
+    "ActiveLearningSelector": ("active_learning", "active_learning_candidates_considered"),
+    "Random/hash exploration blocker": ("active_learning", "random_exploration_opened_trades"),
+    "Cluster/correlation gate": ("correlation_risk", "correlation_adjusted_candidates"),
+}
+
+
+def _g(d: dict, *path, default=None):
+    cur = d
+    for k in path:
+        if not isinstance(cur, dict):
+            return default
+        cur = cur.get(k)
+    return cur if cur is not None else default
+
+
+def _feature_status(audit_status: str, controls_trades: bool, evidence_val) -> str:
+    """Map a feature to a conservative Pass-8 status string (never claim active
+    purely from code existence — require runtime evidence where measurable)."""
+    if audit_status == "dead":
+        return "imported_unused"
+    if audit_status == "imported":
+        return "imported_unused"
+    if audit_status == "telemetry":
+        return "active_telemetry_only"
+    if audit_status in ("active", "annotated") and controls_trades:
+        if evidence_val is None:
+            return "missing_metrics"
+        if isinstance(evidence_val, bool):
+            return "active_controls_trades" if evidence_val else "configured_but_no_candidates"
+        if isinstance(evidence_val, (int, float)) and float(evidence_val) <= 0:
+            return "configured_but_no_candidates"
+        return "active_controls_trades"
+    return "active_telemetry_only"
+
+
+def build_inspection_summary(status: dict, feature_audit: dict, *,
+                             trade_ledger: Optional[dict] = None,
+                             rejection_waterfall: Optional[dict] = None,
+                             data_quality: Optional[dict] = None) -> dict:
+    status = status or {}
+    pnl = status.get("pnl", {}) or {}
+    pe = status.get("paper_realism", {}) or {}
+    sp = status.get("strategy_priority", {}) or {}
+    prk = status.get("profitability_ranking", {}) or {}
+    al = status.get("active_learning", {}) or {}
+    cr = status.get("correlation_risk", {}) or {}
+    breg = (status.get("bregman", {}) or {}).get("execution", {}) or {}
+    sm = status.get("scan_metrics", {}) or {}
+    trade_ledger = trade_ledger or {}
+    rejection_waterfall = rejection_waterfall or {}
+    data_quality = data_quality or {}
+
+    bregman_funnel = {
+        "raw_catalog_markets_scanned": breg.get("raw_catalog_markets_scanned", sm.get("scanned", 0)),
+        "eligible_raw_markets": breg.get("raw_catalog_markets_scanned", sm.get("kept", 0)),
+        "raw_groups_discovered": breg.get("raw_groups_discovered", 0),
+        "graph_groups_discovered": 0,
+        "groups_from_graph_used": breg.get("groups_from_graph_used", False),
+        "duplicate_groups_dropped": breg.get("duplicate_groups_dropped", 0),
+        "unique_groups_certified": breg.get("unique_groups_certified", 0),
+        "certified_opportunities": breg.get("certified_opportunities", 0),
+        "bundles_opened": breg.get("opened_bregman_bundles", 0),
+        "capital_committed": breg.get("bregman_capital_committed", 0.0),
+        "sees_full_raw_catalog": breg.get("sees_full_raw_catalog", sp.get("bregman_priority_enabled", False)),
+        "evaluated_before_directional": breg.get("evaluated_before_directional",
+                                                 sp.get("bregman_evaluated_before_directional", False)),
+        "rejected_by_reason": dict(breg.get("rejected_by_reason", {}) or {}),
+    }
+
+    run = {
+        "schema_version": SCHEMA_VERSION, "paper_only": True,
+        "run_id": status.get("run_id"), "mode": status.get("mode"),
+        "execution_mode": status.get("execution_mode", "paper"),
+        "started_ts": status.get("started_ts"),
+        "runtime_seconds": status.get("runtime_seconds"),
+        "tick": status.get("tick", 0),
+        "live_trading_disabled": True,
+        "strict_paper_realism": not bool(pe.get("reference_price_fills_allowed_for_exploit", False)),
+        "bregman_priority_enabled": bool(sp.get("bregman_priority_enabled", True)),
+        "raw_markets_loaded": sm.get("scanned", 0),
+        "eligible_markets": sm.get("kept", 0),
+        "candidates_considered": prk.get("candidates_annotated", 0),
+        "trades_opened": pnl.get("trades_opened", 0),
+        "realistic_trades": pe.get("realistic_trade_count", 0),
+        "bregman_bundles_opened": bregman_funnel["bundles_opened"],
+        "directional_trades_opened": prk.get("directional_after_cost_positive", 0),
+        "exploration_trades_opened": al.get("exploration_trades_opened", 0),
+        "shadow_only_opportunities": pe.get("shadow_trade_count", 0),
+        "hard_rejects": pe.get("hard_reject_count", 0),
+        "realistic_pnl": pe.get("realistic_pnl", 0.0),
+        "shadow_theoretical_pnl": pe.get("shadow_theoretical_pnl", 0.0),
+        "readiness_pnl": pe.get("readiness_pnl", 0.0),
+    }
+
+    # feature-activation proof table (runtime-evidence backed)
+    feats = []
+    by_name = {f["feature"]: f for f in (feature_audit.get("features") or [])}
+    summary_ctx = {"bregman_funnel": bregman_funnel, "strategy_priority": sp,
+                   "paper_realism": pe, "profitability_ranking": prk,
+                   "active_learning": al, "correlation_risk": cr}
+    for name, f in by_name.items():
+        ev_path = _FEATURE_EVIDENCE.get(name)
+        ev_val = _g(summary_ctx, *ev_path) if ev_path else None
+        # random-exploration blocker is "active" when it kept random opens at 0
+        if name == "Random/hash exploration blocker":
+            ev_val = (al.get("random_exploration_opened_trades", 0) == 0)
+        feats.append({
+            "feature": name, "expected_state": "active" if f.get("controls_trades") else "telemetry",
+            "actual_state": _feature_status(f.get("runtime_status", "unknown"),
+                                            bool(f.get("controls_trades")), ev_val),
+            "controls_trades": bool(f.get("controls_trades")),
+            "evidence_metric": ".".join(ev_path) if ev_path else "(audit)",
+            "evidence_value": ev_val,
+        })
+
+    readiness = {
+        "readiness_trade_count": run["realistic_trades"],
+        "readiness_pnl": run["readiness_pnl"],
+        "readiness_excludes_reference_fills": True,
+        "readiness_excludes_fallback_fills": True,
+        "readiness_excludes_stale_fills": True,
+        "readiness_excludes_shadow_only": True,
+        "readiness_excludes_exploration": not bool(al.get("exploration_counted_toward_readiness", False)),
+        "readiness_includes_bregman_realistic": True,
+        "readiness_includes_directional_realistic": True,
+        "live_trading_enabled": False,
+        "reason_live_disabled": "paper-only build; no wallet/signing/live-submit path exists",
+        "bregman_realistic_pnl": pe.get("bregman_realistic_pnl", 0.0),
+        "directional_realistic_pnl": pe.get("directional_realistic_pnl", 0.0),
+        "exploration_pnl": al.get("exploration_pnl", 0.0),
+    }
+
+    summary = {
+        "schema_version": SCHEMA_VERSION, "paper_only": True,
+        "run": run,
+        "feature_activation": {"features": feats,
+                               "pass_status": {k: feature_audit.get(k) for k in (
+                                   "pass1_status", "pass2_status", "pass3_status",
+                                   "pass4_status", "pass5_status", "pass6_status",
+                                   "pass7_status") if feature_audit.get(k)}},
+        "bregman_funnel": bregman_funnel,
+        "strategy_priority": sp,
+        "paper_realism": pe,
+        "profitability_ranking": prk,
+        "active_learning": al,
+        "correlation_risk": cr,
+        "rejection_waterfall": rejection_waterfall,
+        "trade_ledger_summary": trade_ledger,
+        "readiness": readiness,
+        "data_quality": data_quality,
+        "recommendations": recommendations({
+            "bregman_funnel": bregman_funnel, "paper_realism": pe, "strategy_priority": sp,
+            "profitability_ranking": prk, "active_learning": al, "correlation_risk": cr,
+            "run": run}),
+    }
+    return summary
+
+
+def recommendations(summary: dict) -> list:
+    """Deterministic, metric-driven recommendations (never 'loosen thresholds'
+    unless the bottleneck is proven to be conservatism, not realism)."""
+    bf = summary.get("bregman_funnel", {})
+    pe = summary.get("paper_realism", {})
+    prk = summary.get("profitability_ranking", {})
+    al = summary.get("active_learning", {})
+    cr = summary.get("correlation_risk", {})
+    run = summary.get("run", {})
+    recs: list = []
+    if bf.get("raw_groups_discovered", 0) > 0 and bf.get("certified_opportunities", 0) == 0:
+        recs.append({"code": "bregman_discovered_none_certified", "severity": "high",
+                     "message": "Bregman discovered groups but certified 0 — inspect "
+                                "grouping completeness/exhaustiveness + certifier "
+                                "reject reasons (rejected_by_reason)."})
+    if bf.get("certified_opportunities", 0) > 0 and bf.get("bundles_opened", 0) == 0:
+        recs.append({"code": "bregman_certified_none_opened", "severity": "high",
+                     "message": "Certified Bregman opportunities did not open — check "
+                                "paper realism, per-tick budget/slot caps, and "
+                                "correlation/duplicate-bundle blocks."})
+    if pe.get("reference_fills_blocked", 0) > 5:
+        recs.append({"code": "many_reference_fills_blocked", "severity": "medium",
+                     "message": "Many reference-price fills blocked — improve live CLOB "
+                                "book coverage so candidates become executable (NOT a "
+                                "reason to enable reference fills)."})
+    if prk.get("candidates_rejected_negative_after_cost", 0) > 10:
+        recs.append({"code": "many_negative_after_cost", "severity": "medium",
+                     "message": "Many negative-after-cost rejects — analyze candidate "
+                                "source quality / cost model; do not loosen thresholds."})
+    if al.get("active_learning_candidates_selected", 0) == 0 \
+            and al.get("active_learning_candidates_considered", 0) > 0:
+        recs.append({"code": "active_learning_selected_none", "severity": "medium",
+                     "message": "Active learning considered candidates but selected 0 — "
+                                "check exploration realism/loss/diversity eligibility gates."})
+    if cr.get("candidates_missing_cluster_id", 0) > cr.get("candidates_with_cluster_id", 0):
+        recs.append({"code": "many_missing_cluster_ids", "severity": "medium",
+                     "message": "More candidates missing cluster metadata than carrying it "
+                                "— improve cluster-key generation (event/condition/semantic)."})
+    if (run.get("directional_trades_opened", 0) > 0
+            and bf.get("certified_opportunities", 0) > bf.get("bundles_opened", 0)):
+        recs.append({"code": "directional_while_bregman_pending", "severity": "high",
+                     "message": "Directional traded while certified Bregman did not fully "
+                                "open — verify strategy-priority reservation."})
+    if run.get("realistic_trades", 0) == 0:
+        cause = ("strict paper realism (no live-executable book)"
+                 if pe.get("missing_ask_rejection_count", 0) or pe.get("stale_book_rejection_count", 0)
+                 else "lack of after-cost-positive edge")
+        recs.append({"code": "no_realistic_trades", "severity": "info",
+                     "message": f"No realistic trades opened — attributable to {cause}. "
+                                "This is conservative, not a bug."})
+    if not recs:
+        recs.append({"code": "nominal", "severity": "info",
+                     "message": "No bottleneck detected from current metrics."})
+    return recs
+
+
+def console_summary(summary: dict) -> str:
+    run = summary.get("run", {})
+    bf = summary.get("bregman_funnel", {})
+    al = summary.get("active_learning", {})
+    cr = summary.get("correlation_risk", {})
+    pe = summary.get("paper_realism", {})
+    corr_blocks = sum(int(cr.get(k, 0) or 0) for k in (
+        "blocked_same_market", "blocked_same_condition", "blocked_same_event",
+        "blocked_same_cluster", "blocked_bregman_market_collision",
+        "blocked_bregman_event_collision"))
+    ref_real = 1 if float(pe.get("reference_fill_theoretical_pnl", 0.0) or 0.0) != 0.0 else 0
+    return "\n".join([
+        "Run complete.",
+        f"Mode: {run.get('mode', 'paper')}",
+        f"Raw markets: {run.get('raw_markets_loaded', 0)}",
+        f"Eligible markets: {run.get('eligible_markets', 0)}",
+        f"Bregman groups discovered/certified/opened: "
+        f"{bf.get('raw_groups_discovered', 0)}/{bf.get('certified_opportunities', 0)}/"
+        f"{bf.get('bundles_opened', 0)}",
+        f"Directional trades opened: {run.get('directional_trades_opened', 0)}",
+        f"Exploration trades opened: {run.get('exploration_trades_opened', 0)}",
+        f"Shadow-only opportunities: {run.get('shadow_only_opportunities', 0)}",
+        f"Hard rejects: {run.get('hard_rejects', 0)}",
+        f"Realistic PnL: {run.get('realistic_pnl', 0.0)}",
+        f"Readiness PnL: {run.get('readiness_pnl', 0.0)}",
+        f"Reference fills counted as real: {ref_real}",
+        f"Random exploration trades: {al.get('random_exploration_opened_trades', 0)}",
+        f"Correlation blocks: {corr_blocks}",
+        "Report: reports/paper_training_inspection.md",
+        "Inspection summary: metrics/inspection_summary.json",
+    ])
+
+
+def _kv(d: dict, keys) -> list:
+    return [f"- {k}: {d.get(k)}" for k in keys]
+
+
+def to_markdown(summary: dict) -> str:
+    run = summary.get("run", {})
+    bf = summary.get("bregman_funnel", {})
+    sp = summary.get("strategy_priority", {})
+    pe = summary.get("paper_realism", {})
+    prk = summary.get("profitability_ranking", {})
+    al = summary.get("active_learning", {})
+    cr = summary.get("correlation_risk", {})
+    rw = summary.get("rejection_waterfall", {})
+    tl = summary.get("trade_ledger_summary", {})
+    rd = summary.get("readiness", {})
+    dq = summary.get("data_quality", {})
+    L: list = []
+    L.append("# Polymarket Paper-Training Inspection Report")
+    L.append("")
+    L.append("_PAPER ONLY · unified observability across Pass 1-7 · no live trading._")
+    L.append("")
+
+    L.append("## Executive Summary")
+    L += _kv(run, ["run_id", "mode", "execution_mode", "runtime_seconds",
+                   "live_trading_disabled", "strict_paper_realism", "bregman_priority_enabled",
+                   "raw_markets_loaded", "eligible_markets", "candidates_considered",
+                   "trades_opened", "realistic_trades", "bregman_bundles_opened",
+                   "directional_trades_opened", "exploration_trades_opened",
+                   "shadow_only_opportunities", "hard_rejects", "realistic_pnl",
+                   "shadow_theoretical_pnl", "readiness_pnl"])
+    L.append("")
+
+    L.append("## Feature Activation")
+    L.append("")
+    L.append("| Feature | Expected | Actual state | Controls trades? | Evidence metric | Value |")
+    L.append("|---|---|---|---|---|---|")
+    for f in summary.get("feature_activation", {}).get("features", []):
+        L.append(f"| {f['feature']} | {f['expected_state']} | `{f['actual_state']}` | "
+                 f"{'YES' if f['controls_trades'] else 'no'} | {f['evidence_metric']} | "
+                 f"{f['evidence_value']} |")
+    L.append("")
+
+    L.append("## Bregman / ABCAS Funnel")
+    L += _kv(bf, ["raw_catalog_markets_scanned", "eligible_raw_markets", "raw_groups_discovered",
+                  "graph_groups_discovered", "groups_from_graph_used", "duplicate_groups_dropped",
+                  "unique_groups_certified", "certified_opportunities", "bundles_opened",
+                  "capital_committed", "sees_full_raw_catalog", "evaluated_before_directional"])
+    L.append(f"- rejection breakdown: {bf.get('rejected_by_reason', {})}")
+    L.append(f"- Did Bregman see the full raw catalog? {bf.get('sees_full_raw_catalog')}")
+    L.append(f"- Did Bregman run before directional? {bf.get('evaluated_before_directional')}")
+    L.append(f"- Did any Bregman bundle open? {bf.get('bundles_opened', 0) > 0}")
+    L.append("")
+
+    L.append("## Strategy Priority / Capital Allocation")
+    L += _kv(sp, ["bregman_priority_enabled", "bregman_evaluated_before_directional",
+                  "bregman_reserved_slots", "bregman_reserved_capital_usd",
+                  "directional_slots_before_bregman", "directional_slots_after_bregman",
+                  "unused_bregman_slots_released_to_directional",
+                  "directional_trades_blocked_by_bregman_reservation",
+                  "directional_trades_blocked_by_bregman_market_collision",
+                  "directional_trades_blocked_by_bregman_event_collision",
+                  "exploration_blocked_from_reserved_bregman_capacity",
+                  "directional_consumed_capacity_before_bregman"])
+    L.append("")
+
+    L.append("## Paper Execution Realism")
+    L += _kv(pe, ["reference_price_fills_allowed_for_exploit", "reference_fill_attempts",
+                  "reference_fills_allowed", "reference_fills_blocked", "fallback_fill_count",
+                  "stale_book_rejection_count", "missing_ask_rejection_count",
+                  "thin_depth_rejection_count", "wide_spread_rejection_count",
+                  "offline_stub_rejection_count", "ambiguity_rejection_count",
+                  "avg_spread_executed", "avg_depth_executed", "avg_book_age_executed",
+                  "realistic_trade_count", "shadow_trade_count", "realistic_pnl",
+                  "shadow_theoretical_pnl", "readiness_pnl", "reference_fill_theoretical_pnl"])
+    _ref = float(pe.get("reference_fill_theoretical_pnl", 0.0) or 0.0)
+    L.append(f"- Did any unrealistic fill count toward PnL/readiness? {_ref != 0.0}")
+    L.append("")
+
+    L.append("## Profitability Ranking")
+    L += _kv(prk, ["profitability_first_enabled", "profitability_annotation_before_truncation",
+                   "candidates_annotated", "candidates_missing_profitability_data",
+                   "candidates_ranked_by_profitability", "candidates_rejected_negative_after_cost",
+                   "candidates_shadow_theoretical_only", "directional_after_cost_positive",
+                   "bregman_after_cost_positive", "avg_after_cost_edge_executed",
+                   "avg_after_cost_roi_executed", "total_expected_value_usd_executed",
+                   "execution_without_annotation", "top_ranked_candidate_reason"])
+    L.append(f"- profitability_buckets: {prk.get('profitability_buckets', {})}")
+    L.append(f"- Any trade executed without profitability annotation? "
+             f"{prk.get('execution_without_annotation', 0) > 0}")
+    L.append("")
+
+    L.append("## Active Learning / Exploration")
+    L += _kv(al, ["active_learning_enabled", "random_exploration_enabled",
+                  "random_exploration_opened_trades", "legacy_random_exploration_blocked",
+                  "active_learning_candidates_considered", "active_learning_candidates_selected",
+                  "exploration_trades_opened", "exploration_shadow_only",
+                  "exploration_rejected_by_realism", "exploration_rejected_by_budget",
+                  "exploration_rejected_by_collision", "exploration_budget_used_usd",
+                  "exploration_expected_loss_usd", "exploration_pnl",
+                  "exploration_counted_toward_readiness", "top_learning_buckets",
+                  "category_coverage", "cluster_diversity", "pending_feedback_count",
+                  "completed_feedback_count", "avg_active_learning_score_selected"])
+    L.append("")
+
+    L.append("## Correlation / Cluster Risk")
+    L += _kv(cr, ["correlation_gate_enabled", "require_cluster_metadata", "unknown_cluster_policy",
+                  "candidates_with_cluster_id", "candidates_missing_cluster_id",
+                  "open_clusters_count", "open_events_count", "open_correlation_groups_count",
+                  "blocked_same_market", "blocked_same_condition", "blocked_same_event",
+                  "blocked_same_cluster", "blocked_bregman_market_collision",
+                  "blocked_bregman_event_collision", "blocked_exploration_cluster_collision",
+                  "size_capped_by_cluster_exposure", "shadowed_unknown_cluster",
+                  "max_cluster_exposure_usd", "max_event_exposure_usd", "top_open_clusters",
+                  "real_trade_without_cluster_metadata"])
+    L.append(f"- Any real trade without cluster metadata? "
+             f"{cr.get('real_trade_without_cluster_metadata', 0) > 0}")
+    L.append("")
+
+    L.append("## Candidate Rejection Waterfall")
+    L.append(f"- total rejections: {rw.get('total_rejections', 0)}")
+    for r in rw.get("ranked_reasons", []):
+        L.append(f"  - {r['reason']}: {r['count']}")
+    L.append(f"- by strategy: {rw.get('by_strategy', {})}")
+    L.append("")
+
+    L.append("## Opened Paper Trades / Bundles")
+    L += _kv(tl, ["total_opened", "bregman_legs", "directional_trades", "exploration_trades"])
+    for b in tl.get("bregman_bundles", [])[:10]:
+        L.append(f"  - bundle {b.get('bundle_id')}: legs={b.get('legs')} "
+                 f"cost=${b.get('total_cost')} all_legs_executable={b.get('all_legs_executable')}")
+    for t in tl.get("trades", [])[-10:]:
+        L.append(f"  - {t.get('strategy_tier')} {t.get('market_id')} side={t.get('side')} "
+                 f"${t.get('notional_usd')} status={t.get('execution_realism_status')} "
+                 f"readiness={t.get('readiness_eligible')}")
+    L.append("")
+
+    L.append("## Readiness / Real Edge Score")
+    L += _kv(rd, ["readiness_trade_count", "readiness_pnl", "bregman_realistic_pnl",
+                  "directional_realistic_pnl", "exploration_pnl",
+                  "readiness_excludes_reference_fills", "readiness_excludes_fallback_fills",
+                  "readiness_excludes_stale_fills", "readiness_excludes_shadow_only",
+                  "readiness_excludes_exploration", "readiness_includes_bregman_realistic",
+                  "readiness_includes_directional_realistic", "live_trading_enabled",
+                  "reason_live_disabled"])
+    L.append("")
+
+    L.append("## Data Quality / Market Coverage")
+    L += _kv(dq, ["catalog_load_success", "markets_loaded", "markets_eligible",
+                  "markets_shortlisted", "stale_rate", "null_rate", "feature_coverage",
+                  "candidates_with_cluster_metadata", "candidates_missing_cluster_metadata",
+                  "candidates_with_profitability_annotation",
+                  "candidates_missing_profitability_annotation", "chainlink_enabled",
+                  "research_mode", "grok_enabled"])
+    L.append("")
+
+    L.append("## Recommendations")
+    for r in summary.get("recommendations", []):
+        L.append(f"- [{r.get('severity')}] ({r.get('code')}) {r.get('message')}")
+    L.append("")
+    return "\n".join(L)
+
+
+def validate_report(markdown: str) -> list:
+    """Return the list of REQUIRED_SECTIONS missing from the rendered report."""
+    return [s for s in REQUIRED_SECTIONS if f"## {s}" not in markdown]

@@ -549,8 +549,13 @@ def run(argv=None) -> int:
             # Pass-7: cluster/correlation risk funnel.
             (metrics_dir / "correlation_risk.json").write_text(
                 json.dumps(trainer.correlation_risk_report(), default=str), encoding="utf-8")
-        except Exception:  # noqa: BLE001 — metrics must never break a tick
-            pass
+            # Pass-8: unified inspection summary (machine + human readable) +
+            # compact console line. data_dir is the parent of metrics_dir.
+            _insp = trainer.write_inspection_artifacts(metrics_dir.parent)
+            from engine.training.inspection_summary import console_summary as _console
+            print(_console(_insp))
+        except Exception as _exc:  # noqa: BLE001 — metrics must never break a tick
+            logging.getLogger("hte.training.start").debug("inspection summary failed: %s", _exc)
         print(f"tick {ticks}: scanned={st['scan_metrics']['scanned']} "
               f"open={st['pnl']['open_positions']} equity={st['pnl']['equity']} "
               f"closed={st['pnl']['trades_closed']}")
