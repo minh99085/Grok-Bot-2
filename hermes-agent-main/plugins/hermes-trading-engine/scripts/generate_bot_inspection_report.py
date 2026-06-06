@@ -1069,6 +1069,29 @@ def _build_report_md(rj, feats, status, docker, api, tests, comparison,
                   "category_coverage", "pending_feedback_count", "completed_feedback_count"):
             L.append(f"- {k}: {_yn(al.get(k))}")
         L.append("")
+    # Pass-7: Correlation Risk — cluster/correlation is an active hard gate.
+    cr = status.get("correlation_risk") or {}
+    if cr:
+        L.append("### 14e. Correlation Risk (Pass 7)")
+        L.append("")
+        L.append(f"- Correlation gate enabled: {_yn(cr.get('correlation_gate_enabled'))}")
+        L.append(f"- Unknown clusters become shadow-only: "
+                 f"{_yn(cr.get('unknown_cluster_policy') == 'shadow')} (default)")
+        L.append(f"- Real trade without cluster metadata: "
+                 f"{_yn(cr.get('real_trade_without_cluster_metadata'))} (should be 0)")
+        for k in ("candidates_with_cluster_id", "candidates_missing_cluster_id",
+                  "open_clusters_count", "open_events_count", "open_correlation_groups_count",
+                  "blocked_same_market", "blocked_same_condition", "blocked_same_event",
+                  "blocked_same_cluster", "blocked_bregman_market_collision",
+                  "blocked_bregman_event_collision", "blocked_exploration_cluster_collision",
+                  "size_capped_by_cluster_exposure", "shadowed_unknown_cluster",
+                  "directional_trades_blocked_by_correlation",
+                  "exploration_trades_blocked_by_correlation",
+                  "bregman_bundles_blocked_as_duplicates",
+                  "bregman_bundles_blocked_as_overlapping",
+                  "max_cluster_exposure_usd", "max_event_exposure_usd", "top_open_clusters"):
+            L.append(f"- {k}: {_yn(cr.get(k))}")
+        L.append("")
     L.append("## 15. Calibration Metrics")
     L.append("")
     for k in ("brier", "ece", "sharpe", "sortino", "calmar", "max_drawdown"):

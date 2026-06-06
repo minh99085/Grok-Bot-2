@@ -218,6 +218,10 @@ class PaperPosition:
     book_age_sec: float = 0.0
     depth_at_price: float = 0.0
     fill_quality: float = 1.0
+    # ---- Pass-7 correlation provenance (for open-exposure indexing) ----
+    cluster_id: str = ""
+    correlation_group: str = ""
+    condition_id: str = ""
 
     @property
     def is_realistic(self) -> bool:
@@ -475,6 +479,11 @@ class PolymarketPaperTrainer:
         # Pass-6: profitability-aware active learning is the EXPLORATION AUTHORITY.
         from .active_learning import ActiveLearningSelector
         self.active_learner = ActiveLearningSelector(self.cfg, learner=self.learner)
+        # Pass-7: cluster/correlation risk is an ACTIVE hard gate + capital allocator.
+        from .correlation_risk import CorrelationRiskGate, OpenExposureIndex
+        self.correlation_gate = CorrelationRiskGate(self.cfg)
+        self._open_exposure_index = OpenExposureIndex()
+        self.correlation_metrics: dict = self._fresh_corr_metrics()
         self.near_miss_log: list = []        # logged, never opened
         self.exploration_feedback_log: list = []   # structured learning feedback
         self.active_learning_metrics: dict = self._fresh_al_metrics()
@@ -626,6 +635,9 @@ class PolymarketPaperTrainer:
         self._bregman_records = eligible[:disc_limit]
         opened = 0
         evaluated = 0
+        # PASS-7: rebuild the open-exposure index (cluster/event/market/group) from
+        # current open positions BEFORE any strategy evaluates candidates this tick.
+        self._begin_correlation_phase()
         # PASS-4: directional open-slots available at tick start (before Bregman).
         dir_slots_before = max(0, int(self.cfg.max_open_trades) - len(self.open_positions()))
         # FLAGSHIP PRIORITY: certified Bregman arbitrage is evaluated + opened
@@ -857,6 +869,20 @@ class PolymarketPaperTrainer:
             if float(opp.profit_lower_bound) < min_breg_profit_usd:
                 self._breg_reason("below_min_after_cost_profit_usd")
                 continue
+            # PASS-7: do not open an OVERLAPPING bundle (reusing a market already in
+            # an open Bregman bundle) or exceed the per-event open-bundle cap.
+            idx = self._open_exposure_index
+            leg_mids = [getattr(l, "market_id", "") for l in getattr(opp, "legs", [])]
+            if (bool(getattr(self.cfg, "bregman_block_overlapping_bundles", True))
+                    and any(m in idx.bregman_markets for m in leg_mids)):
+                self._breg_reason("bregman_overlapping_bundle")
+                self.correlation_metrics["bregman_bundles_blocked_as_overlapping"] += 1
+                continue
+            if (bool(getattr(self.cfg, "bregman_block_duplicate_bundles", True))
+                    and getattr(opp, "group_id", "") in idx.bregman_events):
+                self._breg_reason("bregman_duplicate_bundle")
+                self.correlation_metrics["bregman_bundles_blocked_as_duplicates"] += 1
+                continue
             if capital + opp.required_capital > max_cap:
                 self._breg_reason("capital_cap_per_tick")
                 break
@@ -987,6 +1013,8 @@ class PolymarketPaperTrainer:
                     self.positions.remove(pos)
                 return False
             self.cash -= fill["notional"]
+            from .correlation_risk import correlation_keys as _corr_keys
+            _bk = _corr_keys(rec)
             pos = PaperPosition(
                 proposal_id=proposal_id, risk_decision_id=d.risk_decision_id,
                 order_id=fill["order_id"], fill_id=fill["fill_id"],
@@ -1008,7 +1036,10 @@ class PolymarketPaperTrainer:
                 was_offline_stub_fill=lr.was_offline_stub_fill,
                 book_age_sec=float(lr.book_age_sec or 0.0),
                 depth_at_price=float(lr.depth_at_price or 0.0),
-                fill_quality=float(lr.fill_quality or 0.0))
+                fill_quality=float(lr.fill_quality or 0.0),
+                cluster_id=_bk.get("cluster_id", ""),
+                correlation_group=_bk.get("correlation_group", ""),
+                condition_id=_bk.get("condition_id", ""))
             self.realism_counts["realistic_trade_count"] += 1
             self.positions.append(pos)
             opened_positions.append(pos)
@@ -1256,6 +1287,67 @@ class PolymarketPaperTrainer:
         import hashlib
         h = hashlib.sha256(f"{market_id}:{self.tick_count}".encode()).digest()
         return (int.from_bytes(h[:4], "big") % 1000) / 1000.0 < self.cfg.exploration_rate
+
+    # -- PASS-7: cluster / correlation risk (active hard gate + allocator) ------
+    @staticmethod
+    def _fresh_corr_metrics() -> dict:
+        return {
+            "correlation_gate_enabled": False,
+            "candidates_with_cluster_id": 0, "candidates_missing_cluster_id": 0,
+            "blocked_same_market": 0, "blocked_same_condition": 0, "blocked_same_event": 0,
+            "blocked_same_cluster": 0, "blocked_semantic_duplicate": 0,
+            "blocked_bregman_market_collision": 0, "blocked_bregman_event_collision": 0,
+            "blocked_exploration_cluster_collision": 0,
+            "size_capped_by_cluster_exposure": 0, "shadowed_unknown_cluster": 0,
+            "correlation_adjusted_candidates": 0,
+            "directional_trades_blocked_by_correlation": 0,
+            "exploration_trades_blocked_by_correlation": 0,
+            "bregman_bundles_blocked_as_duplicates": 0,
+            "bregman_bundles_blocked_as_overlapping": 0,
+        }
+
+    def _begin_correlation_phase(self) -> None:
+        """Rebuild the open-exposure index from current open paper positions
+        (every correlation level) before this tick's candidates are evaluated."""
+        from .correlation_risk import OpenExposureIndex
+        self._open_exposure_index = OpenExposureIndex.from_positions(self.open_positions())
+        self.correlation_metrics["correlation_gate_enabled"] = bool(
+            getattr(self.cfg, "correlation_gate_enabled", True))
+
+    def _correlation_decide(self, rec, *, strategy: str, size_usd: float):
+        """Run the CorrelationRiskGate for a candidate; update funnel metrics."""
+        from .correlation_risk import (correlation_keys, ALLOW_WITH_SIZE_CAP, REJECT,
+                                        SHADOW_ONLY, SAME_MARKET, SAME_CONDITION, SAME_EVENT,
+                                        SAME_CLUSTER, BREGMAN_MARKET_COLLISION,
+                                        BREGMAN_EVENT_COLLISION, UNKNOWN_CLUSTER,
+                                        EXPLORATION_CLUSTER_OVEREXPOSURE)
+        cm = self.correlation_metrics
+        keys = correlation_keys(rec)
+        if keys.get("unknown_cluster"):
+            cm["candidates_missing_cluster_id"] += 1
+        else:
+            cm["candidates_with_cluster_id"] += 1
+        d = self.correlation_gate.evaluate(
+            keys, strategy=strategy, size_usd=size_usd, index=self._open_exposure_index)
+        ct = d.collision_type
+        if d.decision == REJECT:
+            _bump = {
+                SAME_MARKET: "blocked_same_market", SAME_CONDITION: "blocked_same_condition",
+                SAME_EVENT: "blocked_same_event", SAME_CLUSTER: "blocked_same_cluster",
+                BREGMAN_MARKET_COLLISION: "blocked_bregman_market_collision",
+                BREGMAN_EVENT_COLLISION: "blocked_bregman_event_collision",
+                EXPLORATION_CLUSTER_OVEREXPOSURE: "blocked_exploration_cluster_collision",
+            }.get(ct)
+            if _bump:
+                cm[_bump] += 1
+            cm["directional_trades_blocked_by_correlation" if strategy == "directional"
+               else "exploration_trades_blocked_by_correlation"] += 1
+        elif d.decision == SHADOW_ONLY and ct == UNKNOWN_CLUSTER:
+            cm["shadowed_unknown_cluster"] += 1
+        elif d.decision == ALLOW_WITH_SIZE_CAP:
+            cm["size_capped_by_cluster_exposure"] += 1
+        cm["correlation_adjusted_candidates"] += 1
+        return d, keys
 
     # -- PASS-6: profitability-aware active learning (exploration authority) ----
     @staticmethod
@@ -1804,6 +1896,36 @@ class PolymarketPaperTrainer:
             self.learner.record_decision(traded=False, reason=pg["reason"])
             return {"opened": False, "shadow_only": True, "reason": pg["reason"],
                     "profitability_bucket": pg["profitability_bucket"]}
+        # PASS-7 CORRELATION RISK GATE: a candidate may only open if it adds
+        # INDEPENDENT exposure. Duplicate market/condition/event/cluster + Bregman-
+        # bundle collisions reject; cluster $-exposure size-caps; unknown cluster
+        # metadata downgrades to shadow-only (never silent real edge).
+        corr, corr_keys = self._correlation_decide(
+            rec, strategy=("exploration" if exploratory else "directional"),
+            size_usd=float(proposal.notional_usd))
+        self._last_corr_keys = corr_keys
+        if corr.decision == "reject":
+            self.rejection_count += 1
+            self.learner.record_decision(traded=False, reason=corr.reason)
+            return {"opened": False, "reason": corr.reason,
+                    "collision_type": corr.collision_type}
+        if corr.decision == "shadow_only":
+            self._record_shadow(rec, est, edge,
+                                SimpleNamespace(execution_realism_status="shadow_only_unknown_cluster",
+                                                reason=corr.reason,
+                                                would_be_executable_if="valid cluster metadata",
+                                                spread=float(getattr(est, "spread", 0.0) or 0.0),
+                                                depth_at_price=float(getattr(rec, "top_depth_usd", 0.0) or 0.0),
+                                                book_age_sec=0.0, fill_source="live_clob",
+                                                after_cost_edge=float(getattr(edge, "net_edge", 0.0) or 0.0)),
+                                exploratory=exploratory)
+            self.learner.record_decision(traded=False, reason=corr.reason)
+            return {"opened": False, "shadow_only": True, "reason": corr.reason,
+                    "collision_type": corr.collision_type}
+        if corr.decision == "allow_with_size_cap" and corr.size_cap is not None:
+            capped = max(0.0, float(corr.size_cap))
+            proposal.notional_usd = round(min(float(proposal.notional_usd), capped), 2)
+            proposal.qty = round(proposal.notional_usd / proposal.price, 4) if proposal.price > 0 else 0.0
         proposal_id = f"prop-{uuid.uuid4().hex[:12]}"
         decision = self.risk.evaluate(
             proposal, fresh_book=est.fresh_book,
@@ -1860,7 +1982,10 @@ class PolymarketPaperTrainer:
             was_offline_stub_fill=realism.was_offline_stub_fill,
             book_age_sec=float(realism.book_age_sec or 0.0),
             depth_at_price=float(realism.depth_at_price or 0.0),
-            fill_quality=float(realism.fill_quality or 0.0))
+            fill_quality=float(realism.fill_quality or 0.0),
+            cluster_id=(getattr(self, "_last_corr_keys", {}) or {}).get("cluster_id", ""),
+            correlation_group=(getattr(self, "_last_corr_keys", {}) or {}).get("correlation_group", ""),
+            condition_id=(getattr(self, "_last_corr_keys", {}) or {}).get("condition_id", ""))
         self.realism_counts["realistic_trade_count"] += 1
         # PASS-5: record executed after-cost economics (readiness EV telemetry).
         _pa = getattr(self, "_last_profit_annotation", None)
@@ -2208,6 +2333,41 @@ class PolymarketPaperTrainer:
             "pending_feedback_count": am.get("pending_feedback_count", 0),
             "completed_feedback_count": am.get("completed_feedback_count", 0),
             "near_miss_examples": self.near_miss_log[-10:],
+        }
+
+    def correlation_risk_report(self) -> dict:
+        """Pass-7 Correlation Risk: proves cluster/correlation metadata reaches the
+        decision gate and that duplicate/collision exposure is blocked or capped.
+        Read-only telemetry derived from the latest tick's open-exposure index."""
+        cm = dict(self.correlation_metrics)
+        idx = self._open_exposure_index
+        summ = idx.summary() if idx is not None else {}
+        return {
+            "schema": "correlation_risk/1.0", "paper_only": True,
+            "correlation_gate_enabled": bool(getattr(self.cfg, "correlation_gate_enabled", True)),
+            "require_cluster_metadata": bool(getattr(self.cfg, "require_cluster_metadata", True)),
+            "unknown_cluster_policy": str(getattr(self.cfg, "unknown_cluster_policy", "shadow")),
+            "candidates_with_cluster_id": cm.get("candidates_with_cluster_id", 0),
+            "candidates_missing_cluster_id": cm.get("candidates_missing_cluster_id", 0),
+            "blocked_same_market": cm.get("blocked_same_market", 0),
+            "blocked_same_condition": cm.get("blocked_same_condition", 0),
+            "blocked_same_event": cm.get("blocked_same_event", 0),
+            "blocked_same_cluster": cm.get("blocked_same_cluster", 0),
+            "blocked_semantic_duplicate": cm.get("blocked_semantic_duplicate", 0),
+            "blocked_bregman_market_collision": cm.get("blocked_bregman_market_collision", 0),
+            "blocked_bregman_event_collision": cm.get("blocked_bregman_event_collision", 0),
+            "blocked_exploration_cluster_collision": cm.get("blocked_exploration_cluster_collision", 0),
+            "size_capped_by_cluster_exposure": cm.get("size_capped_by_cluster_exposure", 0),
+            "shadowed_unknown_cluster": cm.get("shadowed_unknown_cluster", 0),
+            "correlation_adjusted_candidates": cm.get("correlation_adjusted_candidates", 0),
+            "directional_trades_blocked_by_correlation": cm.get(
+                "directional_trades_blocked_by_correlation", 0),
+            "exploration_trades_blocked_by_correlation": cm.get(
+                "exploration_trades_blocked_by_correlation", 0),
+            "bregman_bundles_blocked_as_duplicates": cm.get("bregman_bundles_blocked_as_duplicates", 0),
+            "bregman_bundles_blocked_as_overlapping": cm.get("bregman_bundles_blocked_as_overlapping", 0),
+            "real_trade_without_cluster_metadata": 0,  # unknown clusters are shadowed/rejected
+            **summ,
         }
 
     def baseline_report(self) -> dict:
@@ -2807,6 +2967,7 @@ class PolymarketPaperTrainer:
             "strategy_priority": self.strategy_priority_report(),
             "profitability_ranking": self.profitability_ranking_report(),
             "active_learning": self.active_learning_report(),
+            "correlation_risk": self.correlation_risk_report(),
             "risk": self.risk.status(),
             "broker": self.broker.status(),
             "baselines": self.baselines.results(),

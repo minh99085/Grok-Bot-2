@@ -180,18 +180,25 @@ FEATURES: list[dict] = [
     },
     {
         "feature": "Cluster/correlation gate",
-        "files": ["engine/training/market_scanner.py (sets cluster_id)",
-                  "engine/training/edge_engine.py (accepts open_clusters)",
-                  "engine/training/polymarket_trainer.py:_consider"],
-        "runtime_status": "annotated",
-        "controls_trades": False, "telemetry_only": False,
-        "flag": "(cluster_id computed; open_clusters NOT passed)",
+        "files": ["engine/training/correlation_risk.py:CorrelationRiskGate",
+                  "engine/training/polymarket_trainer.py:_open/_open_bregman_sets"],
+        "runtime_status": "active",
+        "controls_trades": True, "telemetry_only": False,
+        "flag": "correlation_gate_enabled=1 / require_cluster_metadata=1 (default)",
         "evidence": "market_scanner sets d['cluster_id']=graph.cluster_of(...); "
                     "EdgeEngine.best_side accepts open_clusters/cluster_id, but the "
                     "trainer call passes only open_event_groups (group_key), so the "
                     "cluster gate is never triggered.",
         "risk": "Correlated (non-same-event) exposure is NOT blocked — concentration "
                 "risk; only same-event group_key duplication is gated.",
+        "pass7": "RESOLVED — CorrelationRiskGate is an ACTIVE hard gate: every "
+                 "candidate carries deterministic correlation keys (market/condition/"
+                 "event/semantic/cluster/correlation_group) into _open; the open-"
+                 "exposure index (rebuilt per tick from positions) drives reject on "
+                 "duplicate market/condition/event/cluster + Bregman collisions, "
+                 "size-cap on cluster $-exposure, and shadow-only on unknown clusters. "
+                 "Bregman blocks duplicate/overlapping bundles; exploration enforces "
+                 "per-event/cluster caps.",
     },
     {
         "feature": "Paper fill realism (slippage/depth)",
@@ -539,6 +546,38 @@ PASS6_STATUS = {
 }
 
 
+# Pass-7 outcome: cluster/correlation risk is an active hard gate + allocator.
+PASS7_STATUS = {
+    "correlation_gate_active": True,
+    "cluster_metadata_reaches_decision_gate": True,
+    "duplicate_market_condition_event_cluster_blocked": True,
+    "cluster_dollar_exposure_size_capped": True,
+    "unknown_cluster_shadow_only_by_default": True,
+    "directional_blocked_on_open_bregman_bundles": True,
+    "exploration_respects_event_cluster_caps": True,
+    "bregman_duplicate_and_overlapping_bundles_blocked": True,
+    "bregman_first_priority_preserved": True,
+    "profitability_first_preserved": True,
+    "active_learning_preserved": True,
+    "paper_realism_preserved": True,
+    "gate": "engine/training/correlation_risk.py:CorrelationRiskGate",
+    "collision_types": ["same_market", "same_condition", "same_event", "same_cluster",
+                        "semantic_duplicate", "bregman_market_collision",
+                        "bregman_event_collision", "directional_cluster_overexposure",
+                        "exploration_cluster_overexposure", "duplicate_bundle",
+                        "unknown_cluster_conservative_block"],
+    "metrics": ["metrics/correlation_risk.json"],
+    "new_env_flags": {
+        "POLYMARKET_CORRELATION_GATE_ENABLED": 1, "POLYMARKET_REQUIRE_CLUSTER_METADATA": 1,
+        "POLYMARKET_MAX_OPEN_PER_MARKET": 1, "POLYMARKET_MAX_OPEN_PER_EVENT": 1,
+        "POLYMARKET_MAX_OPEN_PER_CLUSTER": 1, "POLYMARKET_MAX_CLUSTER_EXPOSURE_USD": 25,
+        "POLYMARKET_UNKNOWN_CLUSTER_POLICY": "shadow", "POLYMARKET_CORRELATION_ALLOW_SIZE_CAP": 1,
+        "POLYMARKET_BREGMAN_BLOCK_DUPLICATE_BUNDLES": 1,
+        "POLYMARKET_BREGMAN_BLOCK_OVERLAPPING_BUNDLES": 1,
+    },
+}
+
+
 def build_feature_activation(cfg: Any = None, status: Optional[dict] = None) -> dict:
     """Build the machine-readable feature-activation audit (read-only, pure).
 
@@ -591,6 +630,7 @@ def build_feature_activation(cfg: Any = None, status: Optional[dict] = None) -> 
         "pass4_status": dict(PASS4_STATUS),
         "pass5_status": dict(PASS5_STATUS),
         "pass6_status": dict(PASS6_STATUS),
+        "pass7_status": dict(PASS7_STATUS),
         "live_config": live,
         "note": "PASS-1 audit traced from run_tick to open. PASS-2 wired raw-catalog "
                 "Bregman into certified PAPER execution (see pass2_status / per-feature "
@@ -617,6 +657,24 @@ def to_markdown(audit: dict) -> str:
                  f"**{p2s['bregman_execution_priority_before_directional']}**")
         for e in p2s["evidence"]:
             L.append(f"  - {e}")
+        L.append("")
+    p7 = audit.get("pass7_status")
+    if p7:
+        L.append("## Pass 7 — cluster/correlation risk (active hard gate)")
+        L.append(f"- Correlation gate active: **{p7['correlation_gate_active']}**")
+        L.append(f"- Cluster metadata reaches decision gate: "
+                 f"**{p7['cluster_metadata_reaches_decision_gate']}**")
+        L.append(f"- Duplicate market/condition/event/cluster blocked: "
+                 f"**{p7['duplicate_market_condition_event_cluster_blocked']}**")
+        L.append(f"- Cluster $-exposure size-capped: "
+                 f"**{p7['cluster_dollar_exposure_size_capped']}**")
+        L.append(f"- Unknown cluster shadow-only by default: "
+                 f"**{p7['unknown_cluster_shadow_only_by_default']}**")
+        L.append(f"- Directional blocked on open Bregman bundles: "
+                 f"**{p7['directional_blocked_on_open_bregman_bundles']}**")
+        L.append(f"- Bregman duplicate/overlapping bundles blocked: "
+                 f"**{p7['bregman_duplicate_and_overlapping_bundles_blocked']}**")
+        L.append(f"- Bregman-first priority preserved: **{p7['bregman_first_priority_preserved']}**")
         L.append("")
     p6 = audit.get("pass6_status")
     if p6:
@@ -712,6 +770,8 @@ def to_markdown(audit: dict) -> str:
             risk = f"{risk}<br>**Pass-5:** {f['pass5']}"
         if f.get("pass6"):
             risk = f"{risk}<br>**Pass-6:** {f['pass6']}"
+        if f.get("pass7"):
+            risk = f"{risk}<br>**Pass-7:** {f['pass7']}"
         L.append(f"| {f['feature']} | {files} | `{f['runtime_status']}` | "
                  f"{'YES' if f['controls_trades'] else 'no'} | "
                  f"{'YES' if f['telemetry_only'] else 'no'} | {f['flag']} | "

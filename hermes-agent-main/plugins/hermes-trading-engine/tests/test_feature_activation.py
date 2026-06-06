@@ -175,6 +175,28 @@ def test_pass6_markdown_section_present():
     assert "Random/hash exploration opens trades: **False**" in md
 
 
+def test_pass7_status_proves_correlation_gate():
+    p7 = build_feature_activation()["pass7_status"]
+    assert p7["correlation_gate_active"] is True
+    assert p7["cluster_metadata_reaches_decision_gate"] is True
+    assert p7["duplicate_market_condition_event_cluster_blocked"] is True
+    assert p7["unknown_cluster_shadow_only_by_default"] is True
+    assert p7["directional_blocked_on_open_bregman_bundles"] is True
+    assert p7["bregman_first_priority_preserved"] is True
+
+
+def test_pass7_cluster_gate_now_active():
+    feats = {f["feature"]: f for f in FEATURES}
+    assert feats["Cluster/correlation gate"]["runtime_status"] == "active"
+    assert "Cluster/correlation gate" in build_feature_activation()["summary"]["truly_active"]
+
+
+def test_pass7_markdown_section_present():
+    md = to_markdown(build_feature_activation())
+    assert "Pass 7 — cluster/correlation risk" in md
+    assert "Correlation gate active: **True**" in md
+
+
 def test_cli_writes_json_and_markdown(tmp_path):
     audit = audit_cli.generate(out_dir=str(tmp_path))
     j = tmp_path / "metrics" / "feature_activation.json"

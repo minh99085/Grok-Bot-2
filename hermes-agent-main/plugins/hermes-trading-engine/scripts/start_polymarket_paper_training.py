@@ -546,6 +546,9 @@ def run(argv=None) -> int:
             # Pass-6: active-learning exploration funnel.
             (metrics_dir / "active_learning.json").write_text(
                 json.dumps(trainer.active_learning_report(), default=str), encoding="utf-8")
+            # Pass-7: cluster/correlation risk funnel.
+            (metrics_dir / "correlation_risk.json").write_text(
+                json.dumps(trainer.correlation_risk_report(), default=str), encoding="utf-8")
         except Exception:  # noqa: BLE001 — metrics must never break a tick
             pass
         print(f"tick {ticks}: scanned={st['scan_metrics']['scanned']} "

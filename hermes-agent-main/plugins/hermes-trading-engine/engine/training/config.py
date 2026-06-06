@@ -186,6 +186,28 @@ class TrainingConfig:
     exploration_max_per_event: int = 1
     exploration_max_per_cluster: int = 1
     exploration_max_per_category_per_tick: int = 2
+    # ---- Pass-7: cluster/correlation risk is an ACTIVE hard gate + allocator ----
+    # Correlated markets are not independent edges. Duplicate market/condition/
+    # event/cluster exposure is blocked or size-capped; unknown clusters become
+    # shadow-only; directional/exploration cannot collide with open Bregman bundles.
+    correlation_gate_enabled: bool = True
+    require_cluster_metadata: bool = True
+    unknown_cluster_policy: str = "shadow"        # "shadow" | "reject"
+    max_open_per_market: int = 1
+    max_open_per_event: int = 1
+    max_open_per_cluster: int = 1
+    max_cluster_exposure_usd: float = 25.0
+    max_correlation_group_exposure_usd: float = 50.0
+    block_duplicate_market: bool = True
+    block_duplicate_event: bool = True
+    block_duplicate_cluster: bool = True
+    block_exploration_on_bregman_markets: bool = True
+    block_exploration_on_bregman_events: bool = True
+    correlation_allow_size_cap: bool = True
+    bregman_block_duplicate_bundles: bool = True
+    bregman_block_overlapping_bundles: bool = True
+    bregman_max_open_per_event: int = 1
+    bregman_max_cluster_exposure_usd: float = 100.0
     # ---- Chainlink oracle layer (additive; default OFF) ----
     chainlink_enabled: bool = False
     chainlink_history_limit: int = 30
@@ -793,6 +815,29 @@ class TrainingConfig:
             exploration_max_per_cluster=_envi("POLYMARKET_EXPLORATION_MAX_PER_CLUSTER", 1),
             exploration_max_per_category_per_tick=_envi(
                 "POLYMARKET_EXPLORATION_MAX_PER_CATEGORY_PER_TICK", 2),
+            correlation_gate_enabled=_envb("POLYMARKET_CORRELATION_GATE_ENABLED", True),
+            require_cluster_metadata=_envb("POLYMARKET_REQUIRE_CLUSTER_METADATA", True),
+            unknown_cluster_policy=os.getenv("POLYMARKET_UNKNOWN_CLUSTER_POLICY", "shadow"),
+            max_open_per_market=_envi("POLYMARKET_MAX_OPEN_PER_MARKET", 1),
+            max_open_per_event=_envi("POLYMARKET_MAX_OPEN_PER_EVENT", 1),
+            max_open_per_cluster=_envi("POLYMARKET_MAX_OPEN_PER_CLUSTER", 1),
+            max_cluster_exposure_usd=_envf("POLYMARKET_MAX_CLUSTER_EXPOSURE_USD", 25.0),
+            max_correlation_group_exposure_usd=_envf(
+                "POLYMARKET_MAX_CORRELATION_GROUP_EXPOSURE_USD", 50.0),
+            block_duplicate_market=_envb("POLYMARKET_BLOCK_DUPLICATE_MARKET", True),
+            block_duplicate_event=_envb("POLYMARKET_BLOCK_DUPLICATE_EVENT", True),
+            block_duplicate_cluster=_envb("POLYMARKET_BLOCK_DUPLICATE_CLUSTER", True),
+            block_exploration_on_bregman_markets=_envb(
+                "POLYMARKET_BLOCK_EXPLORATION_ON_BREGMAN_MARKETS", True),
+            block_exploration_on_bregman_events=_envb(
+                "POLYMARKET_BLOCK_EXPLORATION_ON_BREGMAN_EVENTS", True),
+            correlation_allow_size_cap=_envb("POLYMARKET_CORRELATION_ALLOW_SIZE_CAP", True),
+            bregman_block_duplicate_bundles=_envb("POLYMARKET_BREGMAN_BLOCK_DUPLICATE_BUNDLES", True),
+            bregman_block_overlapping_bundles=_envb(
+                "POLYMARKET_BREGMAN_BLOCK_OVERLAPPING_BUNDLES", True),
+            bregman_max_open_per_event=_envi("POLYMARKET_BREGMAN_MAX_OPEN_PER_EVENT", 1),
+            bregman_max_cluster_exposure_usd=_envf(
+                "POLYMARKET_BREGMAN_MAX_CLUSTER_EXPOSURE_USD", 100.0),
             active_learning_enabled=(_envb("POLYMARKET_ACTIVE_LEARNING_ENABLED", True)
                                      or _envb("ACTIVE_LEARNING_ENABLED", False)),
             exploration_split=_envf("POLYMARKET_EXPLORATION_SPLIT", 0.5),
