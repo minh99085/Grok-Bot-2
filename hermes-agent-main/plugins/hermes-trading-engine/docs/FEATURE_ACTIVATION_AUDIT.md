@@ -1,0 +1,61 @@
+# Feature Activation Audit (Pass 1) — Hermes Polymarket Paper Training
+
+_PAPER ONLY · audit + instrumentation only · no strategy/threshold/sizing/live changes. Verdicts traced from `run_tick` to trade open._
+
+## Summary
+- **Truly active (control trades):** Trainer Bregman certifier, Bregman paper execution, Random/hash exploration, Stale-book rejection, Spread/depth gates, Ambiguity gate, Chainlink conditioning, News/research/model overlay, Position/open-slot governor, Stop-loss/take-profit/settlement handling
+- **Telemetry-only:** Raw ABCAS/Bregman scanner, Grok/LLM reasoning overlay
+- **Dead / imported-only:** Graph grouping (groups_from_graph), Profitability-first ranking, Active learning selector, Reference-price fill fallback, Profitability governor
+- **PnL-inflation risks:** Raw ABCAS/Bregman scanner, Paper fill realism (slippage/depth), Reference-price fill fallback
+- Status counts: {'active': 10, 'telemetry': 2, 'annotated': 3, 'imported': 2, 'dead': 3}
+
+## Runtime feature truth table
+
+| Feature | File(s) | Runtime status | Controls trades? | Telemetry only? | Config/env flag | Evidence | Risk if unchanged |
+|---|---|---|---|---|---|---|---|
+| Raw ABCAS/Bregman scanner | engine/strategies/bregman_scanner.py<br>engine/arbitrage/constraint_discovery.py | `telemetry` | no | YES | BREGMAN_PAPER_SCAN_ENABLED / ABCAS_ENABLED | Run only from start_polymarket_paper_training loop; writes bregman_scan.json + metrics/bregman.json. NOT imported by polymarket_trainer.py — never opens a paper position. | ABCAS looks 'enabled' and reports candidates but never trades — false impression the flagship edge is live. |
+| Trainer Bregman certifier | engine/training/bregman_execution.py<br>engine/training/bregman_grouping.py<br>engine/training/polymarket_trainer.py | `active` | YES | no | bregman_enabled (cfg) | run_tick → _run_bregman → _bregman_tradable → scan_bregman → group_markets(records)+certify_all (trainer ~617-657). | Certifies only over the directional shortlist (see input universe). |
+| Bregman paper execution | engine/training/polymarket_trainer.py:_open_bregman_sets/_open_bregman | `active` | YES | no | bregman_execution_enabled (cfg) + mode==paper_train | _open_bregman_sets gated on paper_train + bregman_execution_enabled; appends hedged-leg PaperPositions via RiskEngine+PaperBroker; skips group_type=='binary_yes_no' (synthetic NO leg). | Almost never fires: binary YES/NO (most of Polymarket) is skipped and the input is the shortlist, so few/no real multi-leg sets. |
+| Bregman INPUT UNIVERSE (catalog vs shortlist) | engine/training/polymarket_trainer.py:run_tick | `annotated` | YES | no | live_watch_limit / trade_candidate_limit / paper_decision_budget | group_markets is fed candidates=watch[:budget], watch=records[:live_watch_limit], records=scanner shortlist — NOT raw_catalog. | HIGH: Bregman/ABCAS sees only the directional shortlist, so most coherence arbitrage across the full market universe is invisible. |
+| Graph grouping (groups_from_graph) | engine/training/bregman_grouping.py | `dead` | no | no | (none) | No groups_from_graph() on this branch; the active grouping is group_markets(records). Dependency-graph clustering exists but is used only for cluster_id annotation. | Structural graph grouping not used for arbitrage discovery. |
+| Profitability-first ranking | engine/training/candidate_ranker.py:annotate_profitability<br>engine/training/profitability_governor.py<br>engine/training/market_scanner.py | `imported` | no | no | profitability_first (annotate_profitability arg; UNWIRED) | market_scanner.scan calls rank_candidates (quality score) + annotate_feedback_value, then shortlist=ranked[:shortlist_limit]. annotate_profitability() is never called in the runtime path. | HIGH: candidates are truncated by quality score, NOT after-cost EV — profitable-but-lower-quality markets are dropped before any decision. |
+| Active learning selector | engine/training/active_learning.py:ActiveLearningSelector | `dead` | no | no | active_learning_enabled (reported only) | ActiveLearningSelector is not imported by the trainer or any engine/scripts runtime module; feedback_value is annotated but the selector is never invoked. | Exploration is blind; high-feedback-value markets are not prioritized. |
+| Random/hash exploration | engine/training/polymarket_trainer.py:_explore_gate/_consider | `active` | YES | no | exploration_enabled / exploration_rate (cfg) | _explore_gate = sha256(market+tick) % 1000 < exploration_rate; opens near-miss exploration trades at capped exploration_notional_usd (paper_train only). | Deterministic hash sampling (not learning-value); correctly tiny + counts_for_readiness=False, but adds no targeted edge. |
+| Cluster/correlation gate | engine/training/market_scanner.py (sets cluster_id)<br>engine/training/edge_engine.py (accepts open_clusters)<br>engine/training/polymarket_trainer.py:_consider | `annotated` | no | no | (cluster_id computed; open_clusters NOT passed) | market_scanner sets d['cluster_id']=graph.cluster_of(...); EdgeEngine.best_side accepts open_clusters/cluster_id, but the trainer call passes only open_event_groups (group_key), so the cluster gate is never triggered. | Correlated (non-same-event) exposure is NOT blocked — concentration risk; only same-event group_key duplication is gated. |
+| Paper fill realism (slippage/depth) | engine/training/paper_policy.py<br>engine/execution/paper_broker.py<br>engine/training/config.py | `annotated` | YES | no | realistic_fill_enabled (default False) | realistic_fill_enabled defaults False (slippage+depth modeling OFF) outside the campaign-safe profile; status emits fill_realism=null. | HIGH: without realistic_fill_enabled, fills can be optimistic and null telemetry hides whether PnL is inflated. |
+| Stale-book rejection | engine/training/edge_engine.py<br>engine/training/config.py | `active` | YES | no | reject_on_stale_book=True / clob_stale_ms=3000 | Hard reject in EdgeEngine.evaluate when the book is stale. | Low (correctly enforced) — disabling it would allow stale fills. |
+| Reference-price fill fallback | engine/execution/paper_broker.py<br>engine/training/config.py | `imported` | YES | no | allow_pm_reference_price_fills=False (default) | PaperBroker supports reference-price fills but they are OFF by default (and campaign-safe forces them off). | If enabled, produces fantasy fills not backed by a real ask. |
+| Spread/depth gates | engine/training/edge_engine.py<br>engine/training/config.py | `active` | YES | no | max_spread=0.08 / min_depth_at_price=50 / max_fill_depth_fraction=0.35 | Hard rejects in EdgeEngine.evaluate before edge math. | Low — correctly enforced hard gates. |
+| Ambiguity gate | engine/training/edge_engine.py<br>engine/training/config.py | `active` | YES | no | max_ambiguity_score=0.35 (hard) + ambiguity_penalty_weight (soft) | Hard reject above max_ambiguity_score; soft penalty below. | Low — enforced; mis-set threshold could over/under-filter. |
+| Chainlink conditioning | engine/training/chainlink_oracle.py<br>engine/training/polymarket_trainer.py<br>engine/training/edge_engine.py | `active` | YES | no | chainlink_enabled / btc_pulse_require_chainlink | Read each tick (read-only); conditions/gates Bregman + BTC Pulse and applies a directional penalty when stale. | Low for paper; stale anchor correctly penalizes. |
+| News/research/model overlay | engine/research/news_scanner.py<br>engine/research/probability.py<br>engine/training/edge_engine.py | `active` | YES | no | NEWS_SCANNER_ENABLED / RESEARCH_USE_IN_STRATEGY | Advisory, read-only; feeds the probability estimate when RESEARCH_USE_IN_STRATEGY; cannot bypass risk/fill gates. | Medium: research nudges probability; weak calibration could bias edge. |
+| Grok/LLM reasoning overlay | engine/research/grok_client.py | `telemetry` | no | YES | NEWS_ENABLE_GROK_PACKET (grok_with_news_count null in report) | Advisory research-only; cannot place/size/approve. Report shows grok_with_news_count=null (telemetry gap, not a trade control). | Low for trades; unmeasured contribution (null counters). |
+| Profitability governor | engine/training/profitability_governor.py | `dead` | no | no | (reached only via the unused annotate_profitability) | Not referenced by polymarket_trainer.py; only used inside annotate_profitability, which is itself never called. | No after-cost graylist/throttle is applied to directional ranking. |
+| Position/open-slot governor | engine/training/polymarket_trainer.py:run_tick<br>engine/training/edge_engine.py<br>engine/risk.py | `active` | YES | no | max_open_trades / RiskEngine caps | run_tick breaks on len(open_positions) >= max_open_trades; EdgeEngine gates max_open_trades; RiskEngine enforces exposure. | Low — enforced. |
+| Stop-loss/take-profit/settlement handling | engine/training/polymarket_trainer.py:_monitor | `active` | YES | no | (monitor/settlement each tick) | _monitor marks open positions to market each tick and settles resolved markets into realized PnL. | Medium: explicit SL/TP is mark-and-settle; no intra-round stop. |
+
+## Top 10 edge leaks (ranked by profit impact)
+
+1. **[highest]** Bregman/ABCAS only sees the directional shortlist, not the full normalized catalog _( Bregman INPUT UNIVERSE (catalog vs shortlist) )_
+2. **[high]** Raw ABCAS scanner is telemetry-only — the flagship edge never opens a trade _( Raw ABCAS/Bregman scanner )_
+3. **[high]** Profitability-first ranking is unused — candidates truncated by quality score, not after-cost EV _( Profitability-first ranking )_
+4. **[high]** realistic_fill_enabled defaults False — paper PnL may be optimistic and fill_realism telemetry is null _( Paper fill realism (slippage/depth) )_
+5. **[medium-high]** Cluster/correlation gate annotated but not enforced (open_clusters not passed) _( Cluster/correlation gate )_
+6. **[medium-high]** binary_yes_no Bregman groups skipped (correct safety) leaves the trainer Bregman with almost nothing to trade _( Bregman paper execution )_
+7. **[medium]** Active learning unused — exploration is blind hash sampling _( Active learning selector )_
+8. **[medium]** Profitability governor dead — no after-cost graylist/throttle on directional ranking _( Profitability governor )_
+9. **[low-medium]** Grok/news evidence counters null — research overlay impact is unmeasured _( Grok/LLM reasoning overlay )_
+10. **[medium]** Two divergent Bregman implementations (strategies/bregman_scanner ABCAS vs training/bregman_execution) — reporting and execution disagree _( Trainer Bregman certifier )_
+
+## Pass 2 recommendation
+- **Recommended:** True
+- Pass 2 SHOULD connect ABCAS to certified paper execution — but only AFTER widening the Bregman input universe and unifying the two Bregman implementations.
+- Preconditions:
+  - Feed the FULL normalized catalog (engine.arbitrage.constraint_discovery) to combinatorial discovery, not the directional shortlist.
+  - Require BOTH legs real + executable (no synthetic binary NO leg) before any certified-executable open.
+  - Turn on realistic_fill_enabled so certified after-cost profit is real.
+  - Unify engine/strategies/bregman_scanner (ABCAS) with engine/training/bregman_execution so reporting == execution.
+- Guardrails:
+  - PAPER ONLY — route certified-executable arbs through the existing RiskEngine + PaperBroker; never enable a live path.
+  - Keep EXECUTABLE_AFTER_COST_CERTIFIED gating; theoretical-only stays shadow.
+- Rationale: Executing ABCAS today would produce ~0 trades (shortlist input + binary skip) or fantasy multi-leg fills (realistic_fill off). Fix the input universe + fill realism first.
