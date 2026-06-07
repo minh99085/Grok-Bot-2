@@ -444,6 +444,11 @@ class TrainingConfig:
     btc_pulse_require_positive_ev: bool = True
     btc_pulse_require_risk_gate: bool = True
     btc_pulse_require_realistic_fill: bool = True
+    # After-cost SHADOW GATE (default ON): demotes marginal rounds to shadow-only so
+    # only proven positive-after-cost edges open a paper trade. Set OFF (env
+    # BTC_PULSE_SHADOW_GATE_ENABLED=0) to LOOSEN trade frequency for higher training
+    # volume — still PAPER ONLY, still gated by EV/risk caps + realistic fills.
+    btc_pulse_shadow_gate_enabled: bool = True
     # ---- BTC Pulse Chainlink BTC/USD oracle gate (PAPER ONLY) ----
     # When required, BTC Pulse must use a FRESH Chainlink BTC/USD reading as its
     # reference price and skips new paper trades when the oracle is missing,
@@ -998,6 +1003,7 @@ class TrainingConfig:
             btc_pulse_max_daily_paper_loss=_envf("BTC_PULSE_MAX_DAILY_PAPER_LOSS", 50.0),
             btc_pulse_min_ev_threshold=_envf("BTC_PULSE_MIN_EV_THRESHOLD", 0.0),
             btc_pulse_require_positive_ev=_envb("BTC_PULSE_REQUIRE_POSITIVE_EV", True),
+            btc_pulse_shadow_gate_enabled=_envb("BTC_PULSE_SHADOW_GATE_ENABLED", True),
             btc_pulse_require_risk_gate=_envb("BTC_PULSE_REQUIRE_RISK_GATE", True),
             btc_pulse_require_realistic_fill=_envb("BTC_PULSE_REQUIRE_REALISTIC_FILL", True),
             btc_pulse_require_chainlink=_envb("BTC_PULSE_REQUIRE_CHAINLINK", False),
