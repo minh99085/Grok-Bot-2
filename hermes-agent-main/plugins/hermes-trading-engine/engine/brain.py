@@ -120,10 +120,7 @@ class GrokBrain:
         # an explicit GROK_BRAIN_ONLINE=1, allow it. Grok is research-only: it can
         # never place, cancel, approve, arm, scale, or size an order.
         self.research_mode = (os.getenv("RESEARCH_MODE") or "offline_cache").strip().lower()
-        _online_modes = ("online_paper", "online_shadow", "guarded_live_readonly", "online")
-        self.grok_network_allowed = (
-            self.research_mode in _online_modes
-            or os.getenv("GROK_BRAIN_ONLINE", "0") not in ("0", "false", "False", ""))
+        self.grok_network_allowed = self._compute_network_allowed()
         # network is enabled only when a key exists AND research mode permits it
         self.enabled = bool(self.api_key) and self.grok_network_allowed
         # Runtime on/off set from the dashboard (None = use the computed default
@@ -168,12 +165,58 @@ class GrokBrain:
     def stop(self) -> None:
         self._stop.set()
 
+    _ONLINE_MODES = ("online_paper", "online_shadow", "guarded_live_readonly", "online")
+
+    def _compute_network_allowed(self) -> bool:
+        return (self.research_mode in self._ONLINE_MODES
+                or os.getenv("GROK_BRAIN_ONLINE", "0") not in ("0", "false", "False", ""))
+
+    def _refresh_key_state(self) -> None:
+        """Re-read the xAI/Grok key + RESEARCH_MODE from the live environment and
+        recompute enabled/grok_source. This SELF-HEALS the common deploy race where
+        the key is injected into the container (docker env_file) but the brain object
+        was constructed before it was visible: the next dashboard poll then flips Grok
+        ON automatically. Respects an explicit user pause (set_active(False)) and never
+        enables a live/order path — Grok stays research-only."""
+        key = (os.getenv("GROK_API_KEY") or os.getenv("XAI_API_KEY") or "").strip()
+        mode = (os.getenv("RESEARCH_MODE") or self.research_mode or "offline_cache").strip().lower()
+        if key == self.api_key and mode == self.research_mode:
+            return
+        self.api_key = key
+        self.research_mode = mode
+        self.grok_network_allowed = self._compute_network_allowed()
+        if self._user_override is False:        # operator explicitly paused it
+            self.enabled = False
+            self.grok_source = "paused_by_user" if key else "disabled"
+            return
+        self.enabled = bool(self.api_key) and self.grok_network_allowed
+        if not self.api_key:
+            self.grok_source = "disabled"
+        elif self.grok_network_allowed:
+            self.grok_source = "online_research"
+        elif self.research_mode in ("offline_cache", ""):
+            self.grok_source = "offline_cache"
+        else:
+            self.grok_source = "legacy_cached"
+        if self.enabled:
+            try:
+                self.start()                    # spin up the worker thread if needed
+            except Exception:  # noqa: BLE001
+                pass
+
     def set_active(self, on: bool) -> dict:
         """Dashboard on/off switch for the Grok RESEARCH layer (research-only;
         Grok still can never place, cancel, or size an order). Turning it on
         starts the worker thread if a key is present; off pauses all calls."""
         on = bool(on)
         self._user_override = on
+        # re-read the key from env in case it was injected after construction (the
+        # "click to turn ON does nothing because api_key was empty at init" bug).
+        if on and not self.api_key:
+            self.api_key = (os.getenv("GROK_API_KEY") or os.getenv("XAI_API_KEY") or "").strip()
+            self.research_mode = (os.getenv("RESEARCH_MODE")
+                                  or self.research_mode or "offline_cache").strip().lower()
+            self.grok_network_allowed = self._compute_network_allowed()
         if on and self.api_key:
             self.enabled = True
             self.grok_source = "online_research"
@@ -453,6 +496,13 @@ class GrokBrain:
         return adv
 
     def status(self) -> dict:
+        # self-heal: pick up a key/RESEARCH_MODE that became visible after init
+        # (docker env_file on a recreated container) so the dashboard flips ON
+        # without a process restart. No-op once the state is already resolved.
+        try:
+            self._refresh_key_state()
+        except Exception:  # noqa: BLE001 — status must never raise
+            pass
         adv = self.latest()
         return {
             "enabled": self.enabled,
