@@ -157,33 +157,117 @@ HARD_REQUIRED_ARTIFACTS = (
     "data/training/decision_records.jsonl",
 )
 
+# Large append-only JSONL event streams. In LIGHT mode these are NOT copied in full
+# into the zip — a tail sample + per-file stats are included instead (the full files
+# stay durable in the runtime /data dir). In FULL mode they are copied verbatim.
+EVENT_JSONL_ARTIFACTS = (
+    "data/training/events.jsonl", "data/training/decision_records.jsonl",
+    "data/training/no_trade_labels.jsonl", "data/training/shadow_labels.jsonl",
+    "data/training/diagnostics.jsonl", "data/training/pending_labels.jsonl",
+    "data/training/completed_labels.jsonl",
+)
+LIGHT_TAIL_ROWS = 500
+SIZE_GUARD_BYTES = 25 * 1024 * 1024   # 25 MB: above this, light mode samples instead
 
-def write_closed_loop_artifacts(bundle, data_dir: Optional[str], repo_root: str) -> dict:
+
+def _tail_rows(path: Path, n: int) -> "tuple[list, int]":
+    """Return (last ``n`` non-empty rows, total_row_count). Streams the file (no full
+    load into memory beyond the tail window)."""
+    from collections import deque
+    tail: deque = deque(maxlen=n)
+    total = 0
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                if line.strip():
+                    total += 1
+                    tail.append(line.rstrip("\n"))
+    except Exception:  # noqa: BLE001
+        return [], 0
+    return list(tail), total
+
+
+def _jsonl_ts(row: str, *keys) -> Optional[str]:
+    try:
+        obj = json.loads(row)
+    except Exception:  # noqa: BLE001
+        return None
+    for k in ("timestamp", "ts", "created_at", "label_due_at"):
+        if isinstance(obj, dict) and obj.get(k) is not None:
+            return str(obj.get(k))
+    return None
+
+
+def write_closed_loop_artifacts(bundle, data_dir: Optional[str], repo_root: str,
+                                bundle_mode: str = "light") -> dict:
     """Write every required closed-loop artifact into the bundle at its CANONICAL
     path, copying REAL runtime files when present (non-empty), else a clearly-marked
-    synthesized placeholder for zip completeness. A synthesized placeholder NEVER
-    counts as proof — it is flagged ``valid_for_run_ready=false``.
+    synthesized placeholder. A synthesized placeholder NEVER counts as proof.
 
-    Returns a manifest with per-artifact status distinguishing:
-      real_non_empty | real_empty | missing(->synthesized) ."""
+    bundle_mode:
+      * ``full``  — include every file verbatim (forensic; large).
+      * ``light`` (default) — include summary metrics/reports/learning_state directly,
+        but for the large JSONL event streams include only ``samples/<name>_tail_500
+        .jsonl`` + ``samples/event_file_stats.json``. The full files stay durable in
+        the runtime /data dir and run-readiness is verified against the SOURCE files,
+        so omitting them from the zip is intentional and not a "missing artifact"."""
+    light = (str(bundle_mode).lower() != "full")
     search_roots = [r for r in (data_dir, repo_root,
                                 str(Path(repo_root) / "data")) if r]
     statuses: list = []
+    event_stats: list = []
+    tail_samples_included = False
+
     for rel in REQUIRED_CLOSED_LOOP_ARTIFACTS:
         src = _locate_artifact(rel, search_roots)
         exists = src is not None
         non_empty = False
         synthesized = False
-        if exists:
+        omitted = False           # intentionally not copied in full (light JSONL)
+        is_event_jsonl = rel in EVENT_JSONL_ARTIFACTS
+        size_bytes = (src.stat().st_size if exists else -1)
+
+        if is_event_jsonl and light:
+            # LIGHT: do NOT copy the full file; verify the source + emit a tail sample.
+            name = Path(rel).name[: -len(".jsonl")]
+            sample_rel = f"samples/{name}_tail_{LIGHT_TAIL_ROWS}.jsonl"
+            rows, total = (_tail_rows(src, LIGHT_TAIL_ROWS) if exists else ([], 0))
+            non_empty = exists and total > 0
+            omitted = True
+            bundle.write_text(sample_rel, ("\n".join(rows) + ("\n" if rows else "")),
+                              redact=True)
+            tail_samples_included = True
+            event_stats.append({
+                "source_path": rel,
+                "exists": bool(exists),
+                "source_size_bytes": int(size_bytes),
+                "total_rows": int(total),
+                "included_rows": len(rows),
+                "tail_sample_path": sample_rel,
+                "first_timestamp": (_jsonl_ts(rows[0]) if rows else None),
+                "last_timestamp": (_jsonl_ts(rows[-1]) if rows else None),
+                "truncated": bool(total > len(rows)),
+            })
+        elif exists:
             try:
                 body = src.read_text(encoding="utf-8", errors="replace")
-                # JSON "{}" / "[]" / whitespace count as empty-of-content
                 stripped = body.strip()
                 non_empty = bool(stripped) and stripped not in ("{}", "[]", "null")
-                bundle.write_text(rel, body, redact=True)
-            except Exception:  # noqa: BLE001 — fall through to placeholder
+                # FULL-mode size guard: a giant non-event file still gets sampled in
+                # light mode (approved summary files are always copied directly).
+                if (light and size_bytes > SIZE_GUARD_BYTES
+                        and not rel.endswith((".json", ".md"))):
+                    name = Path(rel).name
+                    sample_rel = f"samples/{name}.tail.txt"
+                    rows, total = _tail_rows(src, LIGHT_TAIL_ROWS)
+                    bundle.write_text(sample_rel, "\n".join(rows), redact=True)
+                    omitted = True
+                    tail_samples_included = True
+                else:
+                    bundle.write_text(rel, body, redact=True)
+            except Exception:  # noqa: BLE001
                 exists = False
-        if not exists:
+        if not exists and not omitted:
             synthesized = True
             if rel.endswith(".jsonl"):
                 bundle.write_text(rel, "", redact=False)
@@ -200,16 +284,32 @@ def write_closed_loop_artifacts(bundle, data_dir: Optional[str], repo_root: str)
             "exists": bool(exists),
             "non_empty": bool(non_empty),
             "synthesized": bool(synthesized),
+            "omitted_intentionally": bool(omitted),
             "hard_required": bool(hard),
-            # a placeholder or an empty real file is never proof of learning
+            # source-verified (exists + non-empty) is proof — whether copied in full
+            # OR omitted-but-sampled in light mode.
             "valid_for_run_ready": bool(exists and non_empty),
             "source": str(src) if exists else None,
+            "source_size_bytes": int(size_bytes),
         })
+
+    if light:
+        bundle.write_json("samples/event_file_stats.json", {
+            "bundle_mode": "light", "tail_rows": LIGHT_TAIL_ROWS,
+            "generated_from": [r for r in search_roots],
+            "files": event_stats,
+        })
+
     synthesized_paths = [s["path"] for s in statuses if s["synthesized"]]
     empty_real = [s["path"] for s in statuses if s["exists"] and not s["non_empty"]]
     hard_invalid = [s["path"] for s in statuses
                     if s["hard_required"] and not s["valid_for_run_ready"]]
+    omitted_paths = [s["path"] for s in statuses if s["omitted_intentionally"]]
+    source_event_files_verified = all(
+        s["valid_for_run_ready"] for s in statuses
+        if s["path"] in EVENT_JSONL_ARTIFACTS and s["hard_required"])
     manifest = {
+        "bundle_mode": "light" if light else "full",
         "required": list(REQUIRED_CLOSED_LOOP_ARTIFACTS),
         "hard_required": list(HARD_REQUIRED_ARTIFACTS),
         "artifacts": statuses,
@@ -217,9 +317,11 @@ def write_closed_loop_artifacts(bundle, data_dir: Optional[str], repo_root: str)
         "synthesized_empty": synthesized_paths,
         "empty_real_files": empty_real,
         "hard_required_invalid": hard_invalid,
-        # the zip lists every path, but completeness != proof: real_complete requires
-        # every required artifact be a REAL non-empty runtime file.
-        "all_paths_in_bundle": True,
+        "full_event_files_omitted_intentionally": bool(light and omitted_paths),
+        "omitted_full_event_files": omitted_paths,
+        "tail_samples_included": bool(tail_samples_included),
+        "source_event_files_verified": bool(source_event_files_verified),
+        "all_paths_in_bundle": not light,
         "runtime_complete": not synthesized_paths and not empty_real,
         "hard_required_satisfied": not hard_invalid,
         "search_roots": search_roots,
@@ -357,6 +459,13 @@ def build_report_run_ready(manifest: dict, status: dict, algo_audit: dict,
         "blocking_reasons": blocking,
         "warnings": warnings,
         "proof": proof,
+        # bundle-mode transparency: in light mode the full JSONL is intentionally
+        # omitted from the zip but verified at the SOURCE (this is not "missing").
+        "bundle_mode": manifest.get("bundle_mode", "light"),
+        "full_event_files_omitted_intentionally": bool(
+            manifest.get("full_event_files_omitted_intentionally", False)),
+        "source_event_files_verified": bool(manifest.get("source_event_files_verified", False)),
+        "tail_samples_included": bool(manifest.get("tail_samples_included", False)),
         "source": "inspection_report (artifact-reality verdict)",
     }
 
@@ -437,6 +546,7 @@ def generate_report(
     pr: Optional[str] = None,
     api_base_url: str = "http://localhost:8800",
     data_dir: Optional[str] = None,
+    bundle_mode: str = "light",
     now: Optional[_dt.datetime] = None,
     runner=None,
     opener=None,
@@ -559,8 +669,11 @@ def generate_report(
             include_container=include_container_artifacts, runner=runner)
 
     # TASK 6/11: write the canonical closed-loop artifacts into the bundle at their
-    # canonical paths (always present in the zip + listed in the manifest).
-    closed_loop_manifest = write_closed_loop_artifacts(bundle, data_dir, repo_root)
+    # canonical paths. In LIGHT mode (default) the large JSONL event streams are
+    # tail-sampled instead of copied in full (full files stay durable in /data).
+    bundle_mode = "full" if str(bundle_mode).lower() == "full" else "light"
+    closed_loop_manifest = write_closed_loop_artifacts(
+        bundle, data_dir, repo_root, bundle_mode=bundle_mode)
     if closed_loop_manifest.get("synthesized_empty"):
         warnings.append(
             f"{len(closed_loop_manifest['synthesized_empty'])} closed-loop artifact(s) "
@@ -715,6 +828,7 @@ def generate_report(
         "run_ready": report_run_ready,
         "artifact_paths": artifact_paths,
         "closed_loop_artifacts_manifest": closed_loop_manifest,
+        "bundle_mode": bundle_mode,
     }
 
 
@@ -1625,6 +1739,10 @@ def _build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--history-days", type=int, default=7)
     ap.add_argument("--api-base-url", default="http://localhost:8800")
     ap.add_argument("--data-dir", default=None, help="HTE data dir (default: $HTE_DATA_DIR)")
+    ap.add_argument("--bundle-mode", choices=["light", "full"], default="light",
+                    help="light (default): small zip — summary metrics/reports + "
+                         "tail samples of the JSONL event streams (full files stay in "
+                         "/data). full: forensic — include the full JSONL event files.")
     ap.add_argument("--skip-tests", action="store_true")
     ap.add_argument("--skip-docker", action="store_true")
     ap.add_argument("--skip-api", action="store_true")
@@ -1663,11 +1781,29 @@ def main(argv=None) -> int:
         pr=args.pr,
         api_base_url=args.api_base_url,
         data_dir=args.data_dir,
+        bundle_mode=args.bundle_mode,
     )
     print(f"Classification : {result['classification']}")
     print(f"Health score   : {result['score']}/100")
     print(f"Bundle folder  : {result['bundle_dir']}")
     print(f"Zip bundle     : {result['zip_path']}")
+    _rr = result.get("run_ready", {}) or {}
+    _mode = result.get("bundle_mode", "light")
+    try:
+        _zsz = os.path.getsize(result["zip_path"])
+        _zhuman = (f"{_zsz/1024/1024:.2f} MB" if _zsz >= 1024 * 1024
+                   else f"{_zsz/1024:.1f} KB")
+    except Exception:  # noqa: BLE001
+        _zhuman = "?"
+    print(f"Bundle mode    : {_mode}")
+    if _mode == "light":
+        print("Full JSONL     : omitted intentionally")
+        print(f"Samples        : tail {LIGHT_TAIL_ROWS} rows each")
+        print(f"Source events  : {'verified' if _rr.get('source_event_files_verified') else 'NOT verified'}"
+              + (f" from {args.data_dir}" if args.data_dir else ""))
+    else:
+        print("Full JSONL     : included")
+    print(f"Zip size       : {_zhuman}")
     audit_ok = result.get("algorithmic_edge_audit_ok", True)
     print(f"Edge audit     : {'PASS' if audit_ok else 'FAIL (incomplete/stale)'}")
     rr = result.get("run_ready", {}) or {}

@@ -165,8 +165,9 @@ def test_inspection_zip_requires_training_event_files(tmp_path, monkeypatch):
     (tmp_path / "polymarket_training.json").write_text(
         json.dumps(t.status(), default=str), encoding="utf-8")
     out = tmp_path / "out"
+    # FULL (forensic) mode bundles the complete JSONL event files.
     res = gen.generate_report(output_dir=str(out), repo_root=str(tmp_path),
-                              data_dir=str(tmp_path), skip_tests=True,
+                              data_dir=str(tmp_path), skip_tests=True, bundle_mode="full",
                               skip_docker=True, skip_api=True, skip_artifacts=True)
     zf = zipfile.ZipFile(res["zip_path"])
     names = zf.namelist()
