@@ -62,6 +62,21 @@ _SKIP_MARKERS = ("not found", "not allowed", "multi agent", "multi-agent", "unsu
                  "does not support", "invalid model", "not available", "no access")
 
 
+def read_grok_key() -> str:
+    """Read the xAI/Grok key from env and sanitize it.
+
+    Strips surrounding whitespace AND surrounding quotes — a key pasted into .env as
+    ``XAI_API_KEY="xai-..."`` (or with a trailing newline) otherwise yields a
+    malformed ``Bearer`` header and a 401, the classic 'key suddenly stopped working'
+    cause when the key is delivered via docker compose interpolation (which, unlike
+    the dotenv loader, does not strip quotes). Returns "" when absent."""
+    raw = os.getenv("GROK_API_KEY") or os.getenv("XAI_API_KEY") or ""
+    key = raw.strip()
+    if len(key) >= 2 and key[0] == key[-1] and key[0] in ("'", '"'):
+        key = key[1:-1].strip()
+    return key
+
+
 def _score_model(mid: str) -> int:
     l = mid.lower()
     if "grok" not in l:
@@ -96,7 +111,7 @@ def _clamp(x, lo, hi, default):
 class GrokBrain:
     def __init__(self, settings):
         self.s = settings
-        self.api_key = (os.getenv("GROK_API_KEY") or os.getenv("XAI_API_KEY") or "").strip()
+        self.api_key = read_grok_key()
         self.model = (os.getenv("GROK_MODEL") or os.getenv("HTE_GROK_MODEL") or "grok-4.3").strip()
         # When a model is EXPLICITLY configured (GROK_MODEL / HTE_GROK_MODEL),
         # pin it: use only that model (no auto-downgrade to a higher-scored
@@ -178,7 +193,7 @@ class GrokBrain:
         was constructed before it was visible: the next dashboard poll then flips Grok
         ON automatically. Respects an explicit user pause (set_active(False)) and never
         enables a live/order path — Grok stays research-only."""
-        key = (os.getenv("GROK_API_KEY") or os.getenv("XAI_API_KEY") or "").strip()
+        key = read_grok_key()
         mode = (os.getenv("RESEARCH_MODE") or self.research_mode or "offline_cache").strip().lower()
         if key == self.api_key and mode == self.research_mode:
             return
@@ -213,7 +228,7 @@ class GrokBrain:
         # re-read the key from env in case it was injected after construction (the
         # "click to turn ON does nothing because api_key was empty at init" bug).
         if on and not self.api_key:
-            self.api_key = (os.getenv("GROK_API_KEY") or os.getenv("XAI_API_KEY") or "").strip()
+            self.api_key = read_grok_key()
             self.research_mode = (os.getenv("RESEARCH_MODE")
                                   or self.research_mode or "offline_cache").strip().lower()
             self.grok_network_allowed = self._compute_network_allowed()

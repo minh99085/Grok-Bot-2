@@ -88,8 +88,13 @@ class GrokResearchClient:
         self.enable_web_search = os.getenv("GROK_ENABLE_WEB_SEARCH", "0") in ("1", "true", "True")
         self.enable_x_search = os.getenv("GROK_ENABLE_X_SEARCH", "0") in ("1", "true", "True")
         self.reasoning_effort = os.getenv("GROK_REASONING_EFFORT", "low")
-        # Secrets are read here but NEVER logged or persisted.
-        self._api_key = os.getenv("XAI_API_KEY") or os.getenv("GROK_API_KEY") or ""
+        # Secrets are read here but NEVER logged or persisted. Sanitize whitespace +
+        # surrounding quotes so a key pasted as XAI_API_KEY="xai-..." or with a
+        # trailing newline doesn't produce a malformed Bearer header (-> 401).
+        _raw_key = (os.getenv("XAI_API_KEY") or os.getenv("GROK_API_KEY") or "").strip()
+        if len(_raw_key) >= 2 and _raw_key[0] == _raw_key[-1] and _raw_key[0] in ("'", '"'):
+            _raw_key = _raw_key[1:-1].strip()
+        self._api_key = _raw_key
 
     # -- public --------------------------------------------------------- #
     def research(self, market_ctx: dict, mode: Optional[str] = None,

@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from engine.brain import GrokBrain
+from engine.brain import GrokBrain, read_grok_key
 
 _GROK_ENV = ("XAI_API_KEY", "GROK_API_KEY", "RESEARCH_MODE", "GROK_BRAIN_ONLINE")
 
@@ -75,3 +75,27 @@ def test_no_key_stays_off(tmp_path):
     st = b.status()
     assert st["enabled"] is False
     assert st["grok_source"] == "disabled"
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ('xai-clean', 'xai-clean'),
+    ('  xai-ws  ', 'xai-ws'),
+    ('"xai-dquoted"', 'xai-dquoted'),
+    ("'xai-squoted'", 'xai-squoted'),
+    ('  "xai-both"\n', 'xai-both'),     # quotes + whitespace + newline (the 401 trap)
+    ('', ''),
+])
+def test_read_grok_key_sanitizes_quotes_and_whitespace(monkeypatch, raw, expected):
+    # a key delivered via docker compose interpolation may keep surrounding quotes /
+    # a trailing newline -> malformed Bearer header -> 401 ("suddenly stopped").
+    monkeypatch.delenv("GROK_API_KEY", raising=False)
+    monkeypatch.setenv("XAI_API_KEY", raw)
+    assert read_grok_key() == expected
+
+
+def test_quoted_key_in_env_still_enables_brain(tmp_path, monkeypatch):
+    monkeypatch.setenv("XAI_API_KEY", '"xai-quoted-key-value"')
+    monkeypatch.setenv("GROK_BRAIN_ONLINE", "1")
+    b = _brain(tmp_path)
+    assert b.api_key == "xai-quoted-key-value"   # quotes stripped
+    assert b.status()["enabled"] is True
