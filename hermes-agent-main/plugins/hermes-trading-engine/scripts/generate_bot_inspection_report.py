@@ -70,8 +70,14 @@ REQUIRED_CLOSED_LOOP_ARTIFACTS = (
 # ----------------------------------------------------------------------------- #
 def classify(safety: dict, tests: dict, runtime_available: bool,
              comparison: dict, missing_features: list,
-             warnings: list) -> str:
-    """Determine the overall classification (precedence-ordered)."""
+             warnings: list, *, run_ready: Optional[dict] = None) -> str:
+    """Determine the overall classification (precedence-ordered).
+
+    Run-readiness is a HARD gate above warnings: a report can NEVER be
+    PASS/PASS_WITH_WARNINGS when hard-required learning artifacts are missing,
+    synthesized, or empty, when reconciliation fails, or when the edge audit is
+    incomplete — that is ``FAIL_NOT_RUN_READY`` (a synthesized placeholder is not
+    proof of learning)."""
     if safety.get("critical"):
         return "CRITICAL_SAFETY_FAIL"
     tests_failed = tests.get("present") is True and tests.get("passing") is False
@@ -80,6 +86,15 @@ def classify(safety: dict, tests: dict, runtime_available: bool,
         return "FAIL"
     if comparison.get("available") and comparison.get("regression"):
         return "REGRESSION"
+    # HARD run-readiness gate (above warnings): missing/synthesized/empty required
+    # artifacts, failed reconciliation, zero-decision ledger, silent Bregman, or
+    # incomplete edge audit => NOT run-ready (a synthesized placeholder is not proof).
+    if run_ready is not None:
+        if not run_ready.get("run_ready_for_hours", False):
+            return "FAIL_NOT_RUN_READY"
+        # run-ready is the headline: required learning artifacts are real + reconciled.
+        return "PASS_RUN_READY"
+    # legacy path (run-readiness not computed): keep prior PASS/warnings behavior.
     clean = (
         safety.get("status") == "OK"
         and runtime_available
@@ -107,14 +122,16 @@ class Bundle:
         path.parent.mkdir(parents=True, exist_ok=True)
         body = redactor.redact_text(text) if redact else text
         path.write_text(body if body is not None else "", encoding="utf-8")
-        self.files.append(rel)
+        if rel not in self.files:
+            self.files.append(rel)
 
     def write_json(self, rel: str, obj: Any, redact: bool = True) -> None:
         path = self.root / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = redactor.redact_obj(obj) if redact else obj
         path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
-        self.files.append(rel)
+        if rel not in self.files:
+            self.files.append(rel)
 
 
 def _locate_artifact(rel: str, search_roots: list) -> Optional[Path]:
@@ -131,43 +148,217 @@ def _locate_artifact(rel: str, search_roots: list) -> Optional[Path]:
     return None
 
 
+# HARD-required artifacts: a synthesized/missing/empty one of these means the run
+# is NOT proven (run_ready_for_hours=false + classification FAIL_NOT_RUN_READY). A
+# synthesized placeholder NEVER counts as proof of learning.
+HARD_REQUIRED_ARTIFACTS = (
+    "metrics/inspection_summary.json", "metrics/training_reconciliation.json",
+    "metrics/run_ready.json", "data/training/events.jsonl",
+    "data/training/decision_records.jsonl",
+)
+
+
 def write_closed_loop_artifacts(bundle, data_dir: Optional[str], repo_root: str) -> dict:
-    """TASK 6/11: write every required closed-loop artifact into the bundle at its
-    CANONICAL path (so the zip + manifest always list them), copying live runtime
-    files when present, else a valid empty placeholder. Returns a manifest dict."""
+    """Write every required closed-loop artifact into the bundle at its CANONICAL
+    path, copying REAL runtime files when present (non-empty), else a clearly-marked
+    synthesized placeholder for zip completeness. A synthesized placeholder NEVER
+    counts as proof — it is flagged ``valid_for_run_ready=false``.
+
+    Returns a manifest with per-artifact status distinguishing:
+      real_non_empty | real_empty | missing(->synthesized) ."""
     search_roots = [r for r in (data_dir, repo_root,
                                 str(Path(repo_root) / "data")) if r]
-    present: list = []
-    synthesized: list = []
+    statuses: list = []
     for rel in REQUIRED_CLOSED_LOOP_ARTIFACTS:
         src = _locate_artifact(rel, search_roots)
-        if src is not None:
+        exists = src is not None
+        non_empty = False
+        synthesized = False
+        if exists:
             try:
-                bundle.write_text(rel, src.read_text(encoding="utf-8", errors="replace"),
-                                  redact=True)
-                present.append(rel)
-                continue
+                body = src.read_text(encoding="utf-8", errors="replace")
+                # JSON "{}" / "[]" / whitespace count as empty-of-content
+                stripped = body.strip()
+                non_empty = bool(stripped) and stripped not in ("{}", "[]", "null")
+                bundle.write_text(rel, body, redact=True)
             except Exception:  # noqa: BLE001 — fall through to placeholder
-                pass
-        # valid empty placeholder: empty JSONL file, or empty-schema JSON / md
-        if rel.endswith(".jsonl"):
-            bundle.write_text(rel, "", redact=False)
-        elif rel.endswith(".json"):
-            bundle.write_json(rel, {}, redact=False)
-        else:
-            bundle.write_text(rel, f"# {Path(rel).name} — not produced this run.\n",
-                              redact=False)
-        synthesized.append(rel)
+                exists = False
+        if not exists:
+            synthesized = True
+            if rel.endswith(".jsonl"):
+                bundle.write_text(rel, "", redact=False)
+            elif rel.endswith(".json"):
+                bundle.write_json(rel, {"_synthesized_placeholder": True,
+                                        "_valid_for_run_ready": False}, redact=False)
+            else:
+                bundle.write_text(rel, f"# {Path(rel).name} — NOT produced this run "
+                                  "(synthesized placeholder; not proof of learning).\n",
+                                  redact=False)
+        hard = rel in HARD_REQUIRED_ARTIFACTS
+        statuses.append({
+            "path": rel,
+            "exists": bool(exists),
+            "non_empty": bool(non_empty),
+            "synthesized": bool(synthesized),
+            "hard_required": bool(hard),
+            # a placeholder or an empty real file is never proof of learning
+            "valid_for_run_ready": bool(exists and non_empty),
+            "source": str(src) if exists else None,
+        })
+    synthesized_paths = [s["path"] for s in statuses if s["synthesized"]]
+    empty_real = [s["path"] for s in statuses if s["exists"] and not s["non_empty"]]
+    hard_invalid = [s["path"] for s in statuses
+                    if s["hard_required"] and not s["valid_for_run_ready"]]
     manifest = {
         "required": list(REQUIRED_CLOSED_LOOP_ARTIFACTS),
-        "present_from_runtime": present,
-        "synthesized_empty": synthesized,
-        "all_present": True,   # every required path is now in the bundle
-        "runtime_complete": not synthesized,
+        "hard_required": list(HARD_REQUIRED_ARTIFACTS),
+        "artifacts": statuses,
+        "present_from_runtime": [s["path"] for s in statuses if s["valid_for_run_ready"]],
+        "synthesized_empty": synthesized_paths,
+        "empty_real_files": empty_real,
+        "hard_required_invalid": hard_invalid,
+        # the zip lists every path, but completeness != proof: real_complete requires
+        # every required artifact be a REAL non-empty runtime file.
+        "all_paths_in_bundle": True,
+        "runtime_complete": not synthesized_paths and not empty_real,
+        "hard_required_satisfied": not hard_invalid,
         "search_roots": search_roots,
     }
     bundle.write_json("metrics/closed_loop_artifacts_manifest.json", manifest)
     return manifest
+
+
+def _artifact_paths(data_dir: Optional[str], repo_root: str, bundle_dir: Path,
+                    status_source: Optional[str]) -> dict:
+    """Surface the actual runtime vs collector paths so a Docker-container/host
+    mismatch (the usual cause of "synthesized empty" artifacts) is visible."""
+    dd = Path(data_dir) if data_dir else None
+
+    def _ex(p) -> bool:
+        try:
+            return bool(p and Path(p).exists())
+        except Exception:  # noqa: BLE001
+            return False
+    runtime_metrics = (dd / "metrics") if dd else None
+    runtime_reports = (dd / "reports") if dd else None
+    runtime_training = (dd / "training") if dd else None
+    return {
+        "data_dir": str(dd) if dd else None,
+        "data_dir_env_HTE_DATA_DIR": os.getenv("HTE_DATA_DIR"),
+        "status_source": status_source,
+        "runtime_metrics_dir": str(runtime_metrics) if runtime_metrics else None,
+        "runtime_metrics_dir_exists": _ex(runtime_metrics),
+        "runtime_reports_dir": str(runtime_reports) if runtime_reports else None,
+        "runtime_reports_dir_exists": _ex(runtime_reports),
+        "runtime_training_data_dir": str(runtime_training) if runtime_training else None,
+        "runtime_training_data_dir_exists": _ex(runtime_training),
+        "collector_metrics_dir": str(Path(repo_root) / "metrics"),
+        "collector_reports_dir": str(Path(repo_root) / "reports"),
+        "collector_training_data_dir": str(Path(repo_root) / "data" / "training"),
+        "inspection_bundle_dir": str(bundle_dir),
+        "hint": ("If runtime_*_dir_exists is false, pass --data-dir <HTE_DATA_DIR> "
+                 "(or the Docker volume host path) so the collector packages the REAL "
+                 "runtime files instead of synthesizing empty placeholders."),
+    }
+
+
+def build_report_run_ready(manifest: dict, status: dict, algo_audit: dict,
+                           validation_contract: dict) -> dict:
+    """Report-level run-ready verdict computed from ARTIFACT REALITY (not the
+    possibly-synthesized run_ready.json). A synthesized/empty hard-required
+    artifact => run_ready_for_hours=false. This is the authoritative verdict the
+    classification + report use; it overrides the bundle's run_ready.json."""
+    status = status or {}
+    arts = {a["path"]: a for a in (manifest.get("artifacts") or [])}
+    cll = status.get("closed_loop_learning", {}) or {}
+    recon = status.get("training_reconciliation", {}) or {}
+    ledger = status.get("ledger", {}) or {}
+    funnel = status.get("bregman_funnel", {}) or {}
+    decision_count = int(metrics._first(recon.get("decision_count_counter"),
+                                status.get("decisions"),
+                                (status.get("pnl", {}) or {}).get("decision_count"), 0) or 0)
+
+    def _ok(rel: str) -> bool:
+        a = arts.get(rel)
+        return bool(a and a.get("valid_for_run_ready"))
+
+    blocking: list = []
+    warnings: list = []
+    synth = manifest.get("synthesized_empty") or []
+    empty_real = manifest.get("empty_real_files") or []
+    hard_invalid = manifest.get("hard_required_invalid") or []
+    # HARD: a missing/synthesized/empty hard-required artifact blocks run-readiness.
+    if hard_invalid:
+        blocking.append(f"hard-required artifacts missing/synthesized/empty: {hard_invalid}")
+    # any synthesized placeholder (even non-hard) means the runtime files were not
+    # found at the collector path -> not a real, complete run.
+    if synth:
+        blocking.append(f"{len(synth)} closed-loop artifact(s) synthesized (not real): {synth}")
+    # legitimately-empty NON-hard files (e.g. shadow/completed labels with 0 rows)
+    # are only a warning, not a blocker.
+    non_hard_empty = [p for p in empty_real if p not in HARD_REQUIRED_ARTIFACTS]
+    if non_hard_empty:
+        warnings.append(f"{len(non_hard_empty)} non-required artifact(s) present but empty "
+                        f"(legitimate when zero events): {non_hard_empty}")
+
+    event_files_present = _ok("data/training/events.jsonl") and _ok(
+        "data/training/decision_records.jsonl")
+    event_files_non_empty = event_files_present
+    artifact_files_real = not synth
+    recon_passed = bool(recon.get("reconciled", False)) and _ok(
+        "metrics/training_reconciliation.json")
+    if not recon_passed:
+        blocking.append("training reconciliation missing or not passed")
+    ledger_decisions = int(ledger.get("decisions", 0) or 0)
+    ledger_reconciled = not (decision_count > 0 and ledger_decisions == 0)
+    if not ledger_reconciled:
+        blocking.append("ledger.decisions==0 while decision_count>0")
+    # Bregman: enabled but zero scanned requires adapter diagnostics (else silent)
+    breg_tel = (status.get("bregman", {}) or {}).get("execution",
+                                                     status.get("bregman", {})) or {}
+    bregman_enabled = bool(breg_tel.get("bregman_paper_enabled")
+                           or algo_audit.get("bregman_enabled"))
+    scanned = int(metrics._first(funnel.get("groups_sent_to_certifier"),
+                         breg_tel.get("constraint_groups_scanned"), 0) or 0)
+    adapter_failed = int(funnel.get("groups_adapter_failed", 0) or 0)
+    diag_written = int(funnel.get("diagnostic_events_written",
+                                  ledger.get("bregman_diagnostics", 0)) or 0)
+    bregman_non_silent = (not bregman_enabled) or scanned > 0 or (
+        adapter_failed > 0 and diag_written > 0)
+    if bregman_enabled and not bregman_non_silent:
+        blocking.append("Bregman enabled but groups_scanned=0 without adapter diagnostics")
+    edge_audit_ok = bool(algo_audit.get("ok"))
+    if not edge_audit_ok:
+        blocking.append("algorithmic edge audit incomplete: "
+                        + ", ".join(algo_audit.get("hard_failures")
+                                    or algo_audit.get("required_field_violations")
+                                    or ["incomplete"]))
+    inspection_complete = _ok("metrics/inspection_summary.json")
+    if not inspection_complete:
+        blocking.append("inspection_summary.json missing/synthesized/empty")
+    closed_loop_durable = event_files_non_empty and artifact_files_real
+
+    proof = {
+        "training_healthy": bool(status) and not status.get("error"),
+        "event_files_present": bool(event_files_present),
+        "event_files_non_empty": bool(event_files_non_empty),
+        "artifact_files_real_not_synthesized": bool(artifact_files_real),
+        "ledger_reconciled": bool(ledger_reconciled),
+        "training_reconciliation_passed": bool(recon_passed),
+        "bregman_funnel_non_silent": bool(bregman_non_silent),
+        "closed_loop_durable": bool(closed_loop_durable),
+        "inspection_artifacts_complete": bool(inspection_complete),
+        "live_trading_disabled": True,
+    }
+    run_ready = (not blocking) and all(proof.values())
+    return {
+        "run_ready_for_hours": bool(run_ready),
+        "max_safe_runtime_minutes": (None if run_ready else 10),
+        "blocking_reasons": blocking,
+        "warnings": warnings,
+        "proof": proof,
+        "source": "inspection_report (artifact-reality verdict)",
+    }
 
 
 def _read_file(path: Path) -> Optional[str]:
@@ -349,8 +540,6 @@ def generate_report(
     }
     scorecard = metrics.compute_scorecard(feats, safety, tests, runtime_available,
                                           comparison, observability)
-    classification = classify(safety, tests, runtime_available, comparison,
-                              missing_features, warnings)
 
     # --- mandatory Algorithmic Edge Audit (decision-grade; fails loud) ------ #
     algo_audit = metrics.build_algorithmic_edge_audit(
@@ -363,6 +552,22 @@ def generate_report(
         cap = algo_audit.get("readiness_cap")
         warnings.append(
             f"ALGORITHMIC EDGE AUDIT INCOMPLETE (readiness capped <= {cap}): {detail}")
+
+    # --- report-level run-ready verdict (artifact reality; HARD classification gate)
+    report_run_ready = build_report_run_ready(
+        closed_loop_manifest, status, algo_audit, validation_contract)
+    # OVERRIDE the bundle's run_ready.json with the artifact-reality verdict so a
+    # synthesized/empty run_ready.json can never claim run-ready.
+    bundle.write_json("metrics/run_ready.json", report_run_ready)
+    if not report_run_ready["run_ready_for_hours"]:
+        warnings.append("NOT RUN-READY: " + "; ".join(report_run_ready["blocking_reasons"]))
+
+    # --- artifact path transparency (Docker vs host mismatch surfacing) ------ #
+    artifact_paths = _artifact_paths(data_dir, repo_root, bundle_dir, status_source)
+    bundle.write_json("artifact_paths.json", artifact_paths)
+
+    classification = classify(safety, tests, runtime_available, comparison,
+                              missing_features, warnings, run_ready=report_run_ready)
 
     recommendations = recs.build_recommendations(
         safety, missing_features, tests, comparison, runtime_available,
@@ -413,6 +618,9 @@ def generate_report(
         algorithmic_edge_audit=algo_audit, ledger_reconciliation=ledger_reconciliation,
         validation_contract=validation_contract, expectancy=expectancy,
         production_readiness_verdict=readiness_verdict)
+    report_json["run_ready"] = report_run_ready
+    report_json["artifact_paths"] = artifact_paths
+    report_json["closed_loop_artifacts_manifest"] = closed_loop_manifest
     bundle.write_json("report.json", report_json)
 
     report_md = _build_report_md(report_json, feats, status, docker, api, tests,
@@ -445,6 +653,10 @@ def generate_report(
         "equity_reconciled": bool(ledger_reconciliation.get("ok", True)),
         "validation_contract_passed": bool(validation_contract.get("passed", False)),
         "production_ready": bool(readiness_verdict.get("production_ready", False)),
+        "run_ready_for_hours": bool(report_run_ready["run_ready_for_hours"]),
+        "run_ready": report_run_ready,
+        "artifact_paths": artifact_paths,
+        "closed_loop_artifacts_manifest": closed_loop_manifest,
     }
 
 
@@ -1400,6 +1612,18 @@ def main(argv=None) -> int:
     print(f"Zip bundle     : {result['zip_path']}")
     audit_ok = result.get("algorithmic_edge_audit_ok", True)
     print(f"Edge audit     : {'PASS' if audit_ok else 'FAIL (incomplete/stale)'}")
+    rr = result.get("run_ready", {}) or {}
+    print(f"Run-ready      : run_ready_for_hours={rr.get('run_ready_for_hours')} "
+          f"(max_safe_runtime_minutes={rr.get('max_safe_runtime_minutes')})")
+    if rr.get("blocking_reasons"):
+        print("Blocking       : " + "; ".join(rr["blocking_reasons"]))
+    ap = result.get("artifact_paths", {}) or {}
+    print("Artifact paths :")
+    for k in ("runtime_training_data_dir", "runtime_metrics_dir", "runtime_reports_dir"):
+        print(f"   {k}={ap.get(k)} exists={ap.get(k+'_exists')}")
+    print(f"   inspection_bundle_dir={ap.get('inspection_bundle_dir')}")
+    if not (ap.get("runtime_training_data_dir_exists")):
+        print(f"   hint: {ap.get('hint')}")
     if not audit_ok and result.get("algorithmic_edge_audit_missing"):
         print("Missing fields : " + ", ".join(result["algorithmic_edge_audit_missing"]))
     if result["warnings"]:
@@ -1408,6 +1632,9 @@ def main(argv=None) -> int:
         print("FAIL: Algorithmic Edge Audit incomplete (--fail-on-incomplete-audit).",
               file=sys.stderr)
         return 5
+    # non-zero exit when not run-ready so CI/automation cannot treat it as success
+    if not rr.get("run_ready_for_hours", True):
+        return 6
     return 0
 
 

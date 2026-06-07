@@ -180,6 +180,51 @@ def test_inspection_zip_requires_training_event_files(tmp_path, monkeypatch):
     assert len(zf.read(dr)) > 0
 
 
+# --- TASK 8: reproduce the EXACT broken command output ----------------------
+
+def test_report_with_synthesized_artifacts_is_fail_not_run_ready(tmp_path):
+    """Simulates `generate_bot_inspection_report.py` with the reported failure:
+    healthy-looking status (decision_count>0, Bregman enabled, groups scanned=0)
+    but NO real closed-loop artifacts on disk -> 23 synthesized placeholders.
+    Must become FAIL_NOT_RUN_READY, run_ready_for_hours=false, with explicit
+    blocking reasons (NOT PASS_WITH_WARNINGS)."""
+    import json as _json
+    import scripts.generate_bot_inspection_report as gen
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    status = {
+        "mode": "paper_train", "runtime_seconds": 240, "decisions": 900,
+        "pnl": {"decision_count": 900, "equity": 500.0, "trades_closed": 0,
+                "win_rate": None},
+        "scan_metrics": {"scanned": 900, "kept": 80, "groups_detected": 259},
+        "closed_loop_learning": {"closed_loop_enabled": True,
+                                 "decision_records_written": 900,
+                                 "no_trade_labels_written": 900,
+                                 "pending_labels_total": 900,
+                                 "learning_growth_status": "collecting"},
+        "bregman": {"execution": {"bregman_paper_enabled": True,
+                                  "constraint_groups_scanned": 0,
+                                  "groups_discovered": 0}},
+        "ledger": {"decisions": 0},
+        "safety": {"ok": True, "live_detected": False},
+    }
+    (data_dir / "polymarket_training.json").write_text(_json.dumps(status), encoding="utf-8")
+    res = gen.generate_report(
+        output_dir=str(tmp_path / "out"), repo_root=str(tmp_path), skip_tests=True,
+        include_docker=False, include_api=False, include_artifacts=False,
+        data_dir=str(data_dir))
+    assert res["classification"] == "FAIL_NOT_RUN_READY"
+    assert res["run_ready_for_hours"] is False
+    blockers = " ".join(res["run_ready"]["blocking_reasons"]).lower()
+    # explicit blocking reasons cover the failure modes
+    assert "synthesized" in blockers or "missing" in blockers or "empty" in blockers
+    assert ("reconcil" in blockers) or ("ledger" in blockers) or ("bregman" in blockers) \
+        or ("edge audit" in blockers)
+    # synthesized placeholders are flagged not-valid-for-run-ready
+    man = res["closed_loop_artifacts_manifest"]
+    assert man["hard_required_satisfied"] is False
+
+
 # --- 8. run_ready false when reconciliation missing -------------------------
 
 def test_run_ready_false_when_reconciliation_missing():

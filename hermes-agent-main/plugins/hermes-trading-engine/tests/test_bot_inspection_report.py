@@ -90,7 +90,8 @@ def test_report_creates_folder_zip_and_valid_json(tmp_path):
     assert (bundle / "report.md").is_file()
     rj = json.loads((bundle / "report.json").read_text())
     assert rj["classification"] in (
-        "PASS", "PASS_WITH_WARNINGS", "FAIL", "REGRESSION", "CRITICAL_SAFETY_FAIL")
+        "PASS", "PASS_RUN_READY", "PASS_WITH_WARNINGS", "FAIL", "FAIL_NOT_RUN_READY",
+        "REGRESSION", "CRITICAL_SAFETY_FAIL")
     # zip contains report.json + report.md
     names = zipfile.ZipFile(zip_path).namelist()
     assert any(n.endswith("report.json") for n in names)
@@ -128,7 +129,10 @@ def test_report_continues_when_tests_missing(tmp_path):
     assert Path(res["bundle_dir"], "test_results_full.txt").is_file()
 
 
-def test_pass_with_warnings_when_feature_gaps(tmp_path):
+def test_fail_not_run_ready_when_learning_artifacts_synthesized(tmp_path):
+    # A "healthy" status with NO real closed-loop artifacts on disk: the report must
+    # NOT claim PASS_WITH_WARNINGS — synthesized placeholders are not proof of
+    # learning, so classification is FAIL_NOT_RUN_READY + run_ready_for_hours=false.
     data_dir = tmp_path / "data"
     _write_status(data_dir, _healthy_status())
     res = gen.generate_report(
@@ -136,10 +140,20 @@ def test_pass_with_warnings_when_feature_gaps(tmp_path):
         include_docker=False, include_api=False, include_artifacts=False,
         data_dir=str(data_dir), runner=make_runner(), opener=unreachable_opener)
     rj = json.loads(Path(res["report_json"]).read_text())
-    # Safety OK + runtime available + skipped tests, but chainlink missing (no API)
-    # → PASS_WITH_WARNINGS, never PASS.
     assert rj["safety"]["status"] == "OK"
-    assert rj["classification"] == "PASS_WITH_WARNINGS"
+    assert rj["classification"] == "FAIL_NOT_RUN_READY"
+    assert res["run_ready_for_hours"] is False
+    # the bundle's run_ready.json reflects the artifact-reality verdict
+    rr = json.loads((Path(res["bundle_dir"]) / "metrics" / "run_ready.json").read_text())
+    assert rr["run_ready_for_hours"] is False
+    assert rr["proof"]["artifact_files_real_not_synthesized"] is False
+    # manifest marks synthesized placeholders as not valid for run-ready
+    man = res["closed_loop_artifacts_manifest"]
+    assert man["synthesized_empty"]
+    assert man["hard_required_satisfied"] is False
+    for a in man["artifacts"]:
+        if a["synthesized"]:
+            assert a["valid_for_run_ready"] is False
 
 
 def test_critical_safety_fail_when_live_flag_enabled(tmp_path):
