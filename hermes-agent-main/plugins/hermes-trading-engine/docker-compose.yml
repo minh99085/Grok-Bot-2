@@ -6,11 +6,13 @@ services:
       - "8800:8800"
     volumes:
       - hte_data:/data
-    # Load local secrets/config (xAI/Grok key etc.) DIRECTLY into the container so
-    # Docker actually sees the .env (the Dockerfile never copies it, and ${VAR}
-    # interpolation silently yields empty when the project .env isn't found). Both
-    # filenames are optional so a clone without them still starts. PAPER ONLY —
-    # live-trading flags are still hard-blocked by preflight + env_loader.
+      # Bind-mount the local .env read-only into /app so the in-container loader
+      # (engine/env_loader.load_local_env) reads the xAI/Grok key DIRECTLY at startup.
+      # This works on EVERY Docker Compose version (the `env_file` directive below is
+      # not applied to PID 1 on some versions). PAPER ONLY — the loader skips live
+      # flags and preflight still hard-blocks them.
+      - ./.env:/app/.env:ro
+    # env_file ALSO injects the key on Compose >= v2.24; harmless where unsupported.
     env_file:
       - path: .env
         required: false
@@ -18,6 +20,11 @@ services:
         required: false
     environment:
       HTE_ENGINE_NAME: "HermesTradingEngine"
+      # Interpolated from the auto-loaded project .env (universal across Compose
+      # versions). Empty only if .env lacks the key — in which case the bind-mount
+      # above + in-container loader still supply it.
+      GROK_API_KEY: "${GROK_API_KEY:-}"
+      XAI_API_KEY: "${XAI_API_KEY:-}"
       HTE_STARTING_BALANCE: "${HTE_STARTING_BALANCE:-500}"
       # Paper starting balance (fake money). Default $500; override any time by
       # adding HTE_STARTING_BALANCE=<amount> to your .env file.
@@ -423,9 +430,10 @@ services:
       - hermes-trading-engine
     volumes:
       - hte_data:/data
-    # Load the xAI/Grok key (+ local config) DIRECTLY into the training container so
-    # Docker sees the .env (the Dockerfile does not copy it). Optional files so a
-    # clone without them still starts. PAPER ONLY — preflight still blocks live flags.
+      # Bind-mount the local .env so the in-container loader reads the xAI/Grok key
+      # at startup — works on EVERY Compose version (env_file below isn't applied to
+      # PID 1 on some versions). PAPER ONLY — loader skips live flags; preflight blocks.
+      - ./.env:/app/.env:ro
     env_file:
       - path: .env
         required: false
@@ -434,6 +442,10 @@ services:
     environment:
       HTE_DATA_DIR: "/data"
       HTE_MODE: "paper"
+      # Interpolated from the auto-loaded project .env (universal); bind-mount +
+      # loader supply it too if interpolation is empty.
+      GROK_API_KEY: "${GROK_API_KEY:-}"
+      XAI_API_KEY: "${XAI_API_KEY:-}"
       # Durable artifact dirs (ABSOLUTE, on the persisted /data volume so they
       # survive restarts AND stay visible to the dashboard). The entrypoint creates
       # + logs these at startup and verifies on-disk writes every tick.
