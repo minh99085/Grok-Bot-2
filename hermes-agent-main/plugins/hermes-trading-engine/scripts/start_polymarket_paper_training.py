@@ -29,8 +29,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 # loader, and the preflight below still hard-blocks any live flag.
 try:
     if "pytest" not in sys.modules:         # never mutate env during the test suite
-        from engine.env_loader import load_local_env as _load_local_env
+        from engine.env_loader import (load_local_env as _load_local_env,
+                                        enable_grok_research_if_key_present as _grok_on,
+                                        grok_key_present as _grok_key)
         _load_local_env()
+        # "key in .env" => turn xAI/Grok research ON (research-only online_paper) when
+        # RESEARCH_MODE was not explicitly set. NEVER enables live trading.
+        _grok_mode = _grok_on()
+        print(f"xAI/Grok research: key_present={_grok_key()} research_mode={_grok_mode or 'offline_cache'} "
+              f"(research-only; live trading stays OFF)")
 except Exception:  # noqa: E402,BLE001
     pass
 

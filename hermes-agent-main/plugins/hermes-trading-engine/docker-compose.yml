@@ -6,6 +6,16 @@ services:
       - "8800:8800"
     volumes:
       - hte_data:/data
+    # Load local secrets/config (xAI/Grok key etc.) DIRECTLY into the container so
+    # Docker actually sees the .env (the Dockerfile never copies it, and ${VAR}
+    # interpolation silently yields empty when the project .env isn't found). Both
+    # filenames are optional so a clone without them still starts. PAPER ONLY —
+    # live-trading flags are still hard-blocked by preflight + env_loader.
+    env_file:
+      - path: .env
+        required: false
+      - path: .env.env
+        required: false
     environment:
       HTE_ENGINE_NAME: "HermesTradingEngine"
       HTE_STARTING_BALANCE: "${HTE_STARTING_BALANCE:-500}"
@@ -63,8 +73,10 @@ services:
       # is set in .env; with no key it stays gracefully off. Research-only either
       # way (never sizes/approves/arms/places an order).
       GROK_BRAIN_ONLINE: "${GROK_BRAIN_ONLINE:-1}"
-      GROK_API_KEY: "${GROK_API_KEY:-}"
-      XAI_API_KEY: "${XAI_API_KEY:-}"
+      # GROK_API_KEY / XAI_API_KEY come from env_file (.env / .env.env) above — NOT
+      # set here, because an `environment:` value overrides env_file and the
+      # "${XAI_API_KEY:-}" default is EMPTY when Docker can't see the project .env
+      # (the bug that kept Grok off). A host-shell key still works via env_file too.
       GROK_MODEL: "${GROK_MODEL:-grok-4.3}"
       # grok-4.x reasons before answering; 4s reliably trips
       # "xAI The read operation timed out". 30s read budget (override as needed).
@@ -411,6 +423,14 @@ services:
       - hermes-trading-engine
     volumes:
       - hte_data:/data
+    # Load the xAI/Grok key (+ local config) DIRECTLY into the training container so
+    # Docker sees the .env (the Dockerfile does not copy it). Optional files so a
+    # clone without them still starts. PAPER ONLY — preflight still blocks live flags.
+    env_file:
+      - path: .env
+        required: false
+      - path: .env.env
+        required: false
     environment:
       HTE_DATA_DIR: "/data"
       HTE_MODE: "paper"
@@ -501,8 +521,9 @@ services:
       CHAINLINK_ENABLED: "1"
       CHAINLINK_RPC_URL: "${CHAINLINK_RPC_URL:-https://ethereum-rpc.publicnode.com}"
       RESEARCH_MODE: "${RESEARCH_MODE:-online_paper}"
-      GROK_API_KEY: "${GROK_API_KEY:-}"
-      XAI_API_KEY: "${XAI_API_KEY:-}"
+      # GROK_API_KEY / XAI_API_KEY come from env_file (.env / .env.env) above — not
+      # set here so an empty "${XAI_API_KEY:-}" can't override the real key Docker
+      # now loads from the file (the cause of Grok staying off in Docker).
       MICRO_LIVE_ENABLED: "0"
       KALSHI_MICRO_LIVE_ENABLED: "0"
       POLYMARKET_MICRO_LIVE_ENABLED: "0"

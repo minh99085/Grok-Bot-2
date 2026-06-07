@@ -88,3 +88,24 @@ def load_local_env(*, root: "Path | str | None" = None, override: bool = False) 
 def grok_key_present() -> bool:
     """True when an xAI/Grok API key is available in the process environment."""
     return bool((os.getenv("XAI_API_KEY") or os.getenv("GROK_API_KEY") or "").strip())
+
+
+# Research-only online modes (xAI research calls; NEVER a trading/live path). Mirror
+# of engine.research.schemas.ONLINE_MODES (kept local to avoid an import cycle).
+_RESEARCH_ONLINE_MODES = ("online_paper", "online_shadow", "guarded_live_readonly", "online")
+
+
+def enable_grok_research_if_key_present(default_mode: str = "online_paper") -> str:
+    """Turn the xAI/Grok research layer ON when a key is present but RESEARCH_MODE is
+    unset/empty: default it to ``online_paper`` (research-only; NEVER live trading).
+
+    So "the key is in .env" is sufficient to activate xAI without also having to set
+    RESEARCH_MODE by hand. If RESEARCH_MODE is already set, it is respected. Returns
+    the resolved RESEARCH_MODE (or "" when no key is present). Paper-only."""
+    if not grok_key_present():
+        return os.environ.get("RESEARCH_MODE", "")
+    cur = (os.environ.get("RESEARCH_MODE") or "").strip()
+    if cur:
+        return cur
+    os.environ["RESEARCH_MODE"] = default_mode
+    return default_mode

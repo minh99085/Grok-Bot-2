@@ -7,7 +7,8 @@ import os
 
 import pytest
 
-from engine.env_loader import load_local_env, grok_key_present
+from engine.env_loader import (load_local_env, grok_key_present,
+                                enable_grok_research_if_key_present)
 
 
 @pytest.fixture(autouse=True)
@@ -32,6 +33,30 @@ def test_loads_xai_key_from_dot_env(tmp_path, monkeypatch):
     load_local_env(root=tmp_path)
     assert os.environ.get("XAI_API_KEY") == "xai-abc123"
     assert grok_key_present() is True
+
+
+def test_enable_grok_research_defaults_online_paper_when_key_present(monkeypatch):
+    # "key in .env" should turn xAI ON (research-only online_paper) without also
+    # having to set RESEARCH_MODE by hand.
+    monkeypatch.setenv("XAI_API_KEY", "x" * 84)
+    monkeypatch.delenv("RESEARCH_MODE", raising=False)
+    mode = enable_grok_research_if_key_present()
+    assert mode == "online_paper"
+    assert os.environ.get("RESEARCH_MODE") == "online_paper"
+
+
+def test_enable_grok_research_respects_explicit_mode(monkeypatch):
+    monkeypatch.setenv("XAI_API_KEY", "x" * 84)
+    monkeypatch.setenv("RESEARCH_MODE", "offline_cache")
+    assert enable_grok_research_if_key_present() == "offline_cache"  # not overridden
+
+
+def test_enable_grok_research_noop_without_key(monkeypatch):
+    monkeypatch.delenv("XAI_API_KEY", raising=False)
+    monkeypatch.delenv("GROK_API_KEY", raising=False)
+    monkeypatch.delenv("RESEARCH_MODE", raising=False)
+    assert enable_grok_research_if_key_present() == ""
+    assert "RESEARCH_MODE" not in os.environ   # no key -> never auto-enable
 
 
 def test_loads_from_dot_env_dot_env_fallback(tmp_path, monkeypatch):

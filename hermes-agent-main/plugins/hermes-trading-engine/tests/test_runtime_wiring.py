@@ -79,6 +79,25 @@ def test_grok_evidence_metrics_non_null(tmp_path, monkeypatch):
         assert feats[k] is not None
 
 
+def test_research_online_paper_is_recognized_as_online(tmp_path, monkeypatch):
+    # online_paper / online_shadow / guarded_live_readonly are ONLINE modes — they
+    # must NOT report research_mode_not_online (the bug that showed "xAI off").
+    monkeypatch.setenv("XAI_API_KEY", "x" * 84)
+    for mode in ("online_paper", "online_shadow", "guarded_live_readonly"):
+        monkeypatch.setenv("RESEARCH_MODE", mode)
+        t = _run(tmp_path, monkeypatch, ticks=1)
+        rs = t.research_status()
+        assert rs["grok_enabled"] is True
+        assert rs["grok_online_active"] is True, mode
+        assert rs["grok_zero_call_reason"] != "research_mode_not_online", mode
+    # offline_cache stays off (correctly)
+    monkeypatch.setenv("RESEARCH_MODE", "offline_cache")
+    t = _run(tmp_path, monkeypatch, ticks=1)
+    rs = t.research_status()
+    assert rs["grok_online_active"] is False
+    assert rs["grok_zero_call_reason"] == "research_mode_not_online"
+
+
 # --- active learning selection visibility -----------------------------------
 
 def test_active_learning_report_selected_includes_shadow(tmp_path, monkeypatch):

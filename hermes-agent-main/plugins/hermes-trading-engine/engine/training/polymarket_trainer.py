@@ -3160,6 +3160,17 @@ class PolymarketPaperTrainer:
             sm = {}
         grok_enabled = bool(os.getenv("XAI_API_KEY") or os.getenv("GROK_API_KEY"))
         research_mode = os.getenv("RESEARCH_MODE", "offline_cache")
+        # canonical online-mode set (matches engine.research.schemas.ONLINE_MODES +
+        # the signal model's _ONLINE_MODES) — online_paper/shadow/guarded_live_readonly
+        # ARE online. Using the wrong list here falsely reported "xAI off".
+        try:
+            from engine.research.schemas import ONLINE_MODES as _ONLINE
+            online_modes = set(_ONLINE) | {"online", "online_research", "live", "grok_online"}
+        except Exception:  # noqa: BLE001
+            online_modes = {"online_paper", "online_shadow", "guarded_live_readonly",
+                            "online", "online_research", "live", "grok_online"}
+        mode_is_online = research_mode.strip().lower() in online_modes
+        grok_online_active = bool(grok_enabled and mode_is_online)
         calls_total = int(sm.get("calls_online", 0) or 0)
         calls_cache = int(sm.get("calls_cache", 0) or 0)
         calls_stub = int(sm.get("calls_offline_stub", sm.get("calls_stub", 0)) or 0)
@@ -3168,7 +3179,7 @@ class PolymarketPaperTrainer:
         if calls_total == 0:
             if not grok_enabled:
                 zero_reason = "no_api_key"
-            elif research_mode.lower() not in ("online", "online_research", "live", "grok_online"):
+            elif not mode_is_online:
                 zero_reason = "research_mode_not_online"
             elif not news.get("news_scanner_enabled", False):
                 zero_reason = "news_scanner_disabled"
@@ -3183,6 +3194,7 @@ class PolymarketPaperTrainer:
             "grok_research_only": True,
             "grok_enabled": grok_enabled,
             "grok_has_api_key": grok_enabled,
+            "grok_online_active": grok_online_active,
             "research_mode": research_mode,
             "grok_calls_total": calls_total,
             "grok_calls_with_news": int(sm.get("calls_with_news", 0) or 0),

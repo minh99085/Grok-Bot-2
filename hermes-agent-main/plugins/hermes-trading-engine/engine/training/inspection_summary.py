@@ -270,11 +270,18 @@ def build_grok_news_evidence(research: dict, *, news_items_used: int = 0) -> dic
     calls = int(r.get("grok_calls_total", 0) or 0)
     enabled = bool(r.get("grok_enabled", False))
     has_key = bool(r.get("grok_has_api_key", r.get("grok_enabled", False)))
+    try:
+        from engine.research.schemas import ONLINE_MODES as _ONLINE
+        _online_modes = set(_ONLINE) | {"online", "online_research", "live", "grok_online"}
+    except Exception:  # noqa: BLE001
+        _online_modes = {"online_paper", "online_shadow", "guarded_live_readonly",
+                         "online", "online_research", "live", "grok_online"}
+    mode_is_online = str(r.get("research_mode", "")).strip().lower() in _online_modes
     reason = r.get("grok_zero_call_reason")
     if calls == 0 and not reason:
         if not enabled or not has_key:
             reason = "grok_disabled_or_no_api_key"
-        elif str(r.get("research_mode", "")).lower() not in ("online", "online_research", "live"):
+        elif not mode_is_online:
             reason = "research_mode_not_online"
         elif int(news_items_used or 0) == 0:
             reason = "no_news_packet_selected"
@@ -283,6 +290,7 @@ def build_grok_news_evidence(research: dict, *, news_items_used: int = 0) -> dic
     return {
         "grok_enabled": enabled,
         "grok_has_api_key": has_key,
+        "grok_online_active": bool((enabled and has_key) and mode_is_online),
         "research_mode": r.get("research_mode"),
         "news_items_used": int(news_items_used or 0),
         "grok_calls_total": calls,
