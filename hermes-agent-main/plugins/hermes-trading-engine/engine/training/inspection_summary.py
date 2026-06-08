@@ -320,6 +320,37 @@ def build_bregman_funnel(bregman_telemetry: dict, *, market_groups_detected: int
         "bregman_refresh_failed": _i("bregman_refresh_failed"),
         "bregman_stale_after_refresh": _i("bregman_stale_after_refresh"),
         "bregman_refresh_not_attempted_reason": t.get("bregman_refresh_not_attempted_reason"),
+        "bregman_worst_leg_depth_usd": t.get("bregman_worst_leg_depth_usd"),
+        "bregman_best_depth_quality_score": t.get("bregman_best_depth_quality_score"),
+        "bregman_all_groups_depth_insufficient": bool(
+            t.get("bregman_all_groups_depth_insufficient", False)),
+        # canonical price parser census (trainer path)
+        "bregman_price_parse_attempts": _i("bregman_price_parse_attempts"),
+        "bregman_price_parse_success": _i("bregman_price_parse_success"),
+        "bregman_price_parse_failures": _i("bregman_price_parse_failures"),
+        "bregman_price_parse_success_rate": float(
+            t.get("bregman_price_parse_success_rate", t.get("parsed_price_success_rate", 1.0)) or 1.0),
+        "bregman_non_numeric_price_count": _i("bregman_non_numeric_price_count", "non_numeric_price_count"),
+        "bregman_non_numeric_price_examples": list(t.get("bregman_non_numeric_price_examples", []) or []),
+        "bregman_missing_price_count": _i("bregman_missing_price_count"),
+        "bregman_malformed_price_count": _i("bregman_malformed_price_count"),
+        # explicit candidate-generation blocker (candidates=0 is never unexplained)
+        "bregman_groups_entered_certifier": _i("bregman_groups_entered_certifier"),
+        "bregman_groups_failed_before_candidate_generation": _i(
+            "bregman_groups_failed_before_candidate_generation"),
+        "bregman_candidate_generation_blocker": t.get("bregman_candidate_generation_blocker"),
+        "bregman_candidate_generation_blocker_counts": dict(
+            t.get("bregman_candidate_generation_blocker_counts", {}) or {}),
+        "bregman_candidate_generation_blocker_samples": list(
+            t.get("bregman_candidate_generation_blocker_samples", []) or []),
+        "bregman_certifier_exception": t.get("bregman_certifier_exception"),
+        # near-miss honesty
+        "best_after_cost_lower_bound": t.get("best_after_cost_lower_bound"),
+        "best_depth_sufficient_lower_bound": t.get("best_depth_sufficient_lower_bound"),
+        "best_complete_group_lower_bound": t.get("best_complete_group_lower_bound"),
+        "best_one_fix_away_reason": t.get("best_one_fix_away_reason"),
+        "all_top_near_misses_negative_lower_bound": bool(
+            t.get("all_top_near_misses_negative_lower_bound", False)),
         # precise price/outcome parsing diagnostics (from the ABCAS scanner merge)
         "non_numeric_price_count": _i("non_numeric_price_count"),
         "insufficient_outcomes_count": _i("insufficient_outcomes_count"),
@@ -385,7 +416,17 @@ def build_grok_news_evidence(research: dict, *, news_items_used: int = 0) -> dic
         "grok_advisory_calls_per_hour": int(r.get("grok_advisory_calls_per_hour", 0) or 0),
         "grok_proof_calls_total": int(r.get("grok_proof_calls_total", 0) or 0),
         "grok_scheduler_calls_total": int(r.get("grok_scheduler_calls_total", 0) or 0),
+        "grok_total_calls_reconciled": bool(r.get("grok_total_calls_reconciled", True)),
         "grok_scheduled_calls": int(r.get("grok_scheduled_calls", 0) or 0),
+        "grok_scheduler_eligible_targets": int(r.get("grok_scheduler_eligible_targets", 0) or 0),
+        "grok_scheduler_targets_selected": int(r.get("grok_scheduler_targets_selected", 0) or 0),
+        "grok_scheduler_targets_skipped": int(r.get("grok_scheduler_targets_skipped", 0) or 0),
+        "grok_scheduler_skip_reasons": dict(r.get("grok_scheduler_skip_reasons", {}) or {}),
+        "grok_scheduler_rate_limited_count": int(r.get("grok_scheduler_rate_limited_count", 0) or 0),
+        "grok_scheduler_no_target_count": int(r.get("grok_scheduler_no_target_count", 0) or 0),
+        "grok_bregman_incomplete_groups_analyzed": int(r.get("grok_bregman_incomplete_groups_analyzed", 0) or 0),
+        "grok_bregman_malformed_groups_analyzed": int(r.get("grok_bregman_malformed_groups_analyzed", 0) or 0),
+        "grok_learning_features_written": int(r.get("grok_learning_features_written", 0) or 0),
         "grok_market_groups_analyzed": int(r.get("grok_market_groups_analyzed", 0) or 0),
         "grok_bregman_near_misses_analyzed": int(r.get("grok_bregman_near_misses_analyzed", 0) or 0),
         "grok_news_linked_markets_analyzed": int(r.get("grok_news_linked_markets_analyzed", 0) or 0),

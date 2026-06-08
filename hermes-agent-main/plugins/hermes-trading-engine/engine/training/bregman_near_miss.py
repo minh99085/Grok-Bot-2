@@ -47,6 +47,42 @@ def _legs(group) -> list:
     return list(getattr(group, "legs", None) or [])
 
 
+def leg_identity(group) -> dict:
+    """Canonical structured identity for a Bregman group's legs (read-only).
+
+    Distinguishes DISTINCT market ids from DISTINCT outcome/token ids so a single
+    binary market's YES/NO pair is never reported as two separate markets. Reports
+    ``token_ids_unavailable`` when legs carry no real token ids."""
+    legs = _legs(group)
+    market_ids, token_ids, labels, prices = [], [], [], []
+    synthetic_tokens = 0
+    for l in legs:
+        mid = str(getattr(l, "market_id", "") or "")
+        tok = str(getattr(l, "token_id", "") or "")
+        lab = str(getattr(l, "outcome", "") or "")
+        market_ids.append(mid)
+        # a synthetic fallback token id looks like "<market_id>:YES" / ":0"
+        if not tok or tok.startswith(f"{mid}:") or tok == f"{mid}":
+            synthetic_tokens += 1
+            tok = tok or f"{mid}:{lab or len(token_ids)}"
+        token_ids.append(tok)
+        labels.append(lab.upper() if lab.lower() in ("yes", "no") else lab)
+        ask = getattr(l, "ask", None)
+        prices.append(round(float(ask), 6) if ask not in (None, "") else None)
+    distinct_markets = sorted(set(m for m in market_ids if m))
+    return {
+        "market_ids": distinct_markets,            # DISTINCT markets only
+        "leg_market_ids": market_ids,              # per-leg (may repeat for YES/NO)
+        "token_ids": token_ids,                    # per-leg distinct outcome ids
+        "outcome_labels": labels,
+        "outcome_prices": prices,
+        "n_legs": len(legs),
+        "n_distinct_markets": len(distinct_markets),
+        "token_ids_unavailable": bool(synthetic_tokens == len(legs) and legs),
+        "single_market_binary": bool(len(distinct_markets) == 1 and len(legs) == 2),
+    }
+
+
 def depth_quality(group, *, min_depth_usd: float) -> dict:
     """Per-leg depth diagnostic (read-only). Reports min/median/worst leg depth,
     thin-leg count, executable notional at the touch, and whether ONE leg or MANY
@@ -250,13 +286,23 @@ def analyze_rejection(group, reason: str, *, min_depth_usd: float,
         (FIX_DEPTH, depth_ok), (FIX_STALE, fresh_ok), (FIX_SPREAD, spread_ok))
         if not ok]
     one_fix_away = len(blockers) == 1
+    ident = leg_identity(group)
     return {
         "group_key": str(getattr(group, "group_id", "") or ""),
         "group_type": str(getattr(group, "group_type", "") or ""),
-        "raw_market_ids": [str(getattr(l, "market_id", "") or "") for l in _legs(group)],
+        # canonical structured identity (NO duplicated market ids; distinct token ids)
+        "market_ids": ident["market_ids"],
+        "token_ids": ident["token_ids"],
+        "outcome_labels": ident["outcome_labels"],
+        "outcome_prices": ident["outcome_prices"],
+        "token_ids_unavailable": ident["token_ids_unavailable"],
+        "single_market_binary": ident["single_market_binary"],
+        # legacy alias kept for back-compat (now DISTINCT, never ['x','x'] for binary)
+        "raw_market_ids": ident["market_ids"],
         "reject_reason": reason,
         "fix_category": fix,
         "near_miss_score": score,
+        "near_miss_tradeable": False,        # diagnostics are NEVER executable
         "one_fix_away": one_fix_away,
         "remaining_blockers": blockers,
         "depth_quality": dq,
@@ -307,6 +353,20 @@ def summarize(items: list, *, top_n: int = 10) -> dict:
     lbs = [it.get("after_cost_lower_bound") for it in items
            if it.get("after_cost_lower_bound") is not None]
     all_negative = bool(lbs) and all(v <= 0 for v in lbs)
+    best_lb = max(lbs) if lbs else None
+    depth_ok_lbs = [it.get("after_cost_lower_bound") for it in items
+                    if it.get("after_cost_lower_bound") is not None
+                    and it.get("depth_quality", {}).get("thin_legs", 1) == 0]
+    complete_lbs = [it.get("after_cost_lower_bound") for it in items
+                    if it.get("after_cost_lower_bound") is not None
+                    and it.get("completeness", {}).get("completeness_proven")]
+    one_fix_items = [it for it in items if it.get("one_fix_away")]
+    best_one_fix = (sorted(one_fix_items, key=lambda it: it.get("near_miss_score", 0.0),
+                           reverse=True)[0].get("remaining_blockers", [None])[0]
+                    if one_fix_items else None)
+    top_ranked = rank_near_misses(items, top_n=top_n)
+    all_top_negative = bool(top_ranked) and all(
+        (it.get("after_cost_lower_bound") or -1) <= 0 for it in top_ranked)
     return {
         "bregman_near_misses_total": len(items),
         "bregman_top_near_misses": rank_near_misses(items, top_n=top_n),
@@ -328,9 +388,23 @@ def summarize(items: list, *, top_n: int = 10) -> dict:
             "top_by_grok_news_relevance": _top(
                 lambda it: float((it.get("advisory_features") or {}).get(
                     "grok_news_relevance_score", 0.0))),
+            "top_malformed_but_high_liquidity": _top(
+                lambda it: it.get("depth_quality", {}).get("min_leg_depth_usd", 0.0),
+                predicate=lambda it: it.get("simplex", {}).get("invalid_normalization")
+                or it.get("simplex", {}).get("duplicate_outcomes")),
+            "top_incomplete_but_high_liquidity": _top(
+                lambda it: it.get("depth_quality", {}).get("min_leg_depth_usd", 0.0),
+                predicate=lambda it: not it.get("completeness", {}).get(
+                    "completeness_proven", True)),
         },
         "near_miss_all_negative_after_cost_lower_bound": all_negative,
-        "near_miss_tradeable_count": 0,        # diagnostics NEVER tradeable
+        "all_top_near_misses_negative_lower_bound": all_top_negative,
+        "best_after_cost_lower_bound": best_lb,
+        "best_depth_sufficient_lower_bound": (max(depth_ok_lbs) if depth_ok_lbs else None),
+        "best_complete_group_lower_bound": (max(complete_lbs) if complete_lbs else None),
+        "best_one_fix_away_reason": best_one_fix,
+        "near_miss_tradeable": False,          # diagnostics are NEVER tradeable
+        "near_miss_tradeable_count": 0,
         "near_miss_note": ("all near-misses have non-positive after-cost lower bound; "
                            "none are tradeable" if all_negative else
                            "near-misses are diagnostic only and are never executed"),

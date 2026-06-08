@@ -57,6 +57,16 @@ class GrokProofCaller:
         # calls (a chosen high-value target) so report metrics never contradict.
         self.proof_calls_total = 0
         self.scheduler_calls_total = 0
+        # scheduler target accounting (reconciles "0 scheduled calls" honestly)
+        self.scheduler_eligible_targets = 0
+        self.scheduler_targets_selected = 0
+        self.scheduler_targets_skipped = 0
+        self.scheduler_skip_reasons: dict = {}
+        self.scheduler_no_target_count = 0
+        self.scheduler_rate_limited_count = 0
+        self.incomplete_groups_analyzed = 0
+        self.malformed_groups_analyzed = 0
+        self.learning_features_written = 0
 
     @staticmethod
     def _classify_result(res) -> Optional[str]:
@@ -105,7 +115,8 @@ class GrokProofCaller:
                    evidence_sink: Optional[Callable[[dict], None]] = None,
                    now: Optional[float] = None, target_kind: Optional[str] = None,
                    advisory_features: Optional[dict] = None,
-                   analyzed_increments: Optional[dict] = None) -> dict:
+                   analyzed_increments: Optional[dict] = None,
+                   eligible_targets: int = 0) -> dict:
         """Attempt at most one advisory call (bounded scheduler). Returns a result
         dict with ``called`` (bool), ``reason`` (precise zero-call reason when not
         called), ``grok_calls_total`` / ``grok_calls_with_news`` (cumulative), and
@@ -137,6 +148,17 @@ class GrokProofCaller:
             reason = REASON_NOT_DUE         # min spacing between proof calls
         else:
             reason = None
+
+        # scheduler target accounting (only when this is a SCHEDULER attempt).
+        self.scheduler_eligible_targets = max(self.scheduler_eligible_targets,
+                                              int(eligible_targets or 0))
+        if target_kind and reason is not None:
+            self.scheduler_targets_skipped += 1
+            self.scheduler_skip_reasons[reason] = self.scheduler_skip_reasons.get(reason, 0) + 1
+            if reason in (REASON_RATE_LIMIT, REASON_NOT_DUE):
+                self.scheduler_rate_limited_count += 1
+            if reason in (REASON_NO_MARKET, REASON_NO_NEWS):
+                self.scheduler_no_target_count += 1
 
         if reason is not None:
             self.last_reason = reason
@@ -178,8 +200,13 @@ class GrokProofCaller:
         self.news_linked_markets_analyzed += int(inc.get("news_linked_analyzed", 0) or 0)
         if target_kind:
             self.scheduler_calls_total += 1     # chose a high-value advisory target
+            self.scheduler_targets_selected += 1
         else:
             self.proof_calls_total += 1         # bare liveness proof call
+        self.incomplete_groups_analyzed += int(inc.get("incomplete_groups_analyzed", 0) or 0)
+        self.malformed_groups_analyzed += int(inc.get("malformed_groups_analyzed", 0) or 0)
+        if advisory_features:
+            self.learning_features_written += 1
         evidence = {
             "kind": "grok_advisory_call", "advisory_only": True,
             "ts": round(now, 3), "market_id": market_ctx.get("market_id"),
@@ -222,11 +249,22 @@ class GrokProofCaller:
             "grok_calls_with_news": self.calls_with_news,
             "grok_proof_calls_total": self.proof_calls_total,
             "grok_scheduler_calls_total": self.scheduler_calls_total,
+            "grok_total_calls_reconciled": bool(
+                self.proof_calls_total + self.scheduler_calls_total == self.calls_total),
             "grok_evidence_records_written": self.evidence_records_written,
             "grok_advisory_calls_per_hour": self.advisory_calls_per_hour(),
+            "grok_scheduler_eligible_targets": self.scheduler_eligible_targets,
+            "grok_scheduler_targets_selected": self.scheduler_targets_selected,
+            "grok_scheduler_targets_skipped": self.scheduler_targets_skipped,
+            "grok_scheduler_skip_reasons": dict(self.scheduler_skip_reasons),
+            "grok_scheduler_rate_limited_count": self.scheduler_rate_limited_count,
+            "grok_scheduler_no_target_count": self.scheduler_no_target_count,
             "grok_market_groups_analyzed": self.market_groups_analyzed,
             "grok_bregman_near_misses_analyzed": self.bregman_near_misses_analyzed,
+            "grok_bregman_incomplete_groups_analyzed": self.incomplete_groups_analyzed,
+            "grok_bregman_malformed_groups_analyzed": self.malformed_groups_analyzed,
             "grok_news_linked_markets_analyzed": self.news_linked_markets_analyzed,
+            "grok_learning_features_written": self.learning_features_written,
             "grok_proof_call_last_reason": self.last_reason,
             "grok_proof_call_last_ts": self.last_call_ts,
         }

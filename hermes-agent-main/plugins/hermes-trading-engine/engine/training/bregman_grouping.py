@@ -138,20 +138,17 @@ def _rec_attr(rec, name, default=None):
 
 
 def _best_ask(rec) -> Optional[float]:
+    """Best ask via the ONE canonical price parser (no reference/mid fallback)."""
+    from engine.arbitrage.price_parsing import parse_price
     raw = _rec_attr(rec, "raw", {}) or {}
-    try:
-        a = float(raw.get("bestAsk")) if raw.get("bestAsk") not in (None, "") else None
-    except (TypeError, ValueError):
-        a = None
+    a = parse_price(raw.get("bestAsk"))
     return a if (a and a > 0) else None
 
 
 def _best_bid(rec) -> Optional[float]:
+    from engine.arbitrage.price_parsing import parse_price
     raw = _rec_attr(rec, "raw", {}) or {}
-    try:
-        b = float(raw.get("bestBid")) if raw.get("bestBid") not in (None, "") else None
-    except (TypeError, ValueError):
-        b = None
+    b = parse_price(raw.get("bestBid"))
     return b if (b and b > 0) else None
 
 

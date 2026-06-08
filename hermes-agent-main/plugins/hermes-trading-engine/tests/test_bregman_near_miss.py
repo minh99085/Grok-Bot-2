@@ -233,6 +233,75 @@ def test_trainer_depth_sufficient_metrics_no_threshold_change(tmp_path, monkeypa
     assert "bregman_depth_sufficient_groups" in bx
 
 
+def test_binary_near_miss_one_market_two_token_ids_yesno_labels(tmp_path, monkeypatch):
+    from engine.markets.universe_manager import MarketRecord
+    t = _trainer(tmp_path, monkeypatch)
+    r = MarketRecord.from_raw({"id": "573655", "question": "Will X happen?",
+        "bestAsk": "0.5", "bestBid": "0.48", "clobTokenIds": ["tokYES", "tokNO"],
+        "active": True, "liquidityNum": 5, "volumeNum": 5})
+    t.closed_loop.begin_tick()
+    t.scan_bregman([r], now=1000.0)
+    top = t.bregman_exec_metrics.get("bregman_top_near_misses", [])
+    assert top, "expected a near-miss for the thin binary market"
+    nm = top[0]
+    assert nm["market_ids"] == ["573655"]              # ONE market, not duplicated
+    assert len(set(nm["token_ids"])) == 2              # two DISTINCT token ids
+    assert nm["outcome_labels"] == ["YES", "NO"]       # not 'unknown'
+    assert nm["completeness"]["observed_outcomes"] == ["YES", "NO"]
+    assert nm["near_miss_tradeable"] is False
+    assert nm["token_ids_unavailable"] is False
+    assert nm["single_market_binary"] is True
+
+
+def test_candidate_generation_blocker_explicit_when_zero(tmp_path, monkeypatch):
+    from engine.markets.universe_manager import MarketRecord
+    t = _trainer(tmp_path, monkeypatch)
+    r = MarketRecord.from_raw({"id": "m1", "question": "Will X?", "bestAsk": "0.5",
+        "bestBid": "0.48", "clobTokenIds": ["a", "b"], "active": True,
+        "liquidityNum": 5, "volumeNum": 5})       # ~$ thin depth
+    t.closed_loop.begin_tick()
+    t.scan_bregman([r], now=1000.0)
+    bx = t.bregman_exec_metrics
+    assert bx["certified_opportunities"] == 0
+    assert bx["bregman_groups_entered_certifier"] >= 1
+    assert bx["bregman_candidate_generation_blocker"] is not None
+    assert bx["bregman_candidate_generation_blocker_counts"]
+    assert bx["bregman_candidate_generation_blocker_samples"]
+    # sample carries the clean canonical identity (no duplicated market id)
+    s = bx["bregman_candidate_generation_blocker_samples"][0]
+    assert s["market_ids"] == ["m1"]
+    assert len(set(s["token_ids"])) == 2
+
+
+def test_price_parse_census_populated(tmp_path, monkeypatch):
+    from engine.markets.universe_manager import MarketRecord
+    t = _trainer(tmp_path, monkeypatch)
+    r = MarketRecord.from_raw({"id": "m1", "question": "Q", "bestAsk": "0.5",
+        "bestBid": "0.48", "clobTokenIds": ["a", "b"], "active": True,
+        "liquidityNum": 100, "volumeNum": 100})
+    t.closed_loop.begin_tick()
+    t.scan_bregman([r], now=1000.0)
+    bx = t.bregman_exec_metrics
+    assert bx["bregman_price_parse_attempts"] >= 2
+    assert bx["bregman_price_parse_success_rate"] == 1.0
+    assert bx["bregman_non_numeric_price_count"] == 0
+
+
+def test_depth_quality_extras_reported(tmp_path, monkeypatch):
+    from engine.markets.universe_manager import MarketRecord
+    t = _trainer(tmp_path, monkeypatch)
+    recs = [MarketRecord.from_raw({"id": m, "question": "Q", "bestAsk": "0.5",
+        "bestBid": "0.48", "clobTokenIds": [m + "a", m + "b"], "active": True,
+        "liquidityNum": 5, "volumeNum": 5}) for m in ("m1", "m2")]
+    t.closed_loop.begin_tick()
+    t.scan_bregman(recs, now=1000.0)
+    bx = t.bregman_exec_metrics
+    for k in ("bregman_worst_leg_depth_usd", "bregman_best_depth_quality_score",
+              "bregman_all_groups_depth_insufficient", "bregman_required_depth_usd"):
+        assert k in bx
+    assert bx["bregman_all_groups_depth_insufficient"] is True
+
+
 def test_trainer_stale_refresh_metrics_reported(tmp_path, monkeypatch):
     from engine.markets.universe_manager import MarketRecord
     t = _trainer(tmp_path, monkeypatch)

@@ -759,10 +759,24 @@ class PolymarketPaperTrainer:
         groups = self._order_groups_by_depth(groups)
         depth_tel = self._bregman_depth_telemetry(groups)
         stale_tel = self._bregman_refresh_promising(groups, now)
+        parse_tel = self._bregman_price_parse_census(records)
+        certifier_exc = None
         try:
             certs = self.bregman.certify_all(groups, now=now)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 — capture, never silently swallow
+            certifier_exc = f"{type(exc).__name__}: {str(exc)[:160]}"
             self.bregman_log = []
+            self.bregman_exec_metrics = {
+                "raw_catalog_markets_scanned": len(records),
+                "raw_groups_discovered": raw_n, "unique_groups_certified": 0,
+                "certified_opportunities": 0,
+                "bregman_groups_entered_certifier": len(groups),
+                "bregman_candidate_generation_blocker": "certifier_internal_exception",
+                "bregman_candidate_generation_blocker_counts": {"certifier_internal_exception": 1},
+                "bregman_candidate_generation_blocker_samples": [{"exception": certifier_exc}],
+                "bregman_certifier_exception": certifier_exc,
+                **depth_tel, **stale_tel, **parse_tel,
+            }
             return []
         # Funnel + near-miss: for every rejection, count the reason AND record a
         # read-only near-miss diagnostic (how close + exactly why). Never executes.
@@ -788,23 +802,118 @@ class PolymarketPaperTrainer:
         self.bregman_log = [c.to_dict() for c in certs]
         nm_summary = summarize(list(self._bregman_near_miss_best.values()),
                                top_n=int(getattr(self.cfg, "bregman_top_near_misses", 10) or 10))
+        certified_n = sum(1 for c in certs if c.is_opportunity)
+        cand_tel = self._bregman_candidate_blocker(groups, certs, certified_n)
         self.bregman_exec_metrics = {
             "raw_catalog_markets_scanned": len(records),
             "raw_groups_discovered": raw_n,
             "duplicate_groups_dropped": dropped,
             "unique_groups_certified": len(groups),
-            "certified_opportunities": sum(1 for c in certs if c.is_opportunity),
+            "certified_opportunities": certified_n,
             "rejected_by_reason": dict(self.bregman_reject_reasons),
             "grouping_method": "group_markets",
             "groups_from_graph_used": False,
             "groups_from_graph_reason": "groups_from_graph() not present on this branch; "
                                         "using group_markets() over the full eligible catalog",
             "evaluated_before_directional": True,
+            "bregman_certifier_exception": None,
             **nm_summary,
             **depth_tel,
             **stale_tel,
+            **parse_tel,
+            **cand_tel,
         }
         return certs
+
+    def _bregman_price_parse_census(self, records: list) -> dict:
+        """ONE canonical-parser price census over the raw records (read-only). Counts
+        parse attempts/success/failures + non-numeric/missing/malformed with examples
+        so the report proves whether Bregman parsed prices correctly."""
+        from engine.arbitrage.price_parsing import parse_price
+        attempts = success = non_numeric = missing = 0
+        examples: list = []
+        for rec in records:
+            raw = (rec.get("raw", {}) if isinstance(rec, dict)
+                   else getattr(rec, "raw", {})) or {}
+            for fld in ("bestAsk", "bestBid"):
+                v = raw.get(fld)
+                attempts += 1
+                if v in (None, ""):
+                    missing += 1
+                    continue
+                p = parse_price(v)
+                if p is None:
+                    non_numeric += 1
+                    if len(examples) < 5:
+                        examples.append(str(v)[:40])
+                else:
+                    success += 1
+        failures = non_numeric + missing
+        return {
+            "bregman_price_parse_attempts": attempts,
+            "bregman_price_parse_success": success,
+            "bregman_price_parse_failures": failures,
+            "bregman_price_parse_success_rate": round(success / attempts, 4) if attempts else 1.0,
+            "bregman_non_numeric_price_count": non_numeric,
+            "bregman_non_numeric_price_examples": examples,
+            "bregman_missing_price_count": missing,
+            "bregman_malformed_price_count": non_numeric,
+        }
+
+    def _bregman_candidate_blocker(self, groups: list, certs: list,
+                                   certified_n: int) -> dict:
+        """Make ``candidates_generated=0`` impossible WITHOUT a precise blocker.
+
+        When groups reached the certifier but produced no candidate, report which
+        strict gate (never loosened) stopped every group, with counts + samples."""
+        entered = len(groups)
+        if certified_n > 0 or entered == 0:
+            return {
+                "bregman_groups_entered_certifier": entered,
+                "bregman_groups_failed_before_candidate_generation": 0,
+                "bregman_candidate_generation_blocker": None,
+                "bregman_candidate_generation_blocker_counts": {},
+                "bregman_candidate_generation_blocker_samples": [],
+            }
+        _PRE = {"invalid_simplex", "missing_leg", "no_executable_price",
+                "not_exhaustive", "not_mutually_exclusive", "duplicate_legs"}
+        counts: dict = {}
+        samples: list = []
+        failed_before = 0
+        from engine.training.bregman_near_miss import leg_identity
+        for g, c in zip(groups, certs):
+            if getattr(c, "is_opportunity", False):
+                continue
+            reason = (c.no_trade_reason or (c.failure_modes[0]
+                      if getattr(c, "failure_modes", None) else "rejected"))
+            counts[reason] = counts.get(reason, 0) + 1
+            if reason in _PRE:
+                failed_before += 1
+            if len(samples) < 5:
+                ident = leg_identity(g)
+                samples.append({"group_key": getattr(g, "group_id", ""),
+                                "reject_reason": reason,
+                                "market_ids": ident["market_ids"],
+                                "token_ids": ident["token_ids"],
+                                "outcome_labels": ident["outcome_labels"]})
+        _MAP = {"depth_too_thin": "no_depth_sufficient_groups",
+                "no_executable_price": "all_groups_had_missing_prices",
+                "not_exhaustive": "no_complete_groups",
+                "not_mutually_exclusive": "no_complete_groups",
+                "invalid_simplex": "all_groups_invalid_simplex",
+                "stale_book": "all_groups_stale_books",
+                "spread_too_wide": "all_groups_wide_spreads",
+                "no_positive_edge": "no_positive_after_cost_lower_bound",
+                "settlement_ambiguity": "all_groups_ambiguous_settlement"}
+        dominant = max(counts.items(), key=lambda kv: kv[1], default=(None, 0))[0]
+        return {
+            "bregman_groups_entered_certifier": entered,
+            "bregman_groups_failed_before_candidate_generation": failed_before,
+            "bregman_candidate_generation_blocker": _MAP.get(dominant, dominant
+                                                             or "insufficient_market_universe"),
+            "bregman_candidate_generation_blocker_counts": dict(sorted(counts.items())),
+            "bregman_candidate_generation_blocker_samples": samples,
+        }
 
     def _bregman_depth_telemetry(self, groups: list) -> dict:
         """Read-only depth-quality census over the certifier's REQUIRED depth (not
@@ -814,6 +923,8 @@ class PolymarketPaperTrainer:
         min_depth = float(getattr(self.bregman, "min_depth_usd", 50.0))
         hi_liq = max(min_depth * 4.0, 100.0)
         suff = insuff = hi = 0
+        best_worst_leg = 0.0          # best (max) over groups of their worst leg depth
+        best_quality = 0.0            # best depth-quality score in [0,1]
         for g in groups:
             try:
                 dq = depth_quality(g, min_depth_usd=min_depth)
@@ -825,12 +936,18 @@ class PolymarketPaperTrainer:
                 insuff += 1
             if dq["min_leg_depth_usd"] >= hi_liq:
                 hi += 1
+            best_worst_leg = max(best_worst_leg, dq["worst_leg_depth_usd"])
+            best_quality = max(best_quality,
+                               min(1.0, dq["min_leg_depth_usd"] / max(1e-9, min_depth)))
         return {
             "bregman_required_depth_usd": min_depth,
             "bregman_depth_sufficient_groups": suff,
             "bregman_depth_sufficient_groups_sent_to_certifier": suff,
             "bregman_depth_insufficient_groups": insuff,
             "bregman_high_liquidity_groups_scanned": hi,
+            "bregman_worst_leg_depth_usd": round(best_worst_leg, 4),
+            "bregman_best_depth_quality_score": round(best_quality, 4),
+            "bregman_all_groups_depth_insufficient": bool(groups and suff == 0),
             "bregman_all_groups_thin": bool(groups and suff == 0),
         }
 
@@ -3353,9 +3470,12 @@ class PolymarketPaperTrainer:
                 news_packet=news_packet, market_ctx=target_ctx,
                 target_kind=sel.get("target_kind"),
                 advisory_features=sel.get("advisory_features"),
+                eligible_targets=int(sel.get("eligible_targets", 0)),
                 analyzed_increments={
                     "groups_analyzed": sel.get("groups_analyzed", 0),
                     "near_misses_analyzed": sel.get("near_misses_analyzed", 0),
+                    "incomplete_groups_analyzed": sel.get("incomplete_groups_analyzed", 0),
+                    "malformed_groups_analyzed": sel.get("malformed_groups_analyzed", 0),
                     "news_linked_analyzed": sel.get("news_linked_analyzed", 0)},
                 evidence_sink=lambda ev: self.closed_loop.sink.append_diagnostic(
                     {"diagnostic_type": "grok_advisory_call", **ev}),
@@ -3467,6 +3587,16 @@ class PolymarketPaperTrainer:
             # proof vs scheduled-advisory split (reconciles grok_scheduled_calls):
             "grok_proof_calls_total": int(proof.get("grok_proof_calls_total", 0) or 0),
             "grok_scheduler_calls_total": int(proof.get("grok_scheduler_calls_total", 0) or 0),
+            "grok_total_calls_reconciled": bool(proof.get("grok_total_calls_reconciled", True)),
+            "grok_scheduler_eligible_targets": int(proof.get("grok_scheduler_eligible_targets", 0) or 0),
+            "grok_scheduler_targets_selected": int(proof.get("grok_scheduler_targets_selected", 0) or 0),
+            "grok_scheduler_targets_skipped": int(proof.get("grok_scheduler_targets_skipped", 0) or 0),
+            "grok_scheduler_skip_reasons": dict(proof.get("grok_scheduler_skip_reasons", {}) or {}),
+            "grok_scheduler_rate_limited_count": int(proof.get("grok_scheduler_rate_limited_count", 0) or 0),
+            "grok_scheduler_no_target_count": int(proof.get("grok_scheduler_no_target_count", 0) or 0),
+            "grok_bregman_incomplete_groups_analyzed": int(proof.get("grok_bregman_incomplete_groups_analyzed", 0) or 0),
+            "grok_bregman_malformed_groups_analyzed": int(proof.get("grok_bregman_malformed_groups_analyzed", 0) or 0),
+            "grok_learning_features_written": int(proof.get("grok_learning_features_written", 0) or 0),
             "grok_market_groups_analyzed": int(proof.get("grok_market_groups_analyzed", 0) or 0),
             "grok_bregman_near_misses_analyzed": int(proof.get(
                 "grok_bregman_near_misses_analyzed", 0) or 0),

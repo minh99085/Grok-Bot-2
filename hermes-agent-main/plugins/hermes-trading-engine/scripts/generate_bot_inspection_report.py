@@ -1634,10 +1634,16 @@ def _build_report_md(rj, feats, status, docker, api, tests, comparison,
         L.append("")
         for k in ("grok_advisory_enabled", "grok_brain_ready", "grok_brain_blocker",
                   "xai_api_key_source", "grok_calls_total", "grok_calls_with_news",
+                  "grok_proof_calls_total", "grok_scheduler_calls_total",
+                  "grok_total_calls_reconciled", "grok_scheduled_calls",
+                  "grok_scheduler_eligible_targets", "grok_scheduler_targets_selected",
+                  "grok_scheduler_targets_skipped", "grok_scheduler_skip_reasons",
                   "grok_advisory_only_count", "grok_evidence_records_written",
                   "grok_advisory_max_calls_per_hour", "grok_advisory_calls_per_hour",
                   "grok_market_groups_analyzed", "grok_bregman_near_misses_analyzed",
-                  "grok_news_linked_markets_analyzed", "grok_contributed_learning_features",
+                  "grok_bregman_incomplete_groups_analyzed", "grok_bregman_malformed_groups_analyzed",
+                  "grok_news_linked_markets_analyzed", "grok_learning_features_written",
+                  "grok_contributed_learning_features",
                   "grok_advisory_only_invariant", "grok_no_execution_override"):
             if k in _g:
                 L.append(f"- {k}: {_g.get(k)}")
@@ -1707,8 +1713,36 @@ def _build_report_md(rj, feats, status, docker, api, tests, comparison,
             for nm in top[:5]:
                 L.append(f"  - {nm.get('group_key')} reason={nm.get('reject_reason')} "
                          f"score={nm.get('near_miss_score')} "
+                         f"market_ids={nm.get('market_ids')} token_ids={nm.get('token_ids')} "
+                         f"labels={nm.get('outcome_labels')} "
                          f"one_fix_away={nm.get('one_fix_away')} "
+                         f"tradeable={nm.get('near_miss_tradeable', False)} "
                          f"blockers={nm.get('remaining_blockers')}")
+        # 11c. certifier / candidate-generation health — candidates=0 is NEVER unexplained
+        L.append("")
+        L.append("### 11c. Bregman Certifier / Candidate Health (read-only)")
+        L.append("")
+        L.append(f"- bregman_groups_entered_certifier: {_pv('bregman_groups_entered_certifier')}")
+        L.append(f"- candidates_generated (certified): {_bf.get('certified', 0)}")
+        L.append(f"- realistic_executable: {_bf.get('realistic_executable', 0)}")
+        L.append(f"- bundles_opened: {_bf.get('bundles_opened', 0)}")
+        L.append(f"- bregman_candidate_generation_blocker: "
+                 f"{_bf.get('bregman_candidate_generation_blocker')}")
+        cgc = _bf.get("bregman_candidate_generation_blocker_counts", {}) or {}
+        if cgc:
+            L.append(f"- bregman_candidate_generation_blocker_counts: {cgc}")
+        for s in (_bf.get("bregman_candidate_generation_blocker_samples", []) or [])[:3]:
+            L.append(f"  - sample: group={s.get('group_key')} "
+                     f"reason={s.get('reject_reason')} market_ids={s.get('market_ids')} "
+                     f"token_ids={s.get('token_ids')} labels={s.get('outcome_labels')}")
+        if _bf.get("bregman_certifier_exception"):
+            L.append(f"- bregman_certifier_exception: {_bf.get('bregman_certifier_exception')}")
+        L.append(f"- best_after_cost_lower_bound: {_bf.get('best_after_cost_lower_bound')}")
+        L.append(f"- best_one_fix_away_reason: {_bf.get('best_one_fix_away_reason')}")
+        L.append(f"- all_top_near_misses_negative_lower_bound: "
+                 f"{_bf.get('all_top_near_misses_negative_lower_bound', False)}")
+        L.append(f"- bregman_worst_leg_depth_usd: {_pv('bregman_worst_leg_depth_usd')} "
+                 f"(required {_pv('bregman_required_depth_usd')})")
     L.append("")
     L.append("## 12. Paper Training Metrics")
     L.append("")

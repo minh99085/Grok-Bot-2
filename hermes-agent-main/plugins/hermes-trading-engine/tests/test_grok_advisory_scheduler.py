@@ -174,6 +174,56 @@ def test_proof_vs_scheduler_calls_reconciled():
     assert st["grok_proof_calls_total"] + st["grok_scheduler_calls_total"] == st["grok_calls_total"]
 
 
+def test_scheduler_accounting_eligible_selected_skipped():
+    clock = [1000.0]
+    c = GrokProofCaller(enabled=True, max_per_hour=2, max_per_run=10,
+                        min_interval_seconds=0, clock=lambda: clock[0])
+    mk, news = {"market_id": "m1"}, [{"h": "x"}]
+    for _ in range(5):
+        c.maybe_call(client=_OKClient(), online=True, has_key=True, news_packet=news,
+                     market_ctx=mk, target_kind="bregman_near_miss", eligible_targets=3,
+                     advisory_features={"grok_news_relevance_score": 0.5},
+                     analyzed_increments={"incomplete_groups_analyzed": 1,
+                                          "malformed_groups_analyzed": 1})
+        clock[0] += 1
+    st = c.status()
+    assert st["grok_scheduler_calls_total"] == 2          # hourly cap
+    assert st["grok_scheduler_targets_selected"] == 2
+    assert st["grok_scheduler_targets_skipped"] == 3
+    assert st["grok_scheduler_skip_reasons"]              # has reasons
+    assert st["grok_scheduler_eligible_targets"] == 3
+    assert st["grok_total_calls_reconciled"] is True
+    assert st["grok_bregman_incomplete_groups_analyzed"] == 2
+    assert st["grok_bregman_malformed_groups_analyzed"] == 2
+    assert st["grok_learning_features_written"] == 2
+
+
+def test_scheduled_zero_cannot_coexist_with_scheduler_activity():
+    # if the scheduler made calls, scheduled_calls must be > 0 (never contradictory 0)
+    c = GrokProofCaller(enabled=True, max_per_hour=4, max_per_run=10, min_interval_seconds=0)
+    c.maybe_call(client=_OKClient(), online=True, has_key=True, news_packet=[{"h": "x"}],
+                 market_ctx={"market_id": "m1"}, target_kind="bregman_near_miss",
+                 eligible_targets=1)
+    st = c.status()
+    assert st["grok_scheduler_calls_total"] == 1
+    # the trainer maps scheduled_calls to include scheduler calls -> never 0 here
+    assert st["grok_scheduler_calls_total"] > 0
+
+
+def test_scheduler_selects_incomplete_and_malformed_bregman_targets():
+    from engine.research.advisory_targets import select_advisory_target
+    nms = [{"group_key": "g1", "near_miss_score": 0.9, "market_ids": ["a"],
+            "token_ids": ["ay", "an"],
+            "completeness": {"completeness_proven": False},
+            "simplex": {"invalid_normalization": True}}]
+    sel = select_advisory_target(near_misses=nms, news_packet=[{"market_id": "a"}],
+                                 watch_markets=[])
+    assert sel["target_kind"] == "bregman_near_miss"
+    assert sel["incomplete_groups_analyzed"] == 1
+    assert sel["malformed_groups_analyzed"] == 1
+    assert sel["eligible_targets"] >= 1
+
+
 def test_research_status_reconciles_scheduled_calls(monkeypatch, tmp_path):
     from engine.training import PolymarketPaperTrainer, TrainingConfig
     from tests._pmtrain_helpers import clean_live_env

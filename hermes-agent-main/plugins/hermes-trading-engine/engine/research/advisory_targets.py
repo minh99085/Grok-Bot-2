@@ -85,28 +85,40 @@ def select_advisory_target(*, near_misses: Optional[list] = None, news_packet=No
     near_misses = near_misses or []
     watch_markets = watch_markets or []
     news_ids = set(_news_market_ids(news_packet))
+    # eligible-target census (so "0 scheduled calls" is never implied without reason)
+    eligible = len(near_misses) + len(news_ids) + len(watch_markets)
 
     # 1) top Bregman near-miss, preferring one that is news-linked.
     if near_misses:
         ranked = sorted(near_misses, key=lambda n: float(n.get("near_miss_score", 0.0)),
                         reverse=True)
+
+        def _mids(nm):
+            return set(nm.get("market_ids", nm.get("raw_market_ids", [])) or [])
         chosen = None
         for nm in ranked:
-            if news_ids and (set(nm.get("raw_market_ids", [])) & news_ids):
+            if news_ids and (_mids(nm) & news_ids):
                 chosen = nm
                 break
         chosen = chosen or ranked[0]
         kind = "bregman_near_miss"
-        news_linked = bool(news_ids and (set(chosen.get("raw_market_ids", [])) & news_ids))
-        mctx = {"market_id": chosen.get("group_key") or (
-                    chosen.get("raw_market_ids") or ["near_miss"])[0],
-                "question": (chosen.get("completeness", {}) or {}).get(
-                    "expected_outcome_family") or "bregman_near_miss",
-                "group_ids": [chosen.get("group_key")],
-                "raw_market_ids": chosen.get("raw_market_ids", [])}
+        news_linked = bool(news_ids and (_mids(chosen) & news_ids))
+        comp = chosen.get("completeness", {}) or {}
+        sx = chosen.get("simplex", {}) or {}
+        incomplete = 1 if not comp.get("completeness_proven", True) else 0
+        malformed = 1 if (sx.get("invalid_normalization")
+                          or sx.get("duplicate_outcomes")) else 0
+        mids = list(_mids(chosen))
+        mctx = {"market_id": chosen.get("group_key") or (mids or ["near_miss"])[0],
+                "question": comp.get("expected_outcome_family") or "bregman_near_miss",
+                "group_ids": [chosen.get("group_key")], "market_ids": mids,
+                "token_ids": chosen.get("token_ids", [])}
         return {
             "market_ctx": mctx, "target_kind": kind, "reason": "top_bregman_near_miss",
+            "eligible_targets": eligible,
             "groups_analyzed": 1, "near_misses_analyzed": 1,
+            "incomplete_groups_analyzed": incomplete,
+            "malformed_groups_analyzed": malformed,
             "news_linked_analyzed": 1 if news_linked else 0,
             "advisory_features": advisory_features_for(chosen, news_packet, kind),
         }
@@ -118,7 +130,10 @@ def select_advisory_target(*, near_misses: Optional[list] = None, news_packet=No
         return {
             "market_ctx": {"market_id": mid, "question": "news_linked_market"},
             "target_kind": kind, "reason": "news_linked_market",
-            "groups_analyzed": 0, "near_misses_analyzed": 0, "news_linked_analyzed": 1,
+            "eligible_targets": eligible,
+            "groups_analyzed": 0, "near_misses_analyzed": 0,
+            "incomplete_groups_analyzed": 0, "malformed_groups_analyzed": 0,
+            "news_linked_analyzed": 1,
             "advisory_features": advisory_features_for(None, news_packet, kind),
         }
 
@@ -136,11 +151,15 @@ def select_advisory_target(*, near_misses: Optional[list] = None, news_packet=No
         return {
             "market_ctx": {"market_id": str(best), "question": "high_liquidity_market"},
             "target_kind": kind, "reason": "high_liquidity_market",
-            "groups_analyzed": 1, "near_misses_analyzed": 0, "news_linked_analyzed": 0,
+            "eligible_targets": eligible,
+            "groups_analyzed": 1, "near_misses_analyzed": 0,
+            "incomplete_groups_analyzed": 0, "malformed_groups_analyzed": 0,
+            "news_linked_analyzed": 0,
             "advisory_features": advisory_features_for(None, news_packet, kind),
         }
 
     return {"market_ctx": None, "target_kind": None,
-            "reason": "no_advisory_target_available", "groups_analyzed": 0,
-            "near_misses_analyzed": 0, "news_linked_analyzed": 0,
-            "advisory_features": {}}
+            "reason": "no_advisory_target_available", "eligible_targets": eligible,
+            "groups_analyzed": 0, "near_misses_analyzed": 0,
+            "incomplete_groups_analyzed": 0, "malformed_groups_analyzed": 0,
+            "news_linked_analyzed": 0, "advisory_features": {}}

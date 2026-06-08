@@ -128,16 +128,17 @@ def _is_numeric(tok: str) -> bool:
 
 
 def infer_outcome_label(question: Optional[str], outcomes=None) -> str:
-    """Best-effort human outcome label for a leg (candidate/team/range bound).
+    """Best-effort human outcome label for a leg (YES/NO/candidate/team/range bound).
 
     Used only for completeness DIAGNOSTICS — to list observed vs missing outcomes.
-    Returns the normalized last distinctive token of the question, or the first
-    provided outcome. Never affects certification."""
+    Returns the ACTUAL outcome label when present (so a binary leg reports ``YES`` /
+    ``NO`` rather than ``unknown``); otherwise the normalized last distinctive token
+    of the question. Never affects certification."""
     if outcomes:
         for o in outcomes:
             so = str(o).strip()
-            if so and so.lower() not in _YESNO:
-                return so
+            if so:
+                return so.upper() if so.lower() in _YESNO else so
     norm = normalize_text(question)
     if not norm:
         return "unknown"
