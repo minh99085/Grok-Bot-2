@@ -463,6 +463,14 @@ class PolymarketPaperTrainer:
         self.bregman_open_bundles = 0
         self.directional_skipped_due_to_bregman = 0
         self.bregman_exec_metrics: dict = {}
+        # Running Bregman near-miss store (best diagnostic per group, capped). Pure
+        # telemetry: explains how close rejected groups were + why. Never executes.
+        self._bregman_near_miss_best: dict = {}
+        self._bregman_near_miss_cap = int(getattr(
+            self.cfg, "bregman_near_miss_store_cap", 1000) or 1000)
+        # optional read-only book-refresher for promising stale groups (set by the
+        # runner when a live book source exists; None => refresh not available).
+        self._bregman_book_refresher = None
         # Pass-4: strategy-priority ladder (Bregman Tier-1 reservation) telemetry.
         self._bregman_certified_realistic_count = 0
         self._bregman_open_markets: set = set()
@@ -604,28 +612,18 @@ class PolymarketPaperTrainer:
                 self._news_scan(watch, now)
             except Exception as exc:  # noqa: BLE001 — news never blocks a tick
                 self._news_error = f"scan_failed:{exc}"
-        # Grok ADVISORY proof call (PAPER ONLY, research-only, rate-limited to 1/hr).
-        # Only when explicitly enabled; never trades/sizes/bypasses a gate. Provides a
-        # real grok_calls_total>0 so the report isn't stuck on an ambiguous zero-call
-        # reason. Guarded — never blocks a tick.
-        if bool(getattr(self.cfg, "grok_proof_call_enabled", True)):
+        # Grok BOUNDED ADVISORY scheduler (PAPER ONLY, research-only, ≤N/hr, spaced).
+        # Only when enabled; never trades/sizes/bypasses a gate. The scheduler picks
+        # a high-value target itself (top Bregman near-miss / news-linked / liquidity)
+        # — works even with ZERO executable trades. Guarded — never blocks a tick.
+        if bool(getattr(self.cfg, "grok_proof_call_enabled", True)
+                or getattr(self.cfg, "grok_advisory_enabled", True)):
             try:
                 pkt = self._news_last_packet or None
-                # The proof call is READ-ONLY advisory: it does NOT require an
-                # executable trade candidate. Use any scanned market (or, failing
-                # that, a news-derived market) so it can run even when
-                # grok_eligible_markets=0.
-                mref = (watch[0] if watch else (records[0] if records else None))
-                if mref is not None:
-                    mctx = {"market_id": mref.market_id,
-                            "question": getattr(mref, "question", "")}
-                elif pkt:
-                    mctx = {"market_id": str((pkt.get("items") or [{}])[0].get(
-                        "market_id", "news_only")), "question": "news_only_proof"}
-                else:
-                    mctx = None
-                self.maybe_grok_proof_call(news_packet=pkt, market_ctx=mctx, now=now)
-            except Exception:  # noqa: BLE001 — proof call never blocks a tick
+                # market_ctx=None -> the scheduler selects the advisory target from
+                # near-misses / news / high-liquidity watch markets.
+                self.maybe_grok_proof_call(news_packet=pkt, market_ctx=None, now=now)
+            except Exception:  # noqa: BLE001 — advisory call never blocks a tick
                 pass
         health = self.subs.reconcile(watch)
         self.metrics.subscribed_assets = health.subscribed_assets
@@ -756,18 +754,38 @@ class PolymarketPaperTrainer:
             return []
         raw_n = len(groups)
         groups, dropped = self._dedup_bregman_groups(groups)
+        # Depth-aware ordering: send better-depth groups to the certifier FIRST.
+        # This is selection-only — it does NOT change any depth/spread/freshness gate.
+        groups = self._order_groups_by_depth(groups)
         try:
             certs = self.bregman.certify_all(groups, now=now)
         except Exception:  # noqa: BLE001
             self.bregman_log = []
             return []
-        # Funnel: count rejections by explicit certifier reason (read-only telemetry).
-        for c in certs:
-            if not c.is_opportunity:
-                reason = c.no_trade_reason or (
-                    c.failure_modes[0] if getattr(c, "failure_modes", None) else "rejected")
-                self._breg_reason(reason)
+        # Funnel + near-miss: for every rejection, count the reason AND record a
+        # read-only near-miss diagnostic (how close + exactly why). Never executes.
+        from engine.training.bregman_near_miss import analyze_rejection, summarize
+        min_depth = float(getattr(self.bregman, "min_depth_usd", 50.0))
+        max_spread = float(getattr(self.bregman, "max_spread", 0.08))
+        max_age = float(getattr(self.cfg, "bregman_max_book_age_sec", 20.0) or 20.0)
+        for g, c in zip(groups, certs):
+            if c.is_opportunity:
+                continue
+            reason = c.no_trade_reason or (
+                c.failure_modes[0] if getattr(c, "failure_modes", None) else "rejected")
+            self._breg_reason(reason)
+            ra, rok, rreason = self._maybe_refresh_stale(g, reason, now)
+            try:
+                nm = analyze_rejection(g, reason, min_depth_usd=min_depth,
+                                       max_spread=max_spread, max_age_s=max_age,
+                                       refresh_attempted=ra, refresh_ok=rok,
+                                       refresh_reason=rreason)
+                self._record_bregman_near_miss(nm)
+            except Exception:  # noqa: BLE001 — diagnostics must never break a tick
+                pass
         self.bregman_log = [c.to_dict() for c in certs]
+        nm_summary = summarize(list(self._bregman_near_miss_best.values()),
+                               top_n=int(getattr(self.cfg, "bregman_top_near_misses", 10) or 10))
         self.bregman_exec_metrics = {
             "raw_catalog_markets_scanned": len(records),
             "raw_groups_discovered": raw_n,
@@ -780,8 +798,52 @@ class PolymarketPaperTrainer:
             "groups_from_graph_reason": "groups_from_graph() not present on this branch; "
                                         "using group_markets() over the full eligible catalog",
             "evaluated_before_directional": True,
+            **nm_summary,
         }
         return certs
+
+    def _order_groups_by_depth(self, groups: list) -> list:
+        """Order groups so the certifier sees better-depth candidates first. Pure
+        selection/ordering — never changes a depth/spread/freshness gate."""
+        from engine.training.bregman_near_miss import depth_quality
+        min_depth = float(getattr(self.bregman, "min_depth_usd", 50.0))
+
+        def key(g):
+            try:
+                dq = depth_quality(g, min_depth_usd=min_depth)
+                return (dq["thin_legs"], -dq["min_leg_depth_usd"])
+            except Exception:  # noqa: BLE001
+                return (9_999, 0.0)
+        return sorted(groups, key=key)
+
+    def _maybe_refresh_stale(self, group, reason: str, now: float):
+        """For a PROMISING group rejected as stale, attempt a read-only book refresh
+        before recording the rejection (freshness is never loosened). Returns
+        ``(attempted, ok, reason)``. With no refresher configured, records that a
+        refresh was not available — the group still stays rejected as stale."""
+        if reason != "stale_book":
+            return (False, False, None)
+        refresher = self._bregman_book_refresher
+        if refresher is None:
+            return (False, False, "no_refresher_configured")
+        try:
+            ok = bool(refresher(group, now=now))
+            return (True, ok, "refresh_ok" if ok else "refresh_failed")
+        except Exception as exc:  # noqa: BLE001
+            return (True, False, f"refresh_error:{type(exc).__name__}")
+
+    def _record_bregman_near_miss(self, nm: dict) -> None:
+        """Keep the highest-scoring near-miss per group (capped). Read-only store."""
+        key = nm.get("group_key") or ""
+        prev = self._bregman_near_miss_best.get(key)
+        if prev is None or nm.get("near_miss_score", 0) >= prev.get("near_miss_score", 0):
+            self._bregman_near_miss_best[key] = nm
+        if len(self._bregman_near_miss_best) > self._bregman_near_miss_cap:
+            # drop the lowest-scoring entries to stay bounded
+            worst = sorted(self._bregman_near_miss_best.items(),
+                           key=lambda kv: kv[1].get("near_miss_score", 0))
+            for k, _ in worst[: len(self._bregman_near_miss_best) - self._bregman_near_miss_cap]:
+                self._bregman_near_miss_best.pop(k, None)
 
     def _breg_reason(self, reason: str) -> None:
         self.bregman_reject_reasons[reason] = self.bregman_reject_reasons.get(reason, 0) + 1
@@ -3160,44 +3222,71 @@ class PolymarketPaperTrainer:
         return self.chainlink_oracle.status()
 
     def _grok_proof_caller(self):
-        """Lazily-built advisory, rate-limited Grok proof caller (research-only)."""
+        """Lazily-built BOUNDED Grok advisory scheduler (research-only).
+
+        When ``grok_advisory_enabled`` (default), the scheduler caps calls per hour
+        (``grok_advisory_max_calls_per_hour``, default 4), spaces them
+        (``grok_advisory_min_interval_seconds``, default 900s), and allows multiple
+        low-frequency calls per run (``grok_advisory_max_calls_per_run``). Otherwise
+        it falls back to the single-proof-call caps. Never executes/sizes/gates."""
         caller = getattr(self, "_grok_proof", None)
         if caller is None:
             from engine.research.proof_call import GrokProofCaller
+            advisory = bool(getattr(self.cfg, "grok_advisory_enabled", True))
+            if advisory:
+                max_per_hour = int(getattr(self.cfg, "grok_advisory_max_calls_per_hour", 4))
+                max_per_run = int(getattr(self.cfg, "grok_advisory_max_calls_per_run", 48))
+                min_interval = int(getattr(self.cfg, "grok_advisory_min_interval_seconds", 900))
+            else:
+                max_per_hour = int(getattr(self.cfg, "grok_proof_call_max_per_hour", 1))
+                max_per_run = int(getattr(self.cfg, "grok_proof_call_max_per_run", 1))
+                min_interval = int(getattr(self.cfg, "grok_proof_call_min_interval_seconds", 900))
             caller = GrokProofCaller(
-                enabled=bool(getattr(self.cfg, "grok_proof_call_enabled", True)),
-                max_per_hour=int(getattr(self.cfg, "grok_proof_call_max_per_hour", 1)),
-                max_per_run=int(getattr(self.cfg, "grok_proof_call_max_per_run", 1)),
-                min_interval_seconds=int(getattr(
-                    self.cfg, "grok_proof_call_min_interval_seconds", 900)),
+                enabled=bool(getattr(self.cfg, "grok_proof_call_enabled", True)
+                             or advisory),
+                max_per_hour=max_per_hour, max_per_run=max_per_run,
+                min_interval_seconds=min_interval,
                 advisory_only=bool(getattr(self.cfg, "grok_proof_call_advisory_only", True)))
             self._grok_proof = caller
         return caller
 
     def maybe_grok_proof_call(self, *, news_packet=None, market_ctx: Optional[dict] = None,
                               now: Optional[float] = None) -> dict:
-        """Attempt at most one ADVISORY-ONLY Grok proof call per hour (research-only;
-        never trades/sizes/bypasses a gate). Uses the research signal model's xAI
-        client + a news packet. Returns the proof-call result (precise zero-call
-        reason when not called). Never raises into the training loop."""
+        """Make at most one BOUNDED ADVISORY Grok call (research-only; never
+        trades/sizes/bypasses a gate). Chooses a high-value target (top Bregman
+        near-miss / news-linked / high-liquidity market) — works even when there are
+        ZERO executable trades — and records advisory features for learning (not
+        execution). Returns the call result. Never raises into the training loop."""
         import os as _os
+        from engine.research.advisory_targets import select_advisory_target
         caller = self._grok_proof_caller()
         client = getattr(getattr(self, "signal_model", None), "_client", None)
         has_key = bool(_os.getenv("XAI_API_KEY") or _os.getenv("GROK_API_KEY"))
         mode = (_os.getenv("RESEARCH_MODE") or "offline_cache").strip().lower()
         online = mode in ("online_paper", "online_shadow", "guarded_live_readonly",
                           "online", "online_research", "live", "grok_online")
+        # choose a high-value advisory target (near-miss > news-linked > liquidity).
+        sel = select_advisory_target(
+            near_misses=list(getattr(self, "_bregman_near_miss_best", {}).values()),
+            news_packet=news_packet, watch_markets=getattr(self, "_watch_sample", []))
+        target_ctx = market_ctx or sel.get("market_ctx")
         if client is None:
-            caller.last_reason = "no_market_link_available" if not market_ctx else "provider_error"
+            caller.last_reason = "no_market_link_available" if not target_ctx else "provider_error"
             return {"called": False, "reason": caller.last_reason}
         try:
             return caller.maybe_call(
                 client=client, online=online, has_key=has_key,
-                news_packet=news_packet, market_ctx=market_ctx,
+                news_packet=news_packet, market_ctx=target_ctx,
+                target_kind=sel.get("target_kind"),
+                advisory_features=sel.get("advisory_features"),
+                analyzed_increments={
+                    "groups_analyzed": sel.get("groups_analyzed", 0),
+                    "near_misses_analyzed": sel.get("near_misses_analyzed", 0),
+                    "news_linked_analyzed": sel.get("news_linked_analyzed", 0)},
                 evidence_sink=lambda ev: self.closed_loop.sink.append_diagnostic(
-                    {"diagnostic_type": "grok_advisory_proof_call", **ev}),
+                    {"diagnostic_type": "grok_advisory_call", **ev}),
                 now=now)
-        except Exception as exc:  # noqa: BLE001 — proof call must never break a tick
+        except Exception as exc:  # noqa: BLE001 — advisory call must never break a tick
             return {"called": False, "reason": "provider_error", "error": str(exc)[:120]}
 
     def research_status(self) -> dict:
@@ -3292,6 +3381,22 @@ class PolymarketPaperTrainer:
             "grok_proof_call_enabled": bool(proof.get("grok_proof_call_enabled", False)),
             "grok_proof_call_advisory_only": bool(proof.get("grok_proof_call_advisory_only", True)),
             "grok_advisory_only_count": calls_total,
+            # bounded advisory scheduler telemetry (research only; never execution)
+            "grok_advisory_enabled": bool(getattr(cfg, "grok_advisory_enabled", True)),
+            "grok_advisory_max_calls_per_hour": int(proof.get(
+                "grok_advisory_max_calls_per_hour",
+                getattr(cfg, "grok_advisory_max_calls_per_hour", 4)) or 0),
+            "grok_advisory_min_interval_seconds": int(proof.get(
+                "grok_advisory_min_interval_seconds",
+                getattr(cfg, "grok_advisory_min_interval_seconds", 900)) or 0),
+            "grok_advisory_calls_per_hour": int(proof.get("grok_advisory_calls_per_hour", 0) or 0),
+            "grok_market_groups_analyzed": int(proof.get("grok_market_groups_analyzed", 0) or 0),
+            "grok_bregman_near_misses_analyzed": int(proof.get(
+                "grok_bregman_near_misses_analyzed", 0) or 0),
+            "grok_news_linked_markets_analyzed": int(proof.get(
+                "grok_news_linked_markets_analyzed", 0) or 0),
+            "grok_contributed_learning_features": bool(
+                int(proof.get("grok_calls_total", 0) or 0) >= 1),
             "grok_cache_hits": calls_cache,
             "grok_offline_stub_calls": calls_stub,
             "grok_eligible_markets": int(sm.get("eligible_markets", 0) or 0),

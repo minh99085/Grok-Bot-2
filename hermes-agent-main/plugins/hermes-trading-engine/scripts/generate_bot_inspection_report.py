@@ -1045,6 +1045,9 @@ def generate_report(
         "artifact_paths": artifact_paths,
         "closed_loop_artifacts_manifest": closed_loop_manifest,
         "bundle_mode": bundle_mode,
+        # read-only blocks for the console summary (advisory scheduler + near-misses)
+        "grok_news_evidence": status.get("grok_news_evidence", {}) or {},
+        "bregman_funnel": status.get("bregman_funnel", {}) or {},
     }
 
 
@@ -1623,12 +1626,54 @@ def _build_report_md(rj, feats, status, docker, api, tests, comparison,
     L.append("")
     for k in ("grok_enabled", "grok_has_api_key", "grok_with_news_count", "grok_cache_hits"):
         L.append(f"- {k}: {_yn(feats.get(k))}")
+    # bounded advisory scheduler summary (research only; never execution)
+    _g = status.get("grok_news_evidence", {}) or {}
+    if _g:
+        L.append("")
+        L.append("### 10a. Grok Advisory Scheduler (research-only)")
+        L.append("")
+        for k in ("grok_advisory_enabled", "grok_brain_ready", "grok_brain_blocker",
+                  "xai_api_key_source", "grok_calls_total", "grok_calls_with_news",
+                  "grok_advisory_only_count", "grok_evidence_records_written",
+                  "grok_advisory_max_calls_per_hour", "grok_advisory_calls_per_hour",
+                  "grok_market_groups_analyzed", "grok_bregman_near_misses_analyzed",
+                  "grok_news_linked_markets_analyzed", "grok_contributed_learning_features",
+                  "grok_advisory_only_invariant", "grok_no_execution_override"):
+            if k in _g:
+                L.append(f"- {k}: {_g.get(k)}")
     L.append("")
     L.append("## 11. Bregman Paper Scanner Status")
     L.append("")
     for k in ("bregman_paper_enabled", "bregman_candidates_found", "bregman_certified_count",
               "bregman_certified_profit", "bregman_false_positive_rate"):
         L.append(f"- {k}: {_yn(feats.get(k))}")
+    # near-miss diagnostics + blocker explanation (read-only; gates never loosened)
+    _bf = status.get("bregman_funnel", {}) or {}
+    if _bf:
+        L.append("")
+        L.append("### 11a. Bregman Near-Miss Diagnostics (read-only)")
+        L.append("")
+        for k in ("bregman_near_misses_total", "near_miss_one_fix_away_count",
+                  "near_miss_depth_only_count", "near_miss_not_exhaustive_count",
+                  "near_miss_stale_refresh_failed_count"):
+            L.append(f"- {k}: {_bf.get(k, 0)}")
+        nmr = _bf.get("near_miss_by_rejection_reason", {}) or {}
+        if nmr:
+            L.append(f"- near_miss_by_rejection_reason: {nmr}")
+        blk = _bf.get("blocker_explanation", {}) or {}
+        if blk:
+            L.append(f"- no_bundle_blocker: {blk.get('primary_blocker')} "
+                     f"({blk.get('detail', '')})")
+        top = _bf.get("bregman_top_near_misses", []) or []
+        if top:
+            L.append("")
+            L.append("Top Bregman near-misses (diagnostic only — NOT executed):")
+            L.append("")
+            for nm in top[:5]:
+                L.append(f"  - {nm.get('group_key')} reason={nm.get('reject_reason')} "
+                         f"score={nm.get('near_miss_score')} "
+                         f"one_fix_away={nm.get('one_fix_away')} "
+                         f"blockers={nm.get('remaining_blockers')}")
     L.append("")
     L.append("## 12. Paper Training Metrics")
     L.append("")
@@ -2027,6 +2072,22 @@ def main(argv=None) -> int:
           f"(max_safe_runtime_minutes={rr.get('max_safe_runtime_minutes')})")
     print(f"Grok brain     : grok_brain_ready={rr.get('grok_brain_ready')}"
           + (f" blocker={rr.get('grok_brain_blocker')}" if not rr.get("grok_brain_ready") else ""))
+    _ge = result.get("grok_news_evidence", {}) or {}
+    if _ge:
+        print(f"Grok advisory  : calls={_ge.get('grok_calls_total', 0)} "
+              f"with_news={_ge.get('grok_calls_with_news', 0)} "
+              f"near_misses_analyzed={_ge.get('grok_bregman_near_misses_analyzed', 0)} "
+              f"news_linked={_ge.get('grok_news_linked_markets_analyzed', 0)} "
+              f"advisory_only={_ge.get('grok_advisory_only_count', 0)}")
+    _bf2 = result.get("bregman_funnel", {}) or {}
+    if _bf2:
+        _blk = _bf2.get("blocker_explanation", {}) or {}
+        print(f"Bregman near   : total={_bf2.get('bregman_near_misses_total', 0)} "
+              f"one_fix_away={_bf2.get('near_miss_one_fix_away_count', 0)} "
+              f"depth_only={_bf2.get('near_miss_depth_only_count', 0)} "
+              f"not_exhaustive={_bf2.get('near_miss_not_exhaustive_count', 0)}"
+              + (f" | no-bundle blocker={_blk.get('primary_blocker')}"
+                 if _blk.get('blocked') else ""))
     if rr.get("blocking_reasons"):
         print("Blocking       : " + "; ".join(rr["blocking_reasons"]))
     ap = result.get("artifact_paths", {}) or {}

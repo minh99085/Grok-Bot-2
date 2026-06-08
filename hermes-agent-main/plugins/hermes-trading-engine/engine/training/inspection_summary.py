@@ -106,6 +106,16 @@ def build_inspection_summary(status: dict, feature_audit: dict, *,
         "evaluated_before_directional": breg.get("evaluated_before_directional",
                                                  sp.get("bregman_evaluated_before_directional", False)),
         "rejected_by_reason": dict(breg.get("rejected_by_reason", {}) or {}),
+        "bregman_near_misses_total": breg.get("bregman_near_misses_total", 0),
+        "bregman_top_near_misses": list(breg.get("bregman_top_near_misses", []) or []),
+        "near_miss_by_rejection_reason": dict(breg.get("near_miss_by_rejection_reason", {}) or {}),
+        "near_miss_one_fix_away_count": breg.get("near_miss_one_fix_away_count", 0),
+        "near_miss_depth_only_count": breg.get("near_miss_depth_only_count", 0),
+        "near_miss_not_exhaustive_count": breg.get("near_miss_not_exhaustive_count", 0),
+        "near_miss_stale_refresh_failed_count": breg.get("near_miss_stale_refresh_failed_count", 0),
+        "blocker_explanation": _bregman_blocker_explanation(
+            breg, breg.get("certified_opportunities", 0),
+            breg.get("unique_groups_certified", 0)),
     }
 
     run = {
@@ -205,6 +215,38 @@ def build_inspection_summary(status: dict, feature_audit: dict, *,
     return summary
 
 
+def _bregman_blocker_explanation(t: dict, certified: int, scanned: int) -> dict:
+    """Plain-language explanation of WHY no executable Bregman bundle opened, keyed
+    off the dominant rejection reason + near-miss profile. Read-only diagnostic."""
+    reasons = dict(t.get("rejected_by_reason", t.get("skip_reasons", {})) or {})
+    if certified > 0 or int(t.get("opened_bregman_bundles", t.get("bundles_opened", 0)) or 0) > 0:
+        return {"blocked": False, "primary_blocker": None, "detail": "bundles certified/opened"}
+    if scanned == 0:
+        return {"blocked": True, "primary_blocker": "insufficient_market_universe",
+                "detail": "no constraint groups reached the certifier"}
+    top = max(reasons.items(), key=lambda kv: kv[1], default=(None, 0))[0] if reasons else None
+    mapping = {
+        "not_exhaustive": "incomplete_event_families",
+        "not_mutually_exclusive": "incomplete_event_families",
+        "depth_too_thin": "thin_depth",
+        "no_executable_price": "thin_depth",
+        "stale_book": "stale_books",
+        "spread_too_wide": "wide_spreads",
+        "invalid_simplex": "invalid_simplex",
+        "duplicate_legs": "invalid_simplex",
+        "no_positive_edge": "no_positive_after_cost_lower_bound",
+        "settlement_ambiguity": "settlement_ambiguity",
+    }
+    return {
+        "blocked": True,
+        "primary_blocker": mapping.get(top, top or "unknown"),
+        "dominant_rejection_reason": top,
+        "rejection_reason_counts": reasons,
+        "detail": ("groups reached the certifier but every one was rejected by a "
+                   "STRICT gate (not loosened); dominant reason above"),
+    }
+
+
 def build_bregman_funnel(bregman_telemetry: dict, *, market_groups_detected: int = 0,
                          diagnostic_events_written: int = 0) -> dict:
     """ONE canonical Bregman funnel (TASK 9): all Bregman numbers derive from this.
@@ -255,6 +297,15 @@ def build_bregman_funnel(bregman_telemetry: dict, *, market_groups_detected: int
         "skip_reasons": skip_reasons,
         "adapter_missing_fields": dict(t.get("adapter_missing_fields", {}) or {}),
         "diagnostic_events_written": int(diagnostic_events_written),
+        # near-miss diagnostics (read-only; explain how close rejected groups were)
+        "bregman_near_misses_total": _i("bregman_near_misses_total"),
+        "bregman_top_near_misses": list(t.get("bregman_top_near_misses", []) or []),
+        "near_miss_by_rejection_reason": dict(t.get("near_miss_by_rejection_reason", {}) or {}),
+        "near_miss_one_fix_away_count": _i("near_miss_one_fix_away_count"),
+        "near_miss_depth_only_count": _i("near_miss_depth_only_count"),
+        "near_miss_not_exhaustive_count": _i("near_miss_not_exhaustive_count"),
+        "near_miss_stale_refresh_failed_count": _i("near_miss_stale_refresh_failed_count"),
+        "blocker_explanation": _bregman_blocker_explanation(t, certified, sent_to_certifier),
         # consistency invariant: every detected group must be ACCOUNTED FOR as either
         # adapter-success (scanned) or adapter-failure (skip with a reason). An
         # unexplained gap (pre_adapter > 0) is a silent-zero contradiction and FAILS.
@@ -306,6 +357,18 @@ def build_grok_news_evidence(research: dict, *, news_items_used: int = 0) -> dic
         "grok_calls_total": calls,
         "grok_calls_with_news": int(r.get("grok_calls_with_news", 0) or 0),
         "grok_advisory_only_count": int(r.get("grok_advisory_only_count", calls) or 0),
+        "grok_evidence_records_written": int(r.get("grok_evidence_records_written", 0) or 0),
+        # bounded advisory scheduler telemetry (research only; never execution)
+        "grok_advisory_enabled": bool(r.get("grok_advisory_enabled", True)),
+        "grok_advisory_max_calls_per_hour": int(r.get("grok_advisory_max_calls_per_hour", 0) or 0),
+        "grok_advisory_calls_per_hour": int(r.get("grok_advisory_calls_per_hour", 0) or 0),
+        "grok_market_groups_analyzed": int(r.get("grok_market_groups_analyzed", 0) or 0),
+        "grok_bregman_near_misses_analyzed": int(r.get("grok_bregman_near_misses_analyzed", 0) or 0),
+        "grok_news_linked_markets_analyzed": int(r.get("grok_news_linked_markets_analyzed", 0) or 0),
+        "grok_contributed_learning_features": bool(r.get("grok_contributed_learning_features",
+                                                         calls >= 1)),
+        "grok_advisory_only_invariant": True,
+        "grok_no_execution_override": True,
         "grok_eligible_markets": int(r.get("grok_eligible_markets", 0) or 0),
         "grok_scheduled_calls": int(r.get("grok_scheduled_calls", 0) or 0),
         "grok_skipped_rate_limit": int(r.get("grok_skipped_rate_limit", 0) or 0),
