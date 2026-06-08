@@ -343,6 +343,18 @@ def build_bregman_funnel(bregman_telemetry: dict, *, market_groups_detected: int
             t.get("bregman_candidate_generation_blocker_counts", {}) or {}),
         "bregman_candidate_generation_blocker_samples": list(
             t.get("bregman_candidate_generation_blocker_samples", []) or []),
+        # depth-sufficiency-aware zero-candidate hierarchy (never contradictory)
+        "bregman_depth_sufficient_but_negative_edge_count": _i(
+            "bregman_depth_sufficient_but_negative_edge_count"),
+        "bregman_best_depth_sufficient_group_lower_bound": t.get(
+            "bregman_best_depth_sufficient_group_lower_bound"),
+        "bregman_best_depth_sufficient_group_reject_reason": t.get(
+            "bregman_best_depth_sufficient_group_reject_reason"),
+        "bregman_real_market_zero_candidate_reason": t.get(
+            "bregman_real_market_zero_candidate_reason"),
+        "bregman_real_market_zero_candidate_reason_counts": dict(
+            t.get("bregman_real_market_zero_candidate_reason_counts", {}) or {}),
+        "bregman_best_real_group_summary": t.get("bregman_best_real_group_summary"),
         "bregman_certifier_exception": t.get("bregman_certifier_exception"),
         # near-miss honesty
         "best_after_cost_lower_bound": t.get("best_after_cost_lower_bound"),
@@ -427,6 +439,8 @@ def build_grok_news_evidence(research: dict, *, news_items_used: int = 0) -> dic
         "grok_bregman_incomplete_groups_analyzed": int(r.get("grok_bregman_incomplete_groups_analyzed", 0) or 0),
         "grok_bregman_malformed_groups_analyzed": int(r.get("grok_bregman_malformed_groups_analyzed", 0) or 0),
         "grok_learning_features_written": int(r.get("grok_learning_features_written", 0) or 0),
+        "grok_best_bregman_group_analyzed": bool(r.get("grok_best_bregman_group_analyzed", False)),
+        "grok_best_bregman_group_skip_reason": r.get("grok_best_bregman_group_skip_reason"),
         "grok_market_groups_analyzed": int(r.get("grok_market_groups_analyzed", 0) or 0),
         "grok_bregman_near_misses_analyzed": int(r.get("grok_bregman_near_misses_analyzed", 0) or 0),
         "grok_news_linked_markets_analyzed": int(r.get("grok_news_linked_markets_analyzed", 0) or 0),

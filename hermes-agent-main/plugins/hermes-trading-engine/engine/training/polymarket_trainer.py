@@ -874,13 +874,29 @@ class PolymarketPaperTrainer:
                 "bregman_candidate_generation_blocker": None,
                 "bregman_candidate_generation_blocker_counts": {},
                 "bregman_candidate_generation_blocker_samples": [],
+                "bregman_depth_sufficient_but_negative_edge_count": 0,
+                "bregman_best_depth_sufficient_group_lower_bound": None,
+                "bregman_best_depth_sufficient_group_reject_reason": None,
+                "bregman_real_market_zero_candidate_reason": None,
+                "bregman_real_market_zero_candidate_reason_counts": {},
+                "bregman_best_real_group_summary": None,
             }
+        from engine.training.bregman_near_miss import (leg_identity, depth_quality,
+                                                       after_cost_lower_bound)
+        min_depth = float(getattr(self.bregman, "min_depth_usd", 50.0))
         _PRE = {"invalid_simplex", "missing_leg", "no_executable_price",
                 "not_exhaustive", "not_mutually_exclusive", "duplicate_legs"}
         counts: dict = {}
         samples: list = []
         failed_before = 0
-        from engine.training.bregman_near_miss import leg_identity
+        # depth-sufficient awareness — the blocker MUST reflect whether any group had
+        # all legs at/above REQUIRED depth (never reported as no_depth_sufficient).
+        depth_suff_total = 0
+        depth_suff_neg_edge = 0
+        best_ds_lb = None                       # best after-cost lower bound (depth-OK)
+        best_ds_reason = None
+        best_group = None                       # best near-miss real group summary
+        best_score = -1.0
         for g, c in zip(groups, certs):
             if getattr(c, "is_opportunity", False):
                 continue
@@ -889,30 +905,73 @@ class PolymarketPaperTrainer:
             counts[reason] = counts.get(reason, 0) + 1
             if reason in _PRE:
                 failed_before += 1
+            try:
+                dq = depth_quality(g, min_depth_usd=min_depth)
+                lb = after_cost_lower_bound(g)
+            except Exception:  # noqa: BLE001
+                dq, lb = {"thin_legs": 1, "min_leg_depth_usd": 0.0}, None
+            depth_ok = dq["thin_legs"] == 0
+            if depth_ok:
+                depth_suff_total += 1
+                if reason in ("no_positive_edge", "zero_quantity") or (lb is not None and lb <= 0):
+                    depth_suff_neg_edge += 1
+                if lb is not None and (best_ds_lb is None or lb > best_ds_lb):
+                    best_ds_lb, best_ds_reason = lb, reason
+            ident = leg_identity(g)
+            # rank a "best real group": prefer depth-OK, then higher lower bound
+            score = (1_000.0 if depth_ok else 0.0) + (lb if lb is not None else -1.0)
+            if score > best_score:
+                best_score = score
+                best_group = {"group_key": getattr(g, "group_id", ""),
+                              "group_type": getattr(g, "group_type", ""),
+                              "reject_reason": reason,
+                              "depth_sufficient": depth_ok,
+                              "min_leg_depth_usd": dq["min_leg_depth_usd"],
+                              "required_depth_usd": min_depth,
+                              "after_cost_lower_bound": lb,
+                              "market_ids": ident["market_ids"],
+                              "token_ids": ident["token_ids"],
+                              "outcome_labels": ident["outcome_labels"]}
             if len(samples) < 5:
-                ident = leg_identity(g)
                 samples.append({"group_key": getattr(g, "group_id", ""),
                                 "reject_reason": reason,
+                                "depth_sufficient": depth_ok,
                                 "market_ids": ident["market_ids"],
                                 "token_ids": ident["token_ids"],
                                 "outcome_labels": ident["outcome_labels"]})
-        _MAP = {"depth_too_thin": "no_depth_sufficient_groups",
-                "no_executable_price": "all_groups_had_missing_prices",
-                "not_exhaustive": "no_complete_groups",
-                "not_mutually_exclusive": "no_complete_groups",
-                "invalid_simplex": "all_groups_invalid_simplex",
-                "stale_book": "all_groups_stale_books",
-                "spread_too_wide": "all_groups_wide_spreads",
-                "no_positive_edge": "no_positive_after_cost_lower_bound",
-                "settlement_ambiguity": "all_groups_ambiguous_settlement"}
+        # --- precise zero-candidate hierarchy (depth-sufficiency FIRST) ---
         dominant = max(counts.items(), key=lambda kv: kv[1], default=(None, 0))[0]
+        if depth_suff_total > 0:
+            # depth-sufficient groups EXIST -> the blocker is NOT a depth shortage.
+            zero_reason = ("no_positive_after_cost_lower_bound_among_depth_sufficient_groups"
+                           if depth_suff_neg_edge > 0 or (best_ds_reason in
+                               ("no_positive_edge", "zero_quantity", None))
+                           else f"depth_sufficient_groups_rejected_by_{best_ds_reason}")
+        else:
+            _MAP = {"depth_too_thin": "no_depth_sufficient_groups",
+                    "no_executable_price": "missing_prices",
+                    "not_exhaustive": "incomplete_groups",
+                    "not_mutually_exclusive": "incomplete_groups",
+                    "invalid_simplex": "invalid_simplex",
+                    "duplicate_legs": "invalid_simplex",
+                    "stale_book": "stale_books",
+                    "spread_too_wide": "wide_spreads",
+                    "no_positive_edge": "no_positive_after_cost_lower_bound",
+                    "settlement_ambiguity": "all_groups_ambiguous_settlement"}
+            zero_reason = _MAP.get(dominant, dominant or "insufficient_market_universe")
         return {
             "bregman_groups_entered_certifier": entered,
             "bregman_groups_failed_before_candidate_generation": failed_before,
-            "bregman_candidate_generation_blocker": _MAP.get(dominant, dominant
-                                                             or "insufficient_market_universe"),
+            # legacy blocker kept consistent with the hierarchy (never contradictory)
+            "bregman_candidate_generation_blocker": zero_reason,
             "bregman_candidate_generation_blocker_counts": dict(sorted(counts.items())),
             "bregman_candidate_generation_blocker_samples": samples,
+            "bregman_depth_sufficient_but_negative_edge_count": depth_suff_neg_edge,
+            "bregman_best_depth_sufficient_group_lower_bound": best_ds_lb,
+            "bregman_best_depth_sufficient_group_reject_reason": best_ds_reason,
+            "bregman_real_market_zero_candidate_reason": zero_reason,
+            "bregman_real_market_zero_candidate_reason_counts": dict(sorted(counts.items())),
+            "bregman_best_real_group_summary": best_group,
         }
 
     def _bregman_depth_telemetry(self, groups: list) -> dict:
@@ -3597,6 +3656,16 @@ class PolymarketPaperTrainer:
             "grok_bregman_incomplete_groups_analyzed": int(proof.get("grok_bregman_incomplete_groups_analyzed", 0) or 0),
             "grok_bregman_malformed_groups_analyzed": int(proof.get("grok_bregman_malformed_groups_analyzed", 0) or 0),
             "grok_learning_features_written": int(proof.get("grok_learning_features_written", 0) or 0),
+            # whether the scheduler analyzed the BEST (top-ranked) Bregman near-miss,
+            # else the exact skip reason (advisory-only; never executes/sizes/gates).
+            "grok_best_bregman_group_analyzed": bool(
+                int(proof.get("grok_bregman_near_misses_analyzed", 0) or 0) >= 1),
+            "grok_best_bregman_group_skip_reason": (
+                None if int(proof.get("grok_bregman_near_misses_analyzed", 0) or 0) >= 1
+                else (proof.get("grok_proof_call_last_reason")
+                      or ("no_bregman_near_miss_available"
+                          if not getattr(self, "_bregman_near_miss_best", None)
+                          else "scheduler_not_due_or_rate_limited"))),
             "grok_market_groups_analyzed": int(proof.get("grok_market_groups_analyzed", 0) or 0),
             "grok_bregman_near_misses_analyzed": int(proof.get(
                 "grok_bregman_near_misses_analyzed", 0) or 0),

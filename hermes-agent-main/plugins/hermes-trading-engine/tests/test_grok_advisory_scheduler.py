@@ -246,6 +246,31 @@ def test_research_status_reconciles_scheduled_calls(monkeypatch, tmp_path):
     assert rs["grok_scheduled_calls"] >= 1
 
 
+def test_grok_best_bregman_group_analyzed_or_skip_reason(monkeypatch, tmp_path):
+    from engine.training import PolymarketPaperTrainer, TrainingConfig
+    from tests._pmtrain_helpers import clean_live_env
+    clean_live_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("XAI_API_KEY", "x" * 84)
+    monkeypatch.setenv("RESEARCH_MODE", "online_paper")
+    t = PolymarketPaperTrainer(TrainingConfig(mode="paper_train",
+                                              grok_advisory_min_interval_seconds=0),
+                               data_dir=tmp_path)
+    # no near-miss + no call yet -> analyzed False with an EXACT skip reason
+    rs0 = t.research_status()
+    assert rs0["grok_best_bregman_group_analyzed"] is False
+    assert rs0["grok_best_bregman_group_skip_reason"]      # non-empty exact reason
+    # after a scheduled advisory call on a seeded near-miss -> analyzed True
+    t.signal_model._client = _OKClient()
+    t._bregman_near_miss_best = {"g1": {"group_key": "g1", "near_miss_score": 0.9,
+                                        "market_ids": ["a"], "token_ids": ["ay", "an"],
+                                        "completeness": {}, "simplex": {}}}
+    t.maybe_grok_proof_call(news_packet=[{"market_id": "a", "headline": "x"}],
+                            market_ctx=None, now=1_000_000.0)
+    rs1 = t.research_status()
+    assert rs1["grok_best_bregman_group_analyzed"] is True
+    assert rs1["grok_best_bregman_group_skip_reason"] is None
+
+
 def test_no_api_key_value_appears_in_evidence_or_status(monkeypatch, tmp_path):
     from engine.training import PolymarketPaperTrainer, TrainingConfig
     from tests._pmtrain_helpers import clean_live_env
