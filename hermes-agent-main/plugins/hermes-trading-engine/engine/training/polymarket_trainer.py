@@ -789,6 +789,8 @@ class PolymarketPaperTrainer:
         stage_counts: dict = {}
         best_proj_lb = None
         max_div_gap = 0.0
+        positive_proj_rejected = 0          # groups w/ positive raw projected profit
+        positive_proj_by_stage: dict = {}   # ...but still rejected (and at which stage)
         for g, c in zip(groups, certs):
             if c.is_opportunity:
                 continue
@@ -802,6 +804,9 @@ class PolymarketPaperTrainer:
             _plb = cdiag.get("projected_profit_lower_bound")
             if _plb is not None and (best_proj_lb is None or _plb > best_proj_lb):
                 best_proj_lb = _plb
+            if _plb is not None and _plb > 0:
+                positive_proj_rejected += 1
+                positive_proj_by_stage[stage] = positive_proj_by_stage.get(stage, 0) + 1
             ra, rok, rreason = self._maybe_refresh_stale(g, reason, now)
             try:
                 nm = analyze_rejection(g, reason, min_depth_usd=min_depth,
@@ -841,6 +846,13 @@ class PolymarketPaperTrainer:
             "bregman_rejection_stage_counts": dict(sorted(stage_counts.items())),
             "bregman_max_divergence_gap": round(max_div_gap, 8),
             "bregman_best_projected_lower_bound": best_proj_lb,
+            # explicit WHY-ZERO breakdown: groups with positive RAW projected profit
+            # that were still rejected (and the stage that stopped them).
+            "bregman_positive_projected_but_rejected_count": positive_proj_rejected,
+            "bregman_positive_projected_rejected_by_stage": dict(sorted(positive_proj_by_stage.items())),
+            "bregman_zero_certified_explanation": self._bregman_zero_certified_explanation(
+                certified_n, stage_counts, positive_proj_rejected,
+                positive_proj_by_stage, best_proj_lb),
             **nm_summary,
             **depth_tel,
             **stale_tel,
@@ -997,6 +1009,37 @@ class PolymarketPaperTrainer:
             "bregman_real_market_zero_candidate_reason_counts": dict(sorted(counts.items())),
             "bregman_best_real_group_summary": best_group,
         }
+
+    @staticmethod
+    def _bregman_zero_certified_explanation(certified_n: int, stage_counts: dict,
+                                            pos_rejected: int, pos_by_stage: dict,
+                                            best_proj_lb) -> str:
+        """Plain-English breakdown of WHY certified_arbitrages stays at zero, keyed off
+        the dominant rejection stage + whether groups had positive RAW projected
+        profit. Read-only; never loosens a gate."""
+        if certified_n > 0:
+            return f"{certified_n} group(s) certified with positive after-cost profit"
+        if not stage_counts:
+            return "no groups reached certification (none discovered/grouped)"
+        dom = max(stage_counts.items(), key=lambda kv: kv[1])[0]
+        _DESC = {
+            "validate_simplex": ("groups are structurally INCOMPLETE (exhaustive=False / "
+                                 "not a provable complete set) — buying a partial set is "
+                                 "not a guaranteed hedge, so it is correctly NOT certified "
+                                 "(completeness is never fabricated)"),
+            "settlement_consistent": ("groups fail settlement consistency (ambiguity above "
+                                      "threshold or stale/irrelevant oracle)"),
+            "realism": ("groups fail strict paper-realism gates (depth/spread/freshness) — "
+                        "thresholds unchanged"),
+            "edge": "groups are complete + executable but have non-positive after-cost edge",
+        }
+        msg = f"dominant stage={dom}: {_DESC.get(dom, dom)}"
+        if pos_rejected > 0:
+            by = ", ".join(f"{k}={v}" for k, v in sorted(pos_by_stage.items()))
+            msg += (f"; NOTE: {pos_rejected} group(s) had POSITIVE raw projected profit "
+                    f"(best={best_proj_lb}) but were still rejected ({by}) — the raw "
+                    f"mispricing is real, but the set is not a certifiable complete hedge")
+        return msg
 
     def _bregman_depth_telemetry(self, groups: list) -> dict:
         """Read-only depth-quality census over the certifier's REQUIRED depth (not
