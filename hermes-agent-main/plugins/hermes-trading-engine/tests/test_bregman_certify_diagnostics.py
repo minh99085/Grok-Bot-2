@@ -122,6 +122,43 @@ def test_exhaustive_detected_from_events_markets_length():
     assert _group_is_exhaustive(recs) is True
 
 
+def test_zero_certified_explanation_positive_projected_but_rejected(tmp_path, monkeypatch):
+    from engine.training import PolymarketPaperTrainer, TrainingConfig
+    from tests._pmtrain_helpers import clean_live_env
+    import engine.training.polymarket_trainer as P
+    clean_live_env(monkeypatch, tmp_path)
+    t = PolymarketPaperTrainer(TrainingConfig(mode="paper_train"), data_dir=tmp_path)
+    req = float(t.bregman.min_depth_usd)
+    # incomplete subsets with POSITIVE raw projected profit (sum < $1) -> rejected
+    g1 = SimplexGroup("ne1", "mutually_exclusive",
+                      [_leg("a", "YES", "aY", 0.3, req * 4), _leg("b", "YES", "bY", 0.3, req * 4)],
+                      exhaustive=False)
+    g2 = SimplexGroup("ne2", "mutually_exclusive",
+                      [_leg("c", "YES", "cY", 0.2, req * 4), _leg("d", "YES", "dY", 0.25, req * 4)],
+                      exhaustive=False)
+    monkeypatch.setattr(P, "group_markets", lambda recs, **kw: [g1, g2])
+    t.closed_loop.begin_tick()
+    t.scan_bregman([{"market_id": "a"}, {"market_id": "c"}], now=1000.0)
+    bx = t.bregman_exec_metrics
+    assert bx["certified_opportunities"] == 0
+    # non-zero projected profit IS logged even though 0 certified
+    assert bx["bregman_best_projected_lower_bound"] is not None
+    assert bx["bregman_best_projected_lower_bound"] > 0
+    assert bx["bregman_positive_projected_but_rejected_count"] == 2
+    assert bx["bregman_positive_projected_rejected_by_stage"]["validate_simplex"] == 2
+    assert bx["bregman_rejection_stage_counts"]["validate_simplex"] == 2
+    expl = bx["bregman_zero_certified_explanation"]
+    assert "validate_simplex" in expl and "POSITIVE raw projected profit" in expl
+    assert "exhaustive" in expl.lower()       # explains the gate (not loosened)
+
+
+def test_zero_certified_explanation_when_certified():
+    from engine.training import PolymarketPaperTrainer
+    expl = PolymarketPaperTrainer._bregman_zero_certified_explanation(
+        2, {"certified": 2}, 0, {}, 0.1)
+    assert "certified" in expl
+
+
 def test_incomplete_group_not_fabricated_as_exhaustive():
     # 2 grouped legs but declared marketCount=5 -> NOT complete (no fabrication)
     recs = [{"market_id": "a", "group_key": "evt:e3",

@@ -1857,6 +1857,13 @@ def _build_report_md(rj, feats, status, docker, api, tests, comparison,
                      f"{_bf.get('bregman_max_divergence_gap')}")
             L.append(f"- bregman_best_projected_lower_bound: "
                      f"{_bf.get('bregman_best_projected_lower_bound')}")
+            L.append(f"- bregman_positive_projected_but_rejected_count: "
+                     f"{_bf.get('bregman_positive_projected_but_rejected_count', 0)}")
+            if _bf.get("bregman_positive_projected_rejected_by_stage"):
+                L.append(f"- bregman_positive_projected_rejected_by_stage: "
+                         f"{_bf.get('bregman_positive_projected_rejected_by_stage')}")
+            if _bf.get("bregman_zero_certified_explanation"):
+                L.append(f"- WHY certified=0: {_bf.get('bregman_zero_certified_explanation')}")
             for nm in (_bf.get("bregman_top_near_misses", []) or [])[:3]:
                 if "rejection_stage" in nm or "divergence_gap" in nm:
                     L.append(f"  - near_miss: {nm.get('group_key')} "

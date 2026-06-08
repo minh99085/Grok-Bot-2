@@ -360,6 +360,11 @@ def build_bregman_funnel(bregman_telemetry: dict, *, market_groups_detected: int
             t.get("bregman_rejection_stage_counts", {}) or {}),
         "bregman_max_divergence_gap": t.get("bregman_max_divergence_gap"),
         "bregman_best_projected_lower_bound": t.get("bregman_best_projected_lower_bound"),
+        "bregman_positive_projected_but_rejected_count": _i(
+            "bregman_positive_projected_but_rejected_count"),
+        "bregman_positive_projected_rejected_by_stage": dict(
+            t.get("bregman_positive_projected_rejected_by_stage", {}) or {}),
+        "bregman_zero_certified_explanation": t.get("bregman_zero_certified_explanation"),
         "bregman_certifier_exception": t.get("bregman_certifier_exception"),
         # near-miss honesty
         "best_after_cost_lower_bound": t.get("best_after_cost_lower_bound"),
