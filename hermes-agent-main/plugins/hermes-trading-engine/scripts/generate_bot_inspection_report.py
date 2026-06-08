@@ -811,6 +811,24 @@ def generate_report(
                 status["bregman"] = merged
     except Exception:  # noqa: BLE001
         pass
+    # CANONICAL Grok evidence: overlay the durable metrics/grok_news_evidence.json
+    # written by the live training run so an OFFLINE report reflects the real proof
+    # call (grok_brain_ready / grok_calls_total) instead of a fresh keyless recompute.
+    try:
+        if data_dir:
+            for _gp in (Path(data_dir) / "metrics" / "grok_news_evidence.json",
+                        Path(data_dir) / "grok_news_evidence.json"):
+                if _gp.exists():
+                    _ge = json.loads(_gp.read_text(encoding="utf-8")) or {}
+                    if _ge:
+                        # durable run evidence wins over a keyless offline recompute
+                        if int(_ge.get("grok_calls_total", 0) or 0) >= int(
+                                (status.get("grok_news_evidence") or {}).get(
+                                    "grok_calls_total", 0) or 0):
+                            status["grok_news_evidence"] = _ge
+                    break
+    except Exception:  # noqa: BLE001
+        pass
     # CANONICAL Bregman source-of-truth: load metrics/bregman_funnel.json into
     # status["bregman_funnel"] so the edge audit + validation + run-ready read the
     # NEW funnel (constraint_groups_scanned) — not the legacy zero-scan bregman.json.

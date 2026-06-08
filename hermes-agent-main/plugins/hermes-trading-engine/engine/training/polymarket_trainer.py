@@ -608,12 +608,22 @@ class PolymarketPaperTrainer:
         # Only when explicitly enabled; never trades/sizes/bypasses a gate. Provides a
         # real grok_calls_total>0 so the report isn't stuck on an ambiguous zero-call
         # reason. Guarded — never blocks a tick.
-        if bool(getattr(self.cfg, "grok_proof_call_enabled", False)):
+        if bool(getattr(self.cfg, "grok_proof_call_enabled", True)):
             try:
                 pkt = self._news_last_packet or None
-                top = watch[0] if watch else None
-                mctx = ({"market_id": top.market_id,
-                         "question": getattr(top, "question", "")} if top else None)
+                # The proof call is READ-ONLY advisory: it does NOT require an
+                # executable trade candidate. Use any scanned market (or, failing
+                # that, a news-derived market) so it can run even when
+                # grok_eligible_markets=0.
+                mref = (watch[0] if watch else (records[0] if records else None))
+                if mref is not None:
+                    mctx = {"market_id": mref.market_id,
+                            "question": getattr(mref, "question", "")}
+                elif pkt:
+                    mctx = {"market_id": str((pkt.get("items") or [{}])[0].get(
+                        "market_id", "news_only")), "question": "news_only_proof"}
+                else:
+                    mctx = None
                 self.maybe_grok_proof_call(news_packet=pkt, market_ctx=mctx, now=now)
             except Exception:  # noqa: BLE001 — proof call never blocks a tick
                 pass
@@ -3158,6 +3168,8 @@ class PolymarketPaperTrainer:
                 enabled=bool(getattr(self.cfg, "grok_proof_call_enabled", True)),
                 max_per_hour=int(getattr(self.cfg, "grok_proof_call_max_per_hour", 1)),
                 max_per_run=int(getattr(self.cfg, "grok_proof_call_max_per_run", 1)),
+                min_interval_seconds=int(getattr(
+                    self.cfg, "grok_proof_call_min_interval_seconds", 900)),
                 advisory_only=bool(getattr(self.cfg, "grok_proof_call_advisory_only", True)))
             self._grok_proof = caller
         return caller

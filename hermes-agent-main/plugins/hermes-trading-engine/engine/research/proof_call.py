@@ -35,10 +35,12 @@ class GrokProofCaller:
     in-memory ring of recent call timestamps (paper-only; no persistence required)."""
 
     def __init__(self, *, enabled: bool, max_per_hour: int = 1, max_per_run: int = 1,
-                 advisory_only: bool = True, clock: Optional[Callable[[], float]] = None):
+                 min_interval_seconds: int = 900, advisory_only: bool = True,
+                 clock: Optional[Callable[[], float]] = None):
         self.enabled = bool(enabled)
         self.max_per_hour = int(max_per_hour)
         self.max_per_run = int(max_per_run)
+        self.min_interval_seconds = int(min_interval_seconds)
         self.advisory_only = bool(advisory_only)
         self._clock = clock or time.time
         self._calls: list[float] = []          # timestamps of proof calls made
@@ -47,6 +49,43 @@ class GrokProofCaller:
         self.evidence_records_written = 0
         self.last_reason: Optional[str] = None
         self.last_call_ts: Optional[float] = None
+
+    @staticmethod
+    def _classify_result(res) -> Optional[str]:
+        """Return a precise zero-call reason if ``res`` is NOT a real live call, else
+        None (a real advisory call happened). A successful estimate bundle has no
+        failure ``status``; only an explicit cache/offline source is cache-only."""
+        if res is None:
+            return REASON_PROVIDER_ERROR
+        # explicit cache/offline markers (dict or attr) => not a live call
+        src = getattr(res, "source", None)
+        if isinstance(res, dict):
+            src = res.get("source", src)
+        cached = getattr(res, "from_cache", None) or getattr(res, "cached", None)
+        if isinstance(res, dict):
+            cached = res.get("from_cache", res.get("cached", cached))
+        if src in ("grok_cache", "offline_stub", "cache", "legacy_cached") or cached:
+            return REASON_CACHE_ONLY
+        status = getattr(res, "status", None)
+        if isinstance(res, dict):
+            status = res.get("status", status)
+        if status is None:
+            return None                       # estimate bundle (no status) => success
+        s = str(status).upper()
+        if s in ("SUCCEEDED", "OK", "SUCCESS"):
+            return None
+        if s == "BUDGET_BLOCKED":
+            return REASON_RATE_LIMIT
+        reason_field = getattr(res, "reason", None)
+        if isinstance(res, dict):
+            reason_field = res.get("reason", reason_field)
+        if reason_field == "research_mode_not_online":
+            return REASON_NOT_ONLINE
+        if s in ("NO_EVIDENCE", "VALIDATION_FAILED"):
+            # the network call DID hit xAI (advisory proven) but returned no usable
+            # evidence — still a real call; count it (connectivity proven).
+            return None
+        return REASON_PROVIDER_ERROR
 
     def _recent_calls(self, now: float) -> int:
         cutoff = now - 3600.0
@@ -81,6 +120,9 @@ class GrokProofCaller:
             reason = REASON_RATE_LIMIT      # per-RUN cap: bounds total API spend
         elif self.max_per_hour > 0 and self._recent_calls(now) >= self.max_per_hour:
             reason = REASON_RATE_LIMIT
+        elif (self.last_call_ts is not None and self.min_interval_seconds > 0
+              and (now - self.last_call_ts) < self.min_interval_seconds):
+            reason = REASON_NOT_DUE         # min spacing between proof calls
         else:
             reason = None
 
@@ -90,19 +132,28 @@ class GrokProofCaller:
             return result
 
         # --- make ONE advisory-only call (research only; never trades) ---
+        # Force an ONLINE research mode so the proof call hits xAI even if the
+        # client's default mode is offline_cache (the call result, not the client's
+        # ambient mode, decides success).
         try:
-            res = client.research(market_ctx, news_packet=news_packet)
+            try:
+                res = client.research(market_ctx, mode="online_paper", news_packet=news_packet)
+            except TypeError:
+                res = client.research(market_ctx, news_packet=news_packet)
         except Exception as exc:  # noqa: BLE001 — provider error is a precise reason
             self.last_reason = REASON_PROVIDER_ERROR
             result["reason"] = REASON_PROVIDER_ERROR
             result["error"] = f"{type(exc).__name__}: {str(exc)[:120]}"
             return result
 
-        # a cache-only / non-online result is NOT a real proof call
-        source = getattr(res, "source", None) or (res.get("source") if isinstance(res, dict) else None)
-        if source in ("grok_cache", "offline_stub", "cache", None):
-            self.last_reason = REASON_CACHE_ONLY
-            result["reason"] = REASON_CACHE_ONLY
+        # Classify by the result, not by an ambient client mode:
+        #  * a successful estimate bundle has NO failure `status` -> a REAL call;
+        #  * a ResearchFailure carries `.status` (BUDGET_BLOCKED / FAILED / ...);
+        #  * an EXPLICIT cache/offline source marker -> cache-only (not a live call).
+        reason = self._classify_result(res)
+        if reason is not None:
+            self.last_reason = reason
+            result["reason"] = reason
             return result
 
         self._calls.append(now)
@@ -113,7 +164,10 @@ class GrokProofCaller:
             "kind": "grok_advisory_proof_call", "advisory_only": True,
             "ts": round(now, 3), "market_id": market_ctx.get("market_id"),
             "news_items": (len(news_packet) if hasattr(news_packet, "__len__") else 1),
-            "source": source, "is_edge_proof": False,
+            "news_included": bool(news_packet),
+            "call_attempted": True, "call_succeeded": True,
+            "result_status": str(getattr(res, "status", None) or "SUCCEEDED"),
+            "trade_gate_bypassed": False, "is_edge_proof": False,
         }
         if evidence_sink is not None:
             try:
