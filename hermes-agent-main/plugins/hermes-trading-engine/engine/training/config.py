@@ -203,6 +203,7 @@ class TrainingConfig:
     grok_proof_call_enabled: bool = True
     grok_proof_call_max_per_hour: int = 1
     grok_proof_call_max_per_run: int = 1
+    grok_proof_call_min_interval_seconds: int = 900
     grok_proof_call_advisory_only: bool = True
     active_learning_require_realistic_fill_for_trade: bool = True
     active_learning_allow_shadow_without_fill: bool = True
@@ -864,6 +865,8 @@ class TrainingConfig:
             grok_proof_call_max_per_run=_envi(
                 "GROK_PROOF_CALL_MAX_PER_RUN",
                 _envi("POLYMARKET_GROK_PROOF_CALL_MAX_PER_RUN", 1)),
+            grok_proof_call_min_interval_seconds=_envi(
+                "GROK_PROOF_CALL_MIN_INTERVAL_SECONDS", 900),
             grok_proof_call_advisory_only=_envb(
                 "GROK_PROOF_CALL_ADVISORY_ONLY",
                 _envb("POLYMARKET_GROK_PROOF_CALL_ADVISORY_ONLY", True)),

@@ -159,6 +159,98 @@ def test_grok_proof_call_precise_zero_reasons():
         news_packet=news, market_ctx=mk)["reason"] == "cache_only_mode_enabled"
 
 
+class _RealishClient:
+    """Mimics GrokResearchClient: SUCCESS returns an estimate bundle (no ``status``,
+    no ``source``); failures return an object carrying ``status``/``reason``."""
+    def __init__(self, result):
+        self.result = result
+
+    def research(self, ctx, mode=None, news_packet=None):
+        from types import SimpleNamespace
+        return self.result if not isinstance(self.result, dict) \
+            else SimpleNamespace(**self.result)
+
+
+def test_success_estimate_bundle_is_a_real_call_not_cache_only():
+    # REGRESSION: a successful estimate bundle has NO `.source` and NO `.status`.
+    # It must count as a real live advisory call, never as cache_only_mode_enabled.
+    from engine.research.proof_call import GrokProofCaller
+    from types import SimpleNamespace
+    bundle = SimpleNamespace(estimate_id="e1", probability=0.5)   # success bundle
+    r = GrokProofCaller(enabled=True, max_per_run=1, min_interval_seconds=0).maybe_call(
+        client=_RealishClient(bundle), online=True, has_key=True,
+        news_packet=[{"headline": "x"}], market_ctx={"market_id": "m1"})
+    assert r["called"] is True
+    assert r["grok_calls_total"] == 1 and r["grok_calls_with_news"] == 1
+    assert r["reason"] is None
+
+
+def test_normal_paper_training_not_forced_into_cache_only():
+    # With XAI key present + proof enabled + online, a live (non-cache) result must
+    # NOT be downgraded to cache-only.
+    from engine.research.proof_call import GrokProofCaller
+    from types import SimpleNamespace
+    r = GrokProofCaller(enabled=True, max_per_run=1, min_interval_seconds=0).maybe_call(
+        client=_RealishClient(SimpleNamespace(status="SUCCEEDED")), online=True,
+        has_key=True, news_packet=[{"headline": "x"}], market_ctx={"market_id": "m1"})
+    assert r["called"] is True and r["reason"] is None
+
+
+def test_offline_replay_cache_result_stays_cache_only():
+    from engine.research.proof_call import GrokProofCaller
+    from types import SimpleNamespace
+    r = GrokProofCaller(enabled=True, min_interval_seconds=0).maybe_call(
+        client=_RealishClient(SimpleNamespace(source="offline_stub")), online=True,
+        has_key=True, news_packet=[{"headline": "x"}], market_ctx={"market_id": "m1"})
+    assert r["called"] is False and r["reason"] == "cache_only_mode_enabled"
+
+
+def test_proof_call_runs_with_news_only_when_no_eligible_markets():
+    # grok_eligible_markets=0: a read-only news packet + any market ref is enough.
+    from engine.research.proof_call import GrokProofCaller
+    from types import SimpleNamespace
+    r = GrokProofCaller(enabled=True, max_per_run=1, min_interval_seconds=0).maybe_call(
+        client=_RealishClient(SimpleNamespace(estimate_id="e1")), online=True,
+        has_key=True, news_packet=[{"headline": "y", "market_id": "news_only"}],
+        market_ctx={"market_id": "news_only", "question": "news_only_proof"})
+    assert r["called"] is True and r["grok_calls_with_news"] == 1
+
+
+def test_min_interval_blocks_then_allows():
+    from engine.research.proof_call import GrokProofCaller
+    from types import SimpleNamespace
+    clock = [1000.0]
+    c = GrokProofCaller(enabled=True, max_per_hour=10, max_per_run=10,
+                        min_interval_seconds=900, clock=lambda: clock[0])
+    mk, news = {"market_id": "m1"}, [{"headline": "x"}]
+    assert c.maybe_call(client=_RealishClient(SimpleNamespace(estimate_id="e")),
+                        online=True, has_key=True, news_packet=news,
+                        market_ctx=mk)["called"] is True
+    clock[0] += 60      # too soon
+    assert c.maybe_call(client=_RealishClient(SimpleNamespace(estimate_id="e")),
+                        online=True, has_key=True, news_packet=news,
+                        market_ctx=mk)["reason"] == "not_due_yet"
+    clock[0] += 900     # interval elapsed
+    assert c.maybe_call(client=_RealishClient(SimpleNamespace(estimate_id="e")),
+                        online=True, has_key=True, news_packet=news,
+                        market_ctx=mk)["called"] is True
+
+
+def test_proof_call_evidence_never_exposes_key_value():
+    import json
+    from engine.research.proof_call import GrokProofCaller
+    from types import SimpleNamespace
+    written = []
+    r = GrokProofCaller(enabled=True, max_per_run=1, min_interval_seconds=0).maybe_call(
+        client=_RealishClient(SimpleNamespace(estimate_id="e1")), online=True,
+        has_key=True, news_packet=[{"headline": "x"}], market_ctx={"market_id": "m1"},
+        evidence_sink=written.append)
+    blob = json.dumps({"result": r, "evidence": written})
+    assert "xai-" not in blob.lower()       # no key value anywhere
+    assert written and written[0]["advisory_only"] is True
+    assert written[0]["trade_gate_bypassed"] is False
+
+
 def test_xai_api_key_alone_is_sufficient(tmp_path, monkeypatch):
     from engine.brain import read_grok_key, grok_key_source
     monkeypatch.delenv("GROK_API_KEY", raising=False)

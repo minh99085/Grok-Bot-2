@@ -8,11 +8,10 @@ services:
       - hte_data:/data
     environment:
       HTE_ENGINE_NAME: "HermesTradingEngine"
-      # xAI/Grok key injected into the container by interpolation from the project
-      # .env that docker compose auto-loads (works on every Compose version + on
-      # Windows; single-file bind mounts are unreliable on Docker Desktop/WSL2).
-      # Put your key in .env as: XAI_API_KEY=xai-...  (or GROK_API_KEY=...).
-      GROK_API_KEY: "${GROK_API_KEY:-}"
+      # CANONICAL xAI key is XAI_API_KEY, interpolated from the project .env that
+      # docker compose auto-loads (works on every Compose version + on Windows).
+      # Put your key in .env as: XAI_API_KEY=xai-...   GROK_API_KEY is NOT required
+      # (legacy optional fallback only); it is intentionally not passed here.
       XAI_API_KEY: "${XAI_API_KEY:-}"
       HTE_STARTING_BALANCE: "${HTE_STARTING_BALANCE:-500}"
       # Paper starting balance (fake money). Default $500; override any time by
@@ -227,8 +226,12 @@ services:
       REPLAY_STRATEGY_TICK_MS: "1000"
       REPLAY_EQUITY_SNAPSHOT_MS: "1000"
       REPLAY_OUTPUT_DIR: "replay_artifacts"
-      REPLAY_ALLOW_GROK_NETWORK: "0"
-      REPLAY_USE_CACHED_GROK: "1"
+      # Cache-only/replay Grok is for OFFLINE replay + deterministic tests only — it
+      # must NOT force normal paper training into cache-only (that blocked the live
+      # advisory proof call). Defaults allow the bounded live xAI advisory proof call;
+      # set these to 0/1 only for offline replay/test runs.
+      REPLAY_ALLOW_GROK_NETWORK: "${REPLAY_ALLOW_GROK_NETWORK:-1}"
+      REPLAY_USE_CACHED_GROK: "${REPLAY_USE_CACHED_GROK:-0}"
       REPLAY_END_OPEN_ORDER_POLICY: "cancel"
       REPLAY_MARK_TO_MARKET: "1"
       # ---- Phase 5: Grok research/probability engine (research-ONLY) ----
@@ -421,9 +424,9 @@ services:
     environment:
       HTE_DATA_DIR: "/data"
       HTE_MODE: "paper"
-      # xAI/Grok key via interpolation from the auto-loaded project .env (Windows-
-      # safe; no single-file bind mount). Put XAI_API_KEY=xai-... in .env.
-      GROK_API_KEY: "${GROK_API_KEY:-}"
+      # CANONICAL xAI key via interpolation from the auto-loaded project .env
+      # (Windows-safe). Put XAI_API_KEY=xai-... in .env. GROK_API_KEY is NOT required
+      # and is intentionally not passed (legacy optional fallback only).
       XAI_API_KEY: "${XAI_API_KEY:-}"
       # Durable artifact dirs (ABSOLUTE, on the persisted /data volume so they
       # survive restarts AND stay visible to the dashboard). The entrypoint creates
