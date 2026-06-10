@@ -91,19 +91,49 @@ def _clamp01(x) -> float:
         return 0.0
 
 
-def parse_book_timestamp(market):
-    """Parse a book timestamp (seconds OR milliseconds) -> epoch seconds, or None."""
+_BOOK_TS_FIELDS = ("bookUpdatedTs", "orderBookTs", "book_updated_ts",
+                   "updatedAt", "updated_at", "lastTradeTime")
+
+
+def _book_ts_raw(market):
     raw = _raw(market)
-    ts = raw.get("bookUpdatedTs") or raw.get("orderBookTs") or raw.get("book_updated_ts")
+    for k in _BOOK_TS_FIELDS:
+        v = raw.get(k)
+        if v not in (None, ""):
+            return v
+    return None
+
+
+def parse_book_timestamp(market):
+    """Parse a book timestamp -> epoch seconds, or None.
+
+    Accepts epoch SECONDS, epoch MILLISECONDS, and ISO‑8601 strings
+    (``2026-06-10T04:00:00Z``). A MISSING timestamp returns None (callers must treat
+    'missing' as *unknown*, NOT as stale)."""
+    ts = _book_ts_raw(market)
     if ts in (None, ""):
         return None
+    # numeric epoch (seconds or ms)
     try:
         f = float(ts)
+        if f == f and f > 0:                    # not NaN, positive
+            return f / 1000.0 if f >= 1e12 else f
     except (TypeError, ValueError):
-        return None
-    if f != f or f <= 0:                       # NaN / non-positive
-        return None
-    return f / 1000.0 if f >= 1e12 else f      # ms -> s
+        pass
+    # ISO-8601 string
+    if isinstance(ts, str):
+        s = ts.strip().replace("Z", "+00:00")
+        try:
+            import datetime as _dt
+            return _dt.datetime.fromisoformat(s).timestamp()
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
+def book_timestamp_present(market) -> bool:
+    """True iff a book-timestamp field is present (regardless of parseability)."""
+    return _book_ts_raw(market) is not None
 
 
 def structural_checks(market) -> dict:
@@ -138,15 +168,22 @@ def structural_checks(market) -> dict:
     else:
         if not (0.0 < bid < ask < 1.0):
             failures.append("bid_ask_not_ordered_in_unit_interval")
-    if parse_book_timestamp(market) is None:
-        failures.append("book_timestamp_unparseable")
-    # a "critical" failure forces reject_or_diagnostic tier (never tradeable anyway)
+    # Book-timestamp is a SOFT freshness signal, NOT a hard structural failure.
+    # Distinguish MISSING (field absent -> unknown) from UNPARSEABLE (present but bad).
+    ts_present = book_timestamp_present(market)
+    ts_parsed = parse_book_timestamp(market)
+    book_timestamp_status = ("ok" if ts_parsed is not None else
+                             "unparseable" if ts_present else "missing")
+    # a "critical" failure forces reject_or_diagnostic tier (never tradeable anyway).
+    # A missing/unparseable timestamp is NEVER critical (it is unknown, not bad).
     critical = bool(set(failures) & {"non_numeric_bid_ask",
                                      "bid_ask_not_ordered_in_unit_interval",
                                      "duplicate_outcome_labels"})
     return {"ok": not failures, "failures": failures, "critical": critical,
             "is_binary": bool(is_binary), "n_outcomes": n_outcomes,
-            "token_ids_available": bool(tokens), "best_bid": bid, "best_ask": ask}
+            "token_ids_available": bool(tokens), "best_bid": bid, "best_ask": ask,
+            "book_timestamp_status": book_timestamp_status,
+            "book_timestamp_present": bool(ts_present)}
 
 
 def side_specific_depth(legs, *, side: str = "buy") -> dict:
@@ -237,26 +274,44 @@ def score_market(market, *, thresholds: Optional[QualityThresholds] = None,
     spread = (ask - bid) if (bid is not None and ask is not None) else \
         float(_get(market, "spread", 0.0) or 0.0)
 
-    depth_usd = float(_get(market, "top_depth_usd", 0.0)
-                      or parse_price(raw.get("topDepthUsd")) or 0.0)
+    # --- DEPTH: KNOWN only with a REAL top-of-book depth field (missing depth !=
+    # thin). Liquidity is NOT top-of-book depth -> a liquidity-only estimate is used
+    # for ranking but marked UNKNOWN so it is never penalized as thin. ---
+    _real_depth = None
+    for _k in ("topDepthUsd", "top_depth_usd", "orderMinSize"):
+        v = raw.get(_k)
+        if v not in (None, ""):
+            _real_depth = parse_price(v)
+            break
+    _rec_depth = _get(market, "top_depth_usd", None)   # may be a liquidity-derived est
+    depth_known = _real_depth is not None
+    depth_usd = float(_real_depth if _real_depth is not None else (_rec_depth or 0.0))
     liq = float(_get(market, "liquidity_usd", 0.0) or parse_price(raw.get("liquidityNum")) or 0.0)
     vol24 = float(_get(market, "volume_24h_usd", 0.0) or 0.0)
+    activity_known = (vol24 > 0) or (raw.get("volume24hr") not in (None, "")) \
+        or (raw.get("volumeNum") not in (None, ""))
+    # --- FRESHNESS: separate KNOWN age from MISSING timestamp (missing != stale) ---
     book_age = _get(market, "book_age_s", None)
     if book_age is None:
         _bts = parse_book_timestamp(market)
         if _bts is not None:
             import time as _t
             book_age = max(0.0, (now or _t.time()) - _bts)
+    freshness_known = book_age is not None
     res_days = _resolution_days(market, now=now)
 
     # --- soft sub-scores in [0,1] (saturating; never hard pass/fail) ---
-    side_depth_score = _clamp01(depth_usd / max(1e-9, th.gold_depth_usd))
+    # MISSING data -> NEUTRAL priority (not penalized as thin/stale/low-activity).
+    side_depth_score = (_clamp01(depth_usd / max(1e-9, th.gold_depth_usd))
+                        if depth_known else 0.4)
     worst_leg_depth_score = side_depth_score          # single-market = its own depth
-    liquidity_score = _clamp01(liq / max(1e-9, th.gold_liquidity_usd))
-    activity_score = _clamp01(vol24 / max(1e-9, th.gold_volume_24h_usd))
+    liquidity_score = _clamp01(liq / max(1e-9, th.gold_liquidity_usd)) if liq else (
+        0.4 if not activity_known else 0.0)
+    activity_score = _clamp01(vol24 / max(1e-9, th.gold_volume_24h_usd)) \
+        if activity_known else 0.4
     spread_score = _clamp01(1.0 - (max(0.0, spread) / max(1e-9, th.silver_spread)))
-    if book_age is None:
-        freshness_score = 0.4                          # unknown age = mid priority
+    if not freshness_known:
+        freshness_score = 0.5                          # unknown age = NEUTRAL (not stale)
     else:
         freshness_score = _clamp01(1.0 - (float(book_age) / max(1e-9, th.silver_book_age_s)))
     if res_days is None:
@@ -268,13 +323,14 @@ def score_market(market, *, thresholds: Optional[QualityThresholds] = None,
     is_ref = bool(_BTC_ETH_RE.search(q) or _MACRO_RE.search(q))
     external_reference_score = 0.8 if is_ref else 0.0
     news_rel = _clamp01(news_relevance)
-    # scan-waste risk: high when structurally broken / very thin / stale
+    # scan-waste risk: only from KNOWN-bad data (structural break / KNOWN-thin /
+    # KNOWN-stale) — never from missing/unknown fields.
     waste = 0.0
-    if sc["failures"]:
+    if sc["critical"]:
         waste += 0.6
-    if depth_usd < th.silver_depth_usd:
+    if depth_known and depth_usd < th.silver_depth_usd:
         waste += 0.2
-    if book_age is not None and float(book_age) > th.silver_book_age_s:
+    if freshness_known and float(book_age) > th.silver_book_age_s:
         waste += 0.2
     scan_waste_risk_score = _clamp01(waste)
 
@@ -323,6 +379,12 @@ def score_market(market, *, thresholds: Optional[QualityThresholds] = None,
         "is_binary": bool(sc["is_binary"]),
         "proven_completeness_metadata": bool(
             raw.get("negRiskComplete") or raw.get("complete_set") or raw.get("outcomeCount")),
+        # MISSING vs KNOWN flags (so callers never count missing data as bad data)
+        "depth_known": bool(depth_known),
+        "freshness_known": bool(freshness_known),
+        "activity_known": bool(activity_known),
+        "book_timestamp_status": sc.get("book_timestamp_status"),
+        "book_age_s": (round(float(book_age), 3) if freshness_known else None),
         # hard invariant — quality NEVER implies executability
         "trade_eligible": False,
     }

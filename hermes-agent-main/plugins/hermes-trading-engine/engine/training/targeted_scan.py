@@ -54,7 +54,8 @@ def classify_categories(market, qs: dict, *, news_relevance: float = 0.0) -> lis
     sc = qs
     is_binary = bool(sc.get("is_binary"))
     tight = 0.0 < sc["spread"] <= 0.05
-    fresh = sc["freshness_score"] >= 0.5
+    # a MISSING timestamp is UNKNOWN, not stale -> it must not disqualify a category.
+    fresh = (not sc.get("freshness_known")) or sc["freshness_score"] >= 0.5
     deep = sc["side_specific_depth_score"] >= 0.3
     proven_metadata = bool(sc.get("proven_completeness_metadata"))
     binary_pair = sc["completeness_score"] == 1.0 and not proven_metadata
@@ -97,19 +98,22 @@ class TargetedMarketScanner:
         self._waste_streak: dict = {}      # market_id -> consecutive waste count
 
     def _waste_reasons(self, qs: dict, near_miss: Optional[dict]) -> list:
+        """KNOWN-bad data only (never MISSING data). Missing timestamp != stale,
+        missing depth != thin (those are reported separately as missing_data)."""
         out = []
         failures = qs.get("structural_failures", []) or []
-        if qs.get("side_specific_depth_score", 1.0) < 0.2:
+        # KNOWN-thin: depth is KNOWN and below the (priority) thin floor.
+        if qs.get("depth_known") and qs.get("side_specific_depth_score", 1.0) < 0.2:
             out.append("thin_depth")
-        if qs.get("freshness_score", 1.0) <= 0.0 or "book_timestamp_unparseable" in failures:
+        # KNOWN-stale: book age is KNOWN and beyond freshness (missing ts is NOT stale).
+        if qs.get("freshness_known") and qs.get("freshness_score", 1.0) <= 0.0:
             out.append("stale_book")
         for f in ("duplicate_outcome_labels", "token_ids_unavailable"):
             if f in failures:
                 out.append(f)
-        if not qs.get("structural_ok", True) and qs.get("structural_failures"):
-            if any(f in failures for f in ("non_numeric_bid_ask",
-                                           "bid_ask_not_ordered_in_unit_interval")):
-                out.append("invalid_simplex")
+        if any(f in failures for f in ("non_numeric_bid_ask",
+                                       "bid_ask_not_ordered_in_unit_interval")):
+            out.append("invalid_simplex")
         if near_miss:
             r = near_miss.get("reject_reason")
             if r == "invalid_simplex":
@@ -119,6 +123,19 @@ class TargetedMarketScanner:
             elif r == "depth_too_thin":
                 out.append("thin_depth")
         return sorted(set(out))
+
+    @staticmethod
+    def _missing_reasons(qs: dict) -> list:
+        """Fields that are UNKNOWN (absent) — reported separately from waste so
+        missing data is never miscounted as stale/thin/low-activity."""
+        out = []
+        if qs.get("book_timestamp_status") in ("missing", "unparseable"):
+            out.append("missing_book_timestamp")
+        if not qs.get("depth_known"):
+            out.append("missing_depth")
+        if not qs.get("activity_known"):
+            out.append("missing_volume")
+        return out
 
     def scan(self, records: list, *, news_by_market: Optional[dict] = None,
              near_miss_by_market: Optional[dict] = None, now: Optional[float] = None) -> dict:
@@ -144,8 +161,11 @@ class TargetedMarketScanner:
         cat_markets: dict = {c: 0 for c in CATEGORIES}
         score_buckets = {"0.8+": 0, "0.6-0.8": 0, "0.4-0.6": 0, "0.2-0.4": 0, "<0.2": 0}
         waste_counts: dict = {r: 0 for r in _WASTE_REASONS}
+        missing_counts: dict = {"missing_book_timestamp": 0, "missing_depth": 0,
+                                "missing_volume": 0}
         deprioritized = 0
         deprioritized_by_reason: dict = {}
+        cooldown_reason_counts: dict = {}
         exploration_used = 0
         scored: list = []
 
@@ -162,6 +182,9 @@ class TargetedMarketScanner:
             cats = classify_categories(rec, qs, news_relevance=nrel)
             for c in cats:
                 cat_markets[c] = cat_markets.get(c, 0) + 1
+            # MISSING data (reported separately; never miscounted as waste)
+            for r in self._missing_reasons(qs):
+                missing_counts[r] = missing_counts.get(r, 0) + 1
             # scan-waste cooldown (down-prioritize; keep small exploration)
             wreasons = self._waste_reasons(qs, near_miss_by_market.get(mid))
             for r in wreasons:
@@ -174,6 +197,7 @@ class TargetedMarketScanner:
                     deprioritized += 1
                     for r in wreasons:
                         deprioritized_by_reason[r] = deprioritized_by_reason.get(r, 0) + 1
+                        cooldown_reason_counts[r] = cooldown_reason_counts.get(r, 0) + 1
             else:
                 self._waste_streak.pop(mid, None)
             # budget allocation (prioritization only)
@@ -194,8 +218,26 @@ class TargetedMarketScanner:
         budget_by_cat["broad_exploration"] = max(
             budget_by_cat.get("broad_exploration", 0), self.broad_exploration_budget)
         best = sorted(scored, key=lambda x: x["score"], reverse=True)[:10]
-        noop = {c: f"no_markets_matched_{c}" for c in CATEGORIES
-                if cat_markets.get(c, 0) == 0}
+        n = len(scored)
+        # sampled, convincing no-op reason per EMPTY target category (counts + sample)
+        binaries = sum(1 for x in scored if "high_liquidity_binary" in x["categories"]
+                       or "complete_yes_no_tight_spread" in x["categories"])
+        noop: dict = {}
+        for c in CATEGORIES:
+            if c in ("broad_exploration",) or cat_markets.get(c, 0) > 0:
+                continue
+            if c == "negative_risk_complete" or c == "complete_event_family":
+                noop[c] = (f"0/{n} markets carried negRiskComplete/outcomeCount metadata "
+                           f"proving a complete event family (completeness is never "
+                           f"inferred from titles)")
+            elif c in ("btc_eth_chainlink", "fed_macro_reference"):
+                noop[c] = f"0/{n} scanned questions referenced BTC/ETH or Fed/macro terms"
+            elif c == "high_volume_news_linked":
+                noop[c] = f"0/{n} markets had news relevance >= 0.4 this scan"
+            elif c == "short_resolution":
+                noop[c] = f"0/{n} markets had a parseable end date within 30 days"
+            else:
+                noop[c] = f"0/{n} markets matched {c} (binaries seen={binaries})"
         return {
             "targeted_market_scan_enabled": True,
             "targeted_markets_scanned_total": len(scored),
@@ -217,9 +259,15 @@ class TargetedMarketScanner:
             "thin_depth_scan_waste_count": waste_counts.get("thin_depth", 0),
             "stale_book_scan_waste_count": waste_counts.get("stale_book", 0),
             "invalid_simplex_scan_waste_count": waste_counts.get("invalid_simplex", 0),
+            # MISSING data is reported SEPARATELY from waste (missing != stale/thin)
+            "targeted_scan_missing_data_counts": missing_counts,
+            "missing_book_timestamp_count": missing_counts.get("missing_book_timestamp", 0),
+            "missing_depth_count": missing_counts.get("missing_depth", 0),
+            "missing_volume_count": missing_counts.get("missing_volume", 0),
             "scan_deprioritized_groups": deprioritized,
             "scan_deprioritized_by_reason": deprioritized_by_reason,
             "scan_cooldown_active_groups": len(self._cooldown),
+            "scan_cooldown_reason_counts": cooldown_reason_counts,
             "scan_exploration_budget_used": exploration_used,
             "targeted_scan_best_markets": best,
             "targeted_scan_noop_reasons": noop,

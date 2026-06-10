@@ -1982,10 +1982,15 @@ def _build_report_md(rj, feats, status, docker, api, tests, comparison,
                       "high_volume_news_linked_markets_scanned",
                       "complete_event_families_scanned"):
                 L.append(f"- {k}: {_bf.get(k, 0)}")
-            L.append(f"- thin_depth_scan_waste_count: {_bf.get('thin_depth_scan_waste_count', 0)}")
-            L.append(f"- stale_book_scan_waste_count: {_bf.get('stale_book_scan_waste_count', 0)}")
+            L.append(f"- thin_depth_scan_waste_count (KNOWN-thin only): "
+                     f"{_bf.get('thin_depth_scan_waste_count', 0)}")
+            L.append(f"- stale_book_scan_waste_count (KNOWN-stale only): "
+                     f"{_bf.get('stale_book_scan_waste_count', 0)}")
+            L.append(f"- targeted_scan_missing_data_counts (NOT waste): "
+                     f"{_bf.get('targeted_scan_missing_data_counts', {})}")
             L.append(f"- scan_deprioritized_groups: {_bf.get('scan_deprioritized_groups', 0)} "
-                     f"cooldown_active={_bf.get('scan_cooldown_active_groups', 0)}")
+                     f"cooldown_active={_bf.get('scan_cooldown_active_groups', 0)} "
+                     f"reasons={_bf.get('scan_cooldown_reason_counts', {})}")
             L.append(f"- not_exhaustive_high_quality_groups: {_bf.get('not_exhaustive_high_quality_groups', 0)} "
                      f"(sibling={_bf.get('not_exhaustive_sent_to_sibling_search', 0)} "
                      f"grok={_bf.get('not_exhaustive_sent_to_grok', 0)} "

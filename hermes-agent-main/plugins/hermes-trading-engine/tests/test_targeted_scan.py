@@ -66,6 +66,52 @@ def test_scorer_timestamp_ms_and_seconds():
     assert abs(parse_book_timestamp(ms) - _NOW) < 1.0
 
 
+def test_scorer_timestamp_iso_and_missing():
+    iso = _mkt(); del iso["bookUpdatedTs"]; iso["updatedAt"] = "2026-06-10T04:00:00+00:00"
+    assert parse_book_timestamp(iso) is not None        # ISO parses
+    missing = _mkt(); del missing["bookUpdatedTs"]
+    assert parse_book_timestamp(missing) is None        # missing -> None (unknown)
+    sc = structural_checks(missing)
+    assert sc["book_timestamp_status"] == "missing"
+    assert "book_timestamp_unparseable" not in sc["failures"]  # missing is NOT a failure
+    assert sc["critical"] is False
+
+
+def test_missing_timestamp_is_not_counted_stale():
+    # the production catalog often lacks book timestamps -> must NOT all be "stale"
+    s = TargetedMarketScanner(enabled=True)
+    recs = [_mkt(mid=f"m{i}") for i in range(5)]
+    for r in recs:
+        del r["bookUpdatedTs"]                           # no timestamp at all
+    tel = s.scan(recs, now=_NOW)
+    assert tel["stale_book_scan_waste_count"] == 0       # was the 873/873 bug
+    assert tel["targeted_scan_missing_data_counts"]["missing_book_timestamp"] == 5
+
+
+def test_missing_depth_is_not_counted_thin():
+    # liquidity present but NO top-of-book depth field -> depth UNKNOWN, not thin
+    s = TargetedMarketScanner(enabled=True)
+    recs = []
+    for i in range(5):
+        r = _mkt(mid=f"m{i}"); del r["topDepthUsd"]; r["liquidityNum"] = "8000"
+        recs.append(r)
+    tel = s.scan(recs, now=_NOW)
+    assert tel["thin_depth_scan_waste_count"] == 0       # was the 869/873 bug
+    assert tel["targeted_scan_missing_data_counts"]["missing_depth"] == 5
+    # and categories still populate (not disqualified by missing data)
+    assert tel["complete_yes_no_tight_spread_markets_scanned"] >= 1
+
+
+def test_known_thin_and_known_stale_still_counted():
+    # KNOWN data that is genuinely thin/stale MUST still be flagged (gates unchanged)
+    s = TargetedMarketScanner(enabled=True)
+    thin = _mkt(mid="thin", depth=2)                     # real topDepthUsd=2 -> known thin
+    stale = _mkt(mid="stale", age=99999); stale["topDepthUsd"] = "400"  # known old book
+    tel = s.scan([thin, stale], now=_NOW)
+    assert tel["thin_depth_scan_waste_count"] >= 1
+    assert tel["stale_book_scan_waste_count"] >= 1
+
+
 def test_scoring_is_tiered_not_hard_all_pass():
     # thin + zero volume must NOT be reject solely; it is down-prioritized (watch/bronze)
     r = score_market(_mkt(depth=5, liq=100, vol=0), now=_NOW)
@@ -146,6 +192,31 @@ def test_disabled_scanner_is_noop():
     s = TargetedMarketScanner(enabled=False)
     tel = s.scan([_mkt()], now=_NOW)
     assert tel["targeted_market_scan_enabled"] is False
+
+
+def test_empty_categories_have_sampled_noop_reasons():
+    # plain binary markets -> negrisk/short-res/news categories are empty WITH reasons
+    s = TargetedMarketScanner(enabled=True)
+    recs = [_mkt(mid=f"m{i}", q="Will the team win?") for i in range(3)]
+    for r in recs:
+        del r["endDate"]                                  # no resolution date
+    tel = s.scan(recs, now=_NOW)
+    noop = tel["targeted_scan_noop_reasons"]
+    assert "negative_risk_complete" in noop
+    assert "0/" in noop["negative_risk_complete"]         # sampled count in the reason
+    assert "short_resolution" in noop
+    assert "metadata" in noop["negative_risk_complete"]    # explains the WHY
+
+
+def test_cooldown_metrics_reconcile():
+    s = TargetedMarketScanner(enabled=True, cooldown_ticks=5)
+    bad = _mkt(mid="bad", depth=1)                        # known-thin (real topDepthUsd=1)
+    seen_reason = {}
+    for _ in range(4):
+        tel = s.scan([bad], now=_NOW)
+        seen_reason.update(tel.get("scan_cooldown_reason_counts", {}))
+    assert tel["scan_cooldown_active_groups"] >= 1
+    assert seen_reason.get("thin_depth", 0) >= 1          # cooldown reason reconciles
 
 
 # --- trainer integration: telemetry + no gate change ----------------------- #
