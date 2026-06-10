@@ -766,6 +766,24 @@ class PolymarketPaperTrainer:
                 "open_positions": len(self.open_positions()), "equity": self.equity()}
 
     # -- flagship Bregman arbitrage -----------------------------------------
+    def enable_clob_hydration(self, book_fetcher=None, *,
+                              max_book_age_s: float = None,
+                              max_groups_per_tick: int = 40) -> bool:
+        """Attach a READ-ONLY CLOB order-book fetcher so Bregman binary groups are
+        hydrated with real YES/NO books before certification. Called by the paper
+        entrypoint when CLOB read-only is enabled; tests inject a mock fetcher. When
+        ``book_fetcher`` is None a public-CLOB ``/book`` fetcher is built. Returns
+        True when hydration is active. PAPER ONLY: read-only, never trades/sizes."""
+        from engine.training.clob_hydration import (BregmanClobHydrator,
+                                                    clob_book_fetcher)
+        fetcher = book_fetcher if book_fetcher is not None else clob_book_fetcher()
+        age = float(max_book_age_s if max_book_age_s is not None
+                    else getattr(self.cfg, "bregman_max_book_age_sec", 20.0) or 20.0)
+        self._bregman_clob_hydrator = BregmanClobHydrator(
+            book_fetcher=fetcher, max_book_age_s=age,
+            max_groups_per_tick=int(max_groups_per_tick))
+        return self._bregman_clob_hydrator.enabled
+
     def scan_bregman(self, records: list, now: float) -> list:
         """Certify Bregman opportunities across the candidate set (read-only).
 

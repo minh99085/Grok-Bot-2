@@ -127,6 +127,46 @@ def test_open_gate_blocks_synthetic_allows_real(tmp_path, monkeypatch):
     assert t.bregman_reject_reasons.get("incomplete_or_uncertain_exhaustive_set", 0) >= 1
 
 
+# --- trainer path: a targeted binary group actually triggers hydration ----- #
+def test_trainer_scan_bregman_hydrates_binary_group(tmp_path, monkeypatch):
+    from engine.training import PolymarketPaperTrainer, TrainingConfig
+    from engine.markets import universe_manager as um
+    from tests._pmtrain_helpers import clean_live_env, market
+    clean_live_env(monkeypatch, tmp_path)
+    t = PolymarketPaperTrainer(TrainingConfig(mode="paper_train", max_open_trades=8),
+                               data_dir=tmp_path)
+    now = time.time()
+    books = {"tok0a": {"asks": [{"price": "0.46", "size": "800"}],
+                       "bids": [{"price": "0.45", "size": "700"}], "timestamp": str(now - 2)},
+             "tok0b": {"asks": [{"price": "0.50", "size": "900"}],
+                       "bids": [{"price": "0.49", "size": "600"}], "timestamp": str(now - 2)}}
+    # inject a READ-ONLY mock fetcher (no network) — mirrors the live entrypoint wiring
+    assert t.enable_clob_hydration(book_fetcher=lambda tok: books.get(tok),
+                                   max_book_age_s=120.0) is True
+    raw = market(0, bid=0.44, ask=0.45, now=now)   # binary YES/NO w/ tok0a/tok0b
+    rec = um.MarketRecord.from_raw(raw, now=now)
+    t.scan_bregman([rec], now)
+    m = t.bregman_exec_metrics
+    assert m["bregman_clob_hydration_attempted"] >= 1     # the user's failing metric
+    assert m["bregman_clob_hydration_success"] >= 1
+    assert m["bregman_real_yes_no_books_seen"] >= 2
+    assert m["bregman_certifier_used_real_clob_books"] is True
+
+
+def test_trainer_hydration_off_by_default_offline(tmp_path, monkeypatch):
+    """A trainer built directly (no entrypoint, no env) stays offline: attempted=0."""
+    from engine.training import PolymarketPaperTrainer, TrainingConfig
+    from engine.markets import universe_manager as um
+    from tests._pmtrain_helpers import clean_live_env, market
+    clean_live_env(monkeypatch, tmp_path)
+    monkeypatch.delenv("BREGMAN_CLOB_HYDRATION_ENABLED", raising=False)
+    t = PolymarketPaperTrainer(TrainingConfig(mode="paper_train"), data_dir=tmp_path)
+    now = time.time()
+    rec = um.MarketRecord.from_raw(market(0, now=now), now=now)
+    t.scan_bregman([rec], now)
+    assert t.bregman_exec_metrics["bregman_clob_hydration_attempted"] == 0
+
+
 def test_default_fetcher_off_unless_enabled(monkeypatch):
     monkeypatch.delenv("BREGMAN_CLOB_HYDRATION_ENABLED", raising=False)
     assert default_clob_book_fetcher() is None            # OFF by default (no network)

@@ -115,10 +115,20 @@ class BregmanClobHydrator:
             leg.stale = not leg.fresh_book
         return True, None
 
+    @staticmethod
+    def _binary_first(groups: list) -> list:
+        """Order groups so binary YES/NO (the targeted-scan hydration target) are
+        hydrated FIRST within the per-tick budget. Selection-only; no gate change."""
+        binary, other = [], []
+        for g in (groups or []):
+            (binary if getattr(g, "group_type", "") == "binary_yes_no" else other).append(g)
+        return binary + other
+
     def hydrate(self, groups: list, *, now: Optional[float] = None) -> dict:
-        """Hydrate up to ``max_groups_per_tick`` groups with real CLOB books. Returns
-        metrics. On any leg failure the group's leg keeps its synthetic price and is
-        flagged so the certifier treats it as diagnostic/shadow only."""
+        """Hydrate up to ``max_groups_per_tick`` groups with real CLOB books (binary
+        YES/NO groups first). Returns metrics. On any leg failure the group's leg keeps
+        its synthetic price and is flagged so the certifier treats it as
+        diagnostic/shadow only."""
         now = float(now if now is not None else self._clock())
         attempted = success = failed = real_books = synthetic_only = 0
         failure_reasons: dict = {}
@@ -133,7 +143,7 @@ class BregmanClobHydrator:
                 "bregman_certifier_used_real_clob_books": False,
                 "bregman_hydration_failure_reasons": {},
             }
-        for g in (groups or [])[: self.max_groups_per_tick]:
+        for g in self._binary_first(groups)[: self.max_groups_per_tick]:
             legs = list(getattr(g, "legs", None) or [])
             if not legs:
                 continue
@@ -166,26 +176,45 @@ class BregmanClobHydrator:
         }
 
 
+def clob_book_fetcher(*, base_url: Optional[str] = None,
+                      timeout_s: float = 3.0) -> Callable[[str], Optional[dict]]:
+    """Build a READ-ONLY public-CLOB ``/book`` fetcher (httpx GET, one per token id)
+    backed by a single keep-alive client. ALWAYS returns a callable — callers decide
+    when to attach it. Never signs/trades; never raises (returns None on any error).
+
+    This is the production hydration path (used by the paper-training entrypoint when
+    CLOB read-only is enabled). It hits only the public order-book endpoint."""
+    import os
+    url = base_url or os.getenv("BREGMAN_CLOB_BOOK_URL", DEFAULT_CLOB_BOOK_URL)
+    _client_box: dict = {}
+
+    def _client():
+        c = _client_box.get("c")
+        if c is None:
+            import httpx
+            c = httpx.Client(timeout=timeout_s,
+                             headers={"User-Agent": "hermes-bregman-clob/1.0"})
+            _client_box["c"] = c
+        return c
+
+    def _fetch(token_id: str) -> Optional[dict]:
+        try:
+            resp = _client().get(url, params={"token_id": token_id})
+            if resp.status_code != 200:
+                return None
+            return resp.json()
+        except Exception:  # noqa: BLE001 — read-only hydration never breaks a tick
+            return None
+    return _fetch
+
+
 def default_clob_book_fetcher(*, base_url: str = DEFAULT_CLOB_BOOK_URL,
-                              timeout_s: float = 5.0) -> Optional[Callable[[str], Optional[dict]]]:
-    """Build a READ-ONLY public-CLOB ``/book`` fetcher (httpx GET). OFF unless
-    ``BREGMAN_CLOB_HYDRATION_ENABLED`` is set; returns None otherwise. Never raises;
-    never signs/trades. One GET per token id."""
+                              timeout_s: float = 3.0) -> Optional[Callable[[str], Optional[dict]]]:
+    """Constructor default: OFF unless ``BREGMAN_CLOB_HYDRATION_ENABLED`` is set (keeps
+    unit tests that build a trainer fully offline). Production wiring instead calls
+    :func:`clob_book_fetcher` explicitly. Returns None when not enabled."""
     import os
     if str(os.getenv("BREGMAN_CLOB_HYDRATION_ENABLED", "")).strip().lower() \
             not in ("1", "true", "yes", "on"):
         return None
-    url = os.getenv("BREGMAN_CLOB_BOOK_URL", base_url)
-
-    def _fetch(token_id: str) -> Optional[dict]:
-        try:
-            import httpx
-            with httpx.Client(timeout=timeout_s) as client:
-                resp = client.get(url, params={"token_id": token_id},
-                                  headers={"User-Agent": "hermes-bregman-clob/1.0"})
-                if resp.status_code != 200:
-                    return None
-                return resp.json()
-        except Exception:  # noqa: BLE001 — read-only hydration never breaks a tick
-            return None
-    return _fetch
+    return clob_book_fetcher(base_url=base_url, timeout_s=timeout_s)
