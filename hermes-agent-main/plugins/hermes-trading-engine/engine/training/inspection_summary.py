@@ -352,6 +352,24 @@ def build_bregman_funnel(bregman_telemetry: dict, *, market_groups_detected: int
         "bandit_action_rewards": dict(t.get("bandit_action_rewards", {}) or {}),
         "bandit_selected_action": t.get("bandit_selected_action"),
         "bandit_no_gate_override": bool(t.get("bandit_no_gate_override", True)),
+        # targeted market-scan PRIORITIZATION proof (never a trade gate)
+        **{k: t.get(k) for k in (
+            "targeted_market_scan_enabled", "targeted_markets_scanned_total",
+            "targeted_scan_budget_by_category", "targeted_scan_hits_by_category",
+            "targeted_scan_markets_by_category", "market_quality_tier_counts",
+            "market_quality_score_distribution", "high_liquidity_binary_markets_scanned",
+            "complete_yes_no_tight_spread_markets_scanned",
+            "negative_risk_complete_events_scanned", "short_resolution_markets_scanned",
+            "btc_eth_chainlink_markets_scanned", "fed_macro_reference_markets_scanned",
+            "high_volume_news_linked_markets_scanned", "complete_event_families_scanned",
+            "thin_depth_scan_waste_count", "stale_book_scan_waste_count",
+            "invalid_simplex_scan_waste_count", "scan_deprioritized_groups",
+            "scan_deprioritized_by_reason", "scan_cooldown_active_groups",
+            "scan_exploration_budget_used", "targeted_scan_best_markets",
+            "targeted_scan_noop_reasons", "not_exhaustive_high_quality_groups",
+            "not_exhaustive_sent_to_sibling_search", "not_exhaustive_sent_to_grok",
+            "not_exhaustive_completed_by_metadata", "not_exhaustive_remained_shadow_only")
+           if t.get(k) is not None},
         "near_miss_buckets": dict(t.get("near_miss_buckets", {}) or {}),
         "near_miss_all_negative_after_cost_lower_bound": bool(
             t.get("near_miss_all_negative_after_cost_lower_bound", False)),

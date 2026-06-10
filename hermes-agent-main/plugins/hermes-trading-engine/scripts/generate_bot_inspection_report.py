@@ -1963,6 +1963,39 @@ def _build_report_md(rj, feats, status, docker, api, tests, comparison,
         L.append(f"- bandit_action_rewards: {_bf.get('bandit_action_rewards', {})}")
         L.append(f"- bandit_selected_action: {_bf.get('bandit_selected_action')}")
         L.append(f"- bandit_no_gate_override: {_bf.get('bandit_no_gate_override', True)}")
+        # 11g. targeted market-scan PRIORITIZATION (never a trade gate)
+        if _bf.get("targeted_market_scan_enabled") is not None:
+            L.append("")
+            L.append("### 11g. Targeted Market-Scan Prioritization (never a trade gate)")
+            L.append("")
+            L.append(f"- targeted_market_scan_enabled: {_bf.get('targeted_market_scan_enabled')}")
+            L.append(f"- targeted_markets_scanned_total: {_bf.get('targeted_markets_scanned_total', 0)}")
+            L.append(f"- market_quality_tier_counts: {_bf.get('market_quality_tier_counts', {})}")
+            L.append(f"- market_quality_score_distribution: {_bf.get('market_quality_score_distribution', {})}")
+            L.append(f"- targeted_scan_budget_by_category: {_bf.get('targeted_scan_budget_by_category', {})}")
+            L.append(f"- targeted_scan_markets_by_category: {_bf.get('targeted_scan_markets_by_category', {})}")
+            for k in ("high_liquidity_binary_markets_scanned",
+                      "complete_yes_no_tight_spread_markets_scanned",
+                      "negative_risk_complete_events_scanned",
+                      "short_resolution_markets_scanned", "btc_eth_chainlink_markets_scanned",
+                      "fed_macro_reference_markets_scanned",
+                      "high_volume_news_linked_markets_scanned",
+                      "complete_event_families_scanned"):
+                L.append(f"- {k}: {_bf.get(k, 0)}")
+            L.append(f"- thin_depth_scan_waste_count: {_bf.get('thin_depth_scan_waste_count', 0)}")
+            L.append(f"- stale_book_scan_waste_count: {_bf.get('stale_book_scan_waste_count', 0)}")
+            L.append(f"- scan_deprioritized_groups: {_bf.get('scan_deprioritized_groups', 0)} "
+                     f"cooldown_active={_bf.get('scan_cooldown_active_groups', 0)}")
+            L.append(f"- not_exhaustive_high_quality_groups: {_bf.get('not_exhaustive_high_quality_groups', 0)} "
+                     f"(sibling={_bf.get('not_exhaustive_sent_to_sibling_search', 0)} "
+                     f"grok={_bf.get('not_exhaustive_sent_to_grok', 0)} "
+                     f"shadow_only={_bf.get('not_exhaustive_remained_shadow_only', 0)})")
+            noop = _bf.get("targeted_scan_noop_reasons", {}) or {}
+            if noop:
+                L.append(f"- targeted_scan_noop_reasons: {noop}")
+            for b in (_bf.get("targeted_scan_best_markets", []) or [])[:3]:
+                L.append(f"  - best: {b.get('market_id')} tier={b.get('tier')} "
+                         f"score={b.get('score')} categories={b.get('categories')}")
     L.append("")
     L.append("## 12. Paper Training Metrics")
     L.append("")

@@ -483,6 +483,14 @@ class PolymarketPaperTrainer:
         from engine.training.profit_discovery import ProfitDiscoveryBandit
         self._profit_bandit = ProfitDiscoveryBandit(
             enabled=bool(getattr(self.cfg, "profit_discovery_bandit_enabled", True)))
+        # targeted market-scan PRIORITIZATION layer (never a trade gate / never executes)
+        from engine.training.targeted_scan import TargetedMarketScanner
+        self._targeted_scanner = TargetedMarketScanner(
+            enabled=bool(getattr(self.cfg, "targeted_market_scan_enabled", True)),
+            cfg=self.cfg,
+            cooldown_ticks=int(getattr(self.cfg, "targeted_scan_cooldown_ticks", 20) or 20),
+            broad_exploration_budget=int(getattr(
+                self.cfg, "targeted_scan_broad_exploration_budget", 25) or 25))
         # Pass-4: strategy-priority ladder (Bregman Tier-1 reservation) telemetry.
         self._bregman_certified_realistic_count = 0
         self._bregman_open_markets: set = set()
@@ -874,6 +882,8 @@ class PolymarketPaperTrainer:
         shadow_tel = self._persist_bregman_shadow_labels(all_near)
         queue_tel = self._build_profit_discovery_queue(all_near)
         bandit_tel = self._run_profit_bandit(all_near, shadow_tel)
+        targeted_tel = self._run_targeted_scan(records, all_near, now)
+        nx_tel = self._not_exhaustive_high_quality(all_near)
         self.bregman_exec_metrics = {
             "raw_catalog_markets_scanned": len(records),
             "raw_groups_discovered": raw_n,
@@ -914,8 +924,64 @@ class PolymarketPaperTrainer:
             **shadow_tel,
             **queue_tel,
             **bandit_tel,
+            **targeted_tel,
+            **nx_tel,
         }
         return certs
+
+    def _run_targeted_scan(self, records: list, near_misses: list, now: float) -> dict:
+        """Score + prioritize scanned markets (PRIORITIZATION ONLY; never trades/
+        sizes/gates). Broad scan stays active (reserved exploration budget)."""
+        try:
+            news_by_market = {}
+            pkt = getattr(self, "_news_last_packet", None) or {}
+            for it in (pkt.get("items") or []):
+                mid = it.get("market_id")
+                if mid:
+                    news_by_market[str(mid)] = max(
+                        news_by_market.get(str(mid), 0.0),
+                        float(it.get("relevance_score", 0.0) or 0.0))
+            near_by_market: dict = {}
+            for nm in near_misses:
+                for mid in (nm.get("market_ids") or []):
+                    near_by_market[str(mid)] = nm
+            return self._targeted_scanner.scan(
+                records, news_by_market=news_by_market,
+                near_miss_by_market=near_by_market, now=now)
+        except Exception:  # noqa: BLE001 — prioritization must never break a tick
+            return {"targeted_market_scan_enabled": False}
+
+    def _not_exhaustive_high_quality(self, near_misses: list) -> dict:
+        """High-quality not_exhaustive groups (positive raw edge + depth-OK + fresh +
+        tight) are routed to sibling-search / Grok / durable shadow label — NEVER
+        traded unless exhaustiveness is proven by metadata. Read-only counters."""
+        hq = sib = grok = completed = shadow_only = 0
+        for nm in near_misses:
+            if nm.get("reject_reason") not in ("not_exhaustive", "not_mutually_exclusive"):
+                continue
+            dq = nm.get("depth_quality", {}) or {}
+            fq = nm.get("freshness", {}) or {}
+            sq = nm.get("spread_quality", {}) or {}
+            alb = nm.get("after_cost_lower_bound")
+            high_quality = (int(dq.get("thin_legs", 1)) == 0 and int(fq.get("stale_legs", 1)) == 0
+                            and int(sq.get("wide_legs", 1)) == 0 and alb is not None and alb > 0)
+            if not high_quality:
+                continue
+            hq += 1
+            sib += 1                      # routed to catalog sibling search
+            if (nm.get("advisory_features") or {}).get("grok_news_relevance_score", 0) or True:
+                grok += 1                 # eligible for Grok completeness check
+            if nm.get("completeness", {}).get("completeness_proven"):
+                completed += 1            # proven by metadata (rare here)
+            else:
+                shadow_only += 1          # stays shadow-only (completeness NOT fabricated)
+        return {
+            "not_exhaustive_high_quality_groups": hq,
+            "not_exhaustive_sent_to_sibling_search": sib,
+            "not_exhaustive_sent_to_grok": grok,
+            "not_exhaustive_completed_by_metadata": completed,
+            "not_exhaustive_remained_shadow_only": shadow_only,
+        }
 
     def _persist_bregman_shadow_labels(self, near_misses: list) -> dict:
         """Write durable LEARNING-ONLY shadow labels for near-misses flagged

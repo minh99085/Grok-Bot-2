@@ -263,6 +263,18 @@ class TrainingConfig:
     # profit-discovery learning (durable shadow labels + bandit router; never trades)
     bregman_shadow_labels_per_tick: int = 25     # rate-limit durable shadow-label writes
     profit_discovery_bandit_enabled: bool = True
+    # ---- targeted market-scan PRIORITIZATION (never a trade gate) ----
+    # Broad scan stays active; this adds priority budget to higher-quality markets.
+    # Tiers are for budget allocation only — distinct from the strict execution gates.
+    targeted_market_scan_enabled: bool = True
+    targeted_scan_cooldown_ticks: int = 20
+    targeted_scan_broad_exploration_budget: int = 25
+    targeted_scan_gold_depth_usd: float = 250.0
+    targeted_scan_silver_depth_usd: float = 75.0
+    targeted_scan_gold_spread: float = 0.02
+    targeted_scan_silver_spread: float = 0.05
+    targeted_scan_gold_book_age_s: float = 10.0
+    targeted_scan_silver_book_age_s: float = 30.0
     bregman_max_capital_per_tick_usd: float = 100.0
     bregman_min_roi: float = 0.002               # min after-cost ROI per certified set
     # ---- Pass-4: Bregman-FIRST strategy priority + slot/capital reservation ----
@@ -936,6 +948,8 @@ class TrainingConfig:
             bregman_top_near_misses=_envi("POLYMARKET_BREGMAN_TOP_NEAR_MISSES", 10),
             bregman_shadow_labels_per_tick=_envi("POLYMARKET_BREGMAN_SHADOW_LABELS_PER_TICK", 25),
             profit_discovery_bandit_enabled=_envb("POLYMARKET_PROFIT_DISCOVERY_BANDIT_ENABLED", True),
+            targeted_market_scan_enabled=_envb("TARGETED_MARKET_SCAN_ENABLED", True),
+            targeted_scan_cooldown_ticks=_envi("POLYMARKET_TARGETED_SCAN_COOLDOWN_TICKS", 20),
             bregman_max_bundles_per_tick=_envi("POLYMARKET_BREGMAN_MAX_BUNDLES_PER_TICK", 3),
             bregman_max_open_bundles=_envi("POLYMARKET_BREGMAN_MAX_OPEN_BUNDLES", 10),
             bregman_max_capital_per_tick_usd=_envf("POLYMARKET_BREGMAN_MAX_CAPITAL_PER_TICK", 100.0),
