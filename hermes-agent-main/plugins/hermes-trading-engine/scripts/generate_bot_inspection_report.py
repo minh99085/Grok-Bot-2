@@ -1976,6 +1976,10 @@ def _build_report_md(rj, feats, status, docker, api, tests, comparison,
             L.append(f"- targeted_scan_yes_no_pairs_seen: {_bf.get('targeted_scan_yes_no_pairs_seen', 0)}")
             L.append(f"- targeted_scan_binary_group_matches: {_bf.get('targeted_scan_binary_group_matches', 0)} "
                      f"raw_market_matches={_bf.get('targeted_scan_raw_market_matches', 0)}")
+            L.append(f"- targeted_scan_bregman_categories: {_bf.get('targeted_scan_bregman_categories', {})}")
+            L.append(f"- targeted_scan_raw_market_categories: {_bf.get('targeted_scan_raw_market_categories', {})}")
+            L.append(f"- targeted_scan_normalized_reject_reasons: "
+                     f"{_bf.get('targeted_scan_normalized_reject_reasons', {})}")
             L.append(f"- market_quality_tier_counts: {_bf.get('market_quality_tier_counts', {})}")
             L.append(f"- market_quality_score_distribution: {_bf.get('market_quality_score_distribution', {})}")
             L.append(f"- targeted_scan_budget_by_category: {_bf.get('targeted_scan_budget_by_category', {})}")

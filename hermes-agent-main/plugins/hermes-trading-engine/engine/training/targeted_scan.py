@@ -82,6 +82,38 @@ def classify_categories(market, qs: dict, *, news_relevance: float = 0.0) -> lis
     return cats
 
 
+def classify_bregman_group(nm: dict) -> list:
+    """Classify a Bregman NORMALIZED near-miss/group dict into target categories,
+    using its already-normalized fields (group_type / single_market_binary /
+    outcome_labels / token_ids / depth_quality / freshness / spread_quality /
+    completeness). This does NOT depend on raw-record fields, so raw missing data can
+    never hide a Bregman-normalized binary group. Read-only; never a trade gate."""
+    cats: list = []
+    gtype = nm.get("group_type") or ""
+    is_binary = (gtype == "binary_yes_no") or bool(nm.get("single_market_binary"))
+    labels = [str(x).strip().upper() for x in (nm.get("outcome_labels") or [])]
+    tokens = [t for t in (nm.get("token_ids") or []) if t]
+    dq = nm.get("depth_quality", {}) or {}
+    fq = nm.get("freshness", {}) or {}
+    sq = nm.get("spread_quality", {}) or {}
+    comp = nm.get("completeness", {}) or {}
+    depth_ok = int(dq.get("thin_legs", 1)) == 0
+    # missing book age is UNKNOWN, not stale (consistent with the scorer)
+    fresh = int(fq.get("stale_legs", 1)) == 0 or fq.get("worst_leg_age_s") is None
+    tight = int(sq.get("wide_legs", 1)) == 0
+    yes_no = labels[:2] == ["YES", "NO"] and len(tokens) >= 2
+    proven = bool(comp.get("completeness_proven"))
+
+    if is_binary and depth_ok:
+        cats.append("high_liquidity_binary")
+    if (is_binary or yes_no) and tight and fresh:
+        cats.append("complete_yes_no_tight_spread")
+    if proven and not is_binary:
+        cats.append("negative_risk_complete")
+        cats.append("complete_event_family")
+    return cats
+
+
 class TargetedMarketScanner:
     """Scores + categorizes scanned markets to prioritize evaluation budget.
 
@@ -153,11 +185,14 @@ class TargetedMarketScanner:
         if not self.enabled:
             return {"targeted_market_scan_enabled": False,
                     "targeted_markets_scanned_total": 0}
-        # --- count REAL Bregman normalized binary groups (NOT category hits) ---
+        # --- classify Bregman NORMALIZED groups (REAL binary groups + categories,
+        # NOT raw-record category hits). Raw missing fields can never hide these. ---
         breg_binary_groups = 0
         breg_yes_no_pairs = 0
         breg_market_ids: set = set()
         breg_binary_market_ids: set = set()
+        breg_categories: dict = {}
+        normalized_reject_reasons: dict = {}
         for g in bregman_groups:
             gtype = g.get("group_type") or ""
             is_binary = (gtype == "binary_yes_no") or bool(g.get("single_market_binary"))
@@ -173,6 +208,11 @@ class TargetedMarketScanner:
                     breg_binary_market_ids.add(m)
             if labels[:2] == ["YES", "NO"] and len(tokens) >= 2:
                 breg_yes_no_pairs += 1
+            for c in classify_bregman_group(g):
+                breg_categories[c] = breg_categories.get(c, 0) + 1
+            rr = g.get("reject_reason")
+            if rr:
+                normalized_reject_reasons[rr] = normalized_reject_reasons.get(rr, 0) + 1
         # decrement cooldowns each scan
         for k in list(self._cooldown):
             self._cooldown[k] -= 1
@@ -252,9 +292,14 @@ class TargetedMarketScanner:
                         else "raw_records_only")
         # "binaries seen" = REAL Bregman binary groups (never a category-hit count).
         binaries = breg_binary_groups
+
+        def _cat(c):
+            """Headline category count = raw-record hits + Bregman-normalized hits, so
+            raw missing fields can never hide a Bregman-normalized binary group."""
+            return cat_markets.get(c, 0) + breg_categories.get(c, 0)
         noop: dict = {}
         for c in CATEGORIES:
-            if c in ("broad_exploration",) or cat_markets.get(c, 0) > 0:
+            if c in ("broad_exploration",) or _cat(c) > 0:   # raw OR Bregman-normalized
                 continue
             if c == "negative_risk_complete" or c == "complete_event_family":
                 noop[c] = (f"0/{n} markets carried negRiskComplete/outcomeCount metadata "
@@ -278,21 +323,24 @@ class TargetedMarketScanner:
             "targeted_scan_binary_group_matches": binary_group_matches,
             "targeted_scan_raw_market_matches": raw_market_matches,
             "targeted_scan_field_source": field_source,
+            # category counts kept SEPARATE: Bregman-normalized vs raw-record
+            "targeted_scan_bregman_categories": {k: v for k, v in breg_categories.items() if v},
+            "targeted_scan_raw_market_categories": {k: v for k, v in cat_markets.items()
+                                                    if v and k != "broad_exploration"},
+            "targeted_scan_normalized_reject_reasons": normalized_reject_reasons,
             "targeted_scan_budget_by_category": {k: v for k, v in budget_by_cat.items() if v},
             "targeted_scan_hits_by_category": {k: v for k, v in hits_by_cat.items() if v},
             "targeted_scan_markets_by_category": {k: v for k, v in cat_markets.items() if v},
             "market_quality_tier_counts": tier_counts,
             "market_quality_score_distribution": score_buckets,
-            "high_liquidity_binary_markets_scanned": cat_markets.get("high_liquidity_binary", 0),
-            "complete_yes_no_tight_spread_markets_scanned":
-                cat_markets.get("complete_yes_no_tight_spread", 0),
-            "negative_risk_complete_events_scanned": cat_markets.get("negative_risk_complete", 0),
-            "short_resolution_markets_scanned": cat_markets.get("short_resolution", 0),
-            "btc_eth_chainlink_markets_scanned": cat_markets.get("btc_eth_chainlink", 0),
-            "fed_macro_reference_markets_scanned": cat_markets.get("fed_macro_reference", 0),
-            "high_volume_news_linked_markets_scanned":
-                cat_markets.get("high_volume_news_linked", 0),
-            "complete_event_families_scanned": cat_markets.get("complete_event_family", 0),
+            "high_liquidity_binary_markets_scanned": _cat("high_liquidity_binary"),
+            "complete_yes_no_tight_spread_markets_scanned": _cat("complete_yes_no_tight_spread"),
+            "negative_risk_complete_events_scanned": _cat("negative_risk_complete"),
+            "short_resolution_markets_scanned": _cat("short_resolution"),
+            "btc_eth_chainlink_markets_scanned": _cat("btc_eth_chainlink"),
+            "fed_macro_reference_markets_scanned": _cat("fed_macro_reference"),
+            "high_volume_news_linked_markets_scanned": _cat("high_volume_news_linked"),
+            "complete_event_families_scanned": _cat("complete_event_family"),
             "thin_depth_scan_waste_count": waste_counts.get("thin_depth", 0),
             "stale_book_scan_waste_count": waste_counts.get("stale_book", 0),
             "invalid_simplex_scan_waste_count": waste_counts.get("invalid_simplex", 0),

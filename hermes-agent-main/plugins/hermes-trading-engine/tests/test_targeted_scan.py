@@ -247,6 +247,63 @@ def test_cannot_report_zero_binaries_when_bregman_binary_groups_exist():
     assert "binaries seen=0" not in noop
 
 
+def test_classify_bregman_group_binary_categories():
+    from engine.training.targeted_scan import classify_bregman_group
+    thin = {"group_type": "binary_yes_no", "single_market_binary": True,
+            "outcome_labels": ["YES", "NO"], "token_ids": ["y", "n"],
+            "depth_quality": {"thin_legs": 2}, "freshness": {"stale_legs": 0},
+            "spread_quality": {"wide_legs": 0}, "completeness": {"completeness_proven": True}}
+    deep = dict(thin, depth_quality={"thin_legs": 0})
+    assert "complete_yes_no_tight_spread" in classify_bregman_group(thin)
+    assert "high_liquidity_binary" not in classify_bregman_group(thin)   # thin != high-liq
+    assert "high_liquidity_binary" in classify_bregman_group(deep)
+
+
+def test_bregman_binary_populates_categories_even_when_raw_missing_fields():
+    # raw records carry NO depth/timestamp; Bregman normalized binary groups must
+    # still populate the binary categories (raw missing must not hide them).
+    from engine.markets.universe_manager import MarketRecord
+    from engine.training.bregman_grouping import group_markets
+    from engine.training.bregman_near_miss import analyze_rejection
+    raw_recs = []
+    nms = []
+    for i in range(3):
+        full = MarketRecord.from_raw(
+            {"id": f"m{i}", "question": "Will X?", "outcomes": json.dumps(["Yes", "No"]),
+             "outcomePrices": json.dumps(["0.5", "0.49"]), "clobTokenIds": [f"m{i}Y", f"m{i}N"],
+             "bestBid": "0.5", "bestAsk": "0.51", "topDepthUsd": "400",
+             "bookUpdatedTs": str(_NOW - 5), "liquidityNum": "20000"}, now=_NOW)
+        nms.append(analyze_rejection(group_markets([full])[0], "no_positive_edge",
+                                     min_depth_usd=25.0, max_spread=0.08, max_age_s=20.0))
+        # the RAW record handed to targeted scan is field-poor (no depth/ts)
+        raw_recs.append(MarketRecord.from_raw(
+            {"id": f"m{i}", "question": "Will X?", "outcomes": json.dumps(["Yes", "No"]),
+             "outcomePrices": json.dumps(["0.5", "0.49"]), "clobTokenIds": [f"m{i}Y", f"m{i}N"],
+             "bestBid": "0.5", "bestAsk": "0.51"}, now=_NOW))
+    tel = TargetedMarketScanner(enabled=True).scan(raw_recs, bregman_groups=nms, now=_NOW)
+    assert tel["targeted_scan_binary_groups_seen"] == 3
+    # headline binary category is populated FROM Bregman normalized groups
+    assert tel["high_liquidity_binary_markets_scanned"] >= 3
+    assert tel["targeted_scan_bregman_categories"].get("high_liquidity_binary", 0) >= 3
+
+
+def test_category_populated_or_exact_normalized_reject_reason():
+    from engine.markets.universe_manager import MarketRecord
+    from engine.training.bregman_grouping import group_markets
+    from engine.training.bregman_near_miss import analyze_rejection
+    rec = MarketRecord.from_raw(
+        {"id": "thin", "question": "Will X?", "outcomes": json.dumps(["Yes", "No"]),
+         "outcomePrices": json.dumps(["0.5", "0.49"]), "clobTokenIds": ["tY", "tN"],
+         "bestBid": "0.5", "bestAsk": "0.51", "topDepthUsd": "3",
+         "bookUpdatedTs": str(_NOW - 5)}, now=_NOW)
+    nm = analyze_rejection(group_markets([rec])[0], "depth_too_thin",
+                           min_depth_usd=25.0, max_spread=0.08, max_age_s=20.0)
+    tel = TargetedMarketScanner(enabled=True).scan([rec], bregman_groups=[nm], now=_NOW)
+    # high_liquidity_binary is 0 (thin) BUT the normalized reject reason proves WHY
+    assert tel["targeted_scan_normalized_reject_reasons"].get("depth_too_thin", 0) >= 1
+    assert tel["targeted_scan_binary_groups_seen"] >= 1   # still a real binary group
+
+
 def test_bregman_leg_freshness_reconciles_with_market_record():
     rec, g, _ = _binary_near_miss(age=7)
     assert rec.book_age_s is not None

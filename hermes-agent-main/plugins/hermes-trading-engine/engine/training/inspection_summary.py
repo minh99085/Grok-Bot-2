@@ -358,6 +358,8 @@ def build_bregman_funnel(bregman_telemetry: dict, *, market_groups_detected: int
             "targeted_scan_bregman_groups_seen", "targeted_scan_binary_groups_seen",
             "targeted_scan_yes_no_pairs_seen", "targeted_scan_binary_group_matches",
             "targeted_scan_raw_market_matches", "targeted_scan_field_source",
+            "targeted_scan_bregman_categories", "targeted_scan_raw_market_categories",
+            "targeted_scan_normalized_reject_reasons",
             "targeted_scan_budget_by_category", "targeted_scan_hits_by_category",
             "targeted_scan_markets_by_category", "market_quality_tier_counts",
             "market_quality_score_distribution", "high_liquidity_binary_markets_scanned",
