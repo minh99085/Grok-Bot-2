@@ -341,8 +341,17 @@ class MarketRecord:
         depth = _as_float(raw.get("topDepthUsd"), 0.0) or _as_float(raw.get("orderMinSize"), 0.0)
         if not depth and liq:
             depth = liq * 0.02  # heuristic top-of-book fraction when not provided
-        book_ts = raw.get("bookUpdatedTs") or raw.get("orderBookTs")
-        book_age = (now - _as_float(book_ts)) if book_ts else None
+        # ONE canonical timestamp parser (sec/ms/ISO/missing), shared with the
+        # market-quality scorer so freshness never diverges. Missing -> None (unknown).
+        from engine.arbitrage.price_parsing import parse_epoch_seconds
+        book_ts = None
+        for _k in ("bookUpdatedTs", "orderBookTs", "book_updated_ts",
+                   "updatedAt", "updated_at", "lastTradeTime"):
+            if raw.get(_k) not in (None, ""):
+                book_ts = raw.get(_k)
+                break
+        _book_epoch = parse_epoch_seconds(book_ts)
+        book_age = (now - _book_epoch) if _book_epoch is not None else None
         desc = (raw.get("description") or "").strip()
         rules = (raw.get("rules") or raw.get("resolutionSource") or "").strip()
         return cls(

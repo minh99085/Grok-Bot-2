@@ -138,16 +138,41 @@ class TargetedMarketScanner:
         return out
 
     def scan(self, records: list, *, news_by_market: Optional[dict] = None,
-             near_miss_by_market: Optional[dict] = None, now: Optional[float] = None) -> dict:
+             near_miss_by_market: Optional[dict] = None,
+             bregman_groups: Optional[list] = None, now: Optional[float] = None) -> dict:
         """Score + categorize records; return targeted-scan telemetry + a priority plan.
 
-        Read-only. Broad exploration always keeps a reserved budget so targeting never
-        disables broad scan."""
+        Consumes Bregman NORMALIZED groups/near-misses (``bregman_groups``) as a
+        first-class input so binary/YES-NO detection reflects ACTUAL Bregman binary
+        groups (group_type/single_market_binary/outcome_labels/token_ids), not
+        category-hit counts. Read-only; broad exploration keeps a reserved budget so
+        targeting never disables broad scan."""
         news_by_market = news_by_market or {}
         near_miss_by_market = near_miss_by_market or {}
+        bregman_groups = bregman_groups or []
         if not self.enabled:
             return {"targeted_market_scan_enabled": False,
                     "targeted_markets_scanned_total": 0}
+        # --- count REAL Bregman normalized binary groups (NOT category hits) ---
+        breg_binary_groups = 0
+        breg_yes_no_pairs = 0
+        breg_market_ids: set = set()
+        breg_binary_market_ids: set = set()
+        for g in bregman_groups:
+            gtype = g.get("group_type") or ""
+            is_binary = (gtype == "binary_yes_no") or bool(g.get("single_market_binary"))
+            labels = [str(x).strip().upper() for x in (g.get("outcome_labels") or [])]
+            tokens = [t for t in (g.get("token_ids") or []) if t]
+            mids = [str(m) for m in (g.get("market_ids")
+                                     or g.get("raw_market_ids") or []) if m]
+            for m in mids:
+                breg_market_ids.add(m)
+            if is_binary and len(tokens) >= 2:
+                breg_binary_groups += 1
+                for m in mids:
+                    breg_binary_market_ids.add(m)
+            if labels[:2] == ["YES", "NO"] and len(tokens) >= 2:
+                breg_yes_no_pairs += 1
         # decrement cooldowns each scan
         for k in list(self._cooldown):
             self._cooldown[k] -= 1
@@ -219,9 +244,14 @@ class TargetedMarketScanner:
             budget_by_cat.get("broad_exploration", 0), self.broad_exploration_budget)
         best = sorted(scored, key=lambda x: x["score"], reverse=True)[:10]
         n = len(scored)
-        # sampled, convincing no-op reason per EMPTY target category (counts + sample)
-        binaries = sum(1 for x in scored if "high_liquidity_binary" in x["categories"]
-                       or "complete_yes_no_tight_spread" in x["categories"])
+        # match raw scanned markets to Bregman normalized groups (by market id)
+        scanned_ids = {x["market_id"] for x in scored}
+        raw_market_matches = len(scanned_ids & breg_market_ids)
+        binary_group_matches = len(scanned_ids & breg_binary_market_ids)
+        field_source = ("bregman_normalized_groups+raw_records" if bregman_groups
+                        else "raw_records_only")
+        # "binaries seen" = REAL Bregman binary groups (never a category-hit count).
+        binaries = breg_binary_groups
         noop: dict = {}
         for c in CATEGORIES:
             if c in ("broad_exploration",) or cat_markets.get(c, 0) > 0:
@@ -241,6 +271,13 @@ class TargetedMarketScanner:
         return {
             "targeted_market_scan_enabled": True,
             "targeted_markets_scanned_total": len(scored),
+            # Bregman-normalized contract counts (real binary groups, not category hits)
+            "targeted_scan_bregman_groups_seen": len(bregman_groups),
+            "targeted_scan_binary_groups_seen": breg_binary_groups,
+            "targeted_scan_yes_no_pairs_seen": breg_yes_no_pairs,
+            "targeted_scan_binary_group_matches": binary_group_matches,
+            "targeted_scan_raw_market_matches": raw_market_matches,
+            "targeted_scan_field_source": field_source,
             "targeted_scan_budget_by_category": {k: v for k, v in budget_by_cat.items() if v},
             "targeted_scan_hits_by_category": {k: v for k, v in hits_by_cat.items() if v},
             "targeted_scan_markets_by_category": {k: v for k, v in cat_markets.items() if v},

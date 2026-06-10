@@ -1970,6 +1970,12 @@ def _build_report_md(rj, feats, status, docker, api, tests, comparison,
             L.append("")
             L.append(f"- targeted_market_scan_enabled: {_bf.get('targeted_market_scan_enabled')}")
             L.append(f"- targeted_markets_scanned_total: {_bf.get('targeted_markets_scanned_total', 0)}")
+            L.append(f"- targeted_scan_field_source: {_bf.get('targeted_scan_field_source')}")
+            L.append(f"- targeted_scan_bregman_groups_seen: {_bf.get('targeted_scan_bregman_groups_seen', 0)}")
+            L.append(f"- targeted_scan_binary_groups_seen: {_bf.get('targeted_scan_binary_groups_seen', 0)}")
+            L.append(f"- targeted_scan_yes_no_pairs_seen: {_bf.get('targeted_scan_yes_no_pairs_seen', 0)}")
+            L.append(f"- targeted_scan_binary_group_matches: {_bf.get('targeted_scan_binary_group_matches', 0)} "
+                     f"raw_market_matches={_bf.get('targeted_scan_raw_market_matches', 0)}")
             L.append(f"- market_quality_tier_counts: {_bf.get('market_quality_tier_counts', {})}")
             L.append(f"- market_quality_score_distribution: {_bf.get('market_quality_score_distribution', {})}")
             L.append(f"- targeted_scan_budget_by_category: {_bf.get('targeted_scan_budget_by_category', {})}")

@@ -208,6 +208,73 @@ def test_empty_categories_have_sampled_noop_reasons():
     assert "metadata" in noop["negative_risk_complete"]    # explains the WHY
 
 
+# --- Bregman contract: binary groups counted, not category hits ------------ #
+def _binary_near_miss(mid="573655", age=7, depth=5):
+    from engine.markets.universe_manager import MarketRecord
+    from engine.training.bregman_grouping import group_markets
+    from engine.training.bregman_near_miss import analyze_rejection
+    rec = MarketRecord.from_raw(
+        {"id": mid, "question": "Will X happen?", "outcomes": json.dumps(["Yes", "No"]),
+         "outcomePrices": json.dumps(["0.5", "0.49"]), "clobTokenIds": ["tokY", "tokN"],
+         "bestBid": "0.5", "bestAsk": "0.51", "topDepthUsd": str(depth),
+         "bookUpdatedTs": str(_NOW - age), "liquidityNum": "8000"}, now=_NOW)
+    g = group_markets([rec])[0]
+    nm = analyze_rejection(g, "depth_too_thin", min_depth_usd=25.0,
+                           max_spread=0.08, max_age_s=20.0)
+    return rec, g, nm
+
+
+def test_bregman_binary_near_miss_makes_binary_groups_seen_positive():
+    rec, g, nm = _binary_near_miss()
+    assert nm["group_type"] == "binary_yes_no"
+    assert nm["single_market_binary"] is True
+    assert nm["outcome_labels"] == ["YES", "NO"]
+    tel = TargetedMarketScanner(enabled=True).scan(
+        [rec], near_miss_by_market={rec.market_id: nm}, bregman_groups=[nm], now=_NOW)
+    assert tel["targeted_scan_bregman_groups_seen"] == 1
+    assert tel["targeted_scan_binary_groups_seen"] > 0      # was the 'binaries seen=0' bug
+    assert tel["targeted_scan_yes_no_pairs_seen"] > 0
+    assert tel["targeted_scan_field_source"].startswith("bregman_normalized_groups")
+
+
+def test_cannot_report_zero_binaries_when_bregman_binary_groups_exist():
+    _, _, nm = _binary_near_miss(mid="a")
+    _, _, nm2 = _binary_near_miss(mid="b")
+    tel = TargetedMarketScanner(enabled=True).scan([], bregman_groups=[nm, nm2], now=_NOW)
+    assert tel["targeted_scan_binary_groups_seen"] == 2     # counted from groups, not records
+    # the no-op reason can NEVER say binaries seen=0 here
+    noop = tel["targeted_scan_noop_reasons"].get("high_liquidity_binary", "")
+    assert "binaries seen=0" not in noop
+
+
+def test_bregman_leg_freshness_reconciles_with_market_record():
+    rec, g, _ = _binary_near_miss(age=7)
+    assert rec.book_age_s is not None
+    for leg in g.legs:
+        assert leg.book_age_s == rec.book_age_s            # single parser, leg populated
+
+
+def test_shared_timestamp_parser_sec_ms_iso_missing():
+    from engine.arbitrage.price_parsing import parse_epoch_seconds
+    assert abs(parse_epoch_seconds(_NOW) - _NOW) < 1
+    assert abs(parse_epoch_seconds(int(_NOW * 1000)) - _NOW) < 1
+    assert parse_epoch_seconds("2026-06-10T04:00:00+00:00") is not None
+    assert parse_epoch_seconds(None) is None
+    assert parse_epoch_seconds("") is None
+    assert parse_epoch_seconds("null") is None
+
+
+def test_missing_timestamp_record_not_stale_via_shared_parser():
+    from engine.markets.universe_manager import MarketRecord
+    rec = MarketRecord.from_raw(
+        {"id": "m", "question": "Q", "outcomes": json.dumps(["Yes", "No"]),
+         "outcomePrices": json.dumps(["0.5", "0.49"]), "clobTokenIds": ["mY", "mN"],
+         "bestBid": "0.5", "bestAsk": "0.51", "liquidityNum": "8000"}, now=_NOW)  # no ts
+    assert rec.book_age_s is None                          # missing -> unknown, not 0/old
+    tel = TargetedMarketScanner(enabled=True).scan([rec], now=_NOW)
+    assert tel["stale_book_scan_waste_count"] == 0
+
+
 def test_cooldown_metrics_reconcile():
     s = TargetedMarketScanner(enabled=True, cooldown_ticks=5)
     bad = _mkt(mid="bad", depth=1)                        # known-thin (real topDepthUsd=1)

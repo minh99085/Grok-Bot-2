@@ -947,7 +947,10 @@ class PolymarketPaperTrainer:
                     near_by_market[str(mid)] = nm
             return self._targeted_scanner.scan(
                 records, news_by_market=news_by_market,
-                near_miss_by_market=near_by_market, now=now)
+                near_miss_by_market=near_by_market,
+                # Bregman NORMALIZED groups/near-misses as first-class input so binary
+                # detection reflects actual binary groups (not category-hit counts).
+                bregman_groups=near_misses, now=now)
         except Exception:  # noqa: BLE001 — prioritization must never break a tick
             return {"targeted_market_scan_enabled": False}
 

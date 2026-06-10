@@ -68,6 +68,37 @@ def parse_price(v) -> Optional[float]:
     return None
 
 
+def parse_epoch_seconds(v) -> Optional[float]:
+    """ONE canonical timestamp parser: epoch SECONDS, epoch MILLISECONDS, or ISO‑8601
+    string -> epoch seconds; blank/null/missing -> None. Used by BOTH
+    ``MarketRecord.book_age_s`` and the market-quality scorer so freshness can never
+    diverge between the two. A MISSING timestamp returns None (treat as unknown, NOT
+    stale). Pure; never raises."""
+    if v is None or isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        f = float(v)
+        if f != f or f <= 0:                  # NaN / non-positive
+            return None
+        return f / 1000.0 if f >= 1e12 else f
+    if isinstance(v, str):
+        s = v.strip()
+        if s.lower() in _NULLISH:
+            return None
+        try:
+            f = float(s)
+            if f == f and f > 0:
+                return f / 1000.0 if f >= 1e12 else f
+        except (TypeError, ValueError):
+            pass
+        try:
+            import datetime as _dt
+            return _dt.datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
 def _redact(v) -> str:
     """Short, log-safe sample of an invalid value (never a secret/long blob)."""
     s = str(v)

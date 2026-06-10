@@ -187,13 +187,15 @@ def build_binary_group(rec, *, no_ask: Optional[float] = None,
     synthetic = no_ask is None
     no_price = no_ask if no_ask is not None else (
         (1.0 - yes_bid) if yes_bid is not None else None)
+    book_age = _rec_attr(rec, "book_age_s", None)   # reconcile with MarketRecord
     legs = [
         SimplexLeg(market_id=market_id, outcome="YES", token_id=str(yes_tok),
                    ask=yes_ask, bid=yes_bid, depth_usd=depth, fresh_book=fresh,
-                   stale=not fresh, ambiguity_score=amb),
+                   stale=not fresh, ambiguity_score=amb, book_age_s=book_age),
         SimplexLeg(market_id=market_id, outcome="NO", token_id=str(no_tok),
                    ask=no_price, bid=None, depth_usd=depth, fresh_book=fresh,
-                   stale=not fresh, ambiguity_score=amb, synthetic_price=synthetic),
+                   stale=not fresh, ambiguity_score=amb, synthetic_price=synthetic,
+                   book_age_s=book_age),
     ]
     return SimplexGroup(group_id=group_id or f"binary:{market_id}",
                         group_type="binary_yes_no", legs=legs,
@@ -261,6 +263,7 @@ def build_event_group(records: list, *, group_id: str, group_type: str = "exhaus
             ask=_best_ask(rec), bid=_best_bid(rec),
             depth_usd=float(_rec_attr(rec, "top_depth_usd", 0.0) or 0.0),
             fresh_book=fresh, stale=not fresh, ambiguity_score=amb,
+            book_age_s=_rec_attr(rec, "book_age_s", None),
             chainlink_no_trade=cl_no_trade, chainlink_relevant=cl_relevant))
     return SimplexGroup(group_id=group_id, group_type=group_type, legs=legs,
                         mutually_exclusive=mutually_exclusive, exhaustive=exhaustive,

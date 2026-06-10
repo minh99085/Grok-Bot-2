@@ -105,30 +105,12 @@ def _book_ts_raw(market):
 
 
 def parse_book_timestamp(market):
-    """Parse a book timestamp -> epoch seconds, or None.
+    """Parse a book timestamp -> epoch seconds, or None (sec/ms/ISO/missing).
 
-    Accepts epoch SECONDS, epoch MILLISECONDS, and ISO‑8601 strings
-    (``2026-06-10T04:00:00Z``). A MISSING timestamp returns None (callers must treat
-    'missing' as *unknown*, NOT as stale)."""
-    ts = _book_ts_raw(market)
-    if ts in (None, ""):
-        return None
-    # numeric epoch (seconds or ms)
-    try:
-        f = float(ts)
-        if f == f and f > 0:                    # not NaN, positive
-            return f / 1000.0 if f >= 1e12 else f
-    except (TypeError, ValueError):
-        pass
-    # ISO-8601 string
-    if isinstance(ts, str):
-        s = ts.strip().replace("Z", "+00:00")
-        try:
-            import datetime as _dt
-            return _dt.datetime.fromisoformat(s).timestamp()
-        except (ValueError, TypeError):
-            return None
-    return None
+    Delegates to the ONE canonical parser shared with ``MarketRecord.book_age_s`` so
+    freshness never diverges. A MISSING timestamp returns None (unknown, NOT stale)."""
+    from engine.arbitrage.price_parsing import parse_epoch_seconds
+    return parse_epoch_seconds(_book_ts_raw(market))
 
 
 def book_timestamp_present(market) -> bool:
