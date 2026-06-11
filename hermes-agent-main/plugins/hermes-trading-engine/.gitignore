@@ -16,3 +16,8 @@ inspection_reports/
 !.env.example
 metrics/
 reports/
+# Laptop operator layer (scripts/laptop_agent.py): real local config + collected
+# runtime artifacts stay local. The .example.json IS committed as a template.
+.laptop_agent.local.json
+.env.laptop_agent
+runtime_data/

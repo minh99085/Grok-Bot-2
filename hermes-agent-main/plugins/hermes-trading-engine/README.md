@@ -158,6 +158,22 @@ Enable paper autotrading from the dashboard **AUTOTRADE** button, or set
 
 ---
 
+## Laptop operator layer (operator chores only)
+
+A safe local CLI, `scripts/laptop_agent.py`, helps a **non-coder operator** run the
+day-to-day chores from a laptop (PowerShell): check repo/main sync, verify Docker &
+VPS reachability, collect `runtime_data` from the paper-runtime VPS, build the
+light-mode inspection report, validate the runtime, and package the report for an
+independent ChatGPT review. It is **dry-run by default**, never prints/commits
+secrets, and has **no trading code path** — it cannot trade or change any gate.
+See [`docs/LAPTOP_OPERATOR.md`](docs/LAPTOP_OPERATOR.md). Quick start:
+
+```powershell
+copy .laptop_agent.example.json .laptop_agent.local.json   # fill in, git-ignored
+python scripts/laptop_agent.py --help
+python scripts/laptop_agent.py status
+```
+
 ## Phase 2: Polymarket CLOB market data (read-only)
 
 Phase 2 adds a real **read-only** market-data layer for the Polymarket CLOB: a
