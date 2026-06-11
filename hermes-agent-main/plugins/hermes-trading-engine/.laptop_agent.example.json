@@ -1,0 +1,16 @@
+{
+  "_README": "Copy this file to .laptop_agent.local.json (git-ignored) and fill it in. NEVER commit the real file. All VPS/host/key values stay local and are never printed by the tool.",
+
+  "runtime_data_dir": "runtime_data",
+  "inspection_output_dir": "inspection_reports",
+
+  "git_remote": "origin",
+  "git_main_branch": "main",
+
+  "vps_host": "YOUR.VPS.IP.OR.HOST",
+  "vps_user": "ubuntu",
+  "vps_port": 22,
+  "vps_ssh_key": "C:\\Users\\you\\.ssh\\hermes_vps_ed25519",
+
+  "runtime_source": "ubuntu@YOUR.VPS.IP.OR.HOST:/opt/hermes/plugins/hermes-trading-engine/runtime_data/"
+}
