@@ -23,10 +23,12 @@ codebase — if you still see it, you are running a stale image / stray copy.
 
 ## User preference (ALWAYS follow)
 
-**Always push finished work to the repo `main` branch.** The user wants every
-completed change to land on `main` (open a PR targeting `main` and merge it, or
-push to `main` directly where permitted). Do not leave finished work stranded on
-a side branch. Never force‑push or amend; commit normally, then push to `main`.
+**Always push finished work to the repo `main` branch, and reuse a SINGLE working
+branch.** The user wants every completed change to land on `main`. Push to `main`
+directly when permitted; if `main` is protected, route through ONE reused branch
+(do not spin up a new branch per task) and open a single PR into `main` — the user
+merges it. Do not leave finished work stranded on side branches. Never force‑push
+or amend; commit normally, then push.
 
 **At the end of every task, give simple copy‑paste instructions to start the
 system** — short, runnable commands, no long prose. The user runs this on
