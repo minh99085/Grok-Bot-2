@@ -81,6 +81,55 @@ you to. Run these from the plugin folder
 6. Writes `laptop_agent_package_provenance.json` and creates a timestamped zip.
 7. Prints the exact zip path to upload.
 
+## One-command operator handoff (coordinator — Phase 2)
+
+`scripts/laptop_agent_coordinator.py` runs the full operator handoff in a few simple
+commands: **Laptop → GitHub main → Vultr VPS → collect light report → package zip →
+ChatGPT**. It is coordinator tooling only — it never changes trading strategy, gates,
+or live-trading behavior, and never prints your VPS host/user/key.
+
+Run these from the plugin folder in **PowerShell**:
+
+1. **Create your config** from the template (git-ignored; never committed):
+   ```powershell
+   copy .laptop_agent.example.json .laptop_agent.json
+   notepad .laptop_agent.json
+   ```
+   Fill in `repo_root`, `plugin_path`, `vps_host`, `vps_user`, `vps_ssh_key`,
+   `vps_remote_plugin_path`, and `local_artifact_dir`.
+
+2. **Check your laptop is set up** (read-only):
+   ```powershell
+   python scripts/laptop_agent_coordinator.py doctor --config .laptop_agent.json
+   ```
+   Fix any `[FAIL]` lines until it prints `DOCTOR: SAFE TO CONTINUE`.
+
+3. **Smoke-test the VPS** (read-only over SSH):
+   ```powershell
+   python scripts/laptop_agent_coordinator.py vps-smoke --config .laptop_agent.json
+   ```
+   Confirms SSH works, the remote plugin path exists, Docker is up, and reports the
+   `hermes-training` container status.
+
+4. **Collect a light report zip from the VPS** (one command):
+   ```powershell
+   python scripts/laptop_agent_coordinator.py collect-light-report --config .laptop_agent.json
+   ```
+   On the VPS this replaces remote `runtime_data`, runs
+   `generate_bot_inspection_report.py ... --bundle-mode light`, runs
+   `validate_training_runtime.py | tee validation_light_latest.txt`, zips
+   `inspection_reports` + `runtime_data/inspection_summary.json` +
+   `validation_light_latest.txt`, then copies a timestamped zip back to your
+   `local_artifact_dir`. (Add `--dry-run` first to preview the exact commands.)
+
+5. **Get the ChatGPT upload checklist:**
+   ```powershell
+   python scripts/laptop_agent_coordinator.py handoff-summary --config .laptop_agent.json
+   ```
+   Prints the zip path, timestamp, and whether the validation file +
+   `inspection_summary.json` are inside — then: **upload that zip to ChatGPT for
+   inspection.**
+
 ## Collecting runtime data on Windows (rsync vs scp)
 
 `collect` copies `runtime_data` from the VPS and **replaces** your local copy. It

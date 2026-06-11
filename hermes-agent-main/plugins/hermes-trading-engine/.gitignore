@@ -19,7 +19,10 @@ reports/
 # Laptop operator layer (scripts/laptop_agent.py): real local config + collected
 # runtime artifacts stay local. The .example.json IS committed as a template.
 .laptop_agent.local.json
+.laptop_agent.json
 .env.laptop_agent
 runtime_data/
+# coordinator copies VPS report zips here (local artifacts; never committed)
+inspection_reports_artifacts/
 # fresh-package archives any prior inspection_reports here before regenerating
 _stale_inspection_reports_*/
