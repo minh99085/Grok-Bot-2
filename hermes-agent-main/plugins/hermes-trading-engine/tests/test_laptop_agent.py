@@ -54,6 +54,12 @@ def collector():
     return lines, lines.append
 
 
+def which(*available):
+    """Fake shutil.which: only the named tools are 'on PATH'."""
+    avail = set(available)
+    return lambda name: (f"/usr/bin/{name}" if name in avail else None)
+
+
 def write_json_config(tmp_path: Path, **kw) -> Path:
     p = tmp_path / la.CONFIG_JSON
     p.write_text(json.dumps(kw), encoding="utf-8")
@@ -152,7 +158,8 @@ def test_dry_run_collect_does_not_execute_rsync(tmp_path):
                       runtime_source="u@h:/data/")
     lines, printer = collector()
     spy = SpyRunner()
-    rc = la.main(["collect"], runner=spy, printer=printer, repo_root=tmp_path, env={})
+    rc = la.main(["collect"], runner=spy, printer=printer, repo_root=tmp_path,
+                 which_fn=which("rsync", "scp"), env={})
     assert rc == 0
     assert not spy.ran("rsync")          # DESTRUCTIVE command never executed
     assert any("DRY-RUN" in ln for ln in lines)
@@ -186,7 +193,7 @@ def test_execute_collect_runs_rsync(tmp_path):
     lines, printer = collector()
     spy = SpyRunner({"rsync": (0, "", "")})
     rc = la.main(["collect", "--execute"], runner=spy, printer=printer,
-                 repo_root=tmp_path, env={})
+                 repo_root=tmp_path, which_fn=which("rsync"), env={})
     assert rc == 0
     assert spy.ran("rsync")              # destructive command runs ONLY with --execute
 
@@ -196,9 +203,100 @@ def test_dry_run_flag_overrides_execute(tmp_path):
                       runtime_source="u@h:/data/")
     spy = SpyRunner({"rsync": (0, "", "")})
     rc = la.main(["collect", "--execute", "--dry-run"], runner=spy,
-                 printer=lambda *_: None, repo_root=tmp_path, env={})
+                 printer=lambda *_: None, repo_root=tmp_path,
+                 which_fn=which("rsync"), env={})
     assert rc == 0
     assert not spy.ran("rsync")          # explicit --dry-run keeps it safe
+
+
+# --------------------------------------------------------------------------- #
+# Windows collect: rsync preferred, OpenSSH scp fallback
+# --------------------------------------------------------------------------- #
+def _collect_cfg(tmp_path):
+    write_json_config(tmp_path, vps_host="h", vps_user="u", vps_port=2222,
+                      vps_ssh_key="/home/me/.ssh/id", runtime_source="u@h:/srv/runtime_data/")
+
+
+def test_collect_uses_rsync_when_available(tmp_path):
+    _collect_cfg(tmp_path)
+    spy = SpyRunner({"rsync": (0, "", "")})
+    rc = la.main(["collect", "--execute"], runner=spy, printer=lambda *_: None,
+                 repo_root=tmp_path, which_fn=which("rsync", "scp"), env={})
+    assert rc == 0
+    assert spy.ran("rsync") and not spy.ran("scp")
+
+
+def test_collect_scp_fallback_when_rsync_missing(tmp_path):
+    _collect_cfg(tmp_path)
+    lines, printer = collector()
+    spy = SpyRunner({"scp": (0, "", "")})
+    rc = la.main(["collect", "--execute"], runner=spy, printer=printer,
+                 repo_root=tmp_path, which_fn=which("scp"), env={})  # no rsync
+    assert rc == 0
+    assert spy.ran("scp") and not spy.ran("rsync")
+    # the scp argv is well-formed: recursive, uppercase -P port, key, source, dest
+    scp_call = [c for c in spy.calls if c and c[0] == "scp"][0]
+    assert scp_call[:2] == ["scp", "-r"]
+    assert "-P" in scp_call and "2222" in scp_call
+    assert scp_call[-1] == "runtime_data"
+    assert any("OpenSSH" in ln or "scp" in ln for ln in lines)
+
+
+def test_collect_dry_run_scp_does_not_delete_runtime_data(tmp_path):
+    _collect_cfg(tmp_path)
+    rd = tmp_path / "runtime_data"
+    rd.mkdir()
+    (rd / "keep.json").write_text("{}", encoding="utf-8")
+    lines, printer = collector()
+    spy = SpyRunner()
+    rc = la.main(["collect"], runner=spy, printer=printer, repo_root=tmp_path,
+                 which_fn=which("scp"), env={})       # dry-run (default)
+    assert rc == 0
+    assert (rd / "keep.json").is_file()               # NOT deleted in dry-run
+    assert not spy.ran("scp")                         # nothing copied
+    assert any("DRY-RUN" in ln for ln in lines)
+
+
+def test_collect_execute_replaces_runtime_data_before_scp(tmp_path):
+    _collect_cfg(tmp_path)
+    rd = tmp_path / "runtime_data"
+    rd.mkdir()
+    (rd / "old.json").write_text("stale", encoding="utf-8")
+    spy = SpyRunner({"scp": (0, "", "")})
+    rc = la.main(["collect", "--execute"], runner=spy, printer=lambda *_: None,
+                 repo_root=tmp_path, which_fn=which("scp"), env={})
+    assert rc == 0
+    assert not (rd / "old.json").exists()             # stale local data replaced
+    assert spy.ran("scp")
+
+
+def test_collect_scp_secret_redaction(tmp_path):
+    secret_key = "/home/me/.ssh/SECRET_KEY"
+    secret_src = "ubuntu@SECRET-HOST-1.2.3.4:/opt/secret/runtime_data/"
+    write_json_config(tmp_path, vps_host="SECRET-HOST-1.2.3.4", vps_user="ubuntu",
+                      vps_ssh_key=secret_key, runtime_source=secret_src)
+    lines, printer = collector()
+    rc = la.main(["collect"], runner=SpyRunner(), printer=printer,
+                 repo_root=tmp_path, which_fn=which("scp"), env={})
+    out = "\n".join(lines)
+    assert rc == 0
+    assert secret_key not in out
+    assert secret_src not in out
+    assert "SECRET-HOST-1.2.3.4" not in out
+    assert "/opt/secret/runtime_data" not in out      # remote private path not leaked
+    assert "<redacted" in out
+
+
+def test_collect_missing_tools_stops_no_crash(tmp_path):
+    _collect_cfg(tmp_path)
+    lines, printer = collector()
+    spy = SpyRunner()
+    rc = la.main(["collect", "--execute"], runner=spy, printer=printer,
+                 repo_root=tmp_path, which_fn=which(), env={})   # neither rsync nor scp
+    out = "\n".join(lines)
+    assert rc == 2 and "STOP" in out
+    assert "OpenSSH" in out                            # exact operator guidance
+    assert not spy.ran("scp") and not spy.ran("rsync")
 
 
 # --------------------------------------------------------------------------- #
