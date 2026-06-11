@@ -38,6 +38,7 @@ import datetime as _dt
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 import zipfile
@@ -288,7 +289,8 @@ def build_vps_check_cmd(cfg: Config) -> list:
 def build_collect_cmd(cfg: Config) -> list:
     """rsync the configured runtime source into the local ``runtime_data`` dir.
     ``--delete`` mirrors the source (REPLACES local runtime_data) so this is gated
-    behind ``--execute``. Built as an explicit argv array."""
+    behind ``--execute``. Built as an explicit argv array. Preferred where rsync
+    exists (Linux/macOS, or Windows with cwRsync/WSL)."""
     ssh = "ssh"
     if cfg.vps_ssh_key:
         ssh += f" -i {shlex.quote(cfg.vps_ssh_key)}"
@@ -297,13 +299,46 @@ def build_collect_cmd(cfg: Config) -> list:
     return ["rsync", "-az", "--delete", "-e", ssh, cfg.runtime_source, dest]
 
 
+def build_scp_collect_cmd(cfg: Config) -> list:
+    """Windows-compatible fallback using built-in OpenSSH ``scp`` (no rsync/Git
+    Bash/WSL/cwRsync needed). The local ``runtime_data`` dir is replaced by the
+    caller FIRST (scp has no ``--delete``); scp then recreates it from the source.
+    Note ``scp`` uses ``-P`` (uppercase) for the port. Built as an explicit argv."""
+    argv = ["scp", "-r"]
+    if cfg.vps_ssh_key:
+        argv += ["-i", cfg.vps_ssh_key]
+    argv += ["-P", str(cfg.vps_port),
+             "-o", "BatchMode=yes", "-o", "ConnectTimeout=8",
+             "-o", "StrictHostKeyChecking=accept-new",
+             cfg.runtime_source.rstrip("/\\"),
+             cfg.runtime_data_dir.rstrip("/\\")]
+    return argv
+
+
+def select_collect_method(which_fn: Callable[[str], Optional[str]]) -> Optional[str]:
+    """Choose the runtime-collection transport: prefer ``rsync`` where it exists,
+    else fall back to OpenSSH ``scp`` (Windows default), else None."""
+    if which_fn("rsync"):
+        return "rsync"
+    if which_fn("scp"):
+        return "scp"
+    return None
+
+
 # --------------------------------------------------------------------------- #
 # Secret redaction
 # --------------------------------------------------------------------------- #
 def redact_command(argv, cfg: Config) -> str:
     """Render a command for DISPLAY with any secret config values masked. Used so a
     dry-run never prints a VPS host / key / source path."""
-    secrets = {getattr(cfg, k) for k in SECRET_KEYS if getattr(cfg, k, "")}
+    secrets = set()
+    for k in SECRET_KEYS:
+        v = getattr(cfg, k, "")
+        if v:
+            secrets.add(str(v))
+            secrets.add(str(v).rstrip("/\\"))   # commands strip trailing path slashes
+    # mask longest values first so a substring secret can't escape via overlap
+    secrets = sorted(secrets, key=len, reverse=True)
     # also mask "user@host" and the embedded ssh '-i <key>' inside an -e string
     parts = []
     for tok in argv:
@@ -512,6 +547,7 @@ class Ctx:
     runner: Runner
     printer: Callable[[str], None]
     now_fn: Callable[[], _dt.datetime]
+    which_fn: Callable[[str], Optional[str]] = shutil.which   # tool lookup (injectable)
     allow_stale: bool = False                      # --allow-stale-package override
     planned: list = field(default_factory=list)   # commands we WOULD run (dry-run)
     executed: list = field(default_factory=list)   # commands we actually ran
@@ -727,21 +763,68 @@ def cmd_check_vps(ctx: Ctx) -> int:
     return 3
 
 
+def _replace_runtime_data(ctx: Ctx) -> None:
+    """Remove the local runtime_data dir so a copy starts clean (matches the rsync
+    --delete 'replace local runtime_data' invariant). Caller guarantees --execute."""
+    dest = ctx.repo_root / ctx.cfg.runtime_data_dir
+    if dest.is_dir():
+        shutil.rmtree(dest)
+    elif dest.exists():
+        dest.unlink()
+
+
 def cmd_collect(ctx: Ctx) -> int:
     if not ctx.config_found or not ctx.cfg.collect_configured():
         ctx.say(setup_message())
         ctx.say("  (set 'runtime_source' to copy artifacts into runtime_data)")
         return 2
-    argv = build_collect_cmd(ctx.cfg)
+
+    method = select_collect_method(ctx.which_fn)
+    if method is None:
+        # Neither transport exists — STOP with exact operator guidance (no crash).
+        ctx.say("DECISION: STOP — no file-transfer tool found (need rsync or scp).")
+        ctx.say("  On Windows, enable the built-in OpenSSH client:")
+        ctx.say("    Settings > Apps > Optional features > Add a feature > OpenSSH Client")
+        ctx.say("  (or install rsync). Then re-run: "
+                "python scripts/laptop_agent.py collect --execute")
+        return 2
+
     ctx.say("Collect runtime artifacts from the configured runtime source.")
-    ctx.say("  NOTE: this REPLACES local runtime_data (rsync --delete).")
-    res = ctx.run_action(argv, label="collect runtime_data", timeout=1800, redact=True)
-    if res is None:
+    ctx.say(f"  method: {method}"
+            + ("  (rsync not found — Windows-compatible OpenSSH fallback)"
+               if method == "scp" else ""))
+    ctx.say("  NOTE: this REPLACES local runtime_data.")
+
+    if method == "rsync":
+        argv = build_collect_cmd(ctx.cfg)            # rsync --delete mirrors the source
+        res = ctx.run_action(argv, label="collect runtime_data (rsync)",
+                             timeout=1800, redact=True)
+        if res is None:
+            return 0
+        return _finish_collect(ctx, res)
+
+    # scp fallback: replace local runtime_data FIRST, then copy (scp has no --delete).
+    argv = build_scp_collect_cmd(ctx.cfg)
+    if not ctx.execute:
+        ctx.say("  [DRY-RUN] would replace local runtime_data, then run scp:")
+        ctx.say(f"    1. delete local '{ctx.cfg.runtime_data_dir}' (replace)")
+        ctx.say(f"    2. {redact_command(argv, ctx.cfg)}")
+        ctx.say("    (add --execute to run this)")
         return 0
+    _replace_runtime_data(ctx)                       # destructive — execute only
+    ctx.say(f"  replaced local '{ctx.cfg.runtime_data_dir}' (cleared before copy)")
+    res = ctx.run_action(argv, label="collect runtime_data (scp)",
+                         timeout=1800, redact=True)
+    if res is None:   # pragma: no cover — execute is True here
+        return 0
+    return _finish_collect(ctx, res)
+
+
+def _finish_collect(ctx: Ctx, res: "tuple[int, str, str]") -> int:
     rc, _out, err = res
     if rc == 0:
         ctx.say("collected runtime_data successfully.")
-        ctx.say("NEXT COMMAND: python scripts/laptop_agent.py report --execute")
+        ctx.say("NEXT COMMAND: python scripts/laptop_agent.py fresh-package --execute")
         return 0
     ctx.say(f"collect failed (rc={rc}).")
     if err.strip():
@@ -1036,12 +1119,14 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv=None, *, runner: Optional[Runner] = None,
          printer: Optional[Callable[[str], None]] = None,
          now_fn: Optional[Callable[[], _dt.datetime]] = None,
+         which_fn: Optional[Callable[[str], Optional[str]]] = None,
          repo_root: Path = REPO_ROOT, env: Optional[dict] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     printer = printer or print
     runner = runner or default_runner
     now_fn = now_fn or _dt.datetime.now
+    which_fn = which_fn or shutil.which
 
     if not args.command:
         parser.print_help()
@@ -1053,7 +1138,7 @@ def main(argv=None, *, runner: Optional[Runner] = None,
 
     cfg, found = load_config(repo_root=repo_root, explicit_path=args.config, env=env)
     ctx = Ctx(cfg=cfg, config_found=found, execute=execute, repo_root=repo_root,
-              runner=runner, printer=printer, now_fn=now_fn,
+              runner=runner, printer=printer, now_fn=now_fn, which_fn=which_fn,
               allow_stale=bool(getattr(args, "allow_stale_package", False)))
 
     handler = COMMANDS.get(args.command)

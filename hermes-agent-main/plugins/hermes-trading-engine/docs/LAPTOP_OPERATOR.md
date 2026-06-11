@@ -48,6 +48,7 @@ you to. Run these from the plugin folder
 
 2. **Bring runtime data over from the VPS** (only when you need fresh data):
    ```powershell
+   python scripts/laptop_agent.py collect --dry-run   # shows the method it will use
    python scripts/laptop_agent.py collect --execute
    ```
 
@@ -79,6 +80,27 @@ you to. Run these from the plugin folder
    git evidence matches the current HEAD).
 6. Writes `laptop_agent_package_provenance.json` and creates a timestamped zip.
 7. Prints the exact zip path to upload.
+
+## Collecting runtime data on Windows (rsync vs scp)
+
+`collect` copies `runtime_data` from the VPS and **replaces** your local copy. It
+picks a transport automatically:
+
+* **`rsync`** — used when it is on your `PATH` (Linux/macOS, or Windows with
+  WSL/cwRsync). Mirrors the source with `--delete`.
+* **`scp`** (the built-in Windows **OpenSSH client**) — used automatically when
+  `rsync` is missing. This is the normal path on a stock Windows laptop in
+  PowerShell — **no Git Bash, WSL, or cwRsync required**. Because `scp` has no
+  `--delete`, the tool first **clears your local `runtime_data`**, then copies fresh
+  (only with `--execute`; `--dry-run` deletes nothing).
+
+`collect --dry-run` prints which method it selected and the exact (secret-redacted)
+command it would run. If **neither** `rsync` nor `scp` exists, it **STOPs** and tells
+you to enable the OpenSSH Client:
+`Settings > Apps > Optional features > Add a feature > OpenSSH Client`.
+
+It uses your configured `vps_ssh_key`, `vps_port`, and `runtime_source`, and never
+prints the key path, host, or private-key contents.
 
 ## The lower-level commands (advanced)
 
