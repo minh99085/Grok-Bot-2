@@ -118,17 +118,45 @@ def _coerce_int(v, default: int) -> int:
         return default
 
 
-def load_config(path: Path):
-    """Load coordinator config from JSON. Returns ``(Config, found)``. A missing or
-    invalid file is NEVER a crash — ``found=False`` so callers show the setup message."""
+# Config-load status codes (distinct so doctor never mislabels a real file as missing).
+LOAD_OK = "ok"
+LOAD_MISSING = "missing"
+LOAD_UNREADABLE = "unreadable"
+LOAD_PARSE_ERROR = "parse_error"
+
+
+@dataclass
+class ConfigLoad:
+    cfg: Config
+    status: str
+    detail: str = ""
+    path: str = ""
+
+    @property
+    def found(self) -> bool:
+        return self.status == LOAD_OK
+
+
+def load_config(path: Path) -> ConfigLoad:
+    """Load coordinator config from JSON, tolerating a Windows UTF-8 BOM
+    (``utf-8-sig``). Returns a :class:`ConfigLoad` that DISTINGUISHES missing vs.
+    unreadable vs. JSON parse error — a present-but-broken file is NEVER reported as
+    simply 'missing'. Never raises."""
+    resolved = str(path.resolve()) if path else str(path)
+    if not path.is_file():
+        return ConfigLoad(Config(), LOAD_MISSING, f"no file at {resolved}", resolved)
     try:
-        if not path.is_file():
-            return Config(), False
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return Config(), False
+        # utf-8-sig transparently strips a leading BOM that Notepad adds on Windows.
+        text = path.read_text(encoding="utf-8-sig")
+    except OSError as exc:
+        return ConfigLoad(Config(), LOAD_UNREADABLE, f"{type(exc).__name__}: {exc}", resolved)
+    try:
+        raw = json.loads(text)
+    except ValueError as exc:
+        return ConfigLoad(Config(), LOAD_PARSE_ERROR, f"JSON parse error: {exc}", resolved)
     if not isinstance(raw, dict):
-        return Config(), False
+        return ConfigLoad(Config(), LOAD_PARSE_ERROR,
+                          "top-level JSON must be an object {…}", resolved)
     cfg = Config()
     cfg.source_file = path.name
     cfg.repo_root = str(raw.get("repo_root") or "")
@@ -142,15 +170,52 @@ def load_config(path: Path):
                                  or raw.get("artifact_dir") or "inspection_reports_artifacts")
     cfg.hermes_training_container = str(raw.get("hermes_training_container")
                                         or DEFAULT_CONTAINER)
-    return cfg, True
+    return ConfigLoad(cfg, LOAD_OK, "", resolved)
 
 
-def setup_message(path_name: str) -> str:
-    return (
-        f"No coordinator config found at '{path_name}'.\n"
-        f"  -> Copy '{EXAMPLE_CONFIG}' to '{DEFAULT_CONFIG}' and fill it in.\n"
-        f"  The file is git-ignored and is NEVER committed; secrets are never printed."
-    )
+def validate_ssh_key(cfg: Config):
+    """Validate ``vps_ssh_key`` (when set). Returns ``(ok, message)``.
+
+    Catches the two most common Windows mistakes: pasting the PUBLIC key text
+    (``ssh-ed25519 …``) instead of a file path, and pointing at a key file that does
+    not exist. Never prints key contents."""
+    key = str(cfg.vps_ssh_key or "").strip()
+    if not key:
+        return True, "no key set (will use the SSH agent / default key)"
+    low = key.lower()
+    if low.startswith(("ssh-ed25519", "ssh-rsa", "ssh-dss", "ecdsa-sha2", "sk-ssh")):
+        return False, ("vps_ssh_key looks like a PUBLIC key (it starts with a key type "
+                       "like 'ssh-ed25519'). Set it to the PRIVATE key FILE PATH instead, "
+                       "e.g. C:\\Users\\you\\.ssh\\hermes_vps_ed25519")
+    if "-----begin" in low:
+        return False, ("vps_ssh_key contains private-key TEXT. Set it to the private "
+                       "key FILE PATH instead (do not paste the key body).")
+    if not Path(key).expanduser().is_file():
+        return False, "vps_ssh_key path does not point to an existing file"
+    return True, "private key file found"
+
+
+def load_message(load: ConfigLoad) -> str:
+    """Operator-facing message for a non-OK config load (exact, never 'just missing')."""
+    if load.status == LOAD_MISSING:
+        return (f"No coordinator config found at '{load.path}'.\n"
+                f"  -> Create one: python scripts/laptop_agent_coordinator.py init-config\n"
+                f"     (or copy '{EXAMPLE_CONFIG}' to '{DEFAULT_CONFIG}' and fill it in).\n"
+                f"  The file is git-ignored and is NEVER committed; secrets are never printed.")
+    if load.status == LOAD_PARSE_ERROR:
+        return (f"Config at '{load.path}' could not be parsed (it EXISTS but is invalid).\n"
+                f"  detail: {load.detail}\n"
+                f"  -> If you edited it in Notepad and see a 'BOM' error, recreate it "
+                f"cleanly: python scripts/laptop_agent_coordinator.py init-config --force")
+    if load.status == LOAD_UNREADABLE:
+        return f"Config at '{load.path}' could not be read.\n  detail: {load.detail}"
+    return ""
+
+
+def setup_message(path_name: str) -> str:   # back-compat thin wrapper
+    return (f"No coordinator config found at '{path_name}'.\n"
+            f"  -> Run: python scripts/laptop_agent_coordinator.py init-config\n"
+            f"     (or copy '{EXAMPLE_CONFIG}' to '{DEFAULT_CONFIG}').")
 
 
 # --------------------------------------------------------------------------- #
@@ -246,6 +311,9 @@ class Ctx:
     printer: Callable[[str], None]
     now_fn: Callable[[], _dt.datetime]
     which_fn: Callable[[str], Optional[str]] = shutil.which
+    config_status: str = LOAD_OK
+    config_detail: str = ""
+    config_path: str = ""
 
     def say(self, msg: str = "") -> None:
         self.printer(msg)
@@ -270,12 +338,17 @@ def cmd_doctor(ctx: Ctx) -> int:
     cfg = ctx.cfg
     ctx.say("Laptop coordinator — doctor (local environment, read-only)")
     ctx.say("-" * 60)
+    # ALWAYS show the resolved config path + whether it parsed (so a present-but-broken
+    # file is never silently mislabeled as missing).
+    ctx.say(f"  config path (resolved)    : {ctx.config_path or '(none)'}")
+    ctx.say(f"  config parsed             : {'yes' if ctx.config_found else 'NO (' + ctx.config_status + ')'}")
+    if not ctx.config_found:
+        ctx.say("-" * 60)
+        ctx.say(load_message(ConfigLoad(cfg, ctx.config_status, ctx.config_detail, ctx.config_path)))
+        return 2
     for k, v in cfg.public_summary().items():
         ctx.say(f"  {k:<26}: {v}")
     ctx.say("-" * 60)
-    if not ctx.config_found:
-        ctx.say(setup_message(DEFAULT_CONFIG))
-        return 2
     missing = cfg.missing_required()
     results = []
     results.append(_check(ctx, "required config fields set", not missing,
@@ -301,6 +374,8 @@ def cmd_doctor(ctx: Ctx) -> int:
 
     results.append(_check(ctx, "ssh available", bool(ctx.which_fn("ssh"))))
     results.append(_check(ctx, "scp available", bool(ctx.which_fn("scp"))))
+    key_ok, key_msg = validate_ssh_key(cfg)
+    results.append(_check(ctx, "vps_ssh_key valid", key_ok, key_msg))
     results.append(_check(ctx, "python can run local scripts",
                           bool(sys.executable) and plugin_ok))
 
@@ -328,11 +403,15 @@ def cmd_doctor(ctx: Ctx) -> int:
 def cmd_vps_smoke(ctx: Ctx) -> int:
     cfg = ctx.cfg
     if not ctx.config_found:
-        ctx.say(setup_message(DEFAULT_CONFIG))
+        ctx.say(load_message(ConfigLoad(cfg, ctx.config_status, ctx.config_detail, ctx.config_path)))
         return 2
     missing = cfg.missing_required()
     if missing:
         ctx.say(f"STOP — config missing required fields: {', '.join(missing)}")
+        return 2
+    key_ok, key_msg = validate_ssh_key(cfg)
+    if not key_ok:
+        ctx.say(f"STOP — {key_msg}")
         return 2
     ctx.say("Laptop coordinator — VPS smoke test (read-only over SSH)")
     ctx.say("-" * 60)
@@ -379,11 +458,15 @@ def cmd_vps_smoke(ctx: Ctx) -> int:
 def cmd_collect_light_report(ctx: Ctx, *, dry_run: bool = False) -> int:
     cfg = ctx.cfg
     if not ctx.config_found:
-        ctx.say(setup_message(DEFAULT_CONFIG))
+        ctx.say(load_message(ConfigLoad(cfg, ctx.config_status, ctx.config_detail, ctx.config_path)))
         return 2
     missing = cfg.missing_required()
     if missing:
         ctx.say(f"STOP — config missing required fields: {', '.join(missing)}")
+        return 2
+    key_ok, key_msg = validate_ssh_key(cfg)
+    if not key_ok:
+        ctx.say(f"STOP — {key_msg}")
         return 2
 
     now = ctx.now_fn()
@@ -479,9 +562,77 @@ def cmd_handoff_summary(ctx: Ctx) -> int:
 
 
 # --------------------------------------------------------------------------- #
+# init-config
+# --------------------------------------------------------------------------- #
+SAFE_DEFAULT_CONFIG = {
+    "repo_root": "",
+    "plugin_path": "",
+    "vps_host": "",
+    "vps_user": "ubuntu",
+    "vps_port": 22,
+    "vps_ssh_key": "",
+    "vps_remote_plugin_path": "",
+    "local_artifact_dir": "inspection_reports_artifacts",
+    "hermes_training_container": DEFAULT_CONTAINER,
+}
+
+# Only these (non-secret, coordinator) keys are seeded from the example template.
+_TEMPLATE_KEYS = tuple(SAFE_DEFAULT_CONFIG.keys())
+# Fields that must NEVER be seeded with a value (operator fills them locally).
+_NEVER_SEED = frozenset({"vps_host", "vps_ssh_key"})
+
+
+def _example_path() -> Path:
+    return Path(__file__).resolve().parents[1] / EXAMPLE_CONFIG
+
+
+def build_init_config() -> dict:
+    """Build a clean, SECRET-FREE config dict for ``init-config``. Seeds non-secret
+    coordinator defaults from ``.laptop_agent.example.json`` when present (BOM-safe);
+    host/key are always left blank for the operator to fill in locally."""
+    data = dict(SAFE_DEFAULT_CONFIG)
+    ex = _example_path()
+    try:
+        if ex.is_file():
+            raw = json.loads(ex.read_text(encoding="utf-8-sig"))
+            if isinstance(raw, dict):
+                for k in _TEMPLATE_KEYS:
+                    if k in _NEVER_SEED:
+                        continue
+                    v = raw.get(k)
+                    if v not in (None, ""):
+                        data[k] = v
+    except (OSError, ValueError):
+        pass
+    return data
+
+
+def cmd_init_config(ctx: Ctx, *, target: Path, force: bool = False) -> int:
+    """Write a clean, BOM-free ``.laptop_agent.json`` (no secrets). UTF-8 without a
+    BOM so Windows Notepad edits + the loader agree."""
+    if target.exists() and not force:
+        ctx.say(f"{target} already exists. Re-run with --force to overwrite.")
+        return 1
+    data = build_init_config()
+    try:
+        # json.dumps + utf-8 => NO BOM (the exact bug this fixes).
+        target.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    except OSError as exc:
+        ctx.say(f"STOP — could not write {target}: {exc}")
+        return 1
+    ctx.say(f"wrote clean (BOM-free, secret-free) config: {target.resolve()}")
+    ctx.say("  Now fill in: repo_root, plugin_path, vps_host, vps_user, vps_ssh_key "
+            "(PRIVATE key file path), vps_remote_plugin_path.")
+    ctx.say(f"  Then run: python scripts/laptop_agent_coordinator.py doctor "
+            f"--config {target.name}")
+    return 0
+
+
+# --------------------------------------------------------------------------- #
 # Parser & main
 # --------------------------------------------------------------------------- #
 COMMANDS = {
+    "init-config": cmd_init_config,
     "doctor": cmd_doctor,
     "vps-smoke": cmd_vps_smoke,
     "collect-light-report": cmd_collect_light_report,
@@ -497,6 +648,7 @@ def build_parser() -> argparse.ArgumentParser:
                     "strategy, gates, or live-trading behavior; never prints secrets.")
     sub = p.add_subparsers(dest="command", metavar="<command>")
     helps = {
+        "init-config": "write a clean, BOM-free .laptop_agent.json (no secrets)",
         "doctor": "check the local environment (repo/plugin/git/ssh/python/artifacts)",
         "vps-smoke": "read-only VPS checks over SSH (reachable/path/docker/container)",
         "collect-light-report": "collect a light-mode report zip from the VPS",
@@ -509,6 +661,9 @@ def build_parser() -> argparse.ArgumentParser:
         if name == "collect-light-report":
             sp.add_argument("--dry-run", action="store_true",
                             help="print the exact remote/scp commands without running them")
+        if name == "init-config":
+            sp.add_argument("--force", action="store_true",
+                            help="overwrite an existing config file")
     return p
 
 
@@ -528,12 +683,16 @@ def main(argv=None, *, runner: Optional[Runner] = None,
         return 0
 
     cfg_path = Path(args.config)
-    cfg, found = load_config(cfg_path)
+    load = load_config(cfg_path)
+    cfg = load.cfg
     root = repo_root or (Path(cfg.repo_root) if cfg.repo_root else Path.cwd())
-    ctx = Ctx(cfg=cfg, config_found=found, repo_root=root, runner=runner,
-              printer=printer, now_fn=now_fn, which_fn=which_fn)
+    ctx = Ctx(cfg=cfg, config_found=load.found, repo_root=root, runner=runner,
+              printer=printer, now_fn=now_fn, which_fn=which_fn,
+              config_status=load.status, config_detail=load.detail, config_path=load.path)
 
     handler = COMMANDS[args.command]
+    if args.command == "init-config":
+        return handler(ctx, target=cfg_path, force=bool(getattr(args, "force", False)))
     if args.command == "collect-light-report":
         return handler(ctx, dry_run=bool(getattr(args, "dry_run", False)))
     return handler(ctx)

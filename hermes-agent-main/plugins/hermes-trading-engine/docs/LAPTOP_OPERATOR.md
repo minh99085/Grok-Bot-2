@@ -90,13 +90,24 @@ or live-trading behavior, and never prints your VPS host/user/key.
 
 Run these from the plugin folder in **PowerShell**:
 
-1. **Create your config** from the template (git-ignored; never committed):
+   Run all of these from the plugin directory, e.g.
+   `cd C:\hermes-agent\hermes-agent-main\plugins\hermes-trading-engine`.
+
+1. **Create your config** (git-ignored; never committed). Prefer `init-config` — it
+   writes a clean, **BOM-free**, secret-free file that the coordinator can always read
+   (Notepad's "Save As" can add a UTF-8 BOM that used to break loading):
    ```powershell
-   copy .laptop_agent.example.json .laptop_agent.json
+   python scripts/laptop_agent_coordinator.py init-config --config .laptop_agent.json
    notepad .laptop_agent.json
    ```
    Fill in `repo_root`, `plugin_path`, `vps_host`, `vps_user`, `vps_ssh_key`,
    `vps_remote_plugin_path`, and `local_artifact_dir`.
+
+   > **`vps_ssh_key` must be the PRIVATE key FILE PATH** (e.g.
+   > `C:\Users\you\.ssh\hermes_vps_ed25519`) — **not** the public key text. If you
+   > paste a value starting with `ssh-ed25519`/`ssh-rsa`, `doctor` fails with a clear
+   > message. If you must edit by hand and hit a "BOM" parse error, just re-run
+   > `init-config --force` and re-enter your values.
 
 2. **Check your laptop is set up** (read-only):
    ```powershell
