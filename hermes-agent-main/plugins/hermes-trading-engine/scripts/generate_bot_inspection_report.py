@@ -2011,6 +2011,23 @@ def _build_report_md(rj, feats, status, docker, api, tests, comparison,
                          f"{_bf.get('paper_micro_exploration_reject_reasons')}")
             if _bf.get("zero_trade_blocker_if_any"):
                 L.append(f"- zero_trade_blocker_if_any: {_bf.get('zero_trade_blocker_if_any')}")
+            # PAPER_RELAXED_EXPLORATION lane
+            L.append(f"- paper_relaxed_exploration_enabled: "
+                     f"{_bf.get('paper_relaxed_exploration_enabled', False)} "
+                     f"(max_notional={_bf.get('paper_relaxed_max_notional', 0)} "
+                     f"per_hour={_bf.get('paper_relaxed_max_trades_per_hour', 0)} "
+                     f"per_day={_bf.get('paper_relaxed_max_trades_per_day', 0)})")
+            L.append(f"- paper_relaxed_candidates_seen: "
+                     f"{_bf.get('paper_relaxed_candidates_seen', 0)} "
+                     f"trades_opened={_bf.get('paper_relaxed_trades_opened', 0)}")
+            L.append(f"- paper_relaxed_after_cost_positive_seen: "
+                     f"{_bf.get('paper_relaxed_after_cost_positive_seen', 0)} "
+                     f"real_clob_book_seen={_bf.get('paper_relaxed_real_clob_book_seen', 0)}")
+            L.append(f"- paper_relaxed_readiness_pnl_excluded: "
+                     f"{_bf.get('paper_relaxed_readiness_pnl_excluded', True)}")
+            if _bf.get("paper_relaxed_reject_reasons"):
+                L.append(f"- paper_relaxed_reject_reasons: "
+                         f"{_bf.get('paper_relaxed_reject_reasons')}")
             L.append(f"- market_quality_tier_counts: {_bf.get('market_quality_tier_counts', {})}")
             L.append(f"- market_quality_score_distribution: {_bf.get('market_quality_score_distribution', {})}")
             L.append(f"- targeted_scan_budget_by_category: {_bf.get('targeted_scan_budget_by_category', {})}")

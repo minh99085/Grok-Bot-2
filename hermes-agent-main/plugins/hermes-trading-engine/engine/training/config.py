@@ -324,8 +324,13 @@ class TrainingConfig:
     # PnL). It can never trade a synthetic-NO/stale/missing-ask/reference/negative-edge.
     paper_micro_exploration_enabled: bool = True
     paper_micro_exploration_max_notional_usd: float = 1.0   # per bundle (hard cap)
-    paper_micro_exploration_max_trades: int = 5             # per run (~11h)
+    paper_micro_exploration_max_trades: int = 0             # optional per-RUN cap (0=off)
     paper_micro_exploration_min_depth_usd: float = 1.0      # smaller ONLY due to $1 cap
+    # PAPER_RELAXED_EXPLORATION: the same paper-only lane, with hour/day rate limits for
+    # multi-day testing. The lane is active only when BOTH this and the micro flag are on.
+    paper_relaxed_exploration_enabled: bool = True
+    paper_relaxed_max_trades_per_hour: int = 3
+    paper_relaxed_max_trades_per_day: int = 30
     # ---- portfolio risk + aggressive sizing (PAPER ONLY; hard-clamped) ----
     # Additive caps that only ever TIGHTEN the mandatory TrainingRiskGate/RiskEngine.
     max_event_exposure_usd: float = 20.0
@@ -593,11 +598,16 @@ class TrainingConfig:
         self.paper_micro_exploration_max_notional_usd = max(
             0.0, min(1.0, float(self.paper_micro_exploration_max_notional_usd)))
         self.paper_micro_exploration_max_trades = max(
-            0, min(5, int(self.paper_micro_exploration_max_trades)))
+            0, int(self.paper_micro_exploration_max_trades))   # 0 = no per-run cap
         self.paper_micro_exploration_min_depth_usd = max(
             0.0, float(self.paper_micro_exploration_min_depth_usd))
         self.bregman_clob_hydration_max_groups = max(
             1, int(self.bregman_clob_hydration_max_groups))
+        # relaxed-exploration rate limits (paper-only; clamp to sane non-negative ints)
+        self.paper_relaxed_max_trades_per_hour = max(
+            0, int(self.paper_relaxed_max_trades_per_hour))
+        self.paper_relaxed_max_trades_per_day = max(
+            0, int(self.paper_relaxed_max_trades_per_day))
         # Trade pressure: raise the READ-ONLY learning/opportunity surface (more shadow
         # samples + near-misses surfaced). Never loosens a gate or enables live trading.
         if bool(self.paper_trade_pressure_enabled):
@@ -986,6 +996,12 @@ class TrainingConfig:
                 "POLYMARKET_PAPER_MICRO_EXPLORATION_MAX_TRADES", 5),
             paper_micro_exploration_min_depth_usd=_envf(
                 "POLYMARKET_PAPER_MICRO_EXPLORATION_MIN_DEPTH_USD", 1.0),
+            paper_relaxed_exploration_enabled=_envb(
+                "POLYMARKET_PAPER_RELAXED_EXPLORATION_ENABLED", True),
+            paper_relaxed_max_trades_per_hour=_envi(
+                "POLYMARKET_PAPER_RELAXED_MAX_TRADES_PER_HOUR", 3),
+            paper_relaxed_max_trades_per_day=_envi(
+                "POLYMARKET_PAPER_RELAXED_MAX_TRADES_PER_DAY", 30),
             profit_discovery_bandit_enabled=_envb("POLYMARKET_PROFIT_DISCOVERY_BANDIT_ENABLED", True),
             targeted_market_scan_enabled=_envb("TARGETED_MARKET_SCAN_ENABLED", True),
             targeted_scan_cooldown_ticks=_envi("POLYMARKET_TARGETED_SCAN_COOLDOWN_TICKS", 20),

@@ -372,6 +372,12 @@ def build_bregman_funnel(bregman_telemetry: dict, *, market_groups_detected: int
             "paper_micro_exploration_candidates", "paper_micro_exploration_trades",
             "paper_micro_exploration_reject_reasons", "hydrated_positive_after_cost_candidates",
             "realistic_trade_goal_met_11h", "zero_trade_blocker_if_any",
+            # PAPER_RELAXED_EXPLORATION lane metrics
+            "paper_relaxed_exploration_enabled", "paper_relaxed_max_notional",
+            "paper_relaxed_max_trades_per_hour", "paper_relaxed_max_trades_per_day",
+            "paper_relaxed_candidates_seen", "paper_relaxed_trades_opened",
+            "paper_relaxed_reject_reasons", "paper_relaxed_after_cost_positive_seen",
+            "paper_relaxed_real_clob_book_seen", "paper_relaxed_readiness_pnl_excluded",
             "targeted_scan_budget_by_category", "targeted_scan_hits_by_category",
             "targeted_scan_markets_by_category", "market_quality_tier_counts",
             "market_quality_score_distribution", "high_liquidity_binary_markets_scanned",

@@ -163,9 +163,10 @@ def test_max_trades_cap_enforced(tmp_path, monkeypatch):
 def test_config_hard_clamps():
     cfg = TrainingConfig(mode="paper_train",
                          paper_micro_exploration_max_notional_usd=100.0,
-                         paper_micro_exploration_max_trades=999)
-    assert cfg.paper_micro_exploration_max_notional_usd <= 1.0
-    assert cfg.paper_micro_exploration_max_trades <= 5
+                         paper_relaxed_max_trades_per_hour=-5)
+    assert cfg.paper_micro_exploration_max_notional_usd <= 1.0   # hard $1 cap
+    assert cfg.paper_relaxed_max_trades_per_hour >= 0            # non-negative
+    assert cfg.paper_relaxed_max_trades_per_day == 30           # default day cap
 
 
 def test_micro_exploration_is_paper_only_no_live(tmp_path, monkeypatch):

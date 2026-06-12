@@ -505,6 +505,10 @@ class PolymarketPaperTrainer:
         self._micro_exploration_reject_reasons: dict = {}
         self._micro_exploration_candidates_total = 0
         self._micro_engine = None
+        # relaxed-exploration rate-limit ledger + cumulative pressure counters
+        self._micro_exploration_open_ts: list = []     # epoch ts of each opened trade
+        self._micro_after_cost_positive_seen = 0
+        self._micro_real_clob_seen = 0
         # profit-discovery: persist Bregman shadow-label candidates as durable
         # LEARNING-ONLY shadow labels (rate-limited, deduped) + a contextual-bandit
         # learning router. Never trades / sizes / bypasses a gate.
@@ -1633,13 +1637,16 @@ class PolymarketPaperTrainer:
         live trading, and tags trades as exploration (excluded from readiness PnL).
         Returns the number of micro trades opened this tick."""
         cfg = self.cfg
-        enabled = bool(getattr(cfg, "paper_micro_exploration_enabled", False))
-        # PAPER ONLY: only ever runs in paper_train with Bregman execution on.
+        # The relaxed-exploration lane is active only when BOTH flags are on (so either
+        # can disable it) and we are in paper_train with Bregman execution on. It can
+        # NEVER run with live trading.
+        enabled = (bool(getattr(cfg, "paper_micro_exploration_enabled", False))
+                   and bool(getattr(cfg, "paper_relaxed_exploration_enabled", True)))
         paper_ok = (self.mode == "paper_train"
                     and bool(getattr(cfg, "bregman_execution_enabled", True)))
-        max_trades = int(getattr(cfg, "paper_micro_exploration_max_trades", 5))
+        run_cap = int(getattr(cfg, "paper_micro_exploration_max_trades", 0))   # 0 = off
         groups = list(self._bregman_hydrated_groups or [])
-        remaining = max_trades - self._micro_exploration_trades_total
+        remaining = self._micro_budget_remaining(now)
         candidates: list = []
         micro_certs: list = []
         if enabled and paper_ok and groups and remaining > 0:
@@ -1670,20 +1677,28 @@ class PolymarketPaperTrainer:
         rec_by_id = {r.market_id: r for r in records}
         notional_cap = float(getattr(cfg, "paper_micro_exploration_max_notional_usd", 1.0))
         for c in candidates:
-            if self._micro_exploration_trades_total >= max_trades:
+            if self._micro_budget_remaining(now) <= 0:   # hour/day/run rate limit
+                self._micro_exploration_reject_reasons["rate_limited"] = \
+                    self._micro_exploration_reject_reasons.get("rate_limited", 0) + 1
                 break
             if self._open_bregman(c, rec_by_id, now, exploration=True,
                                   notional_cap=notional_cap):
                 opened += 1
+                self._micro_exploration_open_ts.append(float(now))
             else:
                 self._micro_exploration_reject_reasons["open_rejected"] = \
                     self._micro_exploration_reject_reasons.get("open_rejected", 0) + 1
 
+        # real CLOB groups + positive-after-cost candidates seen this tick (cumulative)
+        real_clob_groups = [
+            g for g in groups if bool(getattr(g, "legs", None))
+            and all(bool(getattr(l, "hydrated_from_clob", False)) for l in g.legs)]
         hydrated_positive = sum(
             1 for g, c in zip(groups, micro_certs)
             if c.is_opportunity and not bool(getattr(c, "has_synthetic_leg", False))
-            and bool(getattr(g, "legs", None))
-            and all(bool(getattr(l, "hydrated_from_clob", False)) for l in g.legs))
+            and g in real_clob_groups)
+        self._micro_real_clob_seen += len(real_clob_groups)
+        self._micro_after_cost_positive_seen += hydrated_positive
         best_edge = max(
             (float(c.certify_diagnostics.get("projected_profit_lower_bound", 0.0))
              for c in micro_certs if getattr(c, "certify_diagnostics", None)),
@@ -1691,6 +1706,21 @@ class PolymarketPaperTrainer:
         self._update_micro_metrics(enabled=enabled, hydrated_positive=hydrated_positive,
                                    best_edge=best_edge)
         return opened
+
+    def _micro_budget_remaining(self, now: float) -> int:
+        """Remaining relaxed-exploration trades allowed at ``now`` under the per-hour,
+        per-day, and optional per-run caps (the binding minimum)."""
+        cfg = self.cfg
+        ts = self._micro_exploration_open_ts
+        per_hour = int(getattr(cfg, "paper_relaxed_max_trades_per_hour", 3))
+        per_day = int(getattr(cfg, "paper_relaxed_max_trades_per_day", 30))
+        run_cap = int(getattr(cfg, "paper_micro_exploration_max_trades", 0))
+        in_hour = sum(1 for t in ts if (now - t) < 3600.0)
+        in_day = sum(1 for t in ts if (now - t) < 86400.0)
+        budgets = [max(0, per_hour - in_hour), max(0, per_day - in_day)]
+        if run_cap > 0:
+            budgets.append(max(0, run_cap - self._micro_exploration_trades_total))
+        return min(budgets) if budgets else 0
 
     def _update_micro_metrics(self, *, enabled: bool, hydrated_positive: int = 0,
                               best_edge: float = 0.0) -> None:
@@ -1709,6 +1739,21 @@ class PolymarketPaperTrainer:
         m["paper_micro_exploration_reject_reasons"] = dict(self._micro_exploration_reject_reasons)
         m["hydrated_positive_after_cost_candidates"] = int(hydrated_positive)
         m["realistic_trade_goal_met_11h"] = bool(realistic_total >= 1)
+        # ---- PAPER_RELAXED_EXPLORATION report metrics (paper-only lane) ----
+        m["paper_relaxed_exploration_enabled"] = bool(enabled)
+        m["paper_relaxed_max_notional"] = float(
+            getattr(self.cfg, "paper_micro_exploration_max_notional_usd", 1.0))
+        m["paper_relaxed_max_trades_per_hour"] = int(
+            getattr(self.cfg, "paper_relaxed_max_trades_per_hour", 3))
+        m["paper_relaxed_max_trades_per_day"] = int(
+            getattr(self.cfg, "paper_relaxed_max_trades_per_day", 30))
+        m["paper_relaxed_candidates_seen"] = int(self._micro_exploration_candidates_total)
+        m["paper_relaxed_trades_opened"] = micro_total
+        m["paper_relaxed_reject_reasons"] = dict(self._micro_exploration_reject_reasons)
+        m["paper_relaxed_after_cost_positive_seen"] = int(self._micro_after_cost_positive_seen)
+        m["paper_relaxed_real_clob_book_seen"] = int(self._micro_real_clob_seen)
+        # readiness PnL ALWAYS excludes relaxed-exploration trades (separate accounting)
+        m["paper_relaxed_readiness_pnl_excluded"] = True
         if realistic_total >= 1 or micro_total >= 1:
             m["zero_trade_blocker_if_any"] = ""
         else:
