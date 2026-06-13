@@ -2028,9 +2028,14 @@ def _build_report_md(rj, feats, status, docker, api, tests, comparison,
             if _bf.get("paper_relaxed_reject_reasons"):
                 L.append(f"- paper_relaxed_reject_reasons: "
                          f"{_bf.get('paper_relaxed_reject_reasons')}")
+            L.append(f"- paper_relaxed_pipeline_scanned: "
+                     f"{_bf.get('paper_relaxed_pipeline_scanned', 0)}")
             L.append(f"- paper_relaxed_real_book_candidates_seen: "
                      f"{_bf.get('paper_relaxed_real_book_candidates_seen', 0)} "
                      f"positive={_bf.get('paper_relaxed_positive_real_book_candidates_seen', 0)}")
+            if _bf.get("paper_relaxed_opened_trade_examples"):
+                L.append(f"- paper_relaxed_opened_trade_examples: "
+                         f"{_bf.get('paper_relaxed_opened_trade_examples')}")
             if _bf.get("paper_relaxed_candidate_source_counts"):
                 L.append(f"- paper_relaxed_candidate_source_counts: "
                          f"{_bf.get('paper_relaxed_candidate_source_counts')}")

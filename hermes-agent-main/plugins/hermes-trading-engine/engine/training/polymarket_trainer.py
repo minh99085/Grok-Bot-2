@@ -509,13 +509,19 @@ class PolymarketPaperTrainer:
         self._micro_exploration_open_ts: list = []     # epoch ts of each opened trade
         self._micro_after_cost_positive_seen = 0
         self._micro_real_clob_seen = 0
-        # relaxed candidate-STREAM diagnostics (real-book groups, not only certified)
+        # relaxed candidate-STREAM diagnostics (real-book groups, NOT certification-gated)
+        self._relaxed_pipeline_scanned = 0
         self._relaxed_real_book_seen = 0
         self._relaxed_positive_real_book_seen = 0
         self._relaxed_blocked_by_reason: dict = {}
         self._relaxed_source_counts: dict = {}
         self._relaxed_best_candidate: dict = {}        # best positive real-book example
         self._relaxed_best_reject: dict = {}           # best (least-bad) blocked example
+        self._relaxed_best_edge = None                 # true max after-cost edge (signed)
+        self._relaxed_opened_trade_examples: list = []
+        # durable per-candidate audit log (git-ignored metrics dir)
+        self._relaxed_candidates_path = self.data_dir / "metrics" / "paper_relaxed_candidates.jsonl"
+        self._relaxed_records_written = 0
         # profit-discovery: persist Bregman shadow-label candidates as durable
         # LEARNING-ONLY shadow labels (rate-limited, deduped) + a contextual-bandit
         # learning router. Never trades / sizes / bypasses a gate.
@@ -1644,6 +1650,8 @@ class PolymarketPaperTrainer:
         synthetic-NO/stale/missing-ask/reference/negative-edge group, never enables
         live trading, and tags trades as exploration (excluded from readiness PnL).
         Returns the number of micro trades opened this tick."""
+        from engine.training.relaxed_candidates import (evaluate_relaxed_group, summarize,
+                                                        GATE_TRADABLE)
         cfg = self.cfg
         # The relaxed-exploration lane is active only when BOTH flags are on (so either
         # can disable it) and we are in paper_train with Bregman execution on. It can
@@ -1652,97 +1660,114 @@ class PolymarketPaperTrainer:
                    and bool(getattr(cfg, "paper_relaxed_exploration_enabled", True)))
         paper_ok = (self.mode == "paper_train"
                     and bool(getattr(cfg, "bregman_execution_enabled", True)))
-        run_cap = int(getattr(cfg, "paper_micro_exploration_max_trades", 0))   # 0 = off
         groups = list(self._bregman_hydrated_groups or [])
-        remaining = self._micro_budget_remaining(now)
-        candidates: list = []
-        micro_certs: list = []
-        if enabled and paper_ok and groups and remaining > 0:
-            micro_certs = self._micro_certifier().certify_all(groups)
+        notional_cap = float(getattr(cfg, "paper_micro_exploration_max_notional_usd", 1.0))
+        min_depth = float(getattr(cfg, "paper_micro_exploration_min_depth_usd", 1.0))
+        max_age = float(getattr(cfg, "bregman_max_book_age_sec", 20.0) or 20.0)
+        slip = float(getattr(cfg, "slippage_bps", 25.0) or 25.0)
+        fee = float(getattr(cfg, "taker_fee_bps", 0.0) or 0.0)
+
+        # 1) Build the real-book candidate stream DIRECTLY from hydrated books — this
+        # does NOT depend on full Bregman certification. Each group -> a durable record.
+        eval_recs = [evaluate_relaxed_group(
+            g, now=now, max_notional_usd=notional_cap, min_depth_usd=min_depth,
+            slippage_bps=slip, fee_bps=fee, max_book_age_s=max_age) for g in groups]
+        summary = summarize(eval_recs)
+
+        # 2) accumulate cumulative stream diagnostics
+        self._relaxed_pipeline_scanned += summary["pipeline_scanned"]
+        self._relaxed_real_book_seen += summary["real_book_candidates_seen"]
+        self._relaxed_positive_real_book_seen += summary["positive_real_book_candidates_seen"]
+        self._micro_real_clob_seen = self._relaxed_real_book_seen
+        self._micro_after_cost_positive_seen = self._relaxed_positive_real_book_seen
+        for k, v in summary["blocked_by_reason"].items():
+            self._relaxed_blocked_by_reason[k] = self._relaxed_blocked_by_reason.get(k, 0) + v
+        for k, v in summary["source_counts"].items():
+            self._relaxed_source_counts[k] = self._relaxed_source_counts.get(k, 0) + v
+        def _edge_of(d):       # None-safe edge (hard-gate rejects have no edge yet)
+            v = (d or {}).get("after_cost_edge")
+            return float(v) if v is not None else -1e9
+        if summary["best_real_book_candidate"]:
+            if _edge_of(summary["best_real_book_candidate"]) > _edge_of(self._relaxed_best_candidate):
+                self._relaxed_best_candidate = summary["best_real_book_candidate"]
+        if summary["best_reject_example"]:
+            if _edge_of(summary["best_reject_example"]) > _edge_of(self._relaxed_best_reject):
+                self._relaxed_best_reject = summary["best_reject_example"]
+        be = summary.get("best_after_cost_edge")
+        if be is not None:
+            self._relaxed_best_edge = be if self._relaxed_best_edge is None \
+                else max(self._relaxed_best_edge, be)
+
+        # 3) durable per-candidate audit records (real-book candidates only; capped)
+        self._write_relaxed_candidate_records(
+            [r for r in eval_recs if r.get("is_real_book")], now)
+
+        # 4) open tradable candidates (positive + full-hedge + all hard gates), via the
+        # relaxed certifier opp, rate-limited. Counting above is independent of this.
+        opened = 0
+        tradable = [r for r in eval_recs if r.get("gate_result") == GATE_TRADABLE]
+        self._micro_exploration_candidates_total += len(tradable)
+        if enabled and paper_ok and tradable and self._micro_budget_remaining(now) > 0:
             opened_gids = {p.group_key for p in self.positions
                            if getattr(p, "strategy", "") == "bregman"}
-            for g, c in zip(groups, micro_certs):
-                synthetic = bool(getattr(c, "has_synthetic_leg", False))
-                # MUST use REAL CLOB books: every leg has to have been hydrated from the
-                # live order book (excludes synthetic/derived/reference-only groups).
-                real_clob = bool(getattr(g, "legs", None)) and all(
-                    bool(getattr(l, "hydrated_from_clob", False)) for l in g.legs)
-                if (c.is_opportunity and not synthetic and real_clob
-                        and c.group_id not in opened_gids):
-                    candidates.append(c)
+            tradable = [r for r in tradable if r["group_id"] not in opened_gids]
+            tradable.sort(key=lambda r: float(r.get("after_cost_edge") or 0.0), reverse=True)
+            micro_certs = self._micro_certifier().certify_all(groups)
+            cert_by_gid = {getattr(c, "group_id", ""): c for c in micro_certs}
+            rec_by_id = {r.market_id: r for r in records}
+            for r in tradable:
+                if self._micro_budget_remaining(now) <= 0:
+                    self._micro_exploration_reject_reasons["rate_limited"] = \
+                        self._micro_exploration_reject_reasons.get("rate_limited", 0) + 1
+                    break
+                opp = cert_by_gid.get(r["group_id"])
+                if opp is None or not opp.is_opportunity \
+                        or bool(getattr(opp, "has_synthetic_leg", False)):
+                    self._micro_exploration_reject_reasons["certifier_disagreed"] = \
+                        self._micro_exploration_reject_reasons.get("certifier_disagreed", 0) + 1
+                    continue
+                if self._open_bregman(opp, rec_by_id, now, exploration=True,
+                                      notional_cap=notional_cap):
+                    opened += 1
+                    self._micro_exploration_open_ts.append(float(now))
+                    pos = self.positions[-1] if self.positions else None
+                    self._relaxed_opened_trade_examples.append({
+                        "group_id": r["group_id"], "group_type": r["group_type"],
+                        "after_cost_edge": r.get("after_cost_edge"),
+                        "notional_usd": round(notional_cap, 4),
+                        "paper_order_id": getattr(pos, "order_id", "") if pos else "",
+                        "exploration_paper": True})
                 else:
-                    reason = ("synthetic_no_diagnostic_only" if synthetic
-                              else "not_real_clob_book" if not real_clob
-                              else "already_open_full_bundle" if c.group_id in opened_gids
-                              else (c.no_trade_reason or "not_certified"))
-                    self._micro_exploration_reject_reasons[reason] = \
-                        self._micro_exploration_reject_reasons.get(reason, 0) + 1
-            candidates.sort(key=lambda c: float(getattr(c, "profit_lower_bound", 0.0)),
-                            reverse=True)
-        self._micro_exploration_candidates_total += len(candidates)
+                    self._micro_exploration_reject_reasons["open_rejected"] = \
+                        self._micro_exploration_reject_reasons.get("open_rejected", 0) + 1
 
-        opened = 0
-        rec_by_id = {r.market_id: r for r in records}
-        notional_cap = float(getattr(cfg, "paper_micro_exploration_max_notional_usd", 1.0))
-        for c in candidates:
-            if self._micro_budget_remaining(now) <= 0:   # hour/day/run rate limit
-                self._micro_exploration_reject_reasons["rate_limited"] = \
-                    self._micro_exploration_reject_reasons.get("rate_limited", 0) + 1
-                break
-            if self._open_bregman(c, rec_by_id, now, exploration=True,
-                                  notional_cap=notional_cap):
-                opened += 1
-                self._micro_exploration_open_ts.append(float(now))
-            else:
-                self._micro_exploration_reject_reasons["open_rejected"] = \
-                    self._micro_exploration_reject_reasons.get("open_rejected", 0) + 1
-
-        # ---- relaxed candidate-STREAM accounting (real-book groups, not only the
-        # certified bundles). A "real-book candidate" passed the relaxed HARD gates:
-        # all legs hydrated from a live CLOB book, executable ask, fresh, >= $1 depth.
-        real_clob_groups = []
-        hydrated_positive = 0
-        best_edge = None                              # true max (may be negative)
-        for g, c in zip(groups, micro_certs):
-            if not getattr(c, "certify_diagnostics", None):
-                continue
-            edge = float(c.certify_diagnostics.get("projected_profit_lower_bound", 0.0))
-            if c.is_opportunity:
-                edge = float(getattr(c, "profit_lower_bound", edge) or edge)
-            best_edge = edge if best_edge is None else max(best_edge, edge)
-            real_clob = bool(getattr(g, "legs", None)) and all(
-                bool(getattr(l, "hydrated_from_clob", False)) for l in g.legs)
-            synthetic = bool(getattr(c, "has_synthetic_leg", False))
-            gtype = getattr(g, "group_type", "unknown")
-            if not real_clob:
-                continue                              # not on the real-book stream
-            real_clob_groups.append(g)
-            self._relaxed_source_counts[gtype] = self._relaxed_source_counts.get(gtype, 0) + 1
-            positive = bool(c.is_opportunity and not synthetic)
-            if positive:
-                hydrated_positive += 1
-                if not self._relaxed_best_candidate or edge > self._relaxed_best_candidate.get(
-                        "after_cost_edge", -1e9):
-                    self._relaxed_best_candidate = {
-                        "group_id": getattr(g, "group_id", ""), "group_type": gtype,
-                        "after_cost_edge": round(edge, 6), "n_legs": len(g.legs)}
-            else:
-                reason = ("synthetic_no" if synthetic
-                          else (c.no_trade_reason or "not_certified"))
-                self._relaxed_blocked_by_reason[reason] = \
-                    self._relaxed_blocked_by_reason.get(reason, 0) + 1
-                if not self._relaxed_best_reject or edge > self._relaxed_best_reject.get(
-                        "after_cost_edge", -1e9):
-                    self._relaxed_best_reject = {
-                        "group_id": getattr(g, "group_id", ""), "group_type": gtype,
-                        "reason": reason, "after_cost_edge": round(edge, 6)}
-        self._micro_real_clob_seen += len(real_clob_groups)
-        self._relaxed_real_book_seen += len(real_clob_groups)
-        self._relaxed_positive_real_book_seen += hydrated_positive
-        self._micro_after_cost_positive_seen += hydrated_positive
-        self._update_micro_metrics(enabled=enabled, hydrated_positive=hydrated_positive,
-                                   best_edge=(best_edge if best_edge is not None else 0.0))
+        self._update_micro_metrics(
+            enabled=enabled, hydrated_positive=summary["positive_real_book_candidates_seen"],
+            best_edge=(self._relaxed_best_edge if self._relaxed_best_edge is not None else 0.0))
         return opened
+
+    def _write_relaxed_candidate_records(self, records: list, now: float) -> None:
+        """Append durable, auditable per-candidate JSONL records (market/token ids,
+        book age, bid/ask, depth, costs, after-cost edge, gate result, reject reason,
+        paper order id, exploration_paper). Capped per tick + per run; never raises."""
+        if not records:
+            return
+        cap_run = 5000
+        if self._relaxed_records_written >= cap_run:
+            return
+        try:
+            self._relaxed_candidates_path.parent.mkdir(parents=True, exist_ok=True)
+            import json as _json
+            with self._relaxed_candidates_path.open("a", encoding="utf-8") as fh:
+                for r in records[:50]:                 # per-tick cap
+                    if self._relaxed_records_written >= cap_run:
+                        break
+                    rec = dict(r)
+                    rec["ts"] = round(float(now), 3)
+                    fh.write(_json.dumps(rec, default=str) + "\n")
+                    self._relaxed_records_written += 1
+        except OSError:
+            pass
 
     def _bregman_family_completeness_telemetry(self, groups: list, certs: list) -> dict:
         """B) Event-family completeness diagnostics: surface EXACTLY why multi-outcome
@@ -1835,6 +1860,7 @@ class PolymarketPaperTrainer:
         # readiness PnL ALWAYS excludes relaxed-exploration trades (separate accounting)
         m["paper_relaxed_readiness_pnl_excluded"] = True
         # ---- relaxed candidate-STREAM diagnostics (real-book stream, not only certs) ----
+        m["paper_relaxed_pipeline_scanned"] = int(self._relaxed_pipeline_scanned)
         m["paper_relaxed_real_book_candidates_seen"] = int(self._relaxed_real_book_seen)
         m["paper_relaxed_positive_real_book_candidates_seen"] = int(
             self._relaxed_positive_real_book_seen)
@@ -1842,6 +1868,7 @@ class PolymarketPaperTrainer:
         m["paper_relaxed_candidate_source_counts"] = dict(self._relaxed_source_counts)
         m["paper_relaxed_best_real_book_candidate"] = dict(self._relaxed_best_candidate)
         m["paper_relaxed_best_reject_example"] = dict(self._relaxed_best_reject)
+        m["paper_relaxed_opened_trade_examples"] = list(self._relaxed_opened_trade_examples[-10:])
         if realistic_total >= 1 or micro_total >= 1:
             m["zero_trade_blocker_if_any"] = ""
         else:

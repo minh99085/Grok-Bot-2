@@ -379,6 +379,7 @@ def build_bregman_funnel(bregman_telemetry: dict, *, market_groups_detected: int
             "paper_relaxed_reject_reasons", "paper_relaxed_after_cost_positive_seen",
             "paper_relaxed_real_clob_book_seen", "paper_relaxed_readiness_pnl_excluded",
             # relaxed candidate-STREAM diagnostics + event-family completeness (B)
+            "paper_relaxed_pipeline_scanned", "paper_relaxed_opened_trade_examples",
             "paper_relaxed_real_book_candidates_seen",
             "paper_relaxed_positive_real_book_candidates_seen",
             "paper_relaxed_candidates_blocked_by_reason", "paper_relaxed_candidate_source_counts",

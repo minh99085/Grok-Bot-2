@@ -170,9 +170,58 @@ def test_relaxed_negative_edge_records_blocked_reason_and_example(tmp_path, monk
     m = t.bregman_exec_metrics
     assert m["paper_relaxed_real_book_candidates_seen"] >= 1     # it IS on the stream
     assert m["paper_relaxed_positive_real_book_candidates_seen"] == 0
-    assert m["paper_relaxed_candidates_blocked_by_reason"].get("no_positive_edge", 0) >= 1
-    assert m["paper_relaxed_best_reject_example"].get("reason") == "no_positive_edge"
+    assert m["paper_relaxed_candidates_blocked_by_reason"].get("negative_after_cost_edge", 0) >= 1
+    assert "not_real_clob_book" not in m["paper_relaxed_candidates_blocked_by_reason"]
+    assert m["paper_relaxed_best_reject_example"].get("reject_reason") == "negative_after_cost_edge"
     assert "real_book_candidates_but_no_positive_after_cost_edge" in m["zero_trade_blocker_if_any"]
+
+
+def test_durable_per_candidate_records_written(tmp_path, monkeypatch):
+    import json
+    t = _trainer(tmp_path, monkeypatch)
+    _enable(t)
+    t._run_bregman([_rec()], _NOW)
+    path = tmp_path / "metrics" / "paper_relaxed_candidates.jsonl"
+    assert path.is_file()
+    rows = [json.loads(ln) for ln in path.read_text().splitlines() if ln.strip()]
+    assert rows
+    r = rows[0]
+    # full audit fields per the spec
+    for k in ("market_ids", "token_ids", "outcomes", "book_age_s", "best_asks",
+              "best_bids", "depth_for_1usd", "est_costs", "after_cost_edge",
+              "gate_result", "reject_reason", "is_real_book", "ts"):
+        assert k in r
+
+
+def test_diagnostic_not_contradictory_when_real_books_seen(tmp_path, monkeypatch):
+    # real CLOB books seen, no positive candidate -> blocker must NOT be
+    # not_real_clob_book and best_after_cost_edge must be consistent (negative).
+    t = _trainer(tmp_path, monkeypatch)
+    _enable(t, _books(0.55, 0.50))
+    t._run_bregman([_rec()], _NOW)
+    m = t.bregman_exec_metrics
+    assert m["paper_relaxed_real_book_candidates_seen"] >= 1
+    blocker = m["zero_trade_blocker_if_any"]
+    assert "not_real_clob_book" not in blocker
+    assert "not_real_clob_book" not in m["paper_relaxed_candidates_blocked_by_reason"]
+    # best edge in the blocker is negative (consistent with "no positive")
+    assert "best_after_cost_edge=-" in blocker
+
+
+def test_opened_trade_example_marks_exploration_paper(tmp_path, monkeypatch):
+    t = _trainer(tmp_path, monkeypatch)
+    _enable(t)
+    t._run_bregman([_rec()], _NOW)
+    ex = t.bregman_exec_metrics["paper_relaxed_opened_trade_examples"]
+    assert ex and ex[0]["exploration_paper"] is True
+    assert ex[0]["notional_usd"] <= 1.0 and ex[0]["paper_order_id"]
+
+
+def test_pipeline_scanned_metric_present(tmp_path, monkeypatch):
+    t = _trainer(tmp_path, monkeypatch)
+    _enable(t)
+    t._run_bregman([_rec()], _NOW)
+    assert t.bregman_exec_metrics["paper_relaxed_pipeline_scanned"] >= 1
 
 
 def test_full_readiness_gates_not_loosened(tmp_path, monkeypatch):

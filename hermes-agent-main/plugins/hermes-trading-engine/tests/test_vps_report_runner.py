@@ -124,6 +124,20 @@ def test_runner_packages_unique_and_latest_zip_with_required_inputs():
     assert "report_logs" in t                                    # report logs included
 
 
+def test_runner_zip_includes_full_light_bundle():
+    t = _runner_text()
+    # the inspection_reports bundle carries report.json + report.md + tail log samples;
+    # the zip must include that bundle, runtime_data/metrics, validation, and logs.
+    assert "inspection_reports" in t            # report.json / report.md + tail samples
+    assert "runtime_data/metrics" in t
+    assert "runtime_data/inspection_summary.json" in t
+    assert "validation_light_latest.txt" in t
+    assert "report_logs" in t
+    # the report generator itself emits report.json + report.md into inspection_reports
+    gen = (PLUGIN / "scripts" / "generate_bot_inspection_report.py").read_text(encoding="utf-8")
+    assert 'write_json("report.json"' in gen and "report.md" in gen
+
+
 def test_runner_surfaces_report_exit_code_does_not_hide_failures():
     t = _runner_text()
     # the script exits with the report generator's own rc (run-ready gating preserved)
