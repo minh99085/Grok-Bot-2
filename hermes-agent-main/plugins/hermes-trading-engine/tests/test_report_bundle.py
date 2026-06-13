@@ -41,6 +41,9 @@ def _full_bundle(tmp_path):
     (b / "report.md").write_text("# Hermes light report", encoding="utf-8")
     (b / "validation_contract.json").write_text("{}", encoding="utf-8")
     (b / "final_validation.json").write_text("{}", encoding="utf-8")
+    (b / "algorithmic_edge_audit.json").write_text("{}", encoding="utf-8")
+    (b / "metrics").mkdir()
+    (b / "metrics" / "run_ready.json").write_text("{}", encoding="utf-8")
     (b / "logs").mkdir()
     (b / "logs" / "training_tail.log").write_text("...training tail...", encoding="utf-8")
     (b / "samples").mkdir()
@@ -69,6 +72,7 @@ def test_zip_contains_full_light_bundle_and_tail_samples(tmp_path):
     assert any(n.endswith("report.md") for n in names)
     assert any(n.endswith("validation_contract.json") for n in names)
     assert any(n.endswith("final_validation.json") for n in names)
+    assert any(n.endswith("algorithmic_edge_audit.json") for n in names)
     # tail samples + logs
     assert any("training_tail.log" in n for n in names)
     assert any("events_tail.jsonl" in n for n in names)
@@ -99,6 +103,26 @@ def test_incomplete_bundle_is_refused_no_zip(tmp_path):
     assert res["ok"] is False and res["reason"] == "incomplete_bundle"
     assert "report.json" in res["missing"]
     assert not (tmp_path / "out.zip").exists()       # thin zip NEVER written
+
+
+def test_thin_four_file_bundle_is_refused_no_zip(tmp_path):
+    """A thin bundle (only report.json + report.md + 2 stray files, the repeated ~39 KB
+    failure) must be REFUSED — missing the required validation/audit + samples/metrics."""
+    b = tmp_path / "inspection_reports" / "bot_thin_20260613_120000"
+    b.mkdir(parents=True)
+    (b / "report.json").write_text("{}", encoding="utf-8")
+    (b / "report.md").write_text("# thin", encoding="utf-8")
+    (b / "consistency.json").write_text("{}", encoding="utf-8")
+    (b / "artifact_paths.json").write_text("{}", encoding="utf-8")
+    res = rb.build_report_bundle_zip(tmp_path, tmp_path / "thin.zip", runner=_fake_git)
+    assert res["ok"] is False and res["reason"] == "incomplete_bundle"
+    # names the exact missing complete-bundle artifacts
+    assert "final_validation.json" in res["missing"]
+    assert "algorithmic_edge_audit.json" in res["missing"]
+    assert "validation_contract.json" in res["missing"]
+    assert any("samples" in m for m in res["missing"])
+    assert any("metrics" in m for m in res["missing"])
+    assert not (tmp_path / "thin.zip").exists()         # thin zip NEVER shipped
 
 
 def test_main_cli_exit_codes(tmp_path):

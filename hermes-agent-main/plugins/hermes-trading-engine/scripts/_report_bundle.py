@@ -22,10 +22,15 @@ import sys
 import zipfile
 from pathlib import Path
 
-# Core artifacts the bundle MUST contain to count as a complete light report.
-REQUIRED_BUNDLE_FILES = ("report.json", "report.md")
+# Core artifacts the bundle MUST contain to count as a complete light report. These are
+# all written UNCONDITIONALLY by scripts/generate_bot_inspection_report.py into the
+# bundle dir, so a bundle missing any of them is a thin/broken zip and must be REFUSED
+# (this is what catches the repeated ~39 KB thin zip).
+REQUIRED_BUNDLE_FILES = ("report.json", "report.md", "final_validation.json",
+                         "algorithmic_edge_audit.json", "validation_contract.json")
 # Extra report artifacts to include wherever they are found (best-effort).
-EXTRA_REPORT_FILES = ("validation_contract.json", "final_validation.json")
+EXTRA_REPORT_FILES = ("validation_contract.json", "final_validation.json",
+                      "algorithmic_edge_audit.json")
 GIT_PROOF_NAME = "git_commit_proof.txt"
 
 
@@ -43,10 +48,19 @@ def latest_bundle_dir(inspection_reports: Path):
 
 
 def verify_bundle_complete(bundle_dir):
-    """Return (ok, missing[]). A complete light bundle has report.json + report.md."""
+    """Return (ok, missing[]). A complete light bundle has every REQUIRED_BUNDLE_FILES
+    artifact AND at least one samples tail file AND at least one inspection metrics file
+    (so a thin 4-file zip can never pass as complete)."""
     if bundle_dir is None or not Path(bundle_dir).is_dir():
         return False, ["<no bundle dir>", *REQUIRED_BUNDLE_FILES]
-    missing = [f for f in REQUIRED_BUNDLE_FILES if not (Path(bundle_dir) / f).is_file()]
+    bd = Path(bundle_dir)
+    missing = [f for f in REQUIRED_BUNDLE_FILES if not (bd / f).is_file()]
+    samples = bd / "samples"
+    if not (samples.is_dir() and any(p.is_file() for p in samples.rglob("*"))):
+        missing.append("samples/<tail sample>")
+    metrics = bd / "metrics"
+    if not (metrics.is_dir() and any(p.suffix == ".json" for p in metrics.rglob("*"))):
+        missing.append("metrics/<inspection metric>")
     return (not missing), missing
 
 
