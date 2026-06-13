@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import json
+import re
 import shlex
 import shutil
 import subprocess
@@ -703,6 +704,461 @@ def cmd_init_config(ctx: Ctx, *, target: Path, force: bool = False) -> int:
 
 
 # --------------------------------------------------------------------------- #
+# Phase 5: autonomous operator loop with human/ChatGPT approval gates
+# --------------------------------------------------------------------------- #
+LEDGER_NAME = "artifact_index.jsonl"
+UPLOAD_INSTRUCTIONS = "CHATGPT_UPLOAD_INSTRUCTIONS.md"
+CURSOR_HANDOFF_DIR = "cursor_handoffs"
+
+DECISION_LABELS = ("LONG_RUN_APPROVED", "SHORT_TEST_ONLY", "CURSOR_PROMPT_REQUIRED",
+                   "STOP_REQUIRED", "UNKNOWN_REVIEW_REQUIRED")
+
+
+def _artifact_dir(ctx: Ctx) -> Path:
+    d = ctx.cfg.local_artifact_dir
+    return (ctx.repo_root / d) if not Path(d).is_absolute() else Path(d)
+
+
+def _local_commit(ctx: Ctx) -> str:
+    rc, out, _ = ctx.runner(["git", "rev-parse", "HEAD"], cwd=str(ctx.repo_root), timeout=20)
+    return out.strip() if rc == 0 else ""
+
+
+def _append_ledger(ctx: Ctx, record: dict) -> None:
+    """Append one cycle record to the artifact ledger (JSONL). Never raises."""
+    art = _artifact_dir(ctx)
+    try:
+        art.mkdir(parents=True, exist_ok=True)
+        with (art / LEDGER_NAME).open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, default=str) + "\n")
+    except OSError:
+        pass
+
+
+def classify_chatgpt_decision(text: str) -> str:
+    """Conservatively classify ChatGPT's free-text decision. NEVER returns an
+    action-approving label on ambiguous text; precedence is STOP > CURSOR > LONG >
+    SHORT > UNKNOWN so the safe interpretation always wins. The caller NEVER executes
+    anything from this — it only maps to a recommended next *manual* command."""
+    t = (text or "").lower()
+    stop_kw = ("stop_required", "stop the run", "do not run", "don't run", "do not proceed",
+               "not safe", "unsafe", "halt", "abort", "do not start", "stop the bot")
+    cursor_kw = ("cursor prompt", "prompt for cursor", "paste into cursor", "send to cursor",
+                 "open cursor", "use cursor", "code fix", "needs a fix", "needs fixing",
+                 "patch", "repair", "cursor repair", "fix in cursor")
+    long_kw = ("long run approved", "approve long", "approved for long", "long-run approved",
+               "approved long run", "start the long run", "approve the long",
+               "long paper run approved", "ok to run long", "11-hour", "11 hour",
+               "multi-hour run", "multi-day run")
+    short_kw = ("short test", "short run", "quick test", "smoke test", "short paper",
+                "brief run", "short-run", "short paper run")
+    if any(k in t for k in stop_kw):
+        return "STOP_REQUIRED"
+    if any(k in t for k in cursor_kw):
+        return "CURSOR_PROMPT_REQUIRED"
+    if any(k in t for k in long_kw):
+        return "LONG_RUN_APPROVED"
+    if any(k in t for k in short_kw):
+        return "SHORT_TEST_ONLY"
+    return "UNKNOWN_REVIEW_REQUIRED"
+
+
+def decision_next_command(label: str, cfg_name: str, decision_file: str = "<decision.md>") -> str:
+    base = f"python scripts/laptop_agent_coordinator.py"
+    if label == "STOP_REQUIRED":
+        return ("STOP — do NOT start any run. Re-read ChatGPT's response. If code "
+                "changes are needed, prepare a Cursor handoff.")
+    if label == "CURSOR_PROMPT_REQUIRED":
+        return f"{base} prepare-cursor-handoff --config {cfg_name} --file {decision_file}"
+    if label == "LONG_RUN_APPROVED":
+        return f"{base} start-paper-run --config {cfg_name} --mode long --approved-by-chatgpt"
+    if label == "SHORT_TEST_ONLY":
+        return f"{base} start-paper-run --config {cfg_name} --mode short"
+    return ("Manual review required — re-read ChatGPT's response; the coordinator took "
+            "NO automatic action. Re-run record-chatgpt-decision after clarifying.")
+
+
+def extract_cursor_prompt(text: str) -> str:
+    """Extract the Cursor prompt from a ChatGPT response: prefer the largest fenced
+    code block, then a 'Cursor prompt:'-style section, else the whole text. Pure."""
+    blocks = re.findall(r"```[a-zA-Z0-9_-]*\n(.*?)```", text or "", re.DOTALL)
+    if blocks:
+        return max(blocks, key=len).strip()
+    m = re.search(r"(?:cursor prompt|prompt for cursor|paste (?:this )?into cursor)"
+                  r"\s*[:\-]?\s*\n(.*)", text or "", re.IGNORECASE | re.DOTALL)
+    if m and m.group(1).strip():
+        return m.group(1).strip()
+    return (text or "").strip()
+
+
+def _read_text_file(path: Path):
+    try:
+        return path.read_text(encoding="utf-8-sig")
+    except (OSError, ValueError):
+        return None
+
+
+# ---- operator-cycle -------------------------------------------------------- #
+def cmd_operator_cycle(ctx: Ctx, *, dry_run: bool = False) -> int:
+    """One command: doctor -> vps-smoke -> collect-light-report -> write the ChatGPT
+    upload handoff, then STOP and wait for human/ChatGPT inspection. It never starts a
+    run on its own."""
+    cfg = ctx.cfg
+    ctx.say("=" * 64)
+    ctx.say("OPERATOR CYCLE — collect report + prepare ChatGPT handoff (then STOP)")
+    ctx.say("=" * 64)
+    ctx.say("\n[1/3] doctor")
+    if cmd_doctor(ctx) != 0:
+        ctx.say("\nSTOP — doctor failed; fix the items above before collecting.")
+        return 2
+    ctx.say("\n[2/3] vps-smoke")
+    if cmd_vps_smoke(ctx) != 0:
+        ctx.say("\nSTOP — vps-smoke failed; fix the VPS items above before collecting.")
+        return 2
+    ctx.say("\n[3/3] collect-light-report")
+    if cmd_collect_light_report(ctx, dry_run=dry_run) != 0:
+        ctx.say("\nSTOP — report collection failed (see detail above).")
+        return 1
+    if dry_run:
+        ctx.say("\n[DRY-RUN] cycle preview complete (nothing collected).")
+        return 0
+
+    art = _artifact_dir(ctx)
+    z = _latest_zip(art)
+    has_validation = has_summary = False
+    if z is not None:
+        try:
+            with zipfile.ZipFile(z) as zf:
+                names = zf.namelist()
+            has_validation = any(n.endswith(VALIDATION_FILE) for n in names)
+            has_summary = any(n.endswith("inspection_summary.json") for n in names)
+        except (OSError, zipfile.BadZipFile):
+            pass
+    instr = _write_upload_instructions(ctx, z)
+    _append_ledger(ctx, {
+        "timestamp": _dt.datetime.now().replace(microsecond=0).isoformat(),
+        "event": "operator-cycle", "local_commit": _local_commit(ctx),
+        "report_zip": (str(z) if z else ""), "validation_present": has_validation,
+        "inspection_summary_present": has_summary,
+        "handoff_files": [UPLOAD_INSTRUCTIONS] if instr else [],
+        "decision_classification": None})
+    ctx.say("\n" + "=" * 64)
+    ctx.say("CYCLE COMPLETE — STOP and wait for ChatGPT inspection.")
+    if z is not None:
+        ctx.say(f"  UPLOAD THIS ZIP to ChatGPT: {z}")
+    ctx.say(f"  Handoff instructions written: {instr or '(could not write)'}")
+    ctx.say("  After ChatGPT replies, save its response to a .md file and run:")
+    ctx.say(f"    python scripts/laptop_agent_coordinator.py record-chatgpt-decision "
+            f"--config {cfg.source_file or DEFAULT_CONFIG} --file <decision.md>")
+    return 0
+
+
+def _write_upload_instructions(ctx: Ctx, zip_path) -> str:
+    art = _artifact_dir(ctx)
+    cfg_name = ctx.cfg.source_file or DEFAULT_CONFIG
+    body = (
+        "# Upload this report to ChatGPT for inspection\n\n"
+        f"**Report zip:** `{zip_path if zip_path else '(none found)'}`\n\n"
+        "## Steps\n"
+        "1. Upload the zip above to ChatGPT and ask it to inspect the light report.\n"
+        "2. Save ChatGPT's full reply to a local `.md` file (e.g. `decision.md`).\n"
+        "3. Classify the decision (the coordinator does this conservatively):\n"
+        "   ```\n"
+        f"   python scripts/laptop_agent_coordinator.py record-chatgpt-decision "
+        f"--config {cfg_name} --file decision.md\n"
+        "   ```\n\n"
+        "## If ChatGPT says a CODE FIX is needed (Cursor)\n"
+        "   ```\n"
+        f"   python scripts/laptop_agent_coordinator.py prepare-cursor-handoff "
+        f"--config {cfg_name} --file decision.md\n"
+        "   ```\n"
+        "   Paste the generated prompt into **web Cursor**. Web Cursor must push to\n"
+        "   GitHub `main` and report the commit hash. Then verify:\n"
+        "   ```\n"
+        f"   python scripts/laptop_agent_coordinator.py post-cursor-verify --config {cfg_name}\n"
+        "   ```\n\n"
+        "## If ChatGPT APPROVES a long paper run\n"
+        "   ```\n"
+        f"   python scripts/laptop_agent_coordinator.py record-chatgpt-decision "
+        f"--config {cfg_name} --file decision.md\n"
+        f"   python scripts/laptop_agent_coordinator.py start-paper-run "
+        f"--config {cfg_name} --mode long --approved-by-chatgpt\n"
+        "   ```\n\n"
+        "> Live trading stays DISABLED. The long run requires the explicit\n"
+        "> `--approved-by-chatgpt` flag. No ChatGPT free text is ever executed as a shell command.\n")
+    try:
+        art.mkdir(parents=True, exist_ok=True)
+        path = art / UPLOAD_INSTRUCTIONS
+        path.write_text(body, encoding="utf-8")
+        return str(path)
+    except OSError:
+        return ""
+
+
+# ---- record-chatgpt-decision ----------------------------------------------- #
+def cmd_record_chatgpt_decision(ctx: Ctx, *, file: str) -> int:
+    """Save ChatGPT's response into the artifact folder and classify it CONSERVATIVELY.
+    NEVER executes risky actions from free text — only prints the recommended next
+    *manual* command."""
+    cfg = ctx.cfg
+    src = Path(file)
+    text = _read_text_file(src)
+    if text is None:
+        ctx.say(f"STOP — could not read decision file: {file}")
+        return 2
+    label = classify_chatgpt_decision(text)
+    art = _artifact_dir(ctx)
+    ts = ctx.now_fn().strftime("%Y%m%d_%H%M%S")
+    saved = ""
+    try:
+        art.mkdir(parents=True, exist_ok=True)
+        dest = art / f"chatgpt_decision_{ts}.md"
+        dest.write_text(text, encoding="utf-8")
+        saved = str(dest)
+    except OSError:
+        pass
+    ctx.say("Laptop coordinator — recorded ChatGPT decision")
+    ctx.say("-" * 60)
+    ctx.say(f"  saved copy        : {saved or '(could not write)'}")
+    ctx.say(f"  classification    : {label}")
+    ctx.say("  (no action was executed from the free text — classification only)")
+    ctx.say(f"  RECOMMENDED NEXT  : {decision_next_command(label, cfg.source_file or DEFAULT_CONFIG, str(src))}")
+    _append_ledger(ctx, {
+        "timestamp": _dt.datetime.now().replace(microsecond=0).isoformat(),
+        "event": "record-chatgpt-decision", "local_commit": _local_commit(ctx),
+        "decision_source": str(src), "decision_saved": saved,
+        "decision_classification": label})
+    # exit codes: STOP -> 3 (do not proceed), UNKNOWN -> 1 (needs review), else 0
+    if label == "STOP_REQUIRED":
+        return 3
+    if label == "UNKNOWN_REVIEW_REQUIRED":
+        return 1
+    return 0
+
+
+# ---- prepare-cursor-handoff ------------------------------------------------ #
+def cmd_prepare_cursor_handoff(ctx: Ctx, *, file: str) -> int:
+    """Extract the Cursor prompt from ChatGPT's response and SAVE it to a file (never
+    executes it). Reminds the operator to paste it into web Cursor, which must push to
+    GitHub main and report the commit hash."""
+    src = Path(file)
+    text = _read_text_file(src)
+    if text is None:
+        ctx.say(f"STOP — could not read decision file: {file}")
+        return 2
+    prompt = extract_cursor_prompt(text)
+    out_dir = ctx.repo_root / CURSOR_HANDOFF_DIR
+    ts = ctx.now_fn().strftime("%Y%m%d_%H%M%S")
+    saved = ""
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        dest = out_dir / f"cursor_prompt_{ts}.md"
+        dest.write_text(prompt, encoding="utf-8")
+        saved = str(dest)
+    except OSError:
+        ctx.say("STOP — could not write the Cursor prompt file.")
+        return 1
+    ctx.say("Laptop coordinator — Cursor handoff prepared (NOT executed)")
+    ctx.say("-" * 60)
+    ctx.say(f"  cursor prompt saved : {saved}")
+    ctx.say("  NEXT (manual):")
+    ctx.say("    1. Open WEB Cursor (the user uses web Cursor, not local).")
+    ctx.say("    2. Paste the saved prompt above into web Cursor.")
+    ctx.say("    3. Web Cursor MUST push to GitHub `main` and report the commit hash.")
+    ctx.say("    4. Then run: python scripts/laptop_agent_coordinator.py post-cursor-verify "
+            f"--config {ctx.cfg.source_file or DEFAULT_CONFIG}")
+    _append_ledger(ctx, {
+        "timestamp": _dt.datetime.now().replace(microsecond=0).isoformat(),
+        "event": "prepare-cursor-handoff", "local_commit": _local_commit(ctx),
+        "decision_source": str(src), "cursor_prompt_file": saved})
+    return 0
+
+
+# ---- sync-main ------------------------------------------------------------- #
+def cmd_sync_main(ctx: Ctx) -> int:
+    """Fast-forward-only pull of origin/main. Refuses a dirty working tree and never
+    overwrites local files silently."""
+    remote = ctx.cfg.git_remote if hasattr(ctx.cfg, "git_remote") else "origin"
+    main_branch = "main"
+    ctx.say("Laptop coordinator — sync-main (fast-forward only)")
+    ctx.say("-" * 60)
+    rc, _o, err = ctx.run(["git", "fetch", "origin"], timeout=120)
+    if rc != 0:
+        ctx.say(f"STOP — git fetch failed: {(err.strip().splitlines() or [''])[-1]}")
+        return 1
+    rc, out, _ = ctx.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], timeout=20)
+    branch = out.strip()
+    if rc != 0 or branch != main_branch:
+        ctx.say(f"STOP — current branch is '{branch or 'unknown'}', not '{main_branch}'. "
+                f"Checkout {main_branch} first (never auto-switch).")
+        return 2
+    rc, dirty, _ = ctx.run(["git", "status", "--porcelain"], timeout=30)
+    if rc != 0:
+        ctx.say("STOP — could not read git status.")
+        return 1
+    if dirty.strip():
+        ctx.say("STOP — local working tree has uncommitted changes. Refusing to pull "
+                "(never overwrite local files silently). Commit/stash first:")
+        ctx.say(dirty.rstrip())
+        return 3
+    before = _local_commit(ctx)
+    rc, _o, err = ctx.run(["git", "pull", "--ff-only", "origin", main_branch], timeout=120)
+    if rc != 0:
+        ctx.say(f"STOP — fast-forward pull failed (diverged?): "
+                f"{(err.strip().splitlines() or [''])[-1]}")
+        return 1
+    after = _local_commit(ctx)
+    ctx.say(f"  before : {before or 'unknown'}")
+    ctx.say(f"  after  : {after or 'unknown'}")
+    ctx.say("  in sync with origin/main." if before == after
+            else "  fast-forwarded to origin/main.")
+    return 0
+
+
+# ---- post-cursor-verify ---------------------------------------------------- #
+def cmd_post_cursor_verify(ctx: Ctx) -> int:
+    """After web Cursor pushes to main: sync-main -> local tests -> doctor -> vps-smoke,
+    then say whether it is safe to collect another light report."""
+    ctx.say("=" * 64)
+    ctx.say("POST-CURSOR VERIFY")
+    ctx.say("=" * 64)
+    ctx.say("\n[1/4] sync-main")
+    if cmd_sync_main(ctx) != 0:
+        ctx.say("\nSTOP — could not sync main; resolve the issue above first.")
+        return 2
+    ctx.say("\n[2/4] local tests")
+    rc, out, err = ctx.run([sys.executable, "-m", "pytest", "tests", "-q"], timeout=3600)
+    tests_ok = rc == 0
+    _check(ctx, "local tests pass", tests_ok,
+           "" if tests_ok else (out.strip().splitlines()[-1:] or err.strip().splitlines()[-1:]
+                                or ["see output"])[-1])
+    ctx.say("\n[3/4] doctor")
+    doctor_ok = cmd_doctor(ctx) == 0
+    ctx.say("\n[4/4] vps-smoke")
+    smoke_ok = cmd_vps_smoke(ctx) == 0
+    ok = tests_ok and doctor_ok and smoke_ok
+    ctx.say("\n" + "-" * 64)
+    if ok:
+        ctx.say("SAFE TO COLLECT — run: python scripts/laptop_agent_coordinator.py "
+                f"operator-cycle --config {ctx.cfg.source_file or DEFAULT_CONFIG}")
+    else:
+        ctx.say("NOT SAFE TO COLLECT yet — fix the failing checks above "
+                f"(tests={tests_ok} doctor={doctor_ok} vps_smoke={smoke_ok}).")
+    return 0 if ok else 1
+
+
+# ---- start-paper-run ------------------------------------------------------- #
+def build_remote_paper_run_cmd(cfg: Config) -> str:
+    """The remote (PAPER ONLY) restart workflow using EXISTING compose commands."""
+    plugin = cfg.vps_remote_plugin_path
+    container = cfg.hermes_training_container
+    return (f"cd {shlex.quote(plugin)} && docker compose down --remove-orphans && "
+            f"docker compose up -d --build {shlex.quote(container)}")
+
+
+def cmd_start_paper_run(ctx: Ctx, *, mode: str = "short",
+                        approved_by_chatgpt: bool = False, dry_run: bool = False) -> int:
+    """Start/restart PAPER training on the VPS (live trading stays disabled). Default is
+    SHORT; a LONG run REQUIRES the explicit --approved-by-chatgpt flag."""
+    cfg = ctx.cfg
+    mode = (mode or "short").lower()
+    if mode not in ("short", "long"):
+        ctx.say(f"STOP — unknown mode '{mode}' (use short|long).")
+        return 2
+    if mode == "long" and not approved_by_chatgpt:
+        ctx.say("STOP — a LONG paper run requires explicit ChatGPT approval. Re-run with "
+                "--approved-by-chatgpt (only after ChatGPT approved a long run).")
+        return 3
+    if not ctx.config_found or cfg.missing_required():
+        ctx.say("STOP — config missing required fields for a VPS run.")
+        return 2
+    key_ok, key_msg = validate_ssh_key(cfg)
+    if not key_ok:
+        ctx.say(f"STOP — {key_msg}")
+        return 2
+
+    remote = build_remote_paper_run_cmd(cfg)
+    ssh_cmd = build_ssh_cmd(cfg, remote)
+    ctx.say(f"Laptop coordinator — start PAPER run (mode={mode})")
+    ctx.say("  PAPER TRAINING ONLY — live trading is DISABLED; no trade gates are changed.")
+    ctx.say("  This restarts the hermes-training container via existing compose commands:")
+    ctx.say(f"    {remote}")
+    if dry_run:
+        ctx.say("  [DRY-RUN] would run (secrets redacted):")
+        ctx.say(f"    {redact(ssh_cmd, cfg)}")
+        ctx.say("  (omit --dry-run to execute)")
+        return 0
+    rc, out, err = ctx.run(ssh_cmd, timeout=1800, redact_display=True)
+    if out.strip():
+        ctx.say(out.rstrip())
+    _append_ledger(ctx, {
+        "timestamp": _dt.datetime.now().replace(microsecond=0).isoformat(),
+        "event": "start-paper-run", "mode": mode,
+        "approved_by_chatgpt": bool(approved_by_chatgpt),
+        "local_commit": _local_commit(ctx), "rc": rc})
+    if rc != 0:
+        ctx.say(f"STOP — paper run start failed (rc={rc}).")
+        if err.strip():
+            ctx.say(f"  detail: {err.strip().splitlines()[-1]}")
+        return 1
+    ctx.say(f"PAPER {mode.upper()} run started/restarted (paper training only).")
+    return 0
+
+
+# ---- status ---------------------------------------------------------------- #
+def cmd_status(ctx: Ctx) -> int:
+    """One-glance operator status: local branch/commit, config, latest zip, VPS SSH,
+    Docker/hermes-training, remote Python deps, and the suggested next command."""
+    cfg = ctx.cfg
+    ctx.say("=" * 64)
+    ctx.say("LAPTOP COORDINATOR — STATUS")
+    ctx.say("=" * 64)
+    rc, br, _ = ctx.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], timeout=20)
+    branch = br.strip() if rc == 0 else "unknown"
+    commit = _local_commit(ctx)
+    ctx.say(f"  local branch        : {branch}")
+    ctx.say(f"  local commit        : {commit or 'unknown'}")
+    ctx.say(f"  config parsed       : {'yes' if ctx.config_found else 'NO (' + ctx.config_status + ')'}")
+    art = _artifact_dir(ctx)
+    z = _latest_zip(art)
+    ctx.say(f"  latest report zip   : {z if z else '(none)'}")
+
+    vps_ssh = docker_state = remote_py = "not configured"
+    if ctx.config_found and not cfg.missing_required() and validate_ssh_key(cfg)[0]:
+        rc, out, _ = ctx.run(build_ssh_cmd(cfg, f"echo {VPS_OK_MARKER}"),
+                             timeout=20, redact_display=True)
+        vps_ssh = "reachable" if (rc == 0 and VPS_OK_MARKER in out) else "UNREACHABLE"
+        rc, out, _ = ctx.run(
+            build_ssh_cmd(cfg, f"docker inspect -f '{{{{.State.Status}}}}' "
+                               f"{shlex.quote(cfg.hermes_training_container)} 2>/dev/null "
+                               f"|| echo absent"), timeout=25, redact_display=True)
+        docker_state = (out.strip().splitlines()[-1] if out.strip() else "unknown")
+        rc, out, _ = ctx.run(build_remote_python_probe(cfg), timeout=25, redact_display=True)
+        sel = ""
+        for ln in out.splitlines():
+            if ln.startswith("remote python: "):
+                sel = ln.split("remote python: ", 1)[1].strip()
+        remote_py = (f"OK ({sel}, can import {REMOTE_REQUIRED_IMPORT})" if sel
+                     else f"NO dependency-capable python (run {REMOTE_DEP_FIX} on VPS)")
+    ctx.say(f"  VPS SSH             : {vps_ssh}")
+    ctx.say(f"  hermes-training     : {docker_state}")
+    ctx.say(f"  remote Python deps  : {remote_py}")
+    ctx.say("-" * 64)
+    ctx.say(f"  NEXT SUGGESTED      : {_status_next_command(ctx, vps_ssh, z)}")
+    return 0
+
+
+def _status_next_command(ctx: Ctx, vps_ssh: str, latest_zip) -> str:
+    cfg_name = ctx.cfg.source_file or DEFAULT_CONFIG
+    base = "python scripts/laptop_agent_coordinator.py"
+    if not ctx.config_found:
+        return f"{base} init-config --config {DEFAULT_CONFIG}"
+    if vps_ssh != "reachable":
+        return f"{base} vps-smoke --config {cfg_name}   (VPS not reachable / configure it)"
+    return f"{base} operator-cycle --config {cfg_name}"
+
+
+# --------------------------------------------------------------------------- #
 # Parser & main
 # --------------------------------------------------------------------------- #
 COMMANDS = {
@@ -711,6 +1167,13 @@ COMMANDS = {
     "vps-smoke": cmd_vps_smoke,
     "collect-light-report": cmd_collect_light_report,
     "handoff-summary": cmd_handoff_summary,
+    "operator-cycle": cmd_operator_cycle,
+    "record-chatgpt-decision": cmd_record_chatgpt_decision,
+    "prepare-cursor-handoff": cmd_prepare_cursor_handoff,
+    "sync-main": cmd_sync_main,
+    "post-cursor-verify": cmd_post_cursor_verify,
+    "start-paper-run": cmd_start_paper_run,
+    "status": cmd_status,
 }
 
 
@@ -727,17 +1190,32 @@ def build_parser() -> argparse.ArgumentParser:
         "vps-smoke": "read-only VPS checks over SSH (reachable/path/docker/container)",
         "collect-light-report": "collect a light-mode report zip from the VPS",
         "handoff-summary": "print the ChatGPT upload checklist for the latest zip",
+        "operator-cycle": "doctor + vps-smoke + collect + ChatGPT upload handoff (then STOP)",
+        "record-chatgpt-decision": "classify ChatGPT's saved response (no auto-execute)",
+        "prepare-cursor-handoff": "extract+save a Cursor prompt from ChatGPT's response",
+        "sync-main": "fast-forward-only pull of origin/main (refuses dirty tree)",
+        "post-cursor-verify": "sync-main + tests + doctor + vps-smoke after a Cursor push",
+        "start-paper-run": "start/restart PAPER training on the VPS (long needs approval)",
+        "status": "one-glance operator status + suggested next command",
     }
     for name in COMMANDS:
         sp = sub.add_parser(name, help=helps.get(name, ""))
         sp.add_argument("--config", default=DEFAULT_CONFIG,
                         help=f"path to coordinator config (default: {DEFAULT_CONFIG})")
-        if name == "collect-light-report":
+        if name in ("collect-light-report", "operator-cycle", "start-paper-run"):
             sp.add_argument("--dry-run", action="store_true",
                             help="print the exact remote/scp commands without running them")
         if name == "init-config":
             sp.add_argument("--force", action="store_true",
                             help="overwrite an existing config file")
+        if name in ("record-chatgpt-decision", "prepare-cursor-handoff"):
+            sp.add_argument("--file", required=True,
+                            help="path to the saved ChatGPT response (.md)")
+        if name == "start-paper-run":
+            sp.add_argument("--mode", choices=["short", "long"], default="short",
+                            help="paper run length (default: short)")
+            sp.add_argument("--approved-by-chatgpt", action="store_true",
+                            help="REQUIRED for --mode long (explicit human/ChatGPT approval)")
     return p
 
 
@@ -767,8 +1245,14 @@ def main(argv=None, *, runner: Optional[Runner] = None,
     handler = COMMANDS[args.command]
     if args.command == "init-config":
         return handler(ctx, target=cfg_path, force=bool(getattr(args, "force", False)))
-    if args.command == "collect-light-report":
+    if args.command in ("collect-light-report", "operator-cycle"):
         return handler(ctx, dry_run=bool(getattr(args, "dry_run", False)))
+    if args.command in ("record-chatgpt-decision", "prepare-cursor-handoff"):
+        return handler(ctx, file=args.file)
+    if args.command == "start-paper-run":
+        return handler(ctx, mode=getattr(args, "mode", "short"),
+                       approved_by_chatgpt=bool(getattr(args, "approved_by_chatgpt", False)),
+                       dry_run=bool(getattr(args, "dry_run", False)))
     return handler(ctx)
 
 

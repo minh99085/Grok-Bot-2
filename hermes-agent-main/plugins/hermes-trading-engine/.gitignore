@@ -24,5 +24,7 @@ reports/
 runtime_data/
 # coordinator copies VPS report zips here (local artifacts; never committed)
 inspection_reports_artifacts/
+# coordinator Phase 5: saved Cursor handoff prompts (local operator artifacts)
+cursor_handoffs/
 # fresh-package archives any prior inspection_reports here before regenerating
 _stale_inspection_reports_*/

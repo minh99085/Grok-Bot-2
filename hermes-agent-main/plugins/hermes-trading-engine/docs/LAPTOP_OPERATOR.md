@@ -5,6 +5,58 @@ need to be a coder. The tool (`scripts/laptop_agent.py`) automates the boring,
 repeatable chores and tells you, in plain language, whether it is **SAFE TO
 CONTINUE** or you should **STOP**, plus the exact next command to run.
 
+---
+
+## Phase 5: the simplified autonomous operator loop (recommended)
+
+The coordinator now does the mechanical work. You mainly (1) run one command,
+(2) upload a zip to ChatGPT, (3) paste ChatGPT's reply back, (4) approve gated actions.
+**Live trading stays disabled; no ChatGPT free text is ever executed as a shell command;
+a long paper run requires an explicit approval flag.**
+
+Run from local Windows PowerShell at
+`C:\hermes-agent\hermes-agent-main\plugins\hermes-trading-engine`:
+
+```powershell
+# 0. (anytime) one-glance status + the suggested next command
+python scripts/laptop_agent_coordinator.py status --config .laptop_agent.json
+
+# 1. collect a report + prepare the ChatGPT upload handoff, then STOP
+python scripts/laptop_agent_coordinator.py operator-cycle --config .laptop_agent.json
+```
+
+Then **upload the printed zip to ChatGPT** and save ChatGPT's reply to a `.md` file
+(e.g. `decision.md`). Classify it (the coordinator never auto-runs risky actions):
+
+```powershell
+python scripts/laptop_agent_coordinator.py record-chatgpt-decision --config .laptop_agent.json --file decision.md
+```
+
+**If ChatGPT says a code fix is needed (Cursor):**
+
+```powershell
+python scripts/laptop_agent_coordinator.py prepare-cursor-handoff --config .laptop_agent.json --file decision.md
+# paste the generated cursor_handoffs\cursor_prompt_*.md into WEB Cursor;
+# web Cursor pushes to GitHub main and reports the commit hash, then:
+python scripts/laptop_agent_coordinator.py post-cursor-verify --config .laptop_agent.json
+```
+
+**If ChatGPT approves a long paper run:**
+
+```powershell
+python scripts/laptop_agent_coordinator.py record-chatgpt-decision --config .laptop_agent.json --file decision.md
+python scripts/laptop_agent_coordinator.py start-paper-run --config .laptop_agent.json --mode long --approved-by-chatgpt
+```
+
+A **short** test run is the default and needs no approval:
+`python scripts/laptop_agent_coordinator.py start-paper-run --config .laptop_agent.json --mode short`
+
+Every cycle is recorded in `inspection_reports_artifacts\artifact_index.jsonl`
+(timestamp, local/remote commit, report zip, validation/summary presence, handoff
+files, decision classification).
+
+---
+
 ## Who does what
 
 | Role | Responsibility |

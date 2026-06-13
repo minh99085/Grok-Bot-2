@@ -458,7 +458,200 @@ def test_handoff_summary_no_zip_guides_operator(tmp_path):
 
 def test_help_lists_all_commands():
     p = co.build_parser()
-    for name in ("doctor", "vps-smoke", "collect-light-report", "handoff-summary"):
+    for name in ("doctor", "vps-smoke", "collect-light-report", "handoff-summary",
+                 "operator-cycle", "record-chatgpt-decision", "prepare-cursor-handoff",
+                 "sync-main", "post-cursor-verify", "start-paper-run", "status"):
         assert name in co.COMMANDS
     ns = p.parse_args(["collect-light-report", "--dry-run"])
     assert ns.command == "collect-light-report" and ns.dry_run is True
+
+
+# --------------------------------------------------------------------------- #
+# Phase 5: autonomous operator loop + approval gates
+# --------------------------------------------------------------------------- #
+import zipfile as _zf  # noqa: E402
+
+
+def _cycle_runner(tmp_path, *, dirty="", branch="main", started=None):
+    """Runner that satisfies doctor + vps-smoke + collect; records docker-compose runs;
+    creates the pulled zip on scp."""
+    art = tmp_path / "artifacts"
+
+    def runner(argv, cwd=None, timeout=None):
+        s = " ".join(str(a) for a in argv)
+        if "docker compose up" in s or "docker compose down" in s:
+            if started is not None:
+                started.append(s)
+            return (0, "started\n", "")
+        if argv and argv[0] == "git":
+            if "rev-parse" in argv:
+                return (0, (branch + "\n" if "--abbrev-ref" in argv else "abc123commit\n"), "")
+            if "status" in argv:
+                return (0, dirty, "")
+            if "fetch" in argv or "pull" in argv:
+                return (0, "", "")
+            return (0, "", "")
+        if argv and argv[0] == "scp":
+            art.mkdir(parents=True, exist_ok=True)
+            z = art / ("hermes_light_report_" + _FIXED.strftime("%Y%m%d_%H%M%S") + ".zip")
+            with _zf.ZipFile(z, "w") as zf:
+                zf.writestr("inspection_reports/report.json", "{}")
+                zf.writestr("runtime_data/inspection_summary.json", "{}")
+                zf.writestr("validation_light_latest.txt", "ok")
+            return (0, "", "")
+        if "&& echo hermes-coordinator-ok" in s or "echo hermes-coordinator-ok" in s:
+            return (0, "hermes-coordinator-ok\n", "")
+        if "import pydantic" in s:
+            return (0, "remote python: /usr/bin/python3\n", "")
+        if "docker version" in s:
+            return (0, "27.0\n", "")
+        if "docker inspect" in s:
+            return (0, "running\n", "")
+        if "-m" in argv and "pytest" in argv:
+            return (0, "10 passed", "")
+        if "generate_bot_inspection_report" in s or "validate_training_runtime" in s:
+            return (0, "report ok", "")
+        return (0, "", "")
+    return runner
+
+
+def test_operator_cycle_collects_and_stops_for_handoff(tmp_path):
+    _plugin(tmp_path)
+    write_cfg(tmp_path)
+    started = []
+    rc, lines = _run(["operator-cycle", "--config", str(tmp_path / co.DEFAULT_CONFIG)],
+                     tmp_path, runner=_cycle_runner(tmp_path, started=started))
+    out = "\n".join(lines)
+    assert rc == 0
+    assert "STOP and wait for ChatGPT inspection" in out
+    assert (tmp_path / "artifacts" / co.UPLOAD_INSTRUCTIONS).is_file()      # handoff written
+    assert not started                                               # never started a run
+    # ledger appended with the cycle record
+    ledger = (tmp_path / "artifacts" / co.LEDGER_NAME).read_text().splitlines()
+    rec = json.loads(ledger[-1])
+    assert rec["event"] == "operator-cycle" and rec["report_zip"].endswith(".zip")
+    assert rec["validation_present"] and rec["inspection_summary_present"]
+
+
+def test_record_decision_classifies_and_never_executes(tmp_path):
+    write_cfg(tmp_path)
+    d = tmp_path / "decision.md"
+    d.write_text("Please STOP — the bot is unsafe to run right now.", encoding="utf-8")
+    spy = SpyRunner({"rev-parse": (0, "c1\n", "")})
+    rc, lines = _run(["record-chatgpt-decision", "--config", str(tmp_path / co.DEFAULT_CONFIG),
+                      "--file", str(d)], tmp_path, runner=spy)
+    out = "\n".join(lines)
+    assert rc == 3 and "STOP_REQUIRED" in out                        # conservative stop
+    assert not spy.ran("ssh") and not spy.ran("docker")              # no risky execution
+    assert list((tmp_path / "artifacts").glob("chatgpt_decision_*.md"))    # saved copy
+    rec = json.loads((tmp_path / "artifacts" / co.LEDGER_NAME).read_text().splitlines()[-1])
+    assert rec["decision_classification"] == "STOP_REQUIRED"
+
+
+def test_record_decision_long_run_and_cursor(tmp_path):
+    write_cfg(tmp_path)
+    for text, label, code in [("Long run approved — go ahead.", "LONG_RUN_APPROVED", 0),
+                              ("This needs a code fix; paste into Cursor.",
+                               "CURSOR_PROMPT_REQUIRED", 0),
+                              ("Run a short test only first.", "SHORT_TEST_ONLY", 0),
+                              ("Hmm, interesting results.", "UNKNOWN_REVIEW_REQUIRED", 1)]:
+        d = tmp_path / "dec.md"
+        d.write_text(text, encoding="utf-8")
+        rc, lines = _run(["record-chatgpt-decision", "--config", str(tmp_path / co.DEFAULT_CONFIG),
+                          "--file", str(d)], tmp_path, runner=SpyRunner({"rev-parse": (0, "c\n", "")}))
+        assert label in "\n".join(lines) and rc == code
+
+
+def test_prepare_cursor_handoff_writes_prompt_without_executing(tmp_path):
+    write_cfg(tmp_path)
+    d = tmp_path / "decision.md"
+    d.write_text("Fix it.\n```\nDo X\nThen Y\n```\nthanks", encoding="utf-8")
+    spy = SpyRunner({"rev-parse": (0, "c\n", "")})
+    rc, lines = _run(["prepare-cursor-handoff", "--config", str(tmp_path / co.DEFAULT_CONFIG),
+                      "--file", str(d)], tmp_path, runner=spy)
+    out = "\n".join(lines)
+    assert rc == 0
+    saved = list((tmp_path / co.CURSOR_HANDOFF_DIR).glob("cursor_prompt_*.md"))
+    assert saved and saved[0].read_text() == "Do X\nThen Y"          # extracted, not executed
+    assert "push to GitHub `main`" in out
+    assert not spy.ran("ssh")
+
+
+def test_sync_main_refuses_dirty_tree(tmp_path):
+    write_cfg(tmp_path)
+    runner = _cycle_runner(tmp_path, dirty=" M somefile.py\n")
+    rc, lines = _run(["sync-main", "--config", str(tmp_path / co.DEFAULT_CONFIG)],
+                     tmp_path, runner=runner)
+    out = "\n".join(lines)
+    assert rc == 3 and "uncommitted changes" in out
+    assert "Refusing to pull" in out
+
+
+def test_sync_main_refuses_non_main_branch(tmp_path):
+    write_cfg(tmp_path)
+    runner = _cycle_runner(tmp_path, branch="feature-x")
+    rc, lines = _run(["sync-main", "--config", str(tmp_path / co.DEFAULT_CONFIG)],
+                     tmp_path, runner=runner)
+    assert rc == 2 and "not 'main'" in "\n".join(lines)
+
+
+def test_sync_main_fast_forwards_clean_main(tmp_path):
+    write_cfg(tmp_path)
+    rc, lines = _run(["sync-main", "--config", str(tmp_path / co.DEFAULT_CONFIG)],
+                     tmp_path, runner=_cycle_runner(tmp_path))
+    out = "\n".join(lines)
+    assert rc == 0 and "before :" in out and "after  :" in out
+
+
+def test_start_paper_run_long_requires_approval(tmp_path):
+    write_cfg(tmp_path)
+    started = []
+    rc, lines = _run(["start-paper-run", "--config", str(tmp_path / co.DEFAULT_CONFIG),
+                      "--mode", "long"], tmp_path, runner=_cycle_runner(tmp_path, started=started))
+    out = "\n".join(lines)
+    assert rc == 3 and "requires explicit ChatGPT approval" in out
+    assert not started                                               # nothing started
+
+
+def test_start_paper_run_long_with_approval_uses_compose(tmp_path):
+    write_cfg(tmp_path)
+    started = []
+    rc, lines = _run(["start-paper-run", "--config", str(tmp_path / co.DEFAULT_CONFIG),
+                      "--mode", "long", "--approved-by-chatgpt"],
+                     tmp_path, runner=_cycle_runner(tmp_path, started=started))
+    assert rc == 0
+    assert started and "docker compose down --remove-orphans" in started[0]
+    assert "docker compose up -d --build" in started[0]
+    assert "live trading is DISABLED" in "\n".join(lines)
+
+
+def test_start_paper_run_short_is_default_and_dry_run_safe(tmp_path):
+    write_cfg(tmp_path)
+    started = []
+    rc, lines = _run(["start-paper-run", "--config", str(tmp_path / co.DEFAULT_CONFIG),
+                      "--dry-run"], tmp_path, runner=_cycle_runner(tmp_path, started=started))
+    assert rc == 0 and not started                                   # dry-run executes nothing
+    assert "DRY-RUN" in "\n".join(lines)
+
+
+def test_status_prints_sections_and_next_command(tmp_path):
+    _plugin(tmp_path)
+    write_cfg(tmp_path)
+    rc, lines = _run(["status", "--config", str(tmp_path / co.DEFAULT_CONFIG)],
+                     tmp_path, runner=_cycle_runner(tmp_path))
+    out = "\n".join(lines)
+    assert rc == 0
+    for label in ("local branch", "local commit", "config parsed", "latest report zip",
+                  "VPS SSH", "hermes-training", "remote Python deps", "NEXT SUGGESTED"):
+        assert label in out
+    assert "operator-cycle" in out                                   # suggested next command
+
+
+def test_post_cursor_verify_runs_chain(tmp_path):
+    _plugin(tmp_path)
+    write_cfg(tmp_path)
+    rc, lines = _run(["post-cursor-verify", "--config", str(tmp_path / co.DEFAULT_CONFIG)],
+                     tmp_path, runner=_cycle_runner(tmp_path))
+    out = "\n".join(lines)
+    assert "sync-main" in out and "local tests" in out
+    assert "SAFE TO COLLECT" in out and rc == 0
