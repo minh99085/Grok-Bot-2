@@ -257,6 +257,52 @@ def validate_runtime(status: dict, *, data_dir: Optional[str] = None,
                         stale_streams.append(f"{rel.split('/')[-1]}={rid}")
         _chk(checks, "training_tail_streams_same_run", not stale_streams,
              f"events_run_id={ev_run} stale={stale_streams}" if stale_streams else "same run")
+
+        # FRESHNESS WINDOW: a dedicated stream with rows whose last timestamp lags
+        # events.jsonl by more than the tolerated gap is stale/not-advancing -> not
+        # safe (the observed failure: decision/no-trade/pending ~12.6h behind events
+        # while events stayed fresh). Mirrors the report's source-strict freshness gate.
+        import os as _os
+        _max_gap = float(_os.environ.get("HTE_TAIL_FRESHNESS_MAX_GAP_SEC", "21600") or 21600)
+
+        def _last_ts(rel: str):
+            import json as _json
+            last = None
+            for p in (base / rel, base / rel[len("data/"):] if rel.startswith("data/") else base / rel):
+                try:
+                    if p.exists():
+                        with p.open("r", encoding="utf-8") as fh:
+                            for ln in fh:
+                                if ln.strip():
+                                    last = ln
+                        if last:
+                            try:
+                                obj = _json.loads(last) or {}
+                            except Exception:  # noqa: BLE001
+                                return None
+                            for k in ("timestamp", "ts", "created_at", "label_due_at"):
+                                if obj.get(k) is not None:
+                                    try:
+                                        return float(obj.get(k))
+                                    except (TypeError, ValueError):
+                                        return None
+                            return None
+                except Exception:  # noqa: BLE001
+                    continue
+            return None
+        ev_ts = _last_ts("data/training/events.jsonl")
+        window_stale = []
+        if ev_ts is not None:
+            for rel in ("data/training/decision_records.jsonl",
+                        "data/training/no_trade_labels.jsonl",
+                        "data/training/pending_labels.jsonl"):
+                if _rows(rel) > 0:
+                    ts = _last_ts(rel)
+                    if ts is not None and (ev_ts - ts) > _max_gap:
+                        window_stale.append(f"{rel.split('/')[-1]}=lag{int(ev_ts - ts)}s")
+        _chk(checks, "training_tail_streams_fresh_window", not window_stale,
+             f"events_ts={ev_ts} max_gap={int(_max_gap)}s stale={window_stale}"
+             if window_stale else "within freshness window")
         # reconciliation + unified-summary + run_ready artifacts must exist on disk
         for req in ("metrics/training_reconciliation.json", "metrics/inspection_summary.json",
                     "metrics/run_ready.json"):
