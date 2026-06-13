@@ -325,3 +325,77 @@ def test_healthy_run_is_run_ready_and_ledger_records_decisions(tmp_path, monkeyp
     assert led["decisions"] > 0 and led["trades"] == 0
     rr = t.status()["run_ready"]
     assert rr["run_ready_for_hours"] is True
+
+
+# --- freshness-window: stale decision/label tails fail run-readiness ----------
+
+def _rewrite_tail_timestamps(path: Path, *, offset_sec: float) -> None:
+    """Shift every row's timestamp BACK by ``offset_sec`` (simulating a dedicated
+    stream that stopped advancing while events.jsonl stayed fresh)."""
+    rows = [json.loads(ln) for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    for r in rows:
+        for k in ("timestamp", "ts", "created_at", "label_due_at"):
+            if isinstance(r.get(k), (int, float)):
+                r[k] = r[k] - offset_sec
+    path.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+
+
+def _stale_decision_runtime(tmp_path, monkeypatch, offset_sec=45_000.0) -> Path:
+    """Real runtime dir where events.jsonl is fresh but decision_records/no_trade/
+    pending tails are ~12.6h behind (same run_id) — the exact reported failure."""
+    t = _run(tmp_path, monkeypatch)
+    t.write_inspection_artifacts(tmp_path)
+    train = Path(tmp_path) / "training"
+    for name in ("decision_records.jsonl", "no_trade_labels.jsonl", "pending_labels.jsonl"):
+        p = train / name
+        if p.exists() and p.read_text(encoding="utf-8").strip():
+            _rewrite_tail_timestamps(p, offset_sec=offset_sec)
+    return Path(tmp_path)
+
+
+def test_stale_decision_tail_fails_validate_runtime(tmp_path, monkeypatch):
+    dd = _stale_decision_runtime(tmp_path, monkeypatch)
+    import time
+    v = validate_runtime(_load_status_json(dd), data_dir=str(dd), status_mtime=time.time())
+    assert v["safe_to_run"] is False
+    assert "training_tail_streams_fresh_window" in v["blocking"], v["blocking"]
+
+
+def test_stale_decision_tail_blocks_report_run_ready(tmp_path, monkeypatch):
+    import scripts.generate_bot_inspection_report as gen
+    dd = _stale_decision_runtime(tmp_path, monkeypatch)
+    res = gen.generate_report(
+        output_dir=str(tmp_path / "out"), repo_root=str(tmp_path), skip_tests=True,
+        include_docker=False, include_api=False, include_artifacts=False, data_dir=str(dd))
+    assert res["run_ready_for_hours"] is False
+    manifest = json.loads((Path(res["bundle_dir"]) / "metrics"
+                           / "closed_loop_artifacts_manifest.json").read_text())
+    assert manifest["stale_or_mixed_training_tail_samples"] is True
+    fresh = manifest["tail_freshness"]
+    assert fresh["compatible"] is False
+    assert "decision_records.jsonl" in fresh["incompatible_streams"]
+    # event_file_stats proves the selected source + freshness metadata per file
+    stats = json.loads((Path(res["bundle_dir"]) / "samples"
+                        / "event_file_stats.json").read_text())
+    assert stats["source_strict"] is True
+    by_name = {f["logical_name"]: f for f in stats["files"]}
+    assert by_name["decision_records.jsonl"]["selected_absolute_source"] is not None
+    assert by_name["decision_records.jsonl"]["last_tail_timestamp"] is not None
+
+
+def test_fresh_run_freshness_window_compatible(tmp_path, monkeypatch):
+    import scripts.generate_bot_inspection_report as gen
+    t = _run(tmp_path, monkeypatch)
+    t.write_inspection_artifacts(tmp_path)
+    res = gen.generate_report(
+        output_dir=str(tmp_path / "out"), repo_root=str(tmp_path), skip_tests=True,
+        include_docker=False, include_api=False, include_artifacts=False, data_dir=str(tmp_path))
+    manifest = json.loads((Path(res["bundle_dir"]) / "metrics"
+                           / "closed_loop_artifacts_manifest.json").read_text())
+    assert manifest["tail_freshness"]["compatible"] is True
+    assert manifest["stale_or_mixed_training_tail_samples"] is False
+
+
+def _load_status_json(dd: Path) -> dict:
+    p = Path(dd) / "polymarket_training.json"
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}

@@ -439,14 +439,21 @@ _STREAM_FRESHNESS = (
 )
 
 
+# A dedicated stream whose last tail timestamp lags events.jsonl by more than this many
+# seconds (while events advanced) is treated as a stale/mismatched freshness window ->
+# NOT run-ready (env-tunable). Default 6h is generous for quiet periods yet still catches
+# the observed ~12.6h decision/no-trade/pending lag. NEVER loosens a trade gate.
+_TAIL_FRESHNESS_MAX_GAP_SEC = float(os.getenv("HTE_TAIL_FRESHNESS_MAX_GAP_SEC", "21600") or 21600)
+
+
 def _reconcile_tail_freshness(statuses: list, tail_meta: dict, *,
                               strict_root: Optional[str]) -> dict:
-    """Prove the sampled dedicated training streams are from the SAME run as
-    events.jsonl. A dedicated stream that has rows but a DIFFERENT last run_id than
-    events.jsonl (or no run_id while events advanced) is stale/mixed -> not run-ready.
-
-    An older last timestamp is OK only when the run_id matches events (same run, just
-    no new rows of that type were expected). Returns the freshness record."""
+    """Prove the sampled dedicated training streams are from the SAME fresh run window as
+    events.jsonl. A dedicated stream is stale/mixed -> NOT run-ready when it has rows but
+    (a) a DIFFERENT last run_id than events.jsonl, (b) no run_id while events advanced, OR
+    (c) its last timestamp lags events.jsonl's last timestamp by more than
+    ``_TAIL_FRESHNESS_MAX_GAP_SEC`` (the observed failure: decision/no-trade/pending
+    samples ~12.6h behind fresh events). Returns the freshness record."""
     ev = tail_meta.get("events.jsonl") or {}
     ev_run = ev.get("last_tail_run_id")
     ev_ts = _num_or_none(ev.get("last_tail_timestamp"))
@@ -459,32 +466,49 @@ def _reconcile_tail_freshness(statuses: list, tail_meta: dict, *,
         rid = meta.get("last_tail_run_id")
         ts = _num_or_none(meta.get("last_tail_timestamp"))
         entry = {"last_run_id": rid, "last_timestamp": ts,
-                 "events_run_id": ev_run, "compatible_run_id": None,
-                 "stale_reason": None}
+                 "events_run_id": ev_run, "events_last_timestamp": ev_ts,
+                 "compatible_run_id": None, "fresh_window_ok": None,
+                 "gap_vs_events_sec": None, "stale_reason": None}
         if not has_rows.get(logical):
             entry["compatible_run_id"] = True   # empty file: covered by counter checks
-        elif ev_run is not None and rid is not None:
-            same = (str(rid) == str(ev_run))
-            entry["compatible_run_id"] = same
-            if not same:
-                entry["stale_reason"] = "different_run_id_than_events"
-                reasons.append(f"{logical}: last_run_id={rid} != events run_id={ev_run}")
-        elif ev_run is not None and rid is None and has_rows.get(logical):
-            # events carries a run_id but this stream's rows do not -> cannot prove
-            # same-run; treat as stale/mixed (conservative).
-            entry["compatible_run_id"] = False
-            entry["stale_reason"] = "missing_run_id_while_events_advancing"
-            reasons.append(f"{logical}: rows present but no run_id while events advanced")
+            entry["fresh_window_ok"] = True
         else:
-            entry["compatible_run_id"] = True
+            # (a/b) run-id compatibility
+            if ev_run is not None and rid is not None:
+                same = (str(rid) == str(ev_run))
+                entry["compatible_run_id"] = same
+                if not same:
+                    entry["stale_reason"] = "different_run_id_than_events"
+                    reasons.append(f"{logical}: last_run_id={rid} != events run_id={ev_run}")
+            elif ev_run is not None and rid is None:
+                entry["compatible_run_id"] = False
+                entry["stale_reason"] = "missing_run_id_while_events_advancing"
+                reasons.append(f"{logical}: rows present but no run_id while events advanced")
+            else:
+                entry["compatible_run_id"] = True
+            # (c) freshness-window: a stream far behind fresh events is stale/mixed
+            if ev_ts is not None and ts is not None:
+                gap = round(ev_ts - ts, 3)
+                entry["gap_vs_events_sec"] = gap
+                entry["fresh_window_ok"] = bool(gap <= _TAIL_FRESHNESS_MAX_GAP_SEC)
+                if gap > _TAIL_FRESHNESS_MAX_GAP_SEC:
+                    entry["stale_reason"] = (entry["stale_reason"]
+                                             or "stale_freshness_window_vs_events")
+                    reasons.append(
+                        f"{logical}: last_ts {ts} lags events {ev_ts} by {int(gap)}s "
+                        f"> {int(_TAIL_FRESHNESS_MAX_GAP_SEC)}s (stale freshness window)")
+            else:
+                entry["fresh_window_ok"] = True   # cannot compare -> not a window failure
         per_stream[logical] = entry
 
+    incompatible = [k for k, v in per_stream.items()
+                    if v.get("compatible_run_id") is False or v.get("fresh_window_ok") is False]
     return {
         "events_last_run_id": ev_run,
         "events_last_timestamp": ev_ts,
+        "freshness_max_gap_sec": _TAIL_FRESHNESS_MAX_GAP_SEC,
         "per_stream": per_stream,
-        "incompatible_streams": [k for k, v in per_stream.items()
-                                 if v["compatible_run_id"] is False],
+        "incompatible_streams": incompatible,
         "compatible": not reasons,
         "reasons": reasons,
         "source_strict": bool(strict_root),
