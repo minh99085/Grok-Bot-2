@@ -10,9 +10,14 @@ zip + a 'latest' zip including inspection_reports, runtime_data/metrics, and val
 
 from __future__ import annotations
 
+import os
+import shutil
 import stat
+import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
@@ -73,9 +78,37 @@ def test_required_modules_cover_the_known_failures():
 # Runner script invariants (static; the script does real VPS/docker work)
 # --------------------------------------------------------------------------- #
 def test_runner_script_exists_and_executable():
-    assert RUNNER.is_file()
-    mode = RUNNER.stat().st_mode
-    assert mode & stat.S_IXUSR                      # executable bit set
+    """Cross-platform: the runner must be a real .sh with a shell shebang and the safe
+    light-report workflow. The POSIX executable bit is required ONLY on POSIX — Windows/
+    NTFS does not expose Unix exec bits, so requiring stat.S_IXUSR there is a false
+    negative (the bit is still tracked by git for the VPS; see the next test)."""
+    assert RUNNER.is_file()                          # exists + a normal file (any OS)
+    text = RUNNER.read_text(encoding="utf-8")
+    first = text.splitlines()[0] if text else ""
+    assert first.startswith("#!") and ("sh" in first or "bash" in first)   # valid shebang
+    # the expected safe light-report workflow entrypoint is present
+    assert "generate_bot_inspection_report.py" in text
+    assert "--bundle-mode light" in text
+    if os.name == "posix":
+        # POSIX (Linux/macOS, incl. the VPS + CI): working-tree file carries the exec bit
+        assert RUNNER.stat().st_mode & stat.S_IXUSR, "runner missing POSIX executable bit"
+
+
+def test_runner_git_tracked_executable_for_vps():
+    """The VPS needs the exec bit; git stores mode 100755 regardless of the local FS, so
+    a Windows checkout still ships an executable script. Skips gracefully where git or
+    the tracked file isn't available (e.g. tests run outside a git checkout)."""
+    if shutil.which("git") is None:
+        pytest.skip("git not available")
+    try:
+        res = subprocess.run(
+            ["git", "ls-files", "-s", "scripts/vps_generate_light_report.sh"],
+            cwd=str(PLUGIN), capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        pytest.skip("git invocation failed")
+    if res.returncode != 0 or not res.stdout.strip():
+        pytest.skip("runner not tracked in this checkout")
+    assert res.stdout.split()[0] == "100755"         # git tracks it executable for the VPS
 
 
 def test_runner_uses_venv_python_not_system():
