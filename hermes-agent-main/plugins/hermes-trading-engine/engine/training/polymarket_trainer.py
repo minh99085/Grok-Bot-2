@@ -1646,6 +1646,80 @@ class PolymarketPaperTrainer:
         self._micro_engine = BregmanArbitrageEngine(cfg=_micro_depth_cfg(self.cfg, micro_depth))
         return self._micro_engine
 
+    def _relaxed_opportunity_from_group(self, group):
+        """Build an EXECUTABLE paper opportunity DIRECTLY from a hydrated real-CLOB
+        group, INDEPENDENT of full Bregman certification (PAPER ONLY).
+
+        The relaxed candidate already passed every hard relaxed gate
+        (``evaluate_relaxed_group`` -> ``GATE_TRADABLE``): real CLOB book, fresh, real
+        executable ask on every leg, sufficient depth for <= $1, positive after-cost
+        edge, no synthetic-NO, complete hedge. This constructs the executable legs from
+        those same real books so ``_open_bregman`` can place the tiny paper hedge. Every
+        strict realism gate (stale / missing-ask / reference / synthetic / spread /
+        ambiguity / depth) still runs inside ``_open_bregman``; this method NEVER
+        loosens a gate and NEVER enables live trading. Returns ``None`` when the group
+        cannot be turned into a clean, all-real, fully-priced executable hedge."""
+        from engine.training.bregman_execution import (CertifiedBregmanOpportunity,
+                                                        CertifiedLeg)
+        from engine.execution.slippage import drag_breakdown
+        legs = list(getattr(group, "legs", None) or [])
+        if not legs:
+            return None
+        slip = float(getattr(self.cfg, "slippage_bps", 25.0) or 25.0)
+        fee = float(getattr(self.cfg, "taker_fee_bps", 0.0) or 0.0)
+        notional_cap = float(getattr(self.cfg, "paper_micro_exploration_max_notional_usd", 1.0))
+        has_synthetic = any(bool(getattr(l, "synthetic_price", False)) for l in legs)
+        if has_synthetic:                       # synthetic-NO execution is never tradable
+            return CertifiedBregmanOpportunity(
+                group_id=getattr(group, "group_id", ""),
+                group_type=getattr(group, "group_type", "unknown"), legs=[],
+                executable_prices=[], quantities=[], required_capital=0.0,
+                worst_case_pnl=0.0, profit_lower_bound=0.0, divergence_gap=0.0,
+                divergence_method="relaxed_real_book", failure_modes=["synthetic_no_execution"],
+                fill_feasibility=0.0, persistence_score=0.0,
+                no_trade_reason="synthetic_no_execution", certified=False, risk_free=False,
+                has_synthetic_leg=True, rejection_stage="relaxed_real_book")
+        exec_prices: list = []
+        cert_legs: list = []
+        cost = 0.0
+        for l in legs:
+            ask = getattr(l, "ask", None)
+            if ask is None or float(ask) <= 0.0:        # missing executable ask
+                return None
+            b = drag_breakdown(float(ask), getattr(l, "bid", None),
+                               float(getattr(l, "tick_size", 0.0) or 0.0),
+                               slippage_bps=slip, fee_bps=fee)
+            px = float(b["exec_price"])
+            if px <= 0.0:
+                return None
+            exec_prices.append(px)
+            cost += px
+            depth = float(getattr(l, "visible_ask_depth_usd", None)
+                          or getattr(l, "depth_usd", 0.0) or 0.0)
+            # size so executable_price * quantity >= the $1 cap; _open_bregman re-caps
+            # the bundle to <= $1 and splits it across legs.
+            qty = round(notional_cap / px, 6) if px > 0 else 0.0
+            cert_legs.append(CertifiedLeg(
+                market_id=getattr(l, "market_id", ""), outcome=getattr(l, "outcome", ""),
+                token_id=(getattr(l, "token_id", "")
+                          or f"{getattr(l, 'market_id', '')}:{getattr(l, 'outcome', '')}"),
+                side="BUY", executable_price=px, quantity=qty,
+                depth_usd=depth, tick_size=float(getattr(l, "tick_size", 0.0) or 0.0)))
+        edge = round(float(getattr(group, "payout", 1.0) or 1.0) - cost, 6)
+        if edge <= 0.0:                                 # positive after-cost edge required
+            return None
+        return CertifiedBregmanOpportunity(
+            group_id=getattr(group, "group_id", ""),
+            group_type=getattr(group, "group_type", "unknown"), legs=cert_legs,
+            executable_prices=exec_prices, quantities=[l.quantity for l in cert_legs],
+            required_capital=round(cost, 6), worst_case_pnl=edge, profit_lower_bound=edge,
+            divergence_gap=0.0, divergence_method="relaxed_real_book", failure_modes=[],
+            fill_feasibility=1.0, persistence_score=1.0, no_trade_reason="",
+            certified=False, risk_free=False, cost_per_set=round(cost, 6), sets=1.0,
+            has_synthetic_leg=False, rejection_stage="relaxed_real_book",
+            certify_diagnostics={"source": "relaxed_real_book_no_certification_required",
+                                 "after_cost_edge": edge})
+
     def _run_micro_exploration(self, records: list, now: float) -> int:
         """Paper-only: take a tiny ($1-capped) REAL-book paper trade when a positive
         after-cost edge exists but is below the full readiness margin. Never trades a
@@ -1704,8 +1778,13 @@ class PolymarketPaperTrainer:
         self._write_relaxed_candidate_records(
             [r for r in eval_recs if r.get("is_real_book")], now)
 
-        # 4) open tradable candidates (positive + full-hedge + all hard gates), via the
-        # relaxed certifier opp, rate-limited. Counting above is independent of this.
+        # 4) open tradable candidates (positive + full-hedge + all hard gates),
+        # DIRECTLY from the hydrated real-CLOB group — the relaxed paper lane does NOT
+        # depend on full Bregman certification (a sub-margin / not-fully-certified
+        # bundle must still be paper-tradable when every relaxed hard gate passes). All
+        # strict realism gates (stale / missing-ask / reference / synthetic / spread /
+        # ambiguity / depth) still run inside _open_bregman; certification only adds the
+        # full-readiness ROI/settlement margin, which must NOT block this paper lane.
         opened = 0
         tradable = [r for r in eval_recs if r.get("gate_result") == GATE_TRADABLE]
         self._micro_exploration_candidates_total += len(tradable)
@@ -1714,19 +1793,19 @@ class PolymarketPaperTrainer:
                            if getattr(p, "strategy", "") == "bregman"}
             tradable = [r for r in tradable if r["group_id"] not in opened_gids]
             tradable.sort(key=lambda r: float(r.get("after_cost_edge") or 0.0), reverse=True)
-            micro_certs = self._micro_certifier().certify_all(groups)
-            cert_by_gid = {getattr(c, "group_id", ""): c for c in micro_certs}
+            group_by_gid = {getattr(g, "group_id", ""): g for g in groups}
             rec_by_id = {r.market_id: r for r in records}
             for r in tradable:
                 if self._micro_budget_remaining(now) <= 0:
                     self._micro_exploration_reject_reasons["rate_limited"] = \
                         self._micro_exploration_reject_reasons.get("rate_limited", 0) + 1
                     break
-                opp = cert_by_gid.get(r["group_id"])
-                if opp is None or not opp.is_opportunity \
-                        or bool(getattr(opp, "has_synthetic_leg", False)):
-                    self._micro_exploration_reject_reasons["certifier_disagreed"] = \
-                        self._micro_exploration_reject_reasons.get("certifier_disagreed", 0) + 1
+                g = group_by_gid.get(r["group_id"])
+                opp = self._relaxed_opportunity_from_group(g) if g is not None else None
+                if opp is None or bool(getattr(opp, "has_synthetic_leg", False)):
+                    self._micro_exploration_reject_reasons["unbuildable_or_synthetic"] = \
+                        self._micro_exploration_reject_reasons.get(
+                            "unbuildable_or_synthetic", 0) + 1
                     continue
                 if self._open_bregman(opp, rec_by_id, now, exploration=True,
                                       notional_cap=notional_cap):

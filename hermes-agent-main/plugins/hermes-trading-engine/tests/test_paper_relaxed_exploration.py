@@ -245,6 +245,34 @@ def test_missing_no_leg_is_not_a_positive_real_book_candidate(tmp_path, monkeypa
     assert "0.999" not in blocker                     # the misleading projected edge is gone
 
 
+def test_relaxed_opens_even_when_certification_finds_zero(tmp_path, monkeypatch):
+    """Root-blocker-1 regression: the relaxed $1 paper lane is computed DIRECTLY from
+    the hydrated real-CLOB book and must open even when FULL Bregman certification
+    certifies ZERO opportunities (no certifier_disagreed block)."""
+    from engine.training import bregman_execution as bx
+    t = _trainer(tmp_path, monkeypatch)
+    _enable(t)
+    # Force certification to find ZERO full opportunities (reject every group).
+    orig = bx.BregmanArbitrageEngine.certify
+
+    def _always_reject(self, group, **kw):
+        opp = orig(self, group, **kw)
+        opp.certified = False
+        opp.profit_lower_bound = 0.0           # is_opportunity -> False
+        return opp
+    monkeypatch.setattr(bx.BregmanArbitrageEngine, "certify", _always_reject)
+    t._run_bregman([_rec()], _NOW)
+    m = t.bregman_exec_metrics
+    assert m["certified_opportunities"] == 0           # certification found nothing
+    assert m["paper_relaxed_real_book_candidates_seen"] >= 1
+    assert m["paper_relaxed_positive_real_book_candidates_seen"] >= 1
+    assert m["paper_relaxed_candidates_seen"] >= 1
+    assert m["paper_relaxed_trades_opened"] >= 1        # ...but the paper lane still traded
+    assert [p for p in t.positions if p.exploration]
+    # the removed certifier gate must never reappear as a reject reason
+    assert "certifier_disagreed" not in m["paper_relaxed_reject_reasons"]
+
+
 def test_full_readiness_gates_not_loosened(tmp_path, monkeypatch):
     # The relaxed lane must not turn a thin/sub-margin opportunity into a CERTIFIED
     # readiness opportunity: certified_opportunities stays 0 while the lane still trades.
