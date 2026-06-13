@@ -387,6 +387,13 @@ def build_bregman_funnel(bregman_telemetry: dict, *, market_groups_detected: int
             "bregman_incomplete_family_examples", "bregman_missing_outcome_examples",
             "bregman_false_incomplete_family_count",
             "bregman_near_miss_promoted_to_candidate_count",
+            # accelerated discovery / learning mode proof
+            "accelerated_discovery_enabled", "markets_scanned_per_tick",
+            "candidates_evaluated_per_tick", "shadow_labels_per_tick",
+            "no_trade_labels_per_tick", "near_miss_records_written",
+            "bregman_diagnostics_records_written", "top_near_miss_edges_after_cost",
+            "top_bregman_rejection_reasons", "report_buckets",
+            "accelerated_discovery_knobs",
             "targeted_scan_budget_by_category", "targeted_scan_hits_by_category",
             "targeted_scan_markets_by_category", "market_quality_tier_counts",
             "market_quality_score_distribution", "high_liquidity_binary_markets_scanned",

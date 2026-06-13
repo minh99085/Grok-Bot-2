@@ -316,6 +316,12 @@ class TrainingConfig:
     # samples). It NEVER loosens stale/missing-ask/synthetic-NO/reference/negative-edge
     # protections or enables live trading.
     paper_trade_pressure_enabled: bool = True
+    # ACCELERATED DISCOVERY / LEARNING mode (env HERMES_ACCELERATED_DISCOVERY=1). Scales
+    # up OBSERVATION + LEARNING throughput ONLY (scan breadth, candidates evaluated,
+    # shadow/no-trade labels, near-miss + diagnostics capture, hydration coverage). It
+    # NEVER loosens an execution gate (depth/spread/freshness/after-cost edge+ROI/
+    # ambiguity/correlation), never relaxes paper realism, and never enables live trading.
+    accelerated_discovery_enabled: bool = False
     # CLOB hydration per-tick cap (was hard-coded 40). Higher => more real YES/NO books.
     bregman_clob_hydration_max_groups: int = 120
     # Paper-only micro-exploration: take a tiny ($1-capped) REAL-book paper trade when a
@@ -613,6 +619,21 @@ class TrainingConfig:
         if bool(self.paper_trade_pressure_enabled):
             self.bregman_shadow_labels_per_tick = max(self.bregman_shadow_labels_per_tick, 50)
             self.bregman_top_near_misses = max(self.bregman_top_near_misses, 25)
+        # ACCELERATED DISCOVERY: scale ONLY the observation/learning knobs UP (and the
+        # scan cadence DOWN so more ticks happen per hour). This block deliberately
+        # touches NO execution-gate field (min_depth_at_price, max_spread,
+        # bregman_max_book_age_sec, bregman_min_after_cost_profit_usd/roi, bregman_min_roi,
+        # max_ambiguity_score, correlation caps), NO paper-realism flag, and NO live flag.
+        if bool(self.accelerated_discovery_enabled):
+            self.bregman_discovery_limit = max(self.bregman_discovery_limit, 3000)
+            self.bregman_near_miss_store_cap = max(self.bregman_near_miss_store_cap, 5000)
+            self.bregman_top_near_misses = max(self.bregman_top_near_misses, 50)
+            self.bregman_shadow_labels_per_tick = max(self.bregman_shadow_labels_per_tick, 150)
+            self.bregman_clob_hydration_max_groups = max(self.bregman_clob_hydration_max_groups, 250)
+            self.shortlist_limit = max(self.shortlist_limit, 300)
+            self.scan_limit = max(self.scan_limit, 2000)   # 2000 is the hard ceiling
+            # faster ticks => more markets/candidates/labels processed per runtime hour
+            self.scan_interval_seconds = min(self.scan_interval_seconds, 20.0)
         # Algorithm-freeze (campaign) mode: evidence quality over new code. It can
         # NEVER promote production-like parameters and NEVER touches a live flag.
         if bool(self.algorithm_freeze_mode):
@@ -988,6 +1009,7 @@ class TrainingConfig:
             bregman_top_near_misses=_envi("POLYMARKET_BREGMAN_TOP_NEAR_MISSES", 10),
             bregman_shadow_labels_per_tick=_envi("POLYMARKET_BREGMAN_SHADOW_LABELS_PER_TICK", 25),
             paper_trade_pressure_enabled=_envb("POLYMARKET_PAPER_TRADE_PRESSURE_ENABLED", True),
+            accelerated_discovery_enabled=_envb("HERMES_ACCELERATED_DISCOVERY", False),
             bregman_clob_hydration_max_groups=_envi("POLYMARKET_BREGMAN_CLOB_HYDRATION_MAX_GROUPS", 120),
             paper_micro_exploration_enabled=_envb("POLYMARKET_PAPER_MICRO_EXPLORATION_ENABLED", True),
             paper_micro_exploration_max_notional_usd=_envf(

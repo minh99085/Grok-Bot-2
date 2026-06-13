@@ -2058,6 +2058,25 @@ def _build_report_md(rj, feats, status, docker, api, tests, comparison,
             if _bf.get("bregman_missing_outcome_examples"):
                 L.append(f"- bregman_missing_outcome_examples: "
                          f"{_bf.get('bregman_missing_outcome_examples')}")
+            # accelerated discovery / learning mode
+            L.append(f"- accelerated_discovery_enabled: "
+                     f"{_bf.get('accelerated_discovery_enabled', False)}")
+            L.append(f"- markets_scanned_per_tick: {_bf.get('markets_scanned_per_tick', 0)} "
+                     f"candidates_evaluated_per_tick={_bf.get('candidates_evaluated_per_tick', 0)} "
+                     f"shadow_labels_per_tick={_bf.get('shadow_labels_per_tick', 0)} "
+                     f"no_trade_labels_per_tick={_bf.get('no_trade_labels_per_tick', 0)}")
+            L.append(f"- near_miss_records_written: {_bf.get('near_miss_records_written', 0)} "
+                     f"bregman_diagnostics_records_written={_bf.get('bregman_diagnostics_records_written', 0)}")
+            if _bf.get("top_near_miss_edges_after_cost"):
+                L.append(f"- top_near_miss_edges_after_cost: "
+                         f"{_bf.get('top_near_miss_edges_after_cost')}")
+            if _bf.get("top_bregman_rejection_reasons"):
+                L.append(f"- top_bregman_rejection_reasons: "
+                         f"{_bf.get('top_bregman_rejection_reasons')}")
+            if _bf.get("report_buckets"):
+                L.append(f"- report_buckets: {_bf.get('report_buckets')}")
+            if _bf.get("accelerated_discovery_knobs"):
+                L.append(f"- accelerated_discovery_knobs: {_bf.get('accelerated_discovery_knobs')}")
             L.append(f"- market_quality_tier_counts: {_bf.get('market_quality_tier_counts', {})}")
             L.append(f"- market_quality_score_distribution: {_bf.get('market_quality_score_distribution', {})}")
             L.append(f"- targeted_scan_budget_by_category: {_bf.get('targeted_scan_budget_by_category', {})}")

@@ -7,6 +7,36 @@ CONTINUE** or you should **STOP**, plus the exact next command to run.
 
 ---
 
+## Accelerated discovery / learning mode (VPS env)
+
+To process **more markets, candidates, shadow/no-trade labels, near-misses, and Bregman
+diagnostics per runtime hour** — WITHOUT loosening any execution gate — start the
+training container with `HERMES_ACCELERATED_DISCOVERY=1`.
+
+On the **VPS**, in the plugin dir:
+
+```bash
+# one-off run with accelerated discovery
+HERMES_ACCELERATED_DISCOVERY=1 docker compose up -d --build hermes-training
+
+# or persist it for the container in .env (plugin dir), then restart:
+echo "HERMES_ACCELERATED_DISCOVERY=1" >> .env
+docker compose up -d --build hermes-training
+```
+
+What it scales UP (observation/learning only): scan breadth (`scan_limit`,
+`shortlist_limit`), Bregman discovery breadth (`bregman_discovery_limit`), shadow labels
+per tick, near-miss capture + store, CLOB hydration coverage, and a faster scan cadence.
+
+What it **NEVER** changes: minimum depth, maximum spread, book freshness, after-cost
+edge + ROI thresholds, ambiguity threshold, correlation gate, strict paper realism, and
+the reference/missing-ask/stale/fake-fill bans. **Live trading stays disabled.** A weaker
+opportunity can never count as a realistic executable or certified bundle — the report
+keeps the buckets separated (`report_buckets`) and surfaces
+`accelerated_discovery_enabled` + the per-tick throughput counters.
+
+---
+
 ## Phase 5: the simplified autonomous operator loop (recommended)
 
 The coordinator now does the mechanical work. You mainly (1) run one command,
