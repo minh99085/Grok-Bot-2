@@ -112,38 +112,29 @@ VALIDATE_RC=${PIPESTATUS[0]}
 set -e
 echo "report_rc=${REPORT_RC} validate_rc=${VALIDATE_RC}" | tee -a "${REPORT_LOG}"
 
-# --- 6) package a UNIQUE zip + update the 'latest' pointer ----------------------
-echo "==> packaging ${ZIP_NAME}"
-ZIP_INPUTS=()
-[[ -d inspection_reports ]]   && ZIP_INPUTS+=("inspection_reports")
-[[ -d runtime_data/metrics ]] && ZIP_INPUTS+=("runtime_data/metrics")
-[[ -f runtime_data/inspection_summary.json ]] && ZIP_INPUTS+=("runtime_data/inspection_summary.json")
-[[ -f "${VALIDATION_OUT}" ]]  && ZIP_INPUTS+=("validation_light_latest.txt")
-[[ -d report_logs ]]          && ZIP_INPUTS+=("report_logs")
+# --- 6) package the COMPLETE light bundle (testable Python; never a thin zip) ---
+# scripts/_report_bundle.py writes a git-commit proof, VERIFIES the bundle has
+# report.json + report.md, and zips the full bundle (report.json/md, metric files,
+# logs, samples, validation output, runtime_data/metrics, final_validation.json /
+# validation_contract.json, git proof). It exits 13 (and writes NO success zip) if the
+# generated bundle is incomplete, so a thin/broken zip is never shipped as success.
+echo "==> packaging ${ZIP_NAME} (complete light bundle + git proof)"
 rm -f "${ZIP_NAME}"
-if command -v zip >/dev/null 2>&1; then
-  zip -r "${ZIP_NAME}" "${ZIP_INPUTS[@]}"
-else
-  # fallback: python's zipfile (no system 'zip' needed)
-  "${VPY}" - "$ZIP_NAME" "${ZIP_INPUTS[@]}" <<'PYZIP'
-import sys, os, zipfile
-dest, inputs = sys.argv[1], sys.argv[2:]
-with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as zf:
-    for p in inputs:
-        if os.path.isfile(p):
-            zf.write(p)
-        else:
-            for root, _d, files in os.walk(p):
-                for f in files:
-                    zf.write(os.path.join(root, f))
-print("wrote", dest)
-PYZIP
+set +e
+"${VPY}" scripts/_report_bundle.py --plugin . --out "${ZIP_NAME}"
+BUNDLE_RC=$?
+set -e
+if [[ "${BUNDLE_RC}" -ne 0 || ! -s "${ZIP_NAME}" ]]; then
+  echo "FATAL: report bundle incomplete — refusing to ship a thin zip (report_rc=${REPORT_RC})." >&2
+  echo "       inspect ${REPORT_LOG} and the generator output above." >&2
+  exit 13
 fi
 cp -f "${ZIP_NAME}" "${ZIP_LATEST}"
+ZIP_SIZE="$(wc -c < "${ZIP_NAME}" 2>/dev/null || echo 0)"
 
 echo "==> DONE"
 echo "    report_rc=${REPORT_RC} validate_rc=${VALIDATE_RC}"
-echo "    unique zip : ${PLUGIN_DIR}/${ZIP_NAME}"
+echo "    unique zip : ${PLUGIN_DIR}/${ZIP_NAME} (${ZIP_SIZE} bytes)"
 echo "    latest zip : ${PLUGIN_DIR}/${ZIP_LATEST}"
 echo "    upload ${ZIP_LATEST} to ChatGPT for inspection."
 # Surface the report generator's own exit code so run-ready gating is NOT hidden.

@@ -159,13 +159,11 @@ def test_runner_packages_unique_and_latest_zip_with_required_inputs():
 
 def test_runner_zip_includes_full_light_bundle():
     t = _runner_text()
-    # the inspection_reports bundle carries report.json + report.md + tail log samples;
-    # the zip must include that bundle, runtime_data/metrics, validation, and logs.
-    assert "inspection_reports" in t            # report.json / report.md + tail samples
-    assert "runtime_data/metrics" in t
-    assert "runtime_data/inspection_summary.json" in t
-    assert "validation_light_latest.txt" in t
-    assert "report_logs" in t
+    # packaging is delegated to the testable complete-bundle packager (which includes
+    # report.json/md, metrics, runtime_data/metrics, validation, logs, samples, git
+    # proof — see tests/test_report_bundle.py) and fails on a thin zip.
+    assert "_report_bundle.py" in t and "--out" in t
+    assert "exit 13" in t and "! -s" in t and "refusing to ship a thin zip" in t.lower()
     # the report generator itself emits report.json + report.md into inspection_reports
     gen = (PLUGIN / "scripts" / "generate_bot_inspection_report.py").read_text(encoding="utf-8")
     assert 'write_json("report.json"' in gen and "report.md" in gen

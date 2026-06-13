@@ -224,6 +224,27 @@ def test_pipeline_scanned_metric_present(tmp_path, monkeypatch):
     assert t.bregman_exec_metrics["paper_relaxed_pipeline_scanned"] >= 1
 
 
+def test_missing_no_leg_is_not_a_positive_real_book_candidate(tmp_path, monkeypatch):
+    """Regression for the '0.999 + not_real_clob_book' contradiction: a group whose NO
+    book is missing (NO leg stays synthetic, not hydrated) must NOT count as a positive
+    real-book candidate, and the blocker must be non-contradictory (no positive edge,
+    no not_real_clob_book in the candidate-stream blocker)."""
+    t = _trainer(tmp_path, monkeypatch)
+    # only the YES token has a real book; NO token book is absent -> NO leg synthetic
+    books = {"tok0a": {"asks": [{"price": "0.001", "size": "9999999"}],
+                       "bids": [{"price": "0.0009", "size": "9999"}], "timestamp": str(_NOW - 2)}}
+    t.enable_clob_hydration(book_fetcher=lambda tok: books.get(tok), max_book_age_s=120.0)
+    t._run_bregman([_rec()], _NOW)
+    m = t.bregman_exec_metrics
+    # not a positive real-book candidate; no fake 0.999 edge; nothing traded
+    assert m["paper_relaxed_positive_real_book_candidates_seen"] == 0
+    assert m["paper_relaxed_trades_opened"] == 0
+    blocker = m["zero_trade_blocker_if_any"]
+    # non-contradictory: a positive edge is never claimed while saying not_real_clob_book
+    assert not ("not_real_clob_book" in blocker and "best_after_cost_edge=0.99" in blocker)
+    assert "0.999" not in blocker                     # the misleading projected edge is gone
+
+
 def test_full_readiness_gates_not_loosened(tmp_path, monkeypatch):
     # The relaxed lane must not turn a thin/sub-margin opportunity into a CERTIFIED
     # readiness opportunity: certified_opportunities stays 0 while the lane still trades.
