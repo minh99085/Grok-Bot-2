@@ -376,11 +376,11 @@ class Ctx:
     def say(self, msg: str = "") -> None:
         self.printer(msg)
 
-    def run(self, argv, *, timeout: int = 120, redact_display: bool = False):
+    def run(self, argv, *, timeout: int = 120, redact_display: bool = False, cwd=None):
         shown = redact(argv, self.cfg) if redact_display else " ".join(
             shlex.quote(str(t)) for t in argv)
         self.say(f"  $ {shown}")
-        return self.runner(list(argv), cwd=str(self.repo_root), timeout=timeout)
+        return self.runner(list(argv), cwd=str(cwd or self.repo_root), timeout=timeout)
 
 
 def _check(ctx: Ctx, label: str, ok: bool, detail: str = "") -> bool:
@@ -1016,6 +1016,25 @@ def cmd_sync_main(ctx: Ctx) -> int:
 
 
 # ---- post-cursor-verify ---------------------------------------------------- #
+def _resolve_plugin_tests(ctx: Ctx):
+    """Find the PLUGIN's own tests/ dir (which carries pytest.ini as rootdir), regardless
+    of how repo_root/plugin_path are configured. Order: configured plugin_path, the
+    coordinator script's own plugin dir (always correct — this file lives in
+    <plugin>/scripts/), then repo_root. Returns (plugin_dir, tests_dir) or (None, None)."""
+    candidates = []
+    if getattr(ctx.cfg, "plugin_path", ""):
+        candidates.append(Path(ctx.cfg.plugin_path))
+    candidates.append(Path(__file__).resolve().parents[1])   # <plugin>/scripts/.. = plugin
+    candidates.append(ctx.repo_root)
+    for d in candidates:
+        try:
+            if (d / "tests").is_dir():
+                return d, (d / "tests")
+        except OSError:
+            continue
+    return None, None
+
+
 def cmd_post_cursor_verify(ctx: Ctx) -> int:
     """After web Cursor pushes to main: sync-main -> local tests -> doctor -> vps-smoke,
     then say whether it is safe to collect another light report."""
@@ -1027,11 +1046,28 @@ def cmd_post_cursor_verify(ctx: Ctx) -> int:
         ctx.say("\nSTOP — could not sync main; resolve the issue above first.")
         return 2
     ctx.say("\n[2/4] local tests")
-    rc, out, err = ctx.run([sys.executable, "-m", "pytest", "tests", "-q"], timeout=3600)
-    tests_ok = rc == 0
-    _check(ctx, "local tests pass", tests_ok,
-           "" if tests_ok else (out.strip().splitlines()[-1:] or err.strip().splitlines()[-1:]
-                                or ["see output"])[-1])
+    plugin_dir, tests_dir = _resolve_plugin_tests(ctx)
+    if tests_dir is None:
+        _check(ctx, "local tests pass", False,
+               "no tests/ directory found (checked plugin_path, the coordinator's own "
+               "plugin dir, and repo_root) — verification requires real tests")
+        tests_ok = False
+        out = err = ""
+    else:
+        # Run from the plugin dir so its pytest.ini (rootdir) is used, and target the
+        # plugin's own tests/ explicitly — never the monorepo's tests.
+        rc, out, err = ctx.run([sys.executable, "-m", "pytest", str(tests_dir), "-q"],
+                               timeout=3600, cwd=plugin_dir)
+        if rc == 5:    # pytest "no tests collected" — NEVER treated as success
+            tests_ok = False
+            _check(ctx, "local tests pass", False,
+                   f"NO TESTS COLLECTED at {tests_dir} (exit 5) — fix discovery; "
+                   "verification is not weakened to pass on zero tests")
+        else:
+            tests_ok = rc == 0
+            _check(ctx, "local tests pass", tests_ok,
+                   "" if tests_ok else (out.strip().splitlines()[-1:]
+                                        or err.strip().splitlines()[-1:] or ["see output"])[-1])
     ctx.say("\n[3/4] doctor")
     doctor_ok = cmd_doctor(ctx) == 0
     ctx.say("\n[4/4] vps-smoke")
