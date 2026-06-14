@@ -1309,6 +1309,13 @@ class TrainingConfig:
             feedback_accelerator_enabled=True, feedback_accelerator_target_multiplier=100,
             exploration_tiny_size_enabled=True,
             accelerated_discovery_enabled=_envb("HERMES_ACCELERATED_DISCOVERY", False),
+            # News scanner + research mode are read from env so the VPS 100X profile
+            # actually STARTS the (advisory, read-only) news scanner when NEWS_SCANNER_
+            # ENABLED=1 — otherwise the report falsely says grok blocker=news_scanner_
+            # disabled even though the container env enabled it. Advisory only; never
+            # trades/sizes/bypasses a gate; never leaks the key.
+            news_scanner_enabled=_envb("NEWS_SCANNER_ENABLED", False),
+            news_provider_mode=(os.getenv("NEWS_PROVIDER_MODE") or "offline_cache").strip().lower(),
             # higher paper decision budget + feedback target -> more trades/feedback
             paper_decision_budget=120, feedback_sample_target=500,
             tiny_trade_min_liquidity=50.0,

@@ -293,6 +293,115 @@ def test_startup_fails_fast_if_multiplier_not_100_under_profile(tmp_path, monkey
         os.environ.update(snap)
 
 
+def test_active_learning_enabled_true_under_env(tmp_path, monkeypatch):
+    """When POLYMARKET_ACTIVE_LEARNING_ENABLED=1 (and the aggressive profile is used),
+    BOTH the active-learning report and the acceleration report agree active learning is
+    enabled — no more active_learning_enabled=false while candidates are selected."""
+    monkeypatch.setenv("AGGRESSIVE_PAPER_TRAINING", "1")
+    monkeypatch.setenv("POLYMARKET_ACTIVE_LEARNING_ENABLED", "1")
+    clean_live_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("AGGRESSIVE_PAPER_TRAINING", "1")
+    t = PolymarketPaperTrainer(TrainingConfig.aggressive_paper(), data_dir=tmp_path)
+    al = t.active_learning_report()
+    assert al["active_learning_enabled"] is True
+    assert al["active_learning_runtime_enabled"] is True
+    assert al["active_learning_config_source"] == "aggressive_paper_profile"
+    # explicit tiny-lane metrics present (the 6 required keys)
+    for k in ("active_learning_tiny_evaluator_called", "active_learning_tiny_trades_selected",
+              "active_learning_tiny_trades_opened", "active_learning_tiny_blocked_by_reason"):
+        assert k in al
+    acc = t.paper_trade_acceleration_report()
+    assert acc["active_learning_runtime_enabled"] is True
+    assert "active_learning_tiny_evaluator_called" in acc
+
+
+def test_selected_tiny_candidate_reaches_evaluator_and_blocks_exactly(tmp_path, monkeypatch):
+    """A selected active-learning candidate enters the tiny evaluator; if it can't open it
+    records an EXACT canonical blocker (never generic 'open_rejected')."""
+    t = _trainer(tmp_path, monkeypatch, exploration_enabled=True, active_learning_enabled=True,
+                 min_net_edge=0.9, exploration_notional_usd=1.0)
+    t._begin_directional_phase(dir_slots_before=0, bregman_opened=0)
+    t._begin_exploration_phase()
+    monkeypatch.setattr(t, "_active_learning_admit",
+                        lambda *a, **k: {"decision": "explore", "learning_bucket": "al",
+                                         "reason": "edge_too_low"})
+    # force the open to be REJECTED by the RiskEngine so we exercise the blocker path
+    monkeypatch.setattr(t.risk, "evaluate",
+                        lambda *a, **k: __import__("types").SimpleNamespace(
+                            approved=False, risk_decision_id="r1", proposal_id=""))
+    res = t._consider(_rec(), _NOW)
+    assert res.get("opened") is not True
+    assert t._tiny_directional_evaluator_called == 1
+    assert t._tiny_directional_opened == 0
+    blocked = t._tiny_directional_blocked
+    assert "open_rejected" not in blocked                  # never the vague reason
+    assert blocked.get("risk_rejected", 0) == 1            # exact canonical reason
+
+
+def test_canonical_tiny_block_reason_units():
+    from engine.training.polymarket_trainer import _canonical_tiny_block_reason as f
+    assert f({"reason": "risk_rejected"}) == "risk_rejected"
+    assert f({"reason": "paperbroker_rejected"}) == "broker_error"
+    assert f({"reason": "shadow_stale_book", "execution_realism_status": "shadow_stale"}) == "stale_book"
+    assert f({"reason": "shadow_missing_executable_ask"}) == "missing_ask"
+    assert f({"shadow_only": True, "reason": "shadow_theoretical_only"}) == "fill_not_realistic"
+    assert f({"reason": "variant_budget_exhausted"}) == "budget_blocked"
+
+
+def test_relaxed_bregman_open_reject_is_exact_not_generic(tmp_path, monkeypatch):
+    """For a tradable relaxed candidate that fails to open, the reject reason is the EXACT
+    _open_bregman reason (e.g. bregman_leg_stale_book), not generic 'open_rejected'."""
+    import engine.training.relaxed_candidates as rc
+    t = _trainer(tmp_path, monkeypatch, paper_micro_exploration_enabled=True,
+                 paper_relaxed_exploration_enabled=True)
+
+    # one tradable relaxed candidate, but _open_bregman rejects with an exact reason
+    fake = {"group_id": "g1", "group_type": "binary_yes_no", "gate_result": rc.GATE_TRADABLE,
+            "after_cost_edge": 0.02, "is_real_book": True}
+    monkeypatch.setattr(rc, "evaluate_relaxed_group", lambda g, **k: dict(fake))
+    monkeypatch.setattr(rc, "summarize", lambda recs: {
+        "pipeline_scanned": 1, "real_book_candidates_seen": 1,
+        "positive_real_book_candidates_seen": 1, "tradable_candidates": 1,
+        "blocked_by_reason": {}, "source_counts": {"binary_yes_no": 1},
+        "best_real_book_candidate": dict(fake), "best_reject_example": {},
+        "best_after_cost_edge": 0.02})
+
+    def _fake_open(opp, rec_by_id, now, *, exploration=False, notional_cap=None):
+        t._breg_reason("bregman_leg_stale_book")           # exact reason recorded
+        return False
+    monkeypatch.setattr(t, "_open_bregman", _fake_open)
+    monkeypatch.setattr(t, "_relaxed_opportunity_from_group",
+                        lambda g: __import__("types").SimpleNamespace(has_synthetic_leg=False))
+    t._bregman_hydrated_groups = [__import__("types").SimpleNamespace(group_id="g1")]
+    t._run_micro_exploration([], _NOW)
+    reasons = t._micro_exploration_reject_reasons
+    assert "open_rejected" not in reasons                  # not the generic bucket
+    assert reasons.get("bregman_leg_stale_book", 0) >= 1   # exact reason
+
+
+def test_grok_news_not_disabled_when_env_enabled(tmp_path, monkeypatch):
+    """NEWS_SCANNER_ENABLED=1 must NOT report grok blocker 'news_scanner_disabled'."""
+    monkeypatch.setenv("AGGRESSIVE_PAPER_TRAINING", "1")
+    monkeypatch.setenv("NEWS_SCANNER_ENABLED", "1")
+    monkeypatch.setenv("NEWS_PROVIDER_MODE", "live_read_only")
+    monkeypatch.setenv("RESEARCH_MODE", "online_paper")
+    monkeypatch.setenv("XAI_API_KEY", "x" * 84)
+    clean_live_env(monkeypatch, tmp_path)
+    for k, v in (("AGGRESSIVE_PAPER_TRAINING", "1"), ("NEWS_SCANNER_ENABLED", "1"),
+                 ("NEWS_PROVIDER_MODE", "live_read_only"), ("RESEARCH_MODE", "online_paper"),
+                 ("XAI_API_KEY", "x" * 84)):
+        monkeypatch.setenv(k, v)
+    t = PolymarketPaperTrainer(TrainingConfig.aggressive_paper(), data_dir=tmp_path)
+    rs = t.research_status()
+    assert rs.get("grok_zero_call_reason") != "news_scanner_disabled"
+    assert rs.get("grok_brain_blocker") != "news_scanner_disabled"
+    # precise reason from the allowed set, and the key is never leaked
+    assert rs.get("grok_zero_call_reason") in (
+        None, "scanner_not_started", "no_news_packet_available", "not_due_yet",
+        "proof_call_disabled_by_config")
+    assert "x" * 84 not in str(rs)
+
+
 def test_aggressive_profile_env_fails_closed_on_live_flag():
     # The VPS entrypoint seeds the 100X profile then applies the paper-only lock; a
     # live/real-money flag must make activation FAIL CLOSED (never start).

@@ -25,6 +25,27 @@ from typing import Any
 
 REDACTED = "<REDACTED>"
 
+# Hard cap on the text size any single redaction pass will scan. Huge JSONL artifacts
+# (events/diagnostics streams) otherwise make the value-pattern regexes scan multiple
+# MB repeatedly and the report appears to hang (the observed KeyboardInterrupt inside
+# redaction). For oversized text we keep the HEAD + TAIL (where any secret-looking value
+# would still be caught) and drop the middle with a marker — dropping text is always
+# SAFE for secret-redaction (it only ever REMOVES output, never exposes more).
+MAX_REDACT_BYTES = 1_000_000
+_CAP_KEEP = 200_000          # head + tail bytes kept when capping
+
+
+def cap_for_redaction(text: str, max_bytes: int = MAX_REDACT_BYTES) -> str:
+    """Bound the text a redaction pass scans. Returns ``text`` unchanged when small;
+    otherwise head + a truncation marker + tail so redaction stays O(cap)."""
+    if not text or len(text) <= max_bytes:
+        return text
+    keep = min(_CAP_KEEP, max_bytes // 2)
+    dropped = len(text) - 2 * keep
+    return (text[:keep]
+            + f"\n…[REDACTION-CAP: dropped {dropped} bytes of a large artifact]…\n"
+            + text[-keep:])
+
 # Substrings that mark a config/env KEY as sensitive (matched case-insensitively).
 SENSITIVE_KEY_SUBSTRINGS = (
     "KEY",
@@ -95,10 +116,11 @@ def redact_value(key: str, value: Any) -> Any:
 
 
 def scrub_text(text: str) -> str:
-    """Scrub secret-looking VALUES out of free text / logs (value-based only)."""
+    """Scrub secret-looking VALUES out of free text / logs (value-based only). Caps
+    oversized input first so a multi-MB artifact can never make redaction hang."""
     if not text:
         return text
-    out = text
+    out = cap_for_redaction(text)
     for rx, repl in _VALUE_PATTERNS:
         out = rx.sub(repl, out)
     return out
@@ -106,14 +128,14 @@ def scrub_text(text: str) -> str:
 
 def redact_text(text: str) -> str:
     """Full text redaction for logs / free text: scrub sensitive assignments by
-    key-name AND scrub secret-looking values."""
+    key-name AND scrub secret-looking values. Caps oversized input first (no hang)."""
     if not text:
         return text
 
     def _assign_sub(m: "re.Match[str]") -> str:
         return f"{m.group('key')}{m.group('sep')}{REDACTED}"
 
-    out = _ASSIGNMENT_RE.sub(_assign_sub, text)
+    out = _ASSIGNMENT_RE.sub(_assign_sub, cap_for_redaction(text))
     out = scrub_text(out)
     return out
 

@@ -173,6 +173,53 @@ class PaperBroker:
         return {"orders": self.orders, "fills": self.fills, "rejects": self.rejects}
 
 
+def _active_learning_config_source() -> str:
+    """Where the effective active-learning posture came from (for report transparency)."""
+    if str(os.getenv("AGGRESSIVE_PAPER_TRAINING", "")).strip().lower() in ("1", "true", "yes", "on"):
+        return "aggressive_paper_profile"
+    if str(os.getenv("POLYMARKET_ACTIVE_LEARNING_ENABLED", "")).strip():
+        return "env:POLYMARKET_ACTIVE_LEARNING_ENABLED"
+    if str(os.getenv("ACTIVE_LEARNING_ENABLED", "")).strip():
+        return "env:ACTIVE_LEARNING_ENABLED"
+    return "default"
+
+
+def _canonical_tiny_block_reason(res: dict) -> str:
+    """Map a tiny-directional ``_open`` result to an EXACT, canonical blocker reason
+    (never the vague 'open_rejected'). Hard gates are unchanged; this only NAMES why a
+    selected tiny candidate did not open so the report is actionable."""
+    reason = str((res or {}).get("reason") or "").lower()
+    realism = str((res or {}).get("execution_realism_status") or "").lower()
+    blob = reason + " " + realism
+    if "risk_rejected" in reason:
+        return "risk_rejected"
+    if "paperbroker" in reason or "broker" in reason:
+        return "broker_error"
+    if "missing_ask" in blob or "missing_executable_ask" in blob:
+        return "missing_ask"
+    if "stale" in blob:
+        return "stale_book"
+    if "reference_fill" in blob or "offline_stub" in blob:
+        return "reference_fill_blocked"
+    if "synthetic" in blob:
+        return "synthetic_no_blocked"
+    if "thin_depth" in blob or "depth" in blob:
+        return "depth_insufficient"
+    if "ambiguity" in blob or "ambiguous" in blob:
+        return "fill_not_realistic"
+    if "collision" in blob or (res or {}).get("collision_type"):
+        return "collision_blocked"
+    if any(k in reason for k in ("budget", "capital", "max_trades_per_tick",
+                                 "max_per_event", "max_per_cluster", "max_per_category",
+                                 "reservation", "reserved")):
+        return "budget_blocked"
+    if "negative_after_cost" in blob:
+        return "negative_after_cost_edge"
+    if (res or {}).get("shadow_only"):
+        return "fill_not_realistic"
+    return reason or "unknown_exception_with_trace_id"
+
+
 def _micro_depth_cfg(base, min_depth: float):
     """A read-only proxy of ``base`` cfg with ONLY ``min_depth_at_price`` lowered (for
     the $1-capped micro-exploration path). Every other gate/threshold is unchanged."""
@@ -525,6 +572,7 @@ class PolymarketPaperTrainer:
         # selected but a hard gate stopped it (reason recorded, never loosened).
         self._tiny_directional_selected = 0
         self._tiny_directional_opened = 0
+        self._tiny_directional_evaluator_called = 0
         self._tiny_directional_blocked: dict = {}
         # durable per-candidate audit log (git-ignored metrics dir)
         self._relaxed_candidates_path = self.data_dir / "metrics" / "paper_relaxed_candidates.jsonl"
@@ -1479,6 +1527,9 @@ class PolymarketPaperTrainer:
 
     def _breg_reason(self, reason: str) -> None:
         self.bregman_reject_reasons[reason] = self.bregman_reject_reasons.get(reason, 0) + 1
+        # remember the most recent precise reason so the relaxed-lane open loop can report
+        # an EXACT blocker (e.g. bregman_leg_stale_book) instead of a generic open_rejected.
+        self._last_breg_reason = reason
 
     def _open_bregman_bundle_count(self) -> int:
         """Distinct open Bregman bundles (by group_key) currently held in PAPER."""
@@ -1814,6 +1865,7 @@ class PolymarketPaperTrainer:
                         self._micro_exploration_reject_reasons.get(
                             "unbuildable_or_synthetic", 0) + 1
                     continue
+                self._last_breg_reason = ""
                 if self._open_bregman(opp, rec_by_id, now, exploration=True,
                                       notional_cap=notional_cap):
                     opened += 1
@@ -1826,8 +1878,12 @@ class PolymarketPaperTrainer:
                         "paper_order_id": getattr(pos, "order_id", "") if pos else "",
                         "exploration_paper": True})
                 else:
-                    self._micro_exploration_reject_reasons["open_rejected"] = \
-                        self._micro_exploration_reject_reasons.get("open_rejected", 0) + 1
+                    # EXACT open-reject reason from _open_bregman (e.g.
+                    # bregman_leg_stale_book / bregman_leg_missing_ask / risk_rejected /
+                    # paperbroker_rejected), never a generic "open_rejected".
+                    why = getattr(self, "_last_breg_reason", "") or "open_rejected_unknown"
+                    self._micro_exploration_reject_reasons[why] = \
+                        self._micro_exploration_reject_reasons.get(why, 0) + 1
 
         self._update_micro_metrics(
             enabled=enabled, hydrated_positive=summary["positive_real_book_candidates_seen"],
@@ -2447,12 +2503,14 @@ class PolymarketPaperTrainer:
         # selected for exploration, what actually opened (all hard gates passed), and
         # the exact blocker for any selected-but-unopened tiny trade.
         if exploratory:
+            # a SELECTED active-learning candidate has entered the tiny exploration
+            # evaluator (the <=$1 paper open path through realism + RiskEngine + broker).
+            self._tiny_directional_evaluator_called += 1
             self._tiny_directional_selected += 1
             if res.get("opened"):
                 self._tiny_directional_opened += 1
             else:
-                rsn = (res.get("reason")
-                       or ("shadow_only" if res.get("shadow_only") else "blocked"))
+                rsn = _canonical_tiny_block_reason(res)   # exact, never generic open_rejected
                 self._tiny_directional_blocked[rsn] = \
                     self._tiny_directional_blocked.get(rsn, 0) + 1
         # CLOSED LOOP: record the executed/explored example (or its shadow downgrade).
@@ -3527,10 +3585,16 @@ class PolymarketPaperTrainer:
             "exploration_enabled": bool(getattr(self.cfg, "exploration_enabled", False)),
             "accelerated_discovery_enabled": bool(
                 getattr(self.cfg, "accelerated_discovery_enabled", False)),
+            # explicit runtime-vs-report agreement metrics
+            "active_learning_runtime_enabled": bool(
+                getattr(self.cfg, "active_learning_enabled", False)),
+            "active_learning_config_source": _active_learning_config_source(),
+            "active_learning_tiny_evaluator_called": int(self._tiny_directional_evaluator_called),
             # lane trade accounting
             "active_learning_tiny_trades_selected": int(self._tiny_directional_selected),
             "active_learning_tiny_trades_opened": tiny_opened,
             "active_learning_tiny_trades_blocked_by_reason": dict(self._tiny_directional_blocked),
+            "active_learning_tiny_blocked_by_reason": dict(self._tiny_directional_blocked),
             "relaxed_bregman_trades_opened": relaxed_opened,
             "btc_pulse_paper_trades_opened": btc_opened,
             "readiness_paper_trades_opened": readiness_trades,
@@ -3698,6 +3762,15 @@ class PolymarketPaperTrainer:
             "pending_feedback_count": am.get("pending_feedback_count", 0),
             "completed_feedback_count": am.get("completed_feedback_count", 0),
             "near_miss_examples": self.near_miss_log[-10:],
+            # explicit runtime-vs-report agreement metrics (the headline contradiction fix):
+            # the report's active_learning_enabled now reflects the EFFECTIVE TrainingConfig.
+            "active_learning_runtime_enabled": bool(
+                getattr(self.cfg, "active_learning_enabled", False)),
+            "active_learning_config_source": _active_learning_config_source(),
+            "active_learning_tiny_evaluator_called": int(self._tiny_directional_evaluator_called),
+            "active_learning_tiny_trades_selected": int(self._tiny_directional_selected),
+            "active_learning_tiny_trades_opened": int(self._tiny_directional_opened),
+            "active_learning_tiny_blocked_by_reason": dict(self._tiny_directional_blocked),
         }
 
     def correlation_risk_report(self) -> dict:
@@ -4572,10 +4645,15 @@ class PolymarketPaperTrainer:
                 zero_reason = "no_api_key"
             elif not mode_is_online:
                 zero_reason = "research_mode_not_online"
-            elif not news.get("news_scanner_enabled", False):
+            elif not bool(getattr(self.cfg, "news_scanner_enabled", False)):
+                # genuinely OFF in the effective runtime config (not just "object absent")
                 zero_reason = "news_scanner_disabled"
+            elif not news.get("news_scanner_enabled", False):
+                # enabled in config (env NEWS_SCANNER_ENABLED=1) but the scanner object is
+                # not up yet — NOT the contradictory "news_scanner_disabled".
+                zero_reason = "scanner_not_started"
             elif news_used == 0:
-                zero_reason = "no_news_packet_selected"
+                zero_reason = "no_news_packet_available"
             else:
                 # online + key + news but no call: report the PRECISE proof-call
                 # reason (NEVER the contradictory "served_from_cache_or_offline_stub"

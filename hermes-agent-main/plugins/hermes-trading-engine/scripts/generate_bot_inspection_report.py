@@ -973,8 +973,15 @@ def generate_report(
     # canonical paths. In LIGHT mode (default) the large JSONL event streams are
     # tail-sampled instead of copied in full (full files stay durable in /data).
     bundle_mode = "full" if str(bundle_mode).lower() == "full" else "light"
+    # Stage timing: the closed-loop-artifact write + redaction is the heaviest stage (it
+    # was the observed hang point on huge JSONL streams). The redactor now caps oversized
+    # text so this is bounded; we log the elapsed time so a slow stage is visible.
+    import time as _t
+    _stage_t0 = _t.perf_counter()
+    logger.info("report stage: writing closed-loop artifacts (bundle_mode=%s)…", bundle_mode)
     closed_loop_manifest = write_closed_loop_artifacts(
         bundle, data_dir, repo_root, bundle_mode=bundle_mode)
+    logger.info("report stage: closed-loop artifacts done in %.2fs", _t.perf_counter() - _stage_t0)
     if closed_loop_manifest.get("synthesized_empty"):
         warnings.append(
             f"{len(closed_loop_manifest['synthesized_empty'])} closed-loop artifact(s) "

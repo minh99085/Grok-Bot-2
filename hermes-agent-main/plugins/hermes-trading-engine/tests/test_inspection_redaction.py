@@ -12,6 +12,24 @@ import inspection_redactor as r  # noqa: E402
 REDACTED = r.REDACTED
 
 
+def test_large_artifact_redaction_is_capped_and_fast():
+    # a multi-MB JSONL artifact must NOT make redaction hang (the observed Ctrl+C).
+    import time
+    big = ("{\"event\":\"decision\",\"x\":1}\n" * 400_000) + "leaked xai-" + ("a" * 50) + "\n"
+    assert len(big) > 5_000_000
+    t0 = time.time()
+    out = r.redact_text(big)
+    assert time.time() - t0 < 5.0                      # bounded (cap), never hangs
+    assert "REDACTION-CAP" in out                      # middle dropped with a marker
+    assert "xai-aaaa" not in out                       # tail secret still scrubbed
+
+
+def test_cap_for_redaction_keeps_small_text_unchanged():
+    small = "hello world\nxai-" + ("b" * 40)
+    assert r.cap_for_redaction(small) == small         # small text untouched
+    assert "xai-bbbb" not in r.redact_text(small)      # still scrubbed
+
+
 def test_sensitive_key_detection():
     for key in ("GROK_API_KEY", "XAI_API_KEY", "POLYMARKET_PRIVATE_KEY",
                 "POLYMARKET_API_SECRET", "KALSHI_PRIVATE_KEY_PEM",
