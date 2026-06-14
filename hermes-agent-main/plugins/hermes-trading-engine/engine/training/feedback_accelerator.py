@@ -55,6 +55,11 @@ _TRADE_CLASSES = frozenset({
 _NON_READINESS_CLASSES = frozenset({TINY_EXPLORATION_TRADE, SHADOW_DECISION_ONLY,
                                     NO_TRADE_LABEL})
 
+# Hard upper bound on the EFFECTIVE capacity multiplier that actually scales the soft
+# knobs (decisions/candidates per tick). The REQUESTED target multiplier may be 100 (the
+# 100X profile), but effective capacity stays bounded here so CPU/network never run away.
+EFFECTIVE_CAPACITY_CAP = 20
+
 
 def is_trade_class(cls: str) -> bool:
     return cls in _TRADE_CLASSES
@@ -344,8 +349,7 @@ def apply_feedback_accelerator(cfg) -> dict:
     # network can't run away). We report both and never pretend the effective capacity
     # is higher than this bound.
     requested = max(1, int(getattr(cfg, "feedback_accelerator_target_multiplier", 10)))
-    _EFFECTIVE_CAPACITY_CAP = 20
-    mult = min(requested, _EFFECTIVE_CAPACITY_CAP)
+    mult = min(requested, EFFECTIVE_CAPACITY_CAP)
     before = {
         "paper_decision_budget": int(getattr(cfg, "paper_decision_budget", 30)),
         "trade_candidate_limit": int(getattr(cfg, "trade_candidate_limit", 30)),
@@ -374,7 +378,7 @@ def apply_feedback_accelerator(cfg) -> dict:
     return {"applied": True, "target_multiplier": mult,
             "requested_target_multiplier": requested,
             "effective_capacity_multiplier": mult,
-            "effective_capacity_cap": _EFFECTIVE_CAPACITY_CAP,
+            "effective_capacity_cap": EFFECTIVE_CAPACITY_CAP,
             "before": before, "after": after}
 
 

@@ -92,6 +92,16 @@ def test_hermes_training_has_100x_env_once_with_final_values():
         assert _resolve_default(env[key]) == expected, f"{key} -> {env[key]}"
 
 
+def test_feedback_multiplier_is_hard_pinned_to_100_not_interpolated():
+    """The 100X target must NOT use ${...:-100} (a project .env that sets =10 would win
+    the interpolation). It is hard-pinned to "100" for hermes-training so the container
+    runtime env always resolves 100 regardless of .env."""
+    env = _load_compose()["services"]["hermes-training"]["environment"]
+    raw = str(env["FEEDBACK_ACCELERATOR_TARGET_MULTIPLIER"])
+    assert raw == "100"                      # literal, not "${FEEDBACK_ACCELERATOR_...}"
+    assert "${" not in raw and ":-" not in raw   # no interpolation a .env could override
+
+
 def test_live_trading_remains_disabled_in_compose():
     env = _load_compose()["services"]["hermes-training"]["environment"]
     for flag in LIVE_OFF:

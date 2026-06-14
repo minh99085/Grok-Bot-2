@@ -28,6 +28,14 @@ logger = logging.getLogger("hte.aggressive_paper")
 
 AGGRESSIVE_PAPER_FLAG = "AGGRESSIVE_PAPER_TRAINING"
 
+# 100X profile identity: the REQUESTED feedback-accelerator multiplier. The EFFECTIVE
+# capacity multiplier that actually scales soft knobs is bounded SEPARATELY in
+# engine.training.feedback_accelerator (mirrored here as a lightweight constant so this
+# module stays import-cheap at startup and never pulls in the training package).
+FEEDBACK_TARGET_MULTIPLIER_KEY = "FEEDBACK_ACCELERATOR_TARGET_MULTIPLIER"
+FEEDBACK_TARGET_MULTIPLIER_100X = 100
+FEEDBACK_EFFECTIVE_CAPACITY_CAP = 20   # mirrors feedback_accelerator.EFFECTIVE_CAPACITY_CAP
+
 # Real-money / live flags that MUST be off in aggressive paper mode. If any is
 # truthy we fail closed (refuse to start) rather than forcing it off silently.
 FORBIDDEN_LIVE_FLAGS = (
@@ -134,6 +142,12 @@ def aggressive_paper_proof(env: Optional[Mapping] = None) -> dict:
         "aggressive_paper_training_enabled": bool(agg),
         "feedback_accelerator_enabled": _truthy(e.get("FEEDBACK_ACCELERATOR_ENABLED")),
         "feedback_accelerator_target_multiplier": mult,
+        # the REQUESTED target (== resolved target here) vs the EFFECTIVE capacity cap
+        # that actually bounds soft-knob scaling (reported separately; never inflated).
+        "feedback_accelerator_requested_multiplier": mult,
+        "feedback_accelerator_effective_capacity_cap": FEEDBACK_EFFECTIVE_CAPACITY_CAP,
+        "feedback_accelerator_effective_capacity_multiplier": min(
+            mult, FEEDBACK_EFFECTIVE_CAPACITY_CAP) if mult > 0 else 0,
         "paper_profit_discovery_profile_enabled": (
             _truthy(e.get("PAPER_PROFIT_DISCOVERY_PROFILE")) or bool(agg)),
         # Hard invariants — both are constant under aggressive paper locks.
@@ -168,9 +182,23 @@ def apply_aggressive_paper_env(env: Optional[Mapping] = None) -> dict:
         if not str(e.get(k, "")).strip():
             e[k] = v
             applied.append(k)
+    # 100X PROFILE IDENTITY: the Feedback Accelerator target multiplier MUST resolve to
+    # at least 100 under aggressive paper mode. A stale project .env (e.g. =10) otherwise
+    # leaks through and the runtime under-accelerates. We bump it UP to 100 (never down,
+    # so an intentional higher value is preserved). This is a paper-learning throughput
+    # knob only — the EFFECTIVE capacity is bounded separately and no gate is loosened.
+    forced: list = []
+    try:
+        cur_mult = int(float(e.get(FEEDBACK_TARGET_MULTIPLIER_KEY, 0) or 0))
+    except (TypeError, ValueError):
+        cur_mult = 0
+    if cur_mult < FEEDBACK_TARGET_MULTIPLIER_100X:
+        e[FEEDBACK_TARGET_MULTIPLIER_KEY] = str(FEEDBACK_TARGET_MULTIPLIER_100X)
+        forced.append(FEEDBACK_TARGET_MULTIPLIER_KEY)
     e[AGGRESSIVE_PAPER_FLAG] = "1"
-    logger.info("AGGRESSIVE_PAPER_TRAINING=1 activated: %d paper-locks, %d defaults; "
-                "real_execution_possible=%s", len(locks), len(applied),
-                real_execution_possible(e))
-    return {"locks": locks, "defaults_applied": applied,
+    logger.info("AGGRESSIVE_PAPER_TRAINING=1 activated: %d paper-locks, %d defaults, "
+                "%d forced (target_multiplier=%s); real_execution_possible=%s",
+                len(locks), len(applied), len(forced),
+                e.get(FEEDBACK_TARGET_MULTIPLIER_KEY), real_execution_possible(e))
+    return {"locks": locks, "defaults_applied": applied, "forced": forced,
             "forbidden_clear": True, "real_execution_possible": False}

@@ -160,8 +160,8 @@ def test_compose_defaults_aggressive_and_100x():
     txt = (_PLUGIN / "docker-compose.yml").read_text(encoding="utf-8")
     assert 'AGGRESSIVE_PAPER_TRAINING: "${AGGRESSIVE_PAPER_TRAINING:-1}"' in txt
     assert 'FEEDBACK_ACCELERATOR_ENABLED: "${FEEDBACK_ACCELERATOR_ENABLED:-1}"' in txt
-    assert ('FEEDBACK_ACCELERATOR_TARGET_MULTIPLIER: '
-            '"${FEEDBACK_ACCELERATOR_TARGET_MULTIPLIER:-100}"') in txt
+    # hard-pinned to 100 (NOT ${...:-100}, so a project .env=10 can't win interpolation)
+    assert 'FEEDBACK_ACCELERATOR_TARGET_MULTIPLIER: "100"' in txt
 
 
 # --------------------------------------------------------------------------- #
@@ -201,6 +201,10 @@ def test_acceleration_report_proves_100x_active_under_vps_env(tmp_path, monkeypa
     assert acc["accelerated_discovery_enabled"] is True           # HERMES env resolved
     assert acc["real_execution_possible"] is False
     assert acc["live_flags_forced_off"] is True
+    # requested 100X target + SEPARATE effective capacity cap are both surfaced
+    assert acc["feedback_accelerator_requested_multiplier"] == 100
+    assert acc["feedback_accelerator_effective_capacity_cap"] == 20
+    assert acc["feedback_accelerator_effective_capacity_multiplier"] == 20
 
 
 def test_vps_100x_profile_resolves_effective_runtime_config(monkeypatch):

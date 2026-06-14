@@ -48,6 +48,27 @@ def test_vps_paper_profile_multiplier_is_100():
     assert AGGRESSIVE_PAPER_DEFAULTS["PAPER_PROFIT_DISCOVERY_PROFILE"] == "1"
 
 
+def test_apply_forces_stale_env_multiplier_up_to_100():
+    # a stale project .env value of 10 must be OVERRIDDEN up to the 100X profile identity
+    env = {"FEEDBACK_ACCELERATOR_TARGET_MULTIPLIER": "10"}
+    res = apply_aggressive_paper_env(env)
+    assert env["FEEDBACK_ACCELERATOR_TARGET_MULTIPLIER"] == "100"
+    assert "FEEDBACK_ACCELERATOR_TARGET_MULTIPLIER" in res["forced"]
+    proof = aggressive_paper_proof(env)
+    assert proof["feedback_accelerator_enabled"] is True
+    assert proof["feedback_accelerator_target_multiplier"] == 100
+    assert proof["feedback_accelerator_requested_multiplier"] == 100
+    # effective capacity is reported SEPARATELY (bounded), never inflated to 100
+    assert proof["feedback_accelerator_effective_capacity_cap"] == 20
+    assert proof["feedback_accelerator_effective_capacity_multiplier"] == 20
+
+
+def test_apply_preserves_explicit_higher_multiplier():
+    env = {"FEEDBACK_ACCELERATOR_TARGET_MULTIPLIER": "150"}
+    apply_aggressive_paper_env(env)
+    assert env["FEEDBACK_ACCELERATOR_TARGET_MULTIPLIER"] == "150"   # bump UP only
+
+
 def test_apply_forces_paper_only_locks():
     env = {}
     out = apply_aggressive_paper_env(env)

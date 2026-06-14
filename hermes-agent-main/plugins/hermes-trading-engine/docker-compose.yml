@@ -488,7 +488,11 @@ services:
       PAPER_PROFIT_DISCOVERY_PROFILE: "${PAPER_PROFIT_DISCOVERY_PROFILE:-1}"
       HERMES_ACCELERATED_DISCOVERY: "${HERMES_ACCELERATED_DISCOVERY:-1}"
       FEEDBACK_ACCELERATOR_ENABLED: "${FEEDBACK_ACCELERATOR_ENABLED:-1}"
-      FEEDBACK_ACCELERATOR_TARGET_MULTIPLIER: "${FEEDBACK_ACCELERATOR_TARGET_MULTIPLIER:-100}"
+      # 100X profile identity: HARD-PIN to 100 for hermes-training (NOT
+      # "${...:-100}", because a project .env that sets =10 would otherwise win the
+      # interpolation and the container would receive 10). This pins it for the training
+      # service ONLY; it never enables live trading or loosens any gate.
+      FEEDBACK_ACCELERATOR_TARGET_MULTIPLIER: "100"
       POLYMARKET_ACTIVE_LEARNING_ENABLED: "${POLYMARKET_ACTIVE_LEARNING_ENABLED:-1}"
       EXPLORATION_ENABLED: "${EXPLORATION_ENABLED:-1}"
       EXPLORATION_TINY_SIZE_ENABLED: "${EXPLORATION_TINY_SIZE_ENABLED:-1}"
