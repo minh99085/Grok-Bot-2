@@ -43,6 +43,7 @@ from typing import Callable, Optional
 DEFAULT_CONFIG = ".laptop_agent.json"
 EXAMPLE_CONFIG = ".laptop_agent.example.json"
 DEFAULT_CONTAINER = "hermes-training"
+DEFAULT_ENGINE_CONTAINER = "hermes-trading-engine"
 VPS_OK_MARKER = "hermes-coordinator-ok"
 
 # Module the report generator + tests require; a Python that can't import it is useless
@@ -157,6 +158,7 @@ class Config:
     vps_remote_plugin_path: str = ""
     local_artifact_dir: str = "inspection_reports_artifacts"
     hermes_training_container: str = DEFAULT_CONTAINER
+    hermes_engine_container: str = DEFAULT_ENGINE_CONTAINER
     source_file: str = ""
 
     def missing_required(self) -> list:
@@ -175,6 +177,7 @@ class Config:
         out["vps_port"] = self.vps_port
         out["vps_ssh_key"] = "set" if str(self.vps_ssh_key).strip() else "(default agent/key)"
         out["hermes_training_container"] = self.hermes_training_container
+        out["hermes_engine_container"] = self.hermes_engine_container
         return out
 
 
@@ -237,6 +240,8 @@ def load_config(path: Path) -> ConfigLoad:
                                  or raw.get("artifact_dir") or "inspection_reports_artifacts")
     cfg.hermes_training_container = str(raw.get("hermes_training_container")
                                         or DEFAULT_CONTAINER)
+    cfg.hermes_engine_container = str(raw.get("hermes_engine_container")
+                                      or DEFAULT_ENGINE_CONTAINER)
     return ConfigLoad(cfg, LOAD_OK, "", resolved)
 
 
@@ -316,8 +321,9 @@ def redact(argv, cfg: Config) -> str:
 # Detected failure classes (operator-actionable). UNKNOWN is the safe fallback.
 FAILURE_CLASSES = (
     "SSH_AUTH_FAILED", "SSH_CONNECT_FAILED", "VPS_PATH_MISSING", "GIT_REPO_MISSING",
-    "DOCKER_MISSING", "DOCKER_COMPOSE_FAILED", "CONTAINER_NOT_RUNNING", "API_UNHEALTHY",
-    "UNKNOWN",
+    "GIT_DIRTY_GENERATED_ARTIFACTS", "GIT_PULL_BLOCKED", "DOCKER_MISSING",
+    "DOCKER_COMPOSE_CONFIG_FAILED", "CONTAINER_NOT_RUNNING", "API_UNHEALTHY",
+    "REPORT_MISSING", "REPORT_THIN", "UNKNOWN",
 )
 
 
@@ -355,7 +361,13 @@ def classify_remote_failure(label: str, rc: int, out: str, err: str) -> str:
         return "DOCKER_MISSING"
     # stage-label fallbacks
     if "compose config" in lab:
-        return "DOCKER_COMPOSE_FAILED"
+        return "DOCKER_COMPOSE_CONFIG_FAILED"
+    if "api" in lab or "health" in lab:
+        return "API_UNHEALTHY"
+    if "report" in lab and "thin" in lab:
+        return "REPORT_THIN"
+    if "report" in lab:
+        return "REPORT_MISSING"
     if "repo path" in lab or "plugin path" in lab:
         return "VPS_PATH_MISSING"
     if "git commit" in lab or "git" in lab:
@@ -382,15 +394,29 @@ def suggested_action(failure_class: str) -> str:
                              "there)."),
         "GIT_REPO_MISSING": ("The VPS plugin dir is not a git repo or has no commits. Clone "
                              "the repo / fix it on the VPS, then retry."),
+        "GIT_DIRTY_GENERATED_ARTIFACTS": ("The local git tree is dirty with GENERATED report "
+                                          "artifacts (validation_light_latest.txt / "
+                                          "vps_light_report_*.zip / report_logs/ …). They are "
+                                          "gitignored; run the printed `git rm --cached` "
+                                          "cleanup (never auto-run) and re-pull."),
+        "GIT_PULL_BLOCKED": ("Fast-forward pull of origin/main was blocked (diverged or "
+                             "uncommitted local changes). Resolve/commit/stash locally, then "
+                             "retry — the agent never force-pulls or overwrites local files."),
         "DOCKER_MISSING": ("Docker (or the compose plugin) is not available on the VPS. "
                            "Install/enable Docker + 'docker compose', then retry."),
-        "DOCKER_COMPOSE_FAILED": ("'docker compose config -q' failed (YAML/interpolation "
-                                  "error). Pull latest main on the VPS and fix "
-                                  "docker-compose.yml, then retry."),
-        "CONTAINER_NOT_RUNNING": ("hermes-training is not running, so a FRESH report can't be "
-                                  "generated. Start it (mission-control --approved-paper-run "
+        "DOCKER_COMPOSE_CONFIG_FAILED": ("'docker compose config -q' failed (YAML/interpolation "
+                                         "error). Pull latest main on the VPS and fix "
+                                         "docker-compose.yml, then retry."),
+        "CONTAINER_NOT_RUNNING": ("A required container is not running, so a FRESH report can't "
+                                  "be generated. Start it (mission-control --approved-paper-run "
                                   "--mode proof2h) before collecting."),
-        "API_UNHEALTHY": "The training API/health check is failing; inspect container logs on the VPS.",
+        "API_UNHEALTHY": ("hermes-trading-engine is running but its health check is not healthy; "
+                          "inspect `docker logs hermes-trading-engine` on the VPS."),
+        "REPORT_MISSING": ("No light-report zip was produced/copied. Re-run the canonical "
+                           "`bash scripts/vps_generate_light_report.sh` on the VPS."),
+        "REPORT_THIN": ("The copied report bundle is THIN/incomplete (missing report.json/md, "
+                        "metrics, samples, validation output, or git_commit_proof.txt). The "
+                        "thin zip is refused; re-run the canonical report script on the VPS."),
         "UNKNOWN": "Inspect the exact remote command + stdout/stderr tail above and retry.",
     }.get(failure_class, "Inspect the exact remote command + stdout/stderr tail above.")
 
@@ -868,6 +894,7 @@ SAFE_DEFAULT_CONFIG = {
     "vps_remote_plugin_path": "",
     "local_artifact_dir": "inspection_reports_artifacts",
     "hermes_training_container": DEFAULT_CONTAINER,
+    "hermes_engine_container": DEFAULT_ENGINE_CONTAINER,
 }
 
 # Only these (non-secret, coordinator) keys are seeded from the example template.
@@ -1135,6 +1162,34 @@ def _remote_paper_status(ctx: Ctx) -> "tuple[bool, str]":
     except Exception:  # noqa: BLE001
         status = "unknown"
     return (status == "running"), status
+
+
+def _remote_engine_status(ctx: Ctx) -> "tuple[bool, str, str]":
+    """Read-only: (engine_running, container_status, health) for the hermes-trading-engine
+    (dashboard/API) container, from `docker inspect`. health is the container HEALTHCHECK
+    status (healthy/unhealthy/starting/none). Never fails the cycle; PAPER-only — this
+    only inspects state, it never starts/stops anything."""
+    cfg = ctx.cfg
+    cont = shlex.quote(cfg.hermes_engine_container)
+    status, health = "unknown", "none"
+    try:
+        rc, out, _ = ctx.run(
+            build_ssh_cmd(cfg, f"docker inspect -f '{{{{.State.Status}}}}' {cont} "
+                               f"2>/dev/null || echo absent"), timeout=25, redact_display=True)
+        status = out.strip().splitlines()[-1] if out.strip() else "unknown"
+    except Exception:  # noqa: BLE001
+        status = "unknown"
+    if status == "running":
+        try:
+            rc, out, _ = ctx.run(
+                build_ssh_cmd(cfg, f"docker inspect -f '{{{{if .State.Health}}}}"
+                                   f"{{{{.State.Health.Status}}}}{{{{else}}}}none{{{{end}}}}' "
+                                   f"{cont} 2>/dev/null || echo none"),
+                timeout=25, redact_display=True)
+            health = out.strip().splitlines()[-1] if out.strip() else "none"
+        except Exception:  # noqa: BLE001
+            health = "none"
+    return (status == "running"), status, health
 
 
 def _write_cycle_blocker_handoff(ctx: Ctx, blockers: list, evidence: dict = None) -> str:
@@ -1813,6 +1868,8 @@ def _print_mission_summary(ctx: Ctx, *, mode: str, safe: bool, local_commit: str
                            container_status: str, env100_ok, zip_path, zip_complete,
                            instr: str, cursor_needed: bool, cursor_file: str,
                            dirty_artifacts: list, cleanup_cmd: str,
+                           engine_running: bool = False, engine_status: str = "unknown",
+                           api_health: str = "not checked",
                            blockers: list = None, evidence: dict = None) -> None:
     ctx.say("\n" + "=" * 64)
     ctx.say(f"MISSION-CONTROL — FINAL STATUS (mode={mode})")
@@ -1831,6 +1888,9 @@ def _print_mission_summary(ctx: Ctx, *, mode: str, safe: bool, local_commit: str
     ctx.say(f"  docker compose config: {'OK' if compose_config_ok else 'FAILED' if compose_config_ok is False else 'not checked'}")
     ctx.say(f"  hermes-training     : {'RUNNING' if paper_running else 'NOT running'} "
             f"({container_status})")
+    ctx.say(f"  hermes-trading-engine: {'RUNNING' if engine_running else 'NOT running'} "
+            f"({engine_status})")
+    ctx.say(f"  API health          : {api_health}")
     ctx.say(f"  100X env proof      : {'OK' if env100_ok else 'NOT proven' if env100_ok is False else 'not checked'}")
     ctx.say(f"  report zip (local)  : {zip_path if zip_path else '(none)'}")
     ctx.say(f"  report bundle       : {'COMPLETE' if zip_complete else 'THIN/incomplete' if zip_complete is False else 'n/a'}")
@@ -1866,6 +1926,7 @@ def cmd_mission_control(ctx: Ctx, *, mode: str = "inspect-only",
     cursor_file = ""
     state = {"compose_config_ok": None, "env100_ok": None, "vps_commit": "",
              "paper_running": False, "container_status": "unknown",
+             "engine_running": False, "engine_status": "unknown", "api_health": "not checked",
              "zip": None, "zip_complete": None, "instr": "", "blocker_evidence": None}
 
     ctx.say("=" * 64)
@@ -1884,6 +1945,8 @@ def cmd_mission_control(ctx: Ctx, *, mode: str = "inspect-only",
             "event": "mission-control", "mode": mode, "local_commit": _local_commit(ctx),
             "vps_commit": state["vps_commit"], "compose_config_ok": state["compose_config_ok"],
             "paper_running": state["paper_running"], "env100_ok": state["env100_ok"],
+            "engine_running": state["engine_running"], "engine_status": state["engine_status"],
+            "api_health": state["api_health"],
             "report_zip": (str(state["zip"]) if state["zip"] else ""),
             "zip_complete": state["zip_complete"], "approved_paper_run": bool(approved_paper_run),
             "approved_by_chatgpt": bool(approved_by_chatgpt), "blockers": blockers,
@@ -1895,7 +1958,9 @@ def cmd_mission_control(ctx: Ctx, *, mode: str = "inspect-only",
             env100_ok=state["env100_ok"], zip_path=state["zip"],
             zip_complete=state["zip_complete"], instr=state["instr"],
             cursor_needed=bool(cursor_file), cursor_file=cursor_file,
-            dirty_artifacts=dirty, cleanup_cmd=cleanup, blockers=blockers,
+            dirty_artifacts=dirty, cleanup_cmd=cleanup,
+            engine_running=state["engine_running"], engine_status=state["engine_status"],
+            api_health=state["api_health"], blockers=blockers,
             evidence=state.get("blocker_evidence"))
         return rc
 
@@ -1928,7 +1993,26 @@ def cmd_mission_control(ctx: Ctx, *, mode: str = "inspect-only",
         return _finish(False, 2)
     ctx.say("\n[2] sync local GitHub main (fast-forward only)")
     if cmd_sync_main(ctx) != 0:
-        blockers.append("could not safely sync local GitHub main")
+        # classify the LOCAL git/sync failure precisely (dirty generated artifacts vs a
+        # blocked fast-forward) so the operator gets an exact next action, not "sync failed".
+        dirty, cleanup = _mission_dirty_artifacts(ctx)
+        rc_s, out_s, err_s = ctx.run(["git", "status", "--porcelain"], timeout=30)
+        non_artifact_dirty = bool(out_s.strip()) and len(dirty) < len(
+            [ln for ln in out_s.splitlines() if ln.strip()])
+        fc = ("GIT_DIRTY_GENERATED_ARTIFACTS" if dirty and not non_artifact_dirty
+              else "GIT_PULL_BLOCKED")
+        ev = {"stage": "sync local GitHub main (fast-forward only)",
+              "remote_command": "git pull --ff-only origin main",
+              "exit_code": 1, "stdout_tail": _tail_text(out_s),
+              "stderr_tail": (("dirty generated artifacts: " + ", ".join(dirty))
+                              if dirty else _tail_text(err_s)),
+              "ok": False, "failure_class": fc, "suggested_action": suggested_action(fc)}
+        state["blocker_evidence"] = ev
+        print_remote_evidence(ctx, ev)
+        if dirty:
+            ctx.say(f"    safe cleanup (run yourself; never auto-run): {cleanup}")
+        blockers.append(f"could not safely sync local GitHub main [{fc}]")
+        cursor_needed = True
         return _finish(False, 2)
     # --- STAGED VPS verification (each stage reports EXACT evidence; the precise stage
     # that failed is printed in the console AND written into the Cursor handoff). No more
@@ -1976,7 +2060,28 @@ def cmd_mission_control(ctx: Ctx, *, mode: str = "inspect-only",
                               out=state["container_status"], err="", ok=False)
         ctx.say(f"  note: {cn['failure_class']} — {cn['suggested_action']}")
 
-    ctx.say("\n[5] 100X env proof (only if container running)")
+    ctx.say("\n[5] hermes-trading-engine status + API health")
+    state["engine_running"], state["engine_status"], _health = _remote_engine_status(ctx)
+    ctx.say(f"  hermes-trading-engine: {'RUNNING' if state['engine_running'] else 'NOT running'} "
+            f"({state['engine_status']})")
+    if state["engine_running"]:
+        # API health == the engine container HEALTHCHECK status (healthy/unhealthy/starting).
+        state["api_health"] = _health
+        ctx.say(f"  API health          : {_health}")
+        if _health == "unhealthy":
+            ev = _remote_evidence(ctx, label="hermes-trading-engine API health",
+                                  remote_cmd=f"docker inspect -f '{{{{.State.Health.Status}}}}' "
+                                             f"{shlex.quote(cfg.hermes_engine_container)}",
+                                  rc=1, out=_health, err="", ok=False)
+            print_remote_evidence(ctx, ev)
+            state["blocker_evidence"] = state["blocker_evidence"] or ev
+            blockers.append(f"hermes-trading-engine API unhealthy [{ev['failure_class']}]")
+            cursor_needed = True
+    else:
+        state["api_health"] = "n/a (engine not running)"
+        ctx.say("  API health          : skipped (engine not running)")
+
+    ctx.say("\n[6] 100X env proof (only if container running)")
     if state["paper_running"]:
         state["env100_ok"], _present, _missing = _remote_100x_proof(ctx)
         ctx.say(f"  100X env proof      : {'OK' if state['env100_ok'] else 'NOT proven: ' + str(_missing)}")
@@ -2017,17 +2122,29 @@ def cmd_mission_control(ctx: Ctx, *, mode: str = "inspect-only",
     art = _artifact_dir(ctx)
     z = _latest_zip(art)
     state["zip"] = z
+    missing_markers: list = []
     if z is not None:
         try:
             with zipfile.ZipFile(z) as zf:
-                complete, _missing = zip_completeness(zf.namelist())
+                complete, missing_markers = zip_completeness(zf.namelist())
             state["zip_complete"] = complete
         except (OSError, zipfile.BadZipFile):
             state["zip_complete"] = False
     else:
         state["zip_complete"] = False
     if not state["zip_complete"]:
-        blockers.append("report zip incomplete (missing required bundle markers)")
+        fc = "REPORT_MISSING" if z is None else "REPORT_THIN"
+        ev = {"stage": "collect canonical light report + verify bundle",
+              "remote_command": f"bash {CANONICAL_REPORT_SCRIPT}  (-> {CANONICAL_REPORT_ZIP})",
+              "exit_code": (1 if z is None else 0),
+              "stdout_tail": (f"local zip: {z}" if z is not None else "no zip copied locally"),
+              "stderr_tail": ("missing bundle markers: " + ", ".join(missing_markers)
+                              if missing_markers else "no report zip present"),
+              "ok": False, "failure_class": fc, "suggested_action": suggested_action(fc)}
+        print_remote_evidence(ctx, ev)
+        state["blocker_evidence"] = state["blocker_evidence"] or ev
+        blockers.append(f"report bundle not usable [{fc}]"
+                        + (f": missing {missing_markers}" if missing_markers else ""))
         cursor_needed = True
 
     ctx.say("\n[9] write ChatGPT upload handoff")

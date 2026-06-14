@@ -681,7 +681,7 @@ def test_mission_compose_config_failure_classified(tmp_path):
                    _diag_runner(tmp_path, fail="compose-config", fail_rc=1,
                                 fail_err="yaml: duplicate key POLYMARKET_EXPLORATION_RATE"))
     assert rc == 2
-    assert "DOCKER_COMPOSE_FAILED" in out
+    assert "DOCKER_COMPOSE_CONFIG_FAILED" in out
     assert "duplicate key" in out
     assert "exit_code     : 1" in out
 
@@ -714,7 +714,7 @@ def test_mission_final_summary_includes_exact_blocker(tmp_path):
                    _diag_runner(tmp_path, fail="compose-config", fail_rc=1,
                                 fail_err="yaml: duplicate key"))
     final = out.split("FINAL STATUS", 1)[1]                  # only the summary block
-    assert "DOCKER_COMPOSE_FAILED" in final
+    assert "DOCKER_COMPOSE_CONFIG_FAILED" in final
     assert "failing stage" in final and "exit=1" in final
 
 
@@ -761,4 +761,111 @@ def test_classify_remote_failure_units():
     assert co.classify_remote_failure("Docker available", 127,
                                       "", "bash: docker: command not found") == "DOCKER_MISSING"
     assert co.classify_remote_failure("docker compose config -q", 1,
-                                      "", "yaml: duplicate key") == "DOCKER_COMPOSE_FAILED"
+                                      "", "yaml: duplicate key") == "DOCKER_COMPOSE_CONFIG_FAILED"
+
+
+# --------------------------------------------------------------------------- #
+# Phase 6 (final): hermes-trading-engine status + API health + report classes
+# --------------------------------------------------------------------------- #
+def test_classify_new_failure_classes_units():
+    # the new operator-actionable classes are registered + have a suggested action.
+    for fc in ("GIT_DIRTY_GENERATED_ARTIFACTS", "GIT_PULL_BLOCKED",
+               "DOCKER_COMPOSE_CONFIG_FAILED", "API_UNHEALTHY",
+               "REPORT_MISSING", "REPORT_THIN"):
+        assert fc in co.FAILURE_CLASSES
+        assert co.suggested_action(fc) and co.suggested_action(fc) != ""
+    assert co.classify_remote_failure("hermes-trading-engine API health", 1,
+                                      "", "unhealthy") == "API_UNHEALTHY"
+
+
+def test_mission_inspect_only_reports_engine_status_and_api_health(tmp_path):
+    _plugin(tmp_path)
+    _write_cfg(tmp_path)
+    rc, out = _run(["mission-control", "--config", _cfg_arg(tmp_path)], tmp_path,
+                   _diag_runner(tmp_path))
+    # both the staged line and the final summary must surface the engine + API health rows.
+    assert "hermes-trading-engine:" in out
+    assert "API health" in out
+    final = out.split("FINAL STATUS", 1)[1]
+    assert "hermes-trading-engine:" in final and "API health" in final
+
+
+def test_mission_api_unhealthy_classified_and_printed(tmp_path):
+    _plugin(tmp_path)
+    _write_cfg(tmp_path)
+
+    def runner(argv, cwd=None, timeout=None):
+        s = " ".join(str(a) for a in argv)
+        if argv and argv[0] == "git":
+            if "rev-parse" in argv:
+                return (0, ("main\n" if "--abbrev-ref" in argv else "lc1\n"), "")
+            return (0, "", "")
+        if argv and argv[0] == "scp":
+            _write_full_bundle(tmp_path / "artifacts" / co.CANONICAL_REPORT_ZIP)
+            return (0, "", "")
+        if "State.Health" in s:
+            return (0, "unhealthy\n", "")                    # engine health -> unhealthy
+        stage = _stage_of(s)
+        return {
+            "ssh": (0, co.VPS_OK_MARKER + "\n", ""),
+            "path": (0, co.VPS_OK_MARKER + "\n", ""),
+            "git": (0, "vpsc1234567\n", ""),
+            "docker": (0, "27.0\n", ""),
+            "compose-config": (0, "", ""),
+            "compose-ps": (0, "hermes-training running\n", ""),
+            "env": (0, "\n".join(f"{k}={v}" for k, v in co.REQUIRED_100X_ENV.items()) + "\n", ""),
+            "status": (0, "running\n", ""),
+            "report": (0, "report ok\n", ""),
+        }.get(stage, (0, "ok\n", ""))
+
+    rc, out = _run(["mission-control", "--config", _cfg_arg(tmp_path)], tmp_path, runner)
+    assert "API_UNHEALTHY" in out
+    assert "API health          : unhealthy" in out
+    hand = _handoff_text(tmp_path)
+    assert "API_UNHEALTHY" in hand
+
+
+def test_mission_report_thin_classified(tmp_path):
+    _plugin(tmp_path)
+    _write_cfg(tmp_path)
+
+    def runner(argv, cwd=None, timeout=None):
+        s = " ".join(str(a) for a in argv)
+        if argv and argv[0] == "git":
+            if "rev-parse" in argv:
+                return (0, ("main\n" if "--abbrev-ref" in argv else "lc1\n"), "")
+            return (0, "", "")
+        if argv and argv[0] == "scp":
+            # copy back a THIN zip (only report.json + report.md) -> must be refused.
+            z = tmp_path / "artifacts" / co.CANONICAL_REPORT_ZIP
+            z.parent.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(z, "w") as zf:
+                zf.writestr("inspection_reports/x/report.json", "{}")
+                zf.writestr("inspection_reports/x/report.md", "# r")
+            return (0, "", "")
+        stage = _stage_of(s)
+        return {
+            "ssh": (0, co.VPS_OK_MARKER + "\n", ""),
+            "path": (0, co.VPS_OK_MARKER + "\n", ""),
+            "git": (0, "vpsc1234567\n", ""),
+            "docker": (0, "27.0\n", ""),
+            "compose-config": (0, "", ""),
+            "compose-ps": (0, "hermes-training running\n", ""),
+            "env": (0, "\n".join(f"{k}={v}" for k, v in co.REQUIRED_100X_ENV.items()) + "\n", ""),
+            "status": (0, "running\n", ""),
+            "report": (0, "report ok\n", ""),
+        }.get(stage, (0, "ok\n", ""))
+
+    rc, out = _run(["mission-control", "--config", _cfg_arg(tmp_path)], tmp_path, runner)
+    assert "REPORT_THIN" in out
+    assert "THIN/incomplete" in out
+    assert rc != 0
+
+
+def test_mission_engine_status_in_ledger(tmp_path):
+    _plugin(tmp_path)
+    _write_cfg(tmp_path)
+    _run(["mission-control", "--config", _cfg_arg(tmp_path)], tmp_path, _diag_runner(tmp_path))
+    led = tmp_path / "artifacts" / co.LEDGER_NAME
+    txt = led.read_text(encoding="utf-8") if led.exists() else ""
+    assert "engine_status" in txt and "api_health" in txt
