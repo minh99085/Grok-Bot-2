@@ -118,6 +118,95 @@ def test_record_chatgpt_decision_classifies_conservatively(tmp_path):
         assert label in out and rc == code
 
 
+# --------------------------------------------------------------------------- #
+# Phase 5B: explicit decision-token classification (the exact reported failure)
+# --------------------------------------------------------------------------- #
+# The exact decision file from the reported PowerShell failure.
+_EXACT_LONG_DECISION = (
+    "# ChatGPT Decision\n"
+    "LONG_RUN_APPROVED\n"
+    "Safe to continue with long paper training.\n"
+    "Do not enable live trading.\n"
+    "Do not loosen execution gates.\n"
+    "Do not change paper realism.\n"
+    "Do not use real money.\n"
+    "Approved command:\n"
+    "python scripts/laptop_agent_coordinator.py start-paper-run "
+    "--config .laptop_agent.json --mode long --approved-by-chatgpt\n")
+
+
+def _record(tmp_path, text):
+    d = tmp_path / "chatgpt_decision_test.md"
+    d.write_text(text, encoding="utf-8")
+    return _run(["record-chatgpt-decision", "--config", _cfg_arg(tmp_path),
+                 "--file", str(d)], tmp_path, _runner(tmp_path))
+
+
+def test_explicit_long_run_approved_with_command_classifies(tmp_path):
+    _write_cfg(tmp_path)
+    rc, out = _record(tmp_path, _EXACT_LONG_DECISION)
+    assert "classification    : LONG_RUN_APPROVED" in out
+    assert rc == 0
+    # only classifies + recommends; never starts a run
+    assert "--mode long --approved-by-chatgpt" in out
+    assert co.classify_chatgpt_decision_detail(_EXACT_LONG_DECISION)["source"] == "explicit_token"
+
+
+def test_explicit_long_run_approved_without_flag_is_review(tmp_path):
+    _write_cfg(tmp_path)
+    rc, out = _record(tmp_path, "# Decision\nLONG_RUN_APPROVED\nlooks good to me\n")
+    assert "classification    : UNKNOWN_REVIEW_REQUIRED" in out
+    assert rc == 1
+
+
+def test_explicit_stop_required_classifies(tmp_path):
+    _write_cfg(tmp_path)
+    rc, out = _record(tmp_path, "# Decision\nSTOP_REQUIRED\nfound a problem\n")
+    assert "classification    : STOP_REQUIRED" in out
+    assert rc == 3
+
+
+def test_explicit_cursor_prompt_required_classifies(tmp_path):
+    _write_cfg(tmp_path)
+    rc, out = _record(tmp_path, "# Decision\nCURSOR_PROMPT_REQUIRED\nplease fix this code\n")
+    assert "classification    : CURSOR_PROMPT_REQUIRED" in out
+    assert rc == 0
+    assert "prepare-cursor-handoff" in out          # supports later prompt extraction
+
+
+def test_explicit_short_test_only_classifies(tmp_path):
+    _write_cfg(tmp_path)
+    rc, out = _record(tmp_path, "# Decision\nSHORT_TEST_ONLY\n")
+    assert "classification    : SHORT_TEST_ONLY" in out
+    assert rc == 0
+
+
+def test_conflicting_explicit_tokens_are_review(tmp_path):
+    _write_cfg(tmp_path)
+    rc, out = _record(tmp_path,
+                      "LONG_RUN_APPROVED\n--mode long --approved-by-chatgpt\nSTOP_REQUIRED\n")
+    assert "classification    : UNKNOWN_REVIEW_REQUIRED" in out
+    assert "CONFLICT" in out
+    assert rc == 1
+
+
+def test_no_token_is_review(tmp_path):
+    _write_cfg(tmp_path)
+    rc, out = _record(tmp_path, "# Decision\nSome neutral commentary with no decision token.\n")
+    assert "classification    : UNKNOWN_REVIEW_REQUIRED" in out
+    assert rc == 1
+
+
+def test_explicit_token_takes_priority_over_fuzzy(tmp_path):
+    # fuzzy text says "short test" but the explicit token (with safety language) wins.
+    _write_cfg(tmp_path)
+    text = ("LONG_RUN_APPROVED\nIgnore the short test wording below.\n"
+            "Safe to continue with long paper training; do not enable live trading.\n")
+    rc, out = _record(tmp_path, text)
+    assert "classification    : LONG_RUN_APPROVED" in out
+    assert rc == 0
+
+
 def test_prepare_cursor_handoff_writes_prompt_without_executing(tmp_path):
     _write_cfg(tmp_path)
     d = tmp_path / "dec.md"

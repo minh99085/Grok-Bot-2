@@ -735,13 +735,87 @@ def _append_ledger(ctx: Ctx, record: dict) -> None:
         pass
 
 
-def classify_chatgpt_decision(text: str) -> str:
-    """Conservatively classify ChatGPT's free-text decision. NEVER returns an
-    action-approving label on ambiguous text; precedence is STOP > CURSOR > LONG >
-    SHORT > UNKNOWN so the safe interpretation always wins. The caller NEVER executes
-    anything from this — it only maps to a recommended next *manual* command."""
+# Explicit, machine-readable decision tokens an operator (or ChatGPT) can paste so the
+# coordinator never has to guess. These take ABSOLUTE priority over fuzzy text.
+EXPLICIT_DECISION_TOKENS = ("LONG_RUN_APPROVED", "SHORT_TEST_ONLY",
+                            "CURSOR_PROMPT_REQUIRED", "STOP_REQUIRED",
+                            "UNKNOWN_REVIEW_REQUIRED")
+# The exact approved start command that corroborates an explicit LONG_RUN_APPROVED.
+LONG_RUN_APPROVED_FLAGS = "--mode long --approved-by-chatgpt"
+
+
+def _explicit_decision_tokens(text: str) -> list:
+    """Return the DISTINCT explicit decision tokens present as whole words (uppercase),
+    in first-seen order. Whole-word match avoids matching a token inside another word."""
+    found = []
+    for tok in EXPLICIT_DECISION_TOKENS:
+        if re.search(r"(?<![A-Za-z0-9_])" + re.escape(tok) + r"(?![A-Za-z0-9_])", text or ""):
+            if tok not in found:
+                found.append(tok)
+    return found
+
+
+def _has_long_run_support(text: str) -> bool:
+    """LONG_RUN_APPROVED must be corroborated by the exact approved start command OR by
+    explicit paper-safety language (so a bare token can never approve a multi-hour run)."""
     t = (text or "").lower()
-    stop_kw = ("stop_required", "stop the run", "do not run", "don't run", "do not proceed",
+    if LONG_RUN_APPROVED_FLAGS in t:
+        return True
+    safety_kw = ("do not enable live trading", "do not loosen", "do not change paper realism",
+                 "do not use real money", "safe to continue", "safe to run",
+                 "paper training", "paper-only", "paper only")
+    return any(k in t for k in safety_kw)
+
+
+def classify_chatgpt_decision_detail(text: str) -> dict:
+    """Classify ChatGPT's decision, preferring EXPLICIT uppercase tokens over fuzzy text.
+
+    Precedence + safety rules (the safe interpretation always wins):
+      1. Explicit tokens take priority over fuzzy text.
+      2. Multiple DISTINCT conflicting explicit tokens -> UNKNOWN_REVIEW_REQUIRED (the
+         conflict is reported so the operator re-reads the response).
+      3. A lone explicit LONG_RUN_APPROVED requires corroboration (the approved
+         '--mode long --approved-by-chatgpt' command or explicit paper-safety language);
+         otherwise it is downgraded to UNKNOWN_REVIEW_REQUIRED.
+      4. With no explicit token, fall back to conservative fuzzy keyword matching
+         (STOP > CURSOR > LONG > SHORT > UNKNOWN).
+    Returns {label, source, explicit_tokens, conflict, reason}. The caller NEVER
+    executes anything from this — it only maps to a recommended next *manual* command."""
+    explicit = _explicit_decision_tokens(text)
+    actionable = [t for t in explicit if t != "UNKNOWN_REVIEW_REQUIRED"]
+
+    # (2) conflicting explicit decisions, or an explicit UNKNOWN mixed with others.
+    if len(set(actionable)) > 1 or (("UNKNOWN_REVIEW_REQUIRED" in explicit) and actionable):
+        return {"label": "UNKNOWN_REVIEW_REQUIRED", "source": "explicit_conflict",
+                "explicit_tokens": explicit, "conflict": True,
+                "reason": "conflicting explicit decision tokens: " + ", ".join(explicit)}
+
+    if len(set(actionable)) == 1:
+        tok = actionable[0]
+        if tok == "LONG_RUN_APPROVED" and not _has_long_run_support(text):
+            return {"label": "UNKNOWN_REVIEW_REQUIRED", "source": "explicit_long_uncorroborated",
+                    "explicit_tokens": explicit, "conflict": False,
+                    "reason": ("explicit LONG_RUN_APPROVED without the approved "
+                               f"'{LONG_RUN_APPROVED_FLAGS}' command or paper-safety language")}
+        return {"label": tok, "source": "explicit_token",
+                "explicit_tokens": explicit, "conflict": False,
+                "reason": f"explicit token {tok}"}
+
+    if explicit == ["UNKNOWN_REVIEW_REQUIRED"]:
+        return {"label": "UNKNOWN_REVIEW_REQUIRED", "source": "explicit_token",
+                "explicit_tokens": explicit, "conflict": False,
+                "reason": "explicit token UNKNOWN_REVIEW_REQUIRED"}
+
+    # (4) no explicit token -> conservative fuzzy fallback.
+    return {"label": _classify_chatgpt_decision_fuzzy(text), "source": "fuzzy",
+            "explicit_tokens": [], "conflict": False, "reason": "fuzzy keyword match"}
+
+
+def _classify_chatgpt_decision_fuzzy(text: str) -> str:
+    """Conservative fuzzy fallback (no explicit token present). Precedence is
+    STOP > CURSOR > LONG > SHORT > UNKNOWN so the safe interpretation always wins."""
+    t = (text or "").lower()
+    stop_kw = ("stop the run", "do not run", "don't run", "do not proceed",
                "not safe", "unsafe", "halt", "abort", "do not start", "stop the bot")
     cursor_kw = ("cursor prompt", "prompt for cursor", "paste into cursor", "send to cursor",
                  "open cursor", "use cursor", "code fix", "needs a fix", "needs fixing",
@@ -761,6 +835,12 @@ def classify_chatgpt_decision(text: str) -> str:
     if any(k in t for k in short_kw):
         return "SHORT_TEST_ONLY"
     return "UNKNOWN_REVIEW_REQUIRED"
+
+
+def classify_chatgpt_decision(text: str) -> str:
+    """Back-compat string API: the classified label only (see
+    :func:`classify_chatgpt_decision_detail` for tokens/conflict/reason)."""
+    return classify_chatgpt_decision_detail(text)["label"]
 
 
 def decision_next_command(label: str, cfg_name: str, decision_file: str = "<decision.md>") -> str:
@@ -906,7 +986,8 @@ def cmd_record_chatgpt_decision(ctx: Ctx, *, file: str) -> int:
     if text is None:
         ctx.say(f"STOP — could not read decision file: {file}")
         return 2
-    label = classify_chatgpt_decision(text)
+    detail = classify_chatgpt_decision_detail(text)
+    label = detail["label"]
     art = _artifact_dir(ctx)
     ts = ctx.now_fn().strftime("%Y%m%d_%H%M%S")
     saved = ""
@@ -921,13 +1002,22 @@ def cmd_record_chatgpt_decision(ctx: Ctx, *, file: str) -> int:
     ctx.say("-" * 60)
     ctx.say(f"  saved copy        : {saved or '(could not write)'}")
     ctx.say(f"  classification    : {label}")
+    if detail.get("explicit_tokens"):
+        ctx.say(f"  explicit tokens   : {', '.join(detail['explicit_tokens'])} "
+                f"(source={detail['source']})")
+    if detail.get("conflict"):
+        ctx.say(f"  CONFLICT          : {detail['reason']}")
+    elif label == "UNKNOWN_REVIEW_REQUIRED" and detail.get("source") != "fuzzy":
+        ctx.say(f"  review reason     : {detail['reason']}")
     ctx.say("  (no action was executed from the free text — classification only)")
     ctx.say(f"  RECOMMENDED NEXT  : {decision_next_command(label, cfg.source_file or DEFAULT_CONFIG, str(src))}")
     _append_ledger(ctx, {
         "timestamp": _dt.datetime.now().replace(microsecond=0).isoformat(),
         "event": "record-chatgpt-decision", "local_commit": _local_commit(ctx),
         "decision_source": str(src), "decision_saved": saved,
-        "decision_classification": label})
+        "decision_classification": label, "decision_source_kind": detail.get("source"),
+        "decision_explicit_tokens": detail.get("explicit_tokens"),
+        "decision_conflict": bool(detail.get("conflict"))})
     # exit codes: STOP -> 3 (do not proceed), UNKNOWN -> 1 (needs review), else 0
     if label == "STOP_REQUIRED":
         return 3
