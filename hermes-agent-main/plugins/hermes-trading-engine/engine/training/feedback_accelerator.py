@@ -55,10 +55,13 @@ _TRADE_CLASSES = frozenset({
 _NON_READINESS_CLASSES = frozenset({TINY_EXPLORATION_TRADE, SHADOW_DECISION_ONLY,
                                     NO_TRADE_LABEL})
 
-# Hard upper bound on the EFFECTIVE capacity multiplier that actually scales the soft
-# knobs (decisions/candidates per tick). The REQUESTED target multiplier may be 100 (the
-# 100X profile), but effective capacity stays bounded here so CPU/network never run away.
-EFFECTIVE_CAPACITY_CAP = 20
+# Upper bound on the EFFECTIVE capacity multiplier that scales the soft knobs
+# (decisions/candidates per tick). PAPER-ONLY mode allows the full 100X multiplier;
+# CPU/network can't run away because each scaled knob ALSO has its own hard per-knob
+# ceiling (paper_decision_budget <= 1000, trade_candidate_limit <= 200, shortlist <= 400,
+# live_watch <= 300) applied in apply_feedback_accelerator below. Hard risk/realism caps
+# (open trades, notional, exposure, daily loss) are NEVER touched.
+EFFECTIVE_CAPACITY_CAP = 100
 
 
 def is_trade_class(cls: str) -> bool:

@@ -398,6 +398,22 @@ def run(argv=None) -> int:
             getattr(cfg, "exploration_max_expected_loss_usd", None),
             getattr(cfg, "exploration_notional_usd", None),
             getattr(cfg, "max_order_notional_usd", None))
+        # FAIL-FAST (fix #1): when the aggressive / paper profit-discovery profile is
+        # active, the Feedback Accelerator multiplier MUST resolve to exactly 100. A
+        # stale .env=10 that somehow survived means the 100X profile would silently
+        # under-accelerate — refuse to start with a clear error instead.
+        _ppd = str(_os1.getenv("PAPER_PROFIT_DISCOVERY_PROFILE", "")).strip().lower() \
+            in ("1", "true", "yes", "on")
+        try:
+            _final_mult = int(str(_os1.getenv("FEEDBACK_ACCELERATOR_TARGET_MULTIPLIER", "0") or 0))
+        except ValueError:
+            _final_mult = 0
+        if _ppd and _final_mult != 100:
+            print("\n\033[91m*** REFUSING startup: paper profit-discovery (100X) profile is "
+                  f"active but FEEDBACK_ACCELERATOR_TARGET_MULTIPLIER resolved to {_final_mult} "
+                  "(expected 100). A stale .env value is overriding the 100X profile. Unset "
+                  "FEEDBACK_ACCELERATOR_TARGET_MULTIPLIER in your .env (or set it to 100). ***\033[0m")
+            return 2
 
     # Campaign-safe startup safety validation (fail-closed). Runs whenever the
     # safe profile is engaged; refuses to start if any live/unsafe flag is set.

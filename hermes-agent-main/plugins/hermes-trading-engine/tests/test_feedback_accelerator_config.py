@@ -63,7 +63,11 @@ def test_target_multiplier_resolves_to_100_with_separate_capacity_cap():
     assert cfg.feedback_accelerator_target_multiplier == 100
     rep = apply_feedback_accelerator(cfg)
     assert rep["requested_target_multiplier"] == 100
-    assert rep["effective_capacity_multiplier"] <= 20
+    # paper-only mode runs the full 100X multiplier; per-knob ceilings (decisions <= 1000,
+    # candidates <= 200, ...) are the real CPU bound, NOT the multiplier.
+    assert rep["effective_capacity_multiplier"] == 100
+    assert rep["effective_capacity_cap"] == 100
+    assert cfg.paper_decision_budget <= 1000      # per-knob ceiling still bounds CPU
     # absurd request is capped at 100 (not pretended higher)
     assert TrainingConfig(feedback_accelerator_target_multiplier=999
                           ).feedback_accelerator_target_multiplier == 100

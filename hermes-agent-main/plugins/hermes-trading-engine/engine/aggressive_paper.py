@@ -34,7 +34,7 @@ AGGRESSIVE_PAPER_FLAG = "AGGRESSIVE_PAPER_TRAINING"
 # module stays import-cheap at startup and never pulls in the training package).
 FEEDBACK_TARGET_MULTIPLIER_KEY = "FEEDBACK_ACCELERATOR_TARGET_MULTIPLIER"
 FEEDBACK_TARGET_MULTIPLIER_100X = 100
-FEEDBACK_EFFECTIVE_CAPACITY_CAP = 20   # mirrors feedback_accelerator.EFFECTIVE_CAPACITY_CAP
+FEEDBACK_EFFECTIVE_CAPACITY_CAP = 100  # mirrors feedback_accelerator.EFFECTIVE_CAPACITY_CAP
 
 # Real-money / live flags that MUST be off in aggressive paper mode. If any is
 # truthy we fail closed (refuse to start) rather than forcing it off silently.

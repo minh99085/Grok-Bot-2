@@ -2187,20 +2187,36 @@ def _build_report_md(rj, feats, status, docker, api, tests, comparison,
     agg = status.get("aggressive_paper") or {}
     if acc or agg:
         a = {**agg, **acc}
+        # numeric proof fields must render as RAW NUMBERS (not yes/no); booleans as yes/no.
+        _NUMERIC = {"feedback_accelerator_target_multiplier",
+                    "feedback_accelerator_requested_multiplier",
+                    "feedback_accelerator_effective_capacity_multiplier",
+                    "feedback_accelerator_effective_capacity_cap",
+                    "active_learning_tiny_trades_selected",
+                    "active_learning_tiny_trades_opened", "relaxed_bregman_trades_opened",
+                    "btc_pulse_paper_trades_opened", "readiness_paper_trades_opened",
+                    "exploration_pnl"}
+
+        def _fmt(k):
+            v = a.get(k)
+            return (v if v is not None else 0) if k in _NUMERIC else _yn(v)
         L.append("### 14a-2. 100X Feedback Accelerator + Paper Trade Acceleration")
         L.append("")
         for k in ("aggressive_paper_training_enabled", "feedback_accelerator_enabled",
                   "feedback_accelerator_target_multiplier",
+                  "feedback_accelerator_requested_multiplier",
+                  "feedback_accelerator_effective_capacity_multiplier",
+                  "feedback_accelerator_effective_capacity_cap",
                   "paper_profit_discovery_profile_enabled", "active_learning_enabled",
                   "exploration_enabled", "accelerated_discovery_enabled",
                   "real_execution_possible", "live_flags_forced_off"):
-            L.append(f"- {k}: {_yn(a.get(k))}")
+            L.append(f"- {k}: {_fmt(k)}")
         L.append("")
         L.append("Tiny paper-learning lanes (exploration PnL excluded from readiness):")
         for k in ("active_learning_tiny_trades_selected", "active_learning_tiny_trades_opened",
                   "relaxed_bregman_trades_opened", "btc_pulse_paper_trades_opened",
                   "exploration_pnl", "readiness_pnl_excludes_exploration"):
-            L.append(f"- {k}: {_yn(a.get(k))}")
+            L.append(f"- {k}: {_fmt(k)}")
         L.append(f"- active_learning_tiny_trades_blocked_by_reason: "
                  f"{a.get('active_learning_tiny_trades_blocked_by_reason')}")
         L.append("")

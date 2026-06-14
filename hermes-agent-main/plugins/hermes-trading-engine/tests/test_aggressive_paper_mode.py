@@ -58,9 +58,9 @@ def test_apply_forces_stale_env_multiplier_up_to_100():
     assert proof["feedback_accelerator_enabled"] is True
     assert proof["feedback_accelerator_target_multiplier"] == 100
     assert proof["feedback_accelerator_requested_multiplier"] == 100
-    # effective capacity is reported SEPARATELY (bounded), never inflated to 100
-    assert proof["feedback_accelerator_effective_capacity_cap"] == 20
-    assert proof["feedback_accelerator_effective_capacity_multiplier"] == 20
+    # paper-only mode runs the full 100X multiplier; per-knob ceilings bound CPU
+    assert proof["feedback_accelerator_effective_capacity_cap"] == 100
+    assert proof["feedback_accelerator_effective_capacity_multiplier"] == 100
 
 
 def test_apply_preserves_explicit_higher_multiplier():

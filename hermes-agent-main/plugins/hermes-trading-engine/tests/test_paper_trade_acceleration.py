@@ -201,10 +201,10 @@ def test_acceleration_report_proves_100x_active_under_vps_env(tmp_path, monkeypa
     assert acc["accelerated_discovery_enabled"] is True           # HERMES env resolved
     assert acc["real_execution_possible"] is False
     assert acc["live_flags_forced_off"] is True
-    # requested 100X target + SEPARATE effective capacity cap are both surfaced
+    # requested 100X target + SEPARATE effective capacity cap are both surfaced (honest)
     assert acc["feedback_accelerator_requested_multiplier"] == 100
-    assert acc["feedback_accelerator_effective_capacity_cap"] == 20
-    assert acc["feedback_accelerator_effective_capacity_multiplier"] == 20
+    assert acc["feedback_accelerator_effective_capacity_cap"] == 100
+    assert acc["feedback_accelerator_effective_capacity_multiplier"] == 100
 
 
 def test_vps_100x_profile_resolves_effective_runtime_config(monkeypatch):
@@ -259,6 +259,38 @@ def test_aggressive_profile_without_hermes_env_keeps_accel_off_and_scan_limit(mo
     cfg = TrainingConfig.aggressive_paper(scan_limit=25)
     assert cfg.accelerated_discovery_enabled is False
     assert cfg.scan_limit == 25
+
+
+def test_startup_fails_fast_if_multiplier_not_100_under_profile(tmp_path, monkeypatch):
+    """fix #1: if the paper profit-discovery (100X) profile is active but the final
+    FEEDBACK_ACCELERATOR_TARGET_MULTIPLIER resolves to something other than 100 (e.g. a
+    stale .env=10 that bypassed the force), startup REFUSES with a clear error (rc 2)."""
+    import os
+    import importlib.util
+    import engine.aggressive_paper as ap
+    snap = dict(os.environ)
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "start_pp_failfast",
+            Path(__file__).resolve().parents[1] / "scripts" / "start_polymarket_paper_training.py")
+        starter = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(starter)
+        # simulate the bug: apply_aggressive_paper_env does NOT force the multiplier,
+        # leaving a stale =10 in the container env.
+        monkeypatch.setattr(ap, "apply_aggressive_paper_env",
+                            lambda env=None: {"locks": [], "defaults_applied": [],
+                                              "forced": [], "forbidden_clear": True,
+                                              "real_execution_possible": False})
+        monkeypatch.setenv("AGGRESSIVE_PAPER_TRAINING", "1")
+        monkeypatch.setenv("PAPER_PROFIT_DISCOVERY_PROFILE", "1")
+        monkeypatch.setenv("FEEDBACK_ACCELERATOR_TARGET_MULTIPLIER", "10")  # stale, not 100
+        monkeypatch.setenv("HTE_MODE", "paper")
+        rc = starter.run(["--catalog", "synthetic", "--max-ticks", "1",
+                          "--data-dir", str(tmp_path)])
+        assert rc == 2                       # refused startup
+    finally:
+        os.environ.clear()
+        os.environ.update(snap)
 
 
 def test_aggressive_profile_env_fails_closed_on_live_flag():

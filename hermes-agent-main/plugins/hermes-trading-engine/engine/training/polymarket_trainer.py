@@ -2656,12 +2656,42 @@ class PolymarketPaperTrainer:
         am["_scores"].append(al["active_learning_score"])
         am["_exec_quality"].append(al["execution_quality_score"])
         am["buckets"][al["learning_bucket"]] = am["buckets"].get(al["learning_bucket"], 0) + 1
-        # strict realism + bounded-loss eligibility
+        # strict realism + bounded-loss eligibility (HARD gates — unchanged)
         eligible, info = self._exploration_eligibility(rec, est, edge)
         if not eligible:
             am["exploration_rejected_by_realism"] += 1
             self._record_near_miss(rec, est, edge, info, al)
             return {"decision": "near_miss", "reason": info["failed_gate"], **al}
+        # CANONICAL SOFT GATE: in paper profit-discovery mode (feedback accelerator +
+        # tiny exploration), route the SOFT edge/confidence/EV decision through the shared
+        # resolve_soft_gates + tiny_exploration_gate so the -0.15 soft floor is applied
+        # consistently. HARD gates were already enforced by _exploration_eligibility above
+        # (and again by _open's realism/risk/broker), so they are passed as satisfied here
+        # — this only applies the SOFT learning thresholds; it NEVER loosens a hard gate.
+        if (bool(getattr(cfg, "feedback_accelerator_enabled", False))
+                and bool(getattr(cfg, "exploration_tiny_size_enabled", False))
+                and bool(getattr(cfg, "exploration_enabled", False))):
+            from .feedback_accelerator import resolve_soft_gates, tiny_exploration_gate
+            _net = float(getattr(edge, "net_edge", 0.0) or 0.0)
+            _gate = tiny_exploration_gate(
+                live_blocked=False, fresh_book=True, valid_token=True, has_price=True,
+                chainlink_relevant=False, chainlink_stale=False,
+                ambiguity_score=float(getattr(est, "ambiguity_score", 0.0) or 0.0),
+                ambiguity_max=float(getattr(cfg, "exploration_max_ambiguity_score", 0.45)),
+                risk_ok=True, realistic_fill_ok=True, exploration_daily_loss_ok=True,
+                drawdown_kill_switch=False, edge=_net,
+                confidence=float(getattr(est, "confidence", 1.0) or 1.0),
+                after_cost_ev=_net, exposure_ok=True, soft_gates=resolve_soft_gates(cfg))
+            am["active_learning_tiny_gate_decision"] = _gate.get("decision_class")
+            if not _gate["allowed"]:
+                am["exploration_rejected_by_soft_gate"] = \
+                    am.get("exploration_rejected_by_soft_gate", 0) + 1
+                self._record_near_miss(rec, est, edge, {
+                    "failed_gate": _gate["reason"], "near_miss_reason": _gate["reason"],
+                    "distance_to_threshold": None,
+                    "condition_needed_to_trade": "edge/confidence/EV above the soft tiny floor"},
+                    al)
+                return {"decision": "near_miss", "reason": _gate["reason"], **al}
         if al["active_learning_score"] <= 0.0 or al["learning_bucket"] == "not_eligible_for_learning":
             return {"decision": "skip", "reason": "no_information_value", **al}
         # collision with open Bregman markets/events (structured exposure)
