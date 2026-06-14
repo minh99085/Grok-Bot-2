@@ -340,21 +340,62 @@ def build_scp_pull_cmd(cfg: Config, remote_path: str, local_dir: str) -> list:
     return argv
 
 
+# Canonical VPS report runner + the COMPLETE bundle zip it always produces. The
+# coordinator no longer builds its own thin zip — it runs this script (which refreshes
+# runtime_data, regenerates the light report, validates, and packages the FULL bundle
+# via scripts/_report_bundle.py with a git_commit_proof.txt) and copies the latest zip.
+CANONICAL_REPORT_SCRIPT = "scripts/vps_generate_light_report.sh"
+CANONICAL_REPORT_ZIP = "vps_light_report_latest.zip"
+GIT_PROOF_MEMBER = "git_commit_proof.txt"
+
+# A non-thin light bundle must contain ALL of these (substring/suffix matched against the
+# zip's member names). Refusing a thin zip is what stops the repeated 4-file failure.
+REQUIRED_ZIP_MARKERS = (
+    "report.json", "report.md", "git_commit_proof.txt", "validation_light_latest.txt",
+    "metrics/", "samples/", "runtime_data/metrics",
+)
+
+
 def remote_zip_name(now: _dt.datetime) -> str:
-    return f"hermes_light_report_{now.strftime('%Y%m%d_%H%M%S')}.zip"
+    # the canonical runner always overwrites this stable name (a timestamped copy is
+    # also kept on the VPS); the coordinator copies the stable one back.
+    return CANONICAL_REPORT_ZIP
 
 
-def build_remote_collect_script(cfg: Config, remote_zip: str) -> str:
-    """The exact remote shell workflow run over SSH for collect-light-report.
+def zip_completeness(names) -> "tuple[bool, list]":
+    """Return (is_complete, missing_markers) for a report zip's member list. A complete
+    light bundle has report.json + report.md + metrics + samples + validation output +
+    git_commit_proof.txt + runtime_data/metrics."""
+    present = list(names or [])
+    missing = []
+    for marker in REQUIRED_ZIP_MARKERS:
+        if "/" in marker:                       # path marker -> substring match
+            ok = any(marker in n for n in present)
+        else:                                   # bare filename -> suffix match
+            ok = any(n.endswith(marker) for n in present)
+        if not ok:
+            missing.append(marker)
+    return (not missing), missing
 
-    cd plugin -> drop stale runtime_data -> docker cp container:/data runtime_data ->
-    light inspection report -> runtime validation (tee'd) -> zip the 3 artifacts."""
+
+def build_remote_collect_script(cfg: Config) -> str:
+    """The remote shell workflow run over SSH for collect-light-report / collect-report.
+
+    Runs the CANONICAL self-bootstrapping VPS runner (which builds the .report_venv,
+    refreshes runtime_data from the container, regenerates the light report, validates,
+    and packages the COMPLETE bundle into vps_light_report_latest.zip via
+    scripts/_report_bundle.py — never a thin zip). PAPER ONLY; read-only collection."""
+    plugin = cfg.vps_remote_plugin_path
+    return (
+        f"cd {shlex.quote(plugin)} || {{ echo 'cannot cd to plugin' 1>&2; exit 12; }}; "
+        f"bash {CANONICAL_REPORT_SCRIPT}")
+
+
+def _legacy_build_remote_collect_script(cfg: Config, remote_zip: str) -> str:
+    """DEPRECATED inline zip workflow (kept only for reference; no longer used). The
+    canonical path is build_remote_collect_script -> vps_generate_light_report.sh."""
     plugin = cfg.vps_remote_plugin_path
     container = cfg.hermes_training_container
-    # The report/validation steps run through the DEPENDENCY-CAPABLE "$PYBIN" (a venv
-    # that can import pydantic, preferred), never a bare `python`. Python selection runs
-    # BEFORE `set -e` (its candidate probing legitimately fails for absent candidates);
-    # if no dependency-capable Python exists it exits 12 with an exact fix instruction.
     return (
         f"cd {shlex.quote(plugin)} || {{ echo 'cannot cd to plugin' 1>&2; exit 12; }}; "
         f"{remote_python_select(on_fail_exit=True)}; "
@@ -567,18 +608,18 @@ def cmd_collect_light_report(ctx: Ctx, *, dry_run: bool = False) -> int:
         ctx.say(f"STOP — {key_msg}")
         return 2
 
-    now = ctx.now_fn()
-    zip_name = remote_zip_name(now)
+    zip_name = CANONICAL_REPORT_ZIP
     remote_zip = f"{cfg.vps_remote_plugin_path.rstrip('/')}/{zip_name}"
-    remote_script = build_remote_collect_script(cfg, remote_zip)
+    remote_script = build_remote_collect_script(cfg)
     ssh_cmd = build_ssh_cmd(cfg, remote_script)
     art = (ctx.repo_root / cfg.local_artifact_dir) \
         if not Path(cfg.local_artifact_dir).is_absolute() else Path(cfg.local_artifact_dir)
     scp_cmd = build_scp_pull_cmd(cfg, remote_zip, str(art))
 
-    ctx.say("Laptop coordinator — collect light-mode report from the VPS")
-    ctx.say("  NOTE: this RUNS on the VPS: replaces remote runtime_data, regenerates the")
-    ctx.say("  light report, validates, zips, then copies the zip back to this laptop.")
+    ctx.say("Laptop coordinator — collect light-mode report from the VPS (canonical)")
+    ctx.say(f"  NOTE: runs the canonical {CANONICAL_REPORT_SCRIPT} on the VPS (refreshes")
+    ctx.say("  runtime_data, regenerates the light report, validates, packages the FULL")
+    ctx.say(f"  bundle into {CANONICAL_REPORT_ZIP}), then copies that zip back here.")
     ctx.say("-" * 60)
     ctx.say("  remote workflow (run over SSH):")
     for step in remote_script.split("; "):
@@ -607,8 +648,19 @@ def cmd_collect_light_report(ctx: Ctx, *, dry_run: bool = False) -> int:
             ctx.say(f"  detail: {err.strip().splitlines()[-1]}")
         return 1
     local_zip = art / zip_name
+    # Refuse a THIN zip: the canonical bundle must carry report.json/md + metrics +
+    # samples + validation output + git_commit_proof.txt + runtime_data/metrics.
+    try:
+        with zipfile.ZipFile(local_zip) as zf:
+            complete, missing = zip_completeness(zf.namelist())
+    except (OSError, zipfile.BadZipFile):
+        complete, missing = False, ["<unreadable zip>"]
     ctx.say("-" * 60)
-    ctx.say(f"COLLECTED: {local_zip}")
+    if not complete:
+        ctx.say(f"STOP — collected report is THIN/incomplete (missing: {missing}). "
+                f"Re-run {CANONICAL_REPORT_SCRIPT} on the VPS; not shipping a thin zip.")
+        return 1
+    ctx.say(f"COLLECTED (complete bundle): {local_zip}")
     ctx.say("NEXT: python scripts/laptop_agent_coordinator.py handoff-summary "
             f"--config {cfg.source_file or DEFAULT_CONFIG}")
     return 0
@@ -620,10 +672,12 @@ def cmd_collect_light_report(ctx: Ctx, *, dry_run: bool = False) -> int:
 def _latest_zip(art: Path) -> Optional[Path]:
     if not art.is_dir():
         return None
-    zips = [p for p in art.glob("hermes_light_report_*.zip") if p.is_file()]
-    if not zips:
-        zips = [p for p in art.glob("*.zip") if p.is_file()]
-    return max(zips, key=lambda p: p.stat().st_mtime) if zips else None
+    # prefer the canonical VPS bundle name(s), then any timestamped light report, then *.zip
+    for pat in ("vps_light_report*.zip", "hermes_light_report_*.zip", "*.zip"):
+        zips = [p for p in art.glob(pat) if p.is_file()]
+        if zips:
+            return max(zips, key=lambda p: p.stat().st_mtime)
+    return None
 
 
 def cmd_handoff_summary(ctx: Ctx) -> int:
@@ -644,8 +698,10 @@ def cmd_handoff_summary(ctx: Ctx) -> int:
             names = zf.namelist()
     except (OSError, zipfile.BadZipFile):
         names = []
+    complete, missing = zip_completeness(names)
     has_validation = any(n.endswith(VALIDATION_FILE) for n in names)
     has_summary = any(n.endswith("inspection_summary.json") for n in names)
+    has_proof = any(n.endswith(GIT_PROOF_MEMBER) for n in names)
     ts = _dt.datetime.fromtimestamp(z.stat().st_mtime).replace(microsecond=0).isoformat()
     ctx.say(f"  report zip            : {z}")
     ctx.say(f"  generated (mtime)     : {ts}")
@@ -653,10 +709,17 @@ def cmd_handoff_summary(ctx: Ctx) -> int:
             f"({VALIDATION_FILE})")
     ctx.say(f"  inspection_summary    : {'included' if has_summary else 'MISSING'} "
             f"(runtime_data/inspection_summary.json)")
+    ctx.say(f"  git_commit_proof      : {'included' if has_proof else 'MISSING'}")
     ctx.say(f"  total files in zip    : {len(names)}")
+    if not complete:
+        ctx.say("=" * 60)
+        ctx.say(f"  REFUSED — THIN/incomplete report bundle. Missing: {missing}")
+        ctx.say(f"  -> re-run a full collection: python scripts/laptop_agent_coordinator.py "
+                f"collect-report --config {cfg.source_file or DEFAULT_CONFIG}")
+        return 1
     ctx.say("=" * 60)
-    ctx.say("NEXT: upload the zip above to ChatGPT for inspection.")
-    return 0 if (has_validation and has_summary) else 1
+    ctx.say("COMPLETE BUNDLE — NEXT: upload the zip above to ChatGPT for inspection.")
+    return 0
 
 
 # --------------------------------------------------------------------------- #

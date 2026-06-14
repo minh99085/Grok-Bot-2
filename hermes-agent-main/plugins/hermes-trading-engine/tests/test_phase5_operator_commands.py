@@ -20,6 +20,22 @@ import laptop_agent_coordinator as co  # noqa: E402
 _FIXED = _dt.datetime(2026, 6, 13, 6, 0, 0)
 
 
+def _write_full_bundle(z) -> None:
+    """Write the canonical COMPLETE light bundle (what the VPS bundler produces)."""
+    from pathlib import Path as _P
+    z = _P(z)
+    z.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(z, "w") as zf:
+        zf.writestr("inspection_reports/bot_inspection_x/report.json", "{}")
+        zf.writestr("inspection_reports/bot_inspection_x/report.md", "# report")
+        zf.writestr("inspection_reports/bot_inspection_x/metrics/run_ready.json", "{}")
+        zf.writestr("inspection_reports/bot_inspection_x/samples/events_tail.jsonl", "{}\n")
+        zf.writestr("validation_light_latest.txt", "SAFE TO RUN: True")
+        zf.writestr("git_commit_proof.txt", "HEAD: deadbeef")
+        zf.writestr("runtime_data/metrics/bregman_funnel.json", "{}")
+        zf.writestr("runtime_data/inspection_summary.json", "{}")
+
+
 def _write_cfg(tmp_path, **over):
     keyf = tmp_path / "id_key"
     keyf.write_text("priv", encoding="utf-8")
@@ -50,12 +66,7 @@ def _runner(tmp_path, *, dirty="", branch="main", started=None):
                 return (0, dirty, "")
             return (0, "", "")
         if argv and argv[0] == "scp":
-            art.mkdir(parents=True, exist_ok=True)
-            z = art / ("hermes_light_report_" + _FIXED.strftime("%Y%m%d_%H%M%S") + ".zip")
-            with zipfile.ZipFile(z, "w") as zf:
-                zf.writestr("inspection_reports/report.json", "{}")
-                zf.writestr("runtime_data/inspection_summary.json", "{}")
-                zf.writestr("validation_light_latest.txt", "ok")
+            _write_full_bundle(art / co.CANONICAL_REPORT_ZIP)   # canonical complete bundle
             return (0, "", "")
         if "echo hermes-coordinator-ok" in s:
             return (0, "hermes-coordinator-ok\n", "")
@@ -289,7 +300,9 @@ def test_collect_report_alias_works(tmp_path):
                    _runner(tmp_path))
     assert rc == 0
     assert "collect light-mode report" in out.lower()
-    assert list((tmp_path / "artifacts").glob("hermes_light_report_*.zip"))   # zip pulled
+    # alias uses the canonical VPS bundler + pulls the complete bundle
+    assert "bash scripts/vps_generate_light_report.sh" in out
+    assert (tmp_path / "artifacts" / co.CANONICAL_REPORT_ZIP).is_file()
 
 
 def test_collect_light_report_still_works(tmp_path):
@@ -298,7 +311,7 @@ def test_collect_light_report_still_works(tmp_path):
     rc, out = _run(["collect-light-report", "--config", _cfg_arg(tmp_path)], tmp_path,
                    _runner(tmp_path))
     assert rc == 0
-    assert list((tmp_path / "artifacts").glob("hermes_light_report_*.zip"))
+    assert (tmp_path / "artifacts" / co.CANONICAL_REPORT_ZIP).is_file()
 
 
 def test_operator_cycle_runs_safe_sequence(tmp_path):
@@ -362,7 +375,7 @@ def test_operator_cycle_prints_report_path_and_upload_instruction(tmp_path):
                    _runner(tmp_path))
     assert rc == 0
     assert "report zip (local)" in out
-    assert "hermes_light_report_" in out                    # the actual local zip path
+    assert "vps_light_report_latest.zip" in out             # the actual local zip path
     assert "UPLOAD TO CHATGPT" in out
     assert (tmp_path / "artifacts" / co.UPLOAD_INSTRUCTIONS).is_file()
 

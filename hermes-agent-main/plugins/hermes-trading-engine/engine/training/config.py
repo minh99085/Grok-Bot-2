@@ -147,6 +147,11 @@ class TrainingConfig:
     use_kelly_for_size: bool = False
     kelly_fraction: float = 0.10
     max_kelly_size_usd: float = 5.0
+    # Authoritative HARD per-order PAPER cap (env PAPER_MAX_ORDER_NOTIONAL_USD). 0 = unset
+    # (fall back to fixed/kelly sizing). When > 0 it can ONLY TIGHTEN the effective
+    # max_order_notional_usd (never raise it) — it never increases live risk and never
+    # bypasses the RiskEngine. The 100X paper profile sets this to <= $2.
+    paper_max_order_notional_usd: float = 0.0
     # ---- learner / feedback ----
     learner_enabled: bool = True
     ewma_alpha: float = 0.05
@@ -721,8 +726,12 @@ class TrainingConfig:
         self.exploration_requires_risk_gate = True
         self.exploration_min_book_freshness_required = True
         self.feedback_accelerator_mode = "paper_only"
+        # The REQUESTED target multiplier may resolve up to 100 (the 100X profile);
+        # the EFFECTIVE capacity multiplier that actually scales soft knobs is bounded
+        # SEPARATELY in feedback_accelerator.apply_feedback_accelerator() so CPU/network
+        # never run away. We never pretend the effective capacity is higher than it is.
         self.feedback_accelerator_target_multiplier = max(
-            1, min(int(self.feedback_accelerator_target_multiplier), 20))
+            1, min(int(self.feedback_accelerator_target_multiplier), 100))
         self.exploration_notional_fraction = max(
             0.0, min(float(self.exploration_notional_fraction), 0.02))
         self.exploration_max_trades_per_hour = max(
@@ -739,6 +748,10 @@ class TrainingConfig:
         # hard PAPER clamps (cannot exceed even if env is misconfigured)
         self.fixed_notional_usd = max(0.0, min(self.fixed_notional_usd, 50.0))
         self.max_kelly_size_usd = max(0.0, min(self.max_kelly_size_usd, 50.0))
+        # authoritative hard per-order PAPER cap (>=0; sane upper bound). Only ever
+        # TIGHTENS max_order_notional_usd via the property (never raises live risk).
+        self.paper_max_order_notional_usd = max(
+            0.0, min(float(getattr(self, "paper_max_order_notional_usd", 0.0) or 0.0), 50.0))
         self.max_market_exposure_usd = max(0.0, min(self.max_market_exposure_usd, 500.0))
         self.max_total_exposure_usd = max(0.0, min(self.max_total_exposure_usd, 5000.0))
         self.max_open_trades = max(0, min(self.max_open_trades, self.max_open_trades_hard_cap, 8))
@@ -813,7 +826,11 @@ class TrainingConfig:
 
     @property
     def max_order_notional_usd(self) -> float:
-        return max(self.fixed_notional_usd, self.max_kelly_size_usd)
+        base = max(self.fixed_notional_usd, self.max_kelly_size_usd)
+        # PAPER_MAX_ORDER_NOTIONAL_USD is the authoritative hard cap when set: it can only
+        # TIGHTEN the per-order ceiling (min), never raise it -> never increases risk.
+        cap = float(getattr(self, "paper_max_order_notional_usd", 0.0) or 0.0)
+        return min(base, cap) if cap > 0 else base
 
     @classmethod
     def from_env(cls) -> "TrainingConfig":
@@ -878,6 +895,7 @@ class TrainingConfig:
             slippage_bps=_envf("PAPER_SLIPPAGE_BPS", 25.0),
             max_fill_depth_fraction=_envf("PAPER_MAX_FILL_DEPTH_FRACTION", 0.35),
             fixed_notional_usd=_envf("POLYMARKET_PAPER_FIXED_NOTIONAL_USD", 5.0),
+            paper_max_order_notional_usd=_envf("PAPER_MAX_ORDER_NOTIONAL_USD", 0.0),
             max_open_trades=_envi("POLYMARKET_MAX_OPEN_TRADES", 5),
             max_open_trades_hard_cap=_envi("POLYMARKET_MAX_OPEN_TRADES_HARD_CAP", 8),
             max_market_exposure_usd=_envf("POLYMARKET_MAX_MARKET_EXPOSURE_USD", 20.0),
@@ -1251,9 +1269,10 @@ class TrainingConfig:
             min_evidence_score=0.30, min_liquidity=100.0, min_volume=250.0,
             max_time_to_close_days=180.0, min_time_to_close_s=1800.0,
             max_ambiguity_score=0.45,
-            # hard order-notional cap stays SMALL (<= $2): max_order_notional_usd is the
-            # property max(fixed_notional_usd, max_kelly_size_usd), so bound BOTH. Never
-            # loosened by this profile (env-tunable but clamped to <= 2).
+            # hard order-notional cap stays SMALL (<= $2). PAPER_MAX_ORDER_NOTIONAL_USD is
+            # the authoritative cap (only ever tightens max_order_notional_usd); also bound
+            # the fixed/kelly sizing base so the effective ceiling can never exceed $2.
+            paper_max_order_notional_usd=min(2.0, _envf("PAPER_MAX_ORDER_NOTIONAL_USD", 2.0)),
             fixed_notional_usd=min(2.0, _envf("PAPER_MAX_ORDER_NOTIONAL_USD", 2.0)),
             max_kelly_size_usd=min(2.0, _envf("PAPER_MAX_ORDER_NOTIONAL_USD", 2.0)),
             max_open_trades=8, max_open_trades_hard_cap=8,

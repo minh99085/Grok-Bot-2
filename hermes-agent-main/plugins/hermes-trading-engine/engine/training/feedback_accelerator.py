@@ -156,10 +156,18 @@ def resolve_soft_gates(cfg) -> SoftGates:
         return SoftGates(exploit_edge, exploit_conf, exploit_ev,
                          exploit_edge, exploit_conf, exploit_ev)
 
-    # Bounded relaxation for tiny exploration only.
-    expl_edge = max(float(getattr(cfg, "exploration_min_edge", -0.01)), -0.02)
+    # Bounded relaxation for TINY exploration ONLY (never the exploit path). The soft
+    # exploration edge/EV floor is -0.15 so the configured POLYMARKET_EXPLORATION_MIN_EDGE
+    # (=-0.15 in the 100X profile) is honored for tiny capped directional learning. This
+    # is a SOFT selection gate — it never loosens a HARD gate (live / stale book / missing
+    # ask / reference-or-fake fill / synthetic NO / RiskEngine / realistic fill / the tiny
+    # notional cap), and never touches Bregman after-cost positivity.
+    _TINY_EXPLORATION_EDGE_FLOOR = -0.15
+    expl_edge = max(float(getattr(cfg, "exploration_min_edge", -0.01)),
+                    _TINY_EXPLORATION_EDGE_FLOOR)
     expl_conf = max(0.50, exploit_conf - 0.20)
-    expl_ev = max(float(getattr(cfg, "exploration_min_edge", -0.01)), -0.02)
+    expl_ev = max(float(getattr(cfg, "exploration_min_edge", -0.01)),
+                  _TINY_EXPLORATION_EDGE_FLOOR)
     return SoftGates(exploit_edge, exploit_conf, exploit_ev,
                      round(expl_edge, 6), round(expl_conf, 6), round(expl_ev, 6))
 
@@ -331,7 +339,13 @@ def apply_feedback_accelerator(cfg) -> dict:
     if not bool(getattr(cfg, "feedback_accelerator_enabled", False)):
         return {"applied": False, "reason": "disabled"}
 
-    mult = max(1, min(int(getattr(cfg, "feedback_accelerator_target_multiplier", 10)), 20))
+    # REQUESTED target (may be up to 100, e.g. the 100X profile) vs the EFFECTIVE
+    # capacity multiplier that actually scales the soft knobs (hard-bounded so CPU /
+    # network can't run away). We report both and never pretend the effective capacity
+    # is higher than this bound.
+    requested = max(1, int(getattr(cfg, "feedback_accelerator_target_multiplier", 10)))
+    _EFFECTIVE_CAPACITY_CAP = 20
+    mult = min(requested, _EFFECTIVE_CAPACITY_CAP)
     before = {
         "paper_decision_budget": int(getattr(cfg, "paper_decision_budget", 30)),
         "trade_candidate_limit": int(getattr(cfg, "trade_candidate_limit", 30)),
@@ -357,7 +371,11 @@ def apply_feedback_accelerator(cfg) -> dict:
         "live_watch_limit": cfg.live_watch_limit,
         "exploration_enabled": cfg.exploration_enabled,
     }
-    return {"applied": True, "target_multiplier": mult, "before": before, "after": after}
+    return {"applied": True, "target_multiplier": mult,
+            "requested_target_multiplier": requested,
+            "effective_capacity_multiplier": mult,
+            "effective_capacity_cap": _EFFECTIVE_CAPACITY_CAP,
+            "before": before, "after": after}
 
 
 # ---------------------------------------------------------------------------

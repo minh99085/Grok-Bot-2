@@ -77,6 +77,37 @@ def _which(*avail):
     return lambda n: (f"/usr/bin/{n}" if n in s else None)
 
 
+# The canonical complete light bundle members (what the VPS bundler produces). A zip
+# missing any of these markers is THIN and must be refused.
+def _write_full_bundle(z: Path) -> None:
+    z.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(z, "w") as zf:
+        zf.writestr("inspection_reports/bot_inspection_x/report.json", "{}")
+        zf.writestr("inspection_reports/bot_inspection_x/report.md", "# report")
+        zf.writestr("inspection_reports/bot_inspection_x/metrics/run_ready.json", "{}")
+        zf.writestr("inspection_reports/bot_inspection_x/samples/events_tail.jsonl", "{}\n")
+        zf.writestr("validation_light_latest.txt", "SAFE TO RUN: True")
+        zf.writestr("git_commit_proof.txt", "HEAD: deadbeef")
+        zf.writestr("runtime_data/metrics/bregman_funnel.json", "{}")
+        zf.writestr("runtime_data/inspection_summary.json", "{}")
+
+
+def _scp_bundle_runner(tmp_path, name=None):
+    """A runner that records calls and, on scp, writes a COMPLETE canonical bundle to the
+    local artifact dir (so collect's thin-zip guard passes)."""
+    art = tmp_path / "artifacts"
+    spy = SpyRunner()
+    base_call = spy.__call__
+
+    def runner(argv, cwd=None, timeout=None):
+        rc, out, err = base_call(argv, cwd=cwd, timeout=timeout)
+        if argv and argv[0] == "scp":
+            _write_full_bundle(art / (name or co.CANONICAL_REPORT_ZIP))
+        return rc, out, err
+    runner.spy = spy           # type: ignore[attr-defined]
+    return runner
+
+
 def _run(args, tmp_path, runner=None, which=None, lines_sink=None):
     lines, printer = collector()
     if lines_sink is not None:
@@ -217,22 +248,14 @@ def test_ssh_and_scp_command_construction(tmp_path):
     assert scp[-1].endswith("artifacts/")
 
 
-def test_remote_collect_script_has_exact_workflow(tmp_path):
+def test_remote_collect_script_uses_canonical_runner(tmp_path):
     cfg = co.load_config(write_cfg(tmp_path)).cfg
-    s = co.build_remote_collect_script(cfg, "/opt/hermes/plugins/hermes-trading-engine/r.zip")
+    s = co.build_remote_collect_script(cfg)
     assert "cd /opt/hermes/plugins/hermes-trading-engine" in s
-    assert "rm -rf runtime_data" in s
-    assert "docker cp hermes-training:/data runtime_data" in s
-    # remote Python is a DEPENDENCY-CAPABLE selection (can import pydantic), via "$PYBIN"
-    assert "import pydantic" in s
-    assert ('"$PYBIN" scripts/generate_bot_inspection_report.py --output inspection_reports '
-            "--data-dir runtime_data --bundle-mode light") in s
-    assert '"$PYBIN" scripts/validate_training_runtime.py --data-dir runtime_data | tee ' \
-           "validation_light_latest.txt" in s
-    assert "python scripts/generate_bot_inspection_report.py" not in s   # no bare python
-    assert "python scripts/validate_training_runtime.py" not in s
-    assert "zip -r" in s and "inspection_reports" in s
-    assert "runtime_data/inspection_summary.json" in s and "validation_light_latest.txt" in s
+    # canonical: runs the self-bootstrapping VPS bundler, not a custom inline workflow
+    assert "bash scripts/vps_generate_light_report.sh" in s
+    assert "docker cp" not in s            # old inline workflow is gone
+    assert "zip -r" not in s
 
 
 def test_remote_python_selection_prefers_venv_then_requires_pydantic():
@@ -245,12 +268,12 @@ def test_remote_python_selection_prefers_venv_then_requires_pydantic():
     assert 'import pydantic' in s
 
 
-def test_remote_collect_script_stops_when_no_dependency_capable_python():
+def test_remote_collect_script_delegates_to_canonical_runner():
+    # The canonical VPS runner (vps_generate_light_report.sh) owns dependency-capable
+    # Python selection + bundling; the coordinator just invokes it (no inline pip).
     cfg = co.Config(vps_remote_plugin_path="/opt/p")
-    s = co.build_remote_collect_script(cfg, "/opt/r.zip")
-    assert 'if [ -z "$PYBIN" ]' in s and "exit 12" in s
-    assert "no dependency-capable python" in s.lower()
-    assert "vps_generate_light_report.sh" in s          # exact safe fix, no manual pip
+    s = co.build_remote_collect_script(cfg)
+    assert "bash scripts/vps_generate_light_report.sh" in s
     assert "pip install" not in s.lower()               # never auto-installs
 
 
@@ -310,8 +333,8 @@ def test_vps_smoke_plugin_path_uses_cd_and_shows_detail_on_failure(tmp_path):
     assert "No such file or directory" in out             # explicit detail included
 
 
-def test_remote_zip_name_is_timestamped():
-    assert co.remote_zip_name(_FIXED) == "hermes_light_report_20260611_143000.zip"
+def test_remote_zip_name_is_canonical():
+    assert co.remote_zip_name(_FIXED) == co.CANONICAL_REPORT_ZIP == "vps_light_report_latest.zip"
 
 
 # --------------------------------------------------------------------------- #
@@ -387,21 +410,41 @@ def test_collect_dry_run_does_not_execute(tmp_path):
     assert not (tmp_path / "artifacts").exists() or not any((tmp_path / "artifacts").iterdir())
 
 
-def test_collect_execute_runs_ssh_then_scp(tmp_path):
+def test_collect_execute_runs_canonical_script_then_scp(tmp_path):
     _plugin(tmp_path)
     write_cfg(tmp_path)
-    spy = SpyRunner()
+    runner = _scp_bundle_runner(tmp_path)
     rc, lines = _run(["collect-light-report", "--config", str(tmp_path / co.DEFAULT_CONFIG)],
-                     tmp_path, runner=spy)
+                     tmp_path, runner=runner)
+    spy = runner.spy
     assert rc == 0
-    # the ssh remote workflow ran, then the scp pull ran, in that order
-    assert spy.ran("docker cp hermes-training:/data runtime_data")
-    assert spy.ran("--bundle-mode light")
+    # the canonical VPS bundler ran over SSH, then the scp pull ran
+    assert spy.ran("bash scripts/vps_generate_light_report.sh")
     assert any(c[0] == "scp" for c in spy.calls)
     assert (tmp_path / "artifacts").is_dir()
     out = "\n".join(lines)
-    assert "hermes_light_report_20260611_143000.zip" in out
+    assert "vps_light_report_latest.zip" in out
+    assert "COLLECTED (complete bundle)" in out
     assert "SECRET-HOST-1.2.3.4" not in out
+
+
+def test_collect_refuses_thin_zip(tmp_path):
+    _plugin(tmp_path)
+    write_cfg(tmp_path)
+    art = tmp_path / "artifacts"
+
+    def thin_runner(argv, cwd=None, timeout=None):
+        if argv and argv[0] == "scp":
+            art.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(art / co.CANONICAL_REPORT_ZIP, "w") as zf:
+                zf.writestr("inspection_reports/report.json", "{}")   # thin: 1 file only
+            return (0, "", "")
+        return (0, "", "")
+    rc, lines = _run(["collect-report", "--config", str(tmp_path / co.DEFAULT_CONFIG)],
+                     tmp_path, runner=thin_runner)
+    out = "\n".join(lines)
+    assert rc == 1
+    assert "THIN/incomplete" in out
 
 
 def test_collect_missing_field_stops(tmp_path):
@@ -414,38 +457,37 @@ def test_collect_missing_field_stops(tmp_path):
 # --------------------------------------------------------------------------- #
 # handoff-summary
 # --------------------------------------------------------------------------- #
-def _make_zip(tmp_path, *, with_summary=True, with_validation=True):
+def _make_zip(tmp_path, *, complete=True):
     art = tmp_path / "artifacts"
     art.mkdir(exist_ok=True)
-    z = art / "hermes_light_report_20260611_143000.zip"
-    with zipfile.ZipFile(z, "w") as zf:
-        zf.writestr("inspection_reports/report.json", "{}")
-        if with_summary:
-            zf.writestr("runtime_data/inspection_summary.json", "{}")
-        if with_validation:
-            zf.writestr("validation_light_latest.txt", "ok")
+    z = art / co.CANONICAL_REPORT_ZIP
+    if complete:
+        _write_full_bundle(z)
+    else:
+        with zipfile.ZipFile(z, "w") as zf:               # thin: missing markers
+            zf.writestr("inspection_reports/report.json", "{}")
     return z
 
 
 def test_handoff_summary_complete_zip(tmp_path):
     write_cfg(tmp_path)
-    _make_zip(tmp_path)
+    _make_zip(tmp_path, complete=True)
     rc, lines = _run(["handoff-summary", "--config", str(tmp_path / co.DEFAULT_CONFIG)], tmp_path)
     out = "\n".join(lines)
     assert rc == 0
-    assert "hermes_light_report_20260611_143000.zip" in out
+    assert "vps_light_report_latest.zip" in out
     assert "validation file       : included" in out
-    assert "inspection_summary    : included" in out
-    assert "upload the zip" in out.lower()
+    assert "git_commit_proof      : included" in out
+    assert "COMPLETE BUNDLE" in out
 
 
-def test_handoff_summary_missing_pieces_flagged(tmp_path):
+def test_handoff_summary_refuses_thin_zip(tmp_path):
     write_cfg(tmp_path)
-    _make_zip(tmp_path, with_summary=False)
+    _make_zip(tmp_path, complete=False)
     rc, lines = _run(["handoff-summary", "--config", str(tmp_path / co.DEFAULT_CONFIG)], tmp_path)
     out = "\n".join(lines)
-    assert rc == 1                                   # incomplete handoff
-    assert "inspection_summary    : MISSING" in out
+    assert rc == 1                                   # thin/incomplete handoff refused
+    assert "THIN/incomplete" in out
 
 
 def test_handoff_summary_no_zip_guides_operator(tmp_path):
@@ -492,12 +534,7 @@ def _cycle_runner(tmp_path, *, dirty="", branch="main", started=None):
                 return (0, "", "")
             return (0, "", "")
         if argv and argv[0] == "scp":
-            art.mkdir(parents=True, exist_ok=True)
-            z = art / ("hermes_light_report_" + _FIXED.strftime("%Y%m%d_%H%M%S") + ".zip")
-            with _zf.ZipFile(z, "w") as zf:
-                zf.writestr("inspection_reports/report.json", "{}")
-                zf.writestr("runtime_data/inspection_summary.json", "{}")
-                zf.writestr("validation_light_latest.txt", "ok")
+            _write_full_bundle(art / co.CANONICAL_REPORT_ZIP)    # canonical complete bundle
             return (0, "", "")
         if "&& echo hermes-coordinator-ok" in s or "echo hermes-coordinator-ok" in s:
             return (0, "hermes-coordinator-ok\n", "")

@@ -23,12 +23,20 @@ COMPOSE = Path(__file__).resolve().parents[1] / "docker-compose.yml"
 # effective default values on the hermes-training service.
 REQUIRED_100X = {
     "AGGRESSIVE_PAPER_TRAINING": "1",
+    "PAPER_PROFIT_DISCOVERY_PROFILE": "1",
     "HERMES_ACCELERATED_DISCOVERY": "1",
     "FEEDBACK_ACCELERATOR_ENABLED": "1",
     "FEEDBACK_ACCELERATOR_TARGET_MULTIPLIER": "100",
     "POLYMARKET_ACTIVE_LEARNING_ENABLED": "1",
     "POLYMARKET_EXPLORATION_ENABLED": "1",
     "EXPLORATION_TINY_SIZE_ENABLED": "1",
+    "POLYMARKET_EXPLORATION_RATE": "1.0",
+    "POLYMARKET_EXPLORATION_MIN_EDGE": "-0.15",
+    "POLYMARKET_ACTIVE_LEARNING_TINY_TRADES_PER_TICK": "5",
+    "POLYMARKET_EXPLORATION_MAX_TRADES_PER_TICK": "5",
+    "POLYMARKET_EXPLORATION_MAX_EXPECTED_LOSS_USD": "0.50",
+    "POLYMARKET_EXPLORATION_NOTIONAL_USD": "1",
+    "PAPER_MAX_ORDER_NOTIONAL_USD": "2",
 }
 
 # Live / real-money flags that must stay disabled (=0) on the training service.
@@ -131,3 +139,51 @@ def test_docker_compose_config_validates():
     proc = subprocess.run(["docker", "compose", "config", "-q"],
                           cwd=str(COMPOSE.parent), capture_output=True, text=True, timeout=120)
     assert proc.returncode == 0, proc.stderr
+
+
+# --------------------------------------------------------------------------- #
+# Artifact hygiene: generated report artifacts must be gitignored (never block pull)
+# --------------------------------------------------------------------------- #
+GITIGNORE = COMPOSE.parent / ".gitignore"
+GENERATED_ARTIFACTS = (
+    "validation_light_latest.txt", "vps_light_report_latest.zip",
+    "vps_light_report_20260101_000000.zip", "hermes_light_report_20260101_000000.zip",
+    "report_logs/x.log", ".report_venv/bin/python", "git_commit_proof.txt",
+)
+
+
+def _gitignore_patterns():
+    out = []
+    for ln in GITIGNORE.read_text(encoding="utf-8").splitlines():
+        s = ln.strip()
+        if s and not s.startswith("#"):
+            out.append(s)
+    return out
+
+
+def test_generated_artifacts_are_gitignored():
+    import fnmatch
+    pats = _gitignore_patterns()
+
+    def ignored(path: str) -> bool:
+        name = path.split("/")[-1]
+        for p in pats:
+            pp = p.rstrip("/")
+            # match against the basename, the full relative path, and a leading segment
+            if (fnmatch.fnmatch(name, pp) or fnmatch.fnmatch(path, pp)
+                    or fnmatch.fnmatch(path, pp + "/*")
+                    or fnmatch.fnmatch(path, "**/" + pp)
+                    or path.split("/")[0] == pp):
+                return True
+        return False
+    for art in GENERATED_ARTIFACTS:
+        assert ignored(art), f"generated artifact not gitignored: {art}"
+
+
+def test_validation_light_latest_not_tracked():
+    import subprocess as _sp
+    repo_root = COMPOSE.parents[2]                  # .../hermes-agent-main/.. -> repo root
+    rc = _sp.run(["git", "ls-files", "--error-unmatch",
+                  "hermes-agent-main/plugins/hermes-trading-engine/validation_light_latest.txt"],
+                 cwd=str(repo_root), capture_output=True, text=True)
+    assert rc.returncode != 0, "validation_light_latest.txt must NOT be tracked in git"

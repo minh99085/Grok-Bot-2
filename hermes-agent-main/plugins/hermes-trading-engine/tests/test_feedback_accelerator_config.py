@@ -53,9 +53,20 @@ def test_hard_invariants_reasserted_even_if_overridden():
     assert cfg.feedback_accelerator_mode == "paper_only"
 
 
-def test_target_multiplier_clamped():
-    cfg = TrainingConfig(feedback_accelerator_target_multiplier=999)
-    assert cfg.feedback_accelerator_target_multiplier <= 20
+def test_target_multiplier_resolves_to_100_with_separate_capacity_cap():
+    # The REQUESTED target may resolve up to 100 (the 100X profile); absurd values are
+    # capped at 100. The EFFECTIVE capacity multiplier that scales soft knobs stays
+    # bounded SEPARATELY (<= 20) so CPU/network never run away.
+    from engine.training.feedback_accelerator import apply_feedback_accelerator
+    cfg = TrainingConfig(feedback_accelerator_target_multiplier=100,
+                         feedback_accelerator_enabled=True)
+    assert cfg.feedback_accelerator_target_multiplier == 100
+    rep = apply_feedback_accelerator(cfg)
+    assert rep["requested_target_multiplier"] == 100
+    assert rep["effective_capacity_multiplier"] <= 20
+    # absurd request is capped at 100 (not pretended higher)
+    assert TrainingConfig(feedback_accelerator_target_multiplier=999
+                          ).feedback_accelerator_target_multiplier == 100
 
 
 def test_exploration_caps_clamped():
