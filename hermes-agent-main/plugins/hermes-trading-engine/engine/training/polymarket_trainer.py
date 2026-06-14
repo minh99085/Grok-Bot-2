@@ -519,6 +519,13 @@ class PolymarketPaperTrainer:
         self._relaxed_best_reject: dict = {}           # best (least-bad) blocked example
         self._relaxed_best_edge = None                 # true max after-cost edge (signed)
         self._relaxed_opened_trade_examples: list = []
+        # tiny-directional (active-learning) exploration lane counters (PAPER ONLY).
+        # A "selected" tiny trade is one the ActiveLearningSelector chose to explore;
+        # "opened" passed every hard paper gate (realism/risk/broker); "blocked" was
+        # selected but a hard gate stopped it (reason recorded, never loosened).
+        self._tiny_directional_selected = 0
+        self._tiny_directional_opened = 0
+        self._tiny_directional_blocked: dict = {}
         # durable per-candidate audit log (git-ignored metrics dir)
         self._relaxed_candidates_path = self.data_dir / "metrics" / "paper_relaxed_candidates.jsonl"
         self._relaxed_records_written = 0
@@ -2436,6 +2443,18 @@ class PolymarketPaperTrainer:
             return {"opened": False, "reason": "observe_only"}
 
         res = self._open(rec, est, edge, diag, exploratory=exploratory)
+        # tiny-directional (active-learning) exploration lane accounting: count what was
+        # selected for exploration, what actually opened (all hard gates passed), and
+        # the exact blocker for any selected-but-unopened tiny trade.
+        if exploratory:
+            self._tiny_directional_selected += 1
+            if res.get("opened"):
+                self._tiny_directional_opened += 1
+            else:
+                rsn = (res.get("reason")
+                       or ("shadow_only" if res.get("shadow_only") else "blocked"))
+                self._tiny_directional_blocked[rsn] = \
+                    self._tiny_directional_blocked.get(rsn, 0) + 1
         # CLOSED LOOP: record the executed/explored example (or its shadow downgrade).
         if res.get("opened"):
             self.closed_loop.record(
@@ -3383,6 +3402,114 @@ class PolymarketPaperTrainer:
             "shadow_examples": self.shadow_opportunities[-20:],
         }
 
+    def _btc_pulse_status_safe(self) -> dict:
+        if self.btc_pulse is None:
+            return {}
+        try:
+            return self.btc_pulse.status() or {}
+        except Exception:  # noqa: BLE001 — telemetry must never crash
+            return {}
+
+    def _bregman_lane_blocker(self, m: dict) -> str:
+        """Exact blocker for the strict Bregman lane (certified, full-size). Names the
+        dominant certifier reject reason instead of a generic 'no positive edge'."""
+        reasons = dict(getattr(self, "bregman_reject_reasons", {}) or {})
+        if reasons:
+            dom = max(reasons.items(), key=lambda kv: kv[1])
+            return f"no_certified_bregman_opportunity: dominant_reject={dom[0]}({dom[1]})"
+        scanned = int(m.get("constraint_groups_scanned",
+                            m.get("groups_sent_to_certifier", 0)) or 0)
+        if scanned <= 0:
+            return "no_bregman_groups_scanned"
+        return "no_certified_bregman_opportunity"
+
+    def _tiny_directional_lane_blocker(self) -> str:
+        """Exact blocker for the tiny active-learning directional lane."""
+        if self._tiny_directional_selected <= 0:
+            return ("no_active_learning_tiny_selection: "
+                    f"exploration_enabled={bool(getattr(self.cfg, 'exploration_enabled', False))}; "
+                    f"active_learning_enabled={bool(getattr(self.cfg, 'active_learning_enabled', False))}")
+        if self._tiny_directional_blocked:
+            dom = max(self._tiny_directional_blocked.items(), key=lambda kv: kv[1])
+            return f"tiny_directional_selected_but_blocked: dominant={dom[0]}({dom[1]})"
+        return "tiny_directional_selected_but_unopened"
+
+    def _btc_pulse_lane_blocker(self, bp: dict) -> str:
+        """Exact blocker for the BTC Pulse paper lane (paper-only, never live)."""
+        if not bool(getattr(self.cfg, "btc_pulse_enabled", False)):
+            return "btc_pulse_disabled"
+        if not bp:
+            return "btc_pulse_unavailable"
+        if bool(bp.get("btc_pulse_frozen")):
+            return f"btc_pulse_frozen: {bp.get('btc_pulse_last_gate') or 'fail_closed'}"
+        rej = dict(bp.get("btc_pulse_rejection_reasons", {}) or {})
+        if rej:
+            dom = max(rej.items(), key=lambda kv: kv[1])
+            return f"btc_pulse_no_paper_trade: dominant_reject={dom[0]}({dom[1]})"
+        return "btc_pulse_no_paper_opportunity_yet"
+
+    def paper_trade_acceleration_report(self) -> dict:
+        """100X paper-acceleration proof + per-lane trade accounting (PAPER ONLY).
+
+        Surfaces the aggressive-paper proof block, the three tiny paper-learning lanes
+        (active-learning tiny directional, relaxed Bregman, BTC Pulse), exploration PnL
+        (always excluded from readiness PnL), and a LANE-SPECIFIC blocker for every lane
+        that opened zero trades — so a zero-trade run never collapses to a single
+        generic 'no positive after-cost Bregman' message. Read-only; never trades."""
+        import os as _os
+        from engine.aggressive_paper import aggressive_paper_proof
+        proof = aggressive_paper_proof(_os.environ)
+        m = self.bregman_exec_metrics if isinstance(
+            getattr(self, "bregman_exec_metrics", None), dict) else {}
+        try:
+            pr = self.paper_realism_report()
+        except Exception:  # noqa: BLE001
+            pr = {}
+        bp = self._btc_pulse_status_safe()
+
+        relaxed_opened = int(m.get("paper_relaxed_trades_opened", 0) or 0)
+        tiny_opened = int(self._tiny_directional_opened)
+        btc_opened = int(bp.get("btc_pulse_paper_trades_opened", 0) or 0)
+        # realistic, NON-exploration readiness trades (exploit/strict Bregman)
+        realistic_total = int(self.realism_counts.get("realistic_trade_count", 0) or 0)
+        exploration_realistic = tiny_opened + relaxed_opened
+        readiness_trades = max(0, realistic_total - 0)  # realism_counts excludes exploration already
+
+        bregman_opened = int(m.get("opened_bregman_bundles",
+                                   m.get("bundles_opened", 0)) or 0)
+        bregman_blocker = self._bregman_lane_blocker(m) if bregman_opened <= 0 else ""
+        relaxed_blocker = (str(m.get("zero_trade_blocker_if_any", "")) or
+                           "no_relaxed_bregman_real_book_candidate") if relaxed_opened <= 0 else ""
+        tiny_blocker = self._tiny_directional_lane_blocker() if tiny_opened <= 0 else ""
+        btc_blocker = self._btc_pulse_lane_blocker(bp) if btc_opened <= 0 else ""
+
+        any_trade = (relaxed_opened + tiny_opened + btc_opened + readiness_trades) > 0
+        if any_trade:
+            accel_blocker = ""
+        else:
+            accel_blocker = ("no_paper_trade_opened_in_any_lane: " + "; ".join([
+                f"bregman={bregman_blocker}", f"relaxed_bregman={relaxed_blocker}",
+                f"tiny_directional={tiny_blocker}", f"btc_pulse={btc_blocker}"]))
+        return {
+            **proof,
+            # lane trade accounting
+            "active_learning_tiny_trades_selected": int(self._tiny_directional_selected),
+            "active_learning_tiny_trades_opened": tiny_opened,
+            "active_learning_tiny_trades_blocked_by_reason": dict(self._tiny_directional_blocked),
+            "relaxed_bregman_trades_opened": relaxed_opened,
+            "btc_pulse_paper_trades_opened": btc_opened,
+            "readiness_paper_trades_opened": readiness_trades,
+            "exploration_pnl": float(pr.get("exploration_pnl", 0.0) or 0.0),
+            "readiness_pnl": float(pr.get("readiness_pnl", 0.0) or 0.0),
+            "readiness_pnl_excludes_exploration": True,
+            # lane-specific blockers (empty string == that lane opened >=1 trade)
+            "bregman_blocker": bregman_blocker,
+            "relaxed_bregman_blocker": relaxed_blocker,
+            "tiny_directional_blocker": tiny_blocker,
+            "btc_pulse_blocker": btc_blocker,
+            "paper_trade_acceleration_blocker_if_any": accel_blocker,
+        }
+
     def strategy_priority_report(self) -> dict:
         """Pass-4 Strategy Priority: proves Bregman (Tier 1) gets first claim on
         slots + capital before directional (Tier 2) and exploration (Tier 3).
@@ -4261,6 +4388,18 @@ class PolymarketPaperTrainer:
                 training_healthy=True)
         except Exception as exc:  # noqa: BLE001 — status must never crash
             out["run_ready"] = {"run_ready_for_hours": False, "error": str(exc)}
+        # 100X paper profit-discovery proof + per-lane paper-trade acceleration report.
+        try:
+            from engine.aggressive_paper import aggressive_paper_proof
+            out["aggressive_paper"] = aggressive_paper_proof(os.environ)
+        except Exception as exc:  # noqa: BLE001 — status must never crash
+            out["aggressive_paper"] = {"aggressive_paper_training_enabled": False,
+                                       "real_execution_possible": False, "error": str(exc)}
+        try:
+            out["paper_trade_acceleration"] = self.paper_trade_acceleration_report()
+        except Exception as exc:  # noqa: BLE001 — status must never crash
+            out["paper_trade_acceleration"] = {
+                "paper_trade_acceleration_blocker_if_any": f"report_error: {exc}"}
         return out
 
     def chainlink_oracle_status(self) -> dict:

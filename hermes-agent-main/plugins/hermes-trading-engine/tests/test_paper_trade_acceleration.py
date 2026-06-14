@@ -1,0 +1,164 @@
+"""100X paper profit-discovery profile + per-lane paper-trade acceleration (PAPER ONLY).
+
+Proves:
+* the aggressive-paper proof block is surfaced in trainer status,
+* the three tiny paper-learning lanes are accounted for (active-learning tiny
+  directional, relaxed Bregman, BTC Pulse),
+* a tiny directional exploration trade opens through ALL hard paper gates and is
+  excluded from readiness PnL,
+* tiny exploration HARD gates (live / stale / missing-ask / fake-fill / synthetic /
+  failed-RiskEngine) still block, and
+* a zero-trade run reports LANE-SPECIFIC blockers (never a single generic message).
+No live trading is ever reachable.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from engine.markets import universe_manager as um
+from engine.training import PolymarketPaperTrainer, TrainingConfig
+from engine.training.feedback_accelerator import (SoftGates, TINY_EXPLORATION_TRADE,
+                                                  tiny_exploration_gate)
+
+from tests._pmtrain_helpers import clean_live_env, market
+
+_NOW = 1_000_000.0
+_PLUGIN = Path(__file__).resolve().parents[1]
+_SG = SoftGates(0.03, 0.8, 0.03, -0.02, 0.5, -0.02)
+
+
+def _trainer(tmp_path, monkeypatch, **cfg):
+    clean_live_env(monkeypatch, tmp_path)
+    cfg.setdefault("max_open_trades", 8)
+    return PolymarketPaperTrainer(
+        TrainingConfig(mode="paper_train", **cfg), data_dir=tmp_path)
+
+
+def _rec(mid="m0", *, depth=4000, spread=0.02, ask=0.40, fresh=True):
+    raw = market(0, bid=round(ask - spread, 4), ask=ask, depth=depth, now=_NOW)
+    raw["id"] = mid
+    rec = um.MarketRecord.from_raw(raw, now=_NOW)
+    rec.market_id = mid
+    rec.group_key = "event:" + mid
+    if not fresh:
+        rec.book_age_s = 9999.0
+    return rec
+
+
+# --------------------------------------------------------------------------- #
+# 1) proof block surfaced in status
+# --------------------------------------------------------------------------- #
+def test_status_includes_aggressive_proof_and_acceleration(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGGRESSIVE_PAPER_TRAINING", "1")
+    monkeypatch.setenv("FEEDBACK_ACCELERATOR_ENABLED", "1")
+    monkeypatch.setenv("FEEDBACK_ACCELERATOR_TARGET_MULTIPLIER", "100")
+    t = _trainer(tmp_path, monkeypatch)
+    st = t.status()
+    assert st["aggressive_paper"]["aggressive_paper_training_enabled"] is True
+    assert st["aggressive_paper"]["feedback_accelerator_target_multiplier"] == 100
+    assert st["aggressive_paper"]["real_execution_possible"] is False
+    acc = st["paper_trade_acceleration"]
+    for k in ("aggressive_paper_training_enabled", "feedback_accelerator_enabled",
+              "feedback_accelerator_target_multiplier",
+              "paper_profit_discovery_profile_enabled", "real_execution_possible",
+              "live_flags_forced_off", "active_learning_tiny_trades_selected",
+              "active_learning_tiny_trades_opened",
+              "active_learning_tiny_trades_blocked_by_reason",
+              "relaxed_bregman_trades_opened", "btc_pulse_paper_trades_opened",
+              "exploration_pnl", "readiness_pnl_excludes_exploration",
+              "bregman_blocker", "relaxed_bregman_blocker", "tiny_directional_blocker",
+              "btc_pulse_blocker", "paper_trade_acceleration_blocker_if_any"):
+        assert k in acc, k
+
+
+# --------------------------------------------------------------------------- #
+# 2) lane-specific blockers when zero trades (never one generic message)
+# --------------------------------------------------------------------------- #
+def test_zero_trade_lane_specific_blockers(tmp_path, monkeypatch):
+    t = _trainer(tmp_path, monkeypatch)
+    acc = t.paper_trade_acceleration_report()
+    assert acc["active_learning_tiny_trades_opened"] == 0
+    assert acc["relaxed_bregman_trades_opened"] == 0
+    assert acc["btc_pulse_paper_trades_opened"] == 0
+    # every lane gets its OWN blocker
+    assert acc["tiny_directional_blocker"]
+    assert acc["btc_pulse_blocker"] == "btc_pulse_disabled"
+    blk = acc["paper_trade_acceleration_blocker_if_any"]
+    assert blk and "bregman=" in blk and "relaxed_bregman=" in blk \
+        and "tiny_directional=" in blk and "btc_pulse=" in blk
+    # NOT a single generic no-positive-after-cost message
+    assert blk != "no positive after-cost Bregman"
+    assert acc["readiness_pnl_excludes_exploration"] is True
+
+
+# --------------------------------------------------------------------------- #
+# 3) tiny directional exploration trade opens through ALL hard gates
+# --------------------------------------------------------------------------- #
+def test_tiny_directional_trade_opens_and_excluded_from_readiness(tmp_path, monkeypatch):
+    t = _trainer(tmp_path, monkeypatch, exploration_enabled=True,
+                 active_learning_enabled=True, min_net_edge=0.9,
+                 exploration_notional_usd=1.0)
+    t._begin_directional_phase(dir_slots_before=0, bregman_opened=0)
+    t._begin_exploration_phase()
+    # The ActiveLearningSelector decision is unit-tested elsewhere; here we force an
+    # "explore" admit so the REAL hard-gate open path (realism + RiskEngine +
+    # PaperBroker) is exercised on a clean fresh book.
+    monkeypatch.setattr(t, "_active_learning_admit",
+                        lambda *a, **k: {"decision": "explore",
+                                         "learning_bucket": "active_learning",
+                                         "reason": "edge_too_low"})
+    res = t._consider(_rec(), _NOW)
+    assert res.get("opened") is True, res
+    assert t._tiny_directional_selected == 1
+    assert t._tiny_directional_opened == 1
+    # the opened position is tagged exploration and excluded from readiness PnL
+    expl = [p for p in t.positions if p.exploration]
+    assert expl and expl[0].is_realistic            # realistic fill, but exploration
+    acc = t.paper_trade_acceleration_report()
+    assert acc["active_learning_tiny_trades_opened"] >= 1
+    assert acc["tiny_directional_blocker"] == ""    # lane opened -> no blocker
+    pr = t.paper_realism_report()
+    assert pr["readiness_pnl"] == 0.0               # exploration never feeds readiness
+
+
+# --------------------------------------------------------------------------- #
+# 4) tiny exploration HARD gates still block (never loosened)
+# --------------------------------------------------------------------------- #
+def test_tiny_exploration_hard_gates_block():
+    base = dict(fresh_book=True, valid_token=True, has_price=True, risk_ok=True,
+                realistic_fill_ok=True, exploration_daily_loss_ok=True, edge=0.0,
+                confidence=0.6, after_cost_ev=0.0, exposure_ok=True, soft_gates=_SG)
+    cases = {
+        "live_blocked": {"live_blocked": True},                  # live mode
+        "no_fresh_book": {"fresh_book": False},                  # stale book
+        "missing_price": {"has_price": False},                   # missing ask
+        "realistic_fill_rejected": {"realistic_fill_ok": False},  # fake/reference fill
+        "risk_rejected": {"risk_ok": False},                     # failed RiskEngine
+        "settlement_ambiguous": {"ambiguity_score": 0.9},        # synthetic/ambiguous NO
+    }
+    for expected, over in cases.items():
+        res = tiny_exploration_gate(**{**base, **over})
+        assert res["allowed"] is False
+        assert res["reason"] == expected
+        assert res["hard_gate_block"] is True
+
+
+def test_tiny_exploration_allows_when_all_gates_pass():
+    res = tiny_exploration_gate(
+        fresh_book=True, valid_token=True, has_price=True, risk_ok=True,
+        realistic_fill_ok=True, exploration_daily_loss_ok=True, edge=0.0,
+        confidence=0.6, after_cost_ev=0.0, exposure_ok=True, soft_gates=_SG)
+    assert res["allowed"] is True
+    assert res["decision_class"] == TINY_EXPLORATION_TRADE
+
+
+# --------------------------------------------------------------------------- #
+# 5) docker-compose boots the 100X profile by default for hermes-training
+# --------------------------------------------------------------------------- #
+def test_compose_defaults_aggressive_and_100x():
+    txt = (_PLUGIN / "docker-compose.yml").read_text(encoding="utf-8")
+    assert 'AGGRESSIVE_PAPER_TRAINING: "${AGGRESSIVE_PAPER_TRAINING:-1}"' in txt
+    assert 'FEEDBACK_ACCELERATOR_ENABLED: "${FEEDBACK_ACCELERATOR_ENABLED:-1}"' in txt
+    assert ('FEEDBACK_ACCELERATOR_TARGET_MULTIPLIER: '
+            '"${FEEDBACK_ACCELERATOR_TARGET_MULTIPLIER:-100}"') in txt

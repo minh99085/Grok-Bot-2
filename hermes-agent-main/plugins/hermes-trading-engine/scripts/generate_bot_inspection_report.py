@@ -1100,6 +1100,12 @@ def generate_report(
     report_json["run_ready"] = report_run_ready
     report_json["artifact_paths"] = artifact_paths
     report_json["closed_loop_artifacts_manifest"] = closed_loop_manifest
+    # 100X paper profit-discovery proof + per-lane paper-trade acceleration (machine-
+    # readable). Lets the report prove the accelerator profile + lane-specific blockers.
+    if status.get("aggressive_paper"):
+        report_json["aggressive_paper"] = status.get("aggressive_paper")
+    if status.get("paper_trade_acceleration"):
+        report_json["paper_trade_acceleration"] = status.get("paper_trade_acceleration")
     bundle.write_json("report.json", report_json)
 
     report_md = _build_report_md(report_json, feats, status, docker, api, tests,
@@ -2175,6 +2181,32 @@ def _build_report_md(rj, feats, status, docker, api, tests, comparison,
                   "stale_book_fills_allowed", "offline_stub_fills_count_as_real",
                   "bregman_requires_all_executable_legs"):
             L.append(f"- {k}: {_yn(pr.get(k))}")
+        L.append("")
+    # 100X paper profit-discovery profile + per-lane paper-trade acceleration.
+    acc = status.get("paper_trade_acceleration") or {}
+    agg = status.get("aggressive_paper") or {}
+    if acc or agg:
+        a = {**agg, **acc}
+        L.append("### 14a-2. 100X Feedback Accelerator + Paper Trade Acceleration")
+        L.append("")
+        for k in ("aggressive_paper_training_enabled", "feedback_accelerator_enabled",
+                  "feedback_accelerator_target_multiplier",
+                  "paper_profit_discovery_profile_enabled", "real_execution_possible",
+                  "live_flags_forced_off"):
+            L.append(f"- {k}: {_yn(a.get(k))}")
+        L.append("")
+        L.append("Tiny paper-learning lanes (exploration PnL excluded from readiness):")
+        for k in ("active_learning_tiny_trades_selected", "active_learning_tiny_trades_opened",
+                  "relaxed_bregman_trades_opened", "btc_pulse_paper_trades_opened",
+                  "exploration_pnl", "readiness_pnl_excludes_exploration"):
+            L.append(f"- {k}: {_yn(a.get(k))}")
+        L.append(f"- active_learning_tiny_trades_blocked_by_reason: "
+                 f"{a.get('active_learning_tiny_trades_blocked_by_reason')}")
+        L.append("")
+        L.append("Lane-specific zero-trade blockers (empty == lane opened >=1 paper trade):")
+        for k in ("bregman_blocker", "relaxed_bregman_blocker", "tiny_directional_blocker",
+                  "btc_pulse_blocker", "paper_trade_acceleration_blocker_if_any"):
+            L.append(f"- {k}: {a.get(k) if a.get(k) else '(none)'}")
         L.append("")
     # Pass-4: Strategy Priority — Bregman (Tier 1) first claim on slots/capital.
     sp = status.get("strategy_priority") or {}
