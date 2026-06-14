@@ -1263,6 +1263,14 @@ class TrainingConfig:
             # near-misses, balanced exploration/exploitation, diversified coverage.
             active_learning_enabled=True, exploration_split=0.5,
             category_sample_target=100, max_explore_per_category=4, max_explore_per_event=2,
+            # 100X paper profit-discovery profile: feedback accelerator + tiny capped
+            # exploration ON (PAPER ONLY; speeds LEARNING, never loosens an execution/
+            # realism/safety gate — those are unchanged). NOTE: this profile already sets
+            # explicit high scan/shortlist/candidate limits above, so it does NOT also
+            # flip accelerated_discovery_enabled (which would override an explicit
+            # scan_limit); HERMES_ACCELERATED_DISCOVERY stays an env-level opt-in.
+            feedback_accelerator_enabled=True, feedback_accelerator_target_multiplier=100,
+            exploration_tiny_size_enabled=True,
             # higher paper decision budget + feedback target -> more trades/feedback
             paper_decision_budget=120, feedback_sample_target=500,
             tiny_trade_min_liquidity=50.0,

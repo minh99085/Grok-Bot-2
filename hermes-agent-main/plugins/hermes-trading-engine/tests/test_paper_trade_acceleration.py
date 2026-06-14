@@ -162,3 +162,52 @@ def test_compose_defaults_aggressive_and_100x():
     assert 'FEEDBACK_ACCELERATOR_ENABLED: "${FEEDBACK_ACCELERATOR_ENABLED:-1}"' in txt
     assert ('FEEDBACK_ACCELERATOR_TARGET_MULTIPLIER: '
             '"${FEEDBACK_ACCELERATOR_TARGET_MULTIPLIER:-100}"') in txt
+
+
+# --------------------------------------------------------------------------- #
+# 6) VPS aggressive paper profile actually turns the 100X learning posture ON
+# --------------------------------------------------------------------------- #
+def test_vps_aggressive_profile_enables_learning():
+    cfg = TrainingConfig.aggressive_paper()
+    assert cfg.active_learning_enabled is True
+    assert cfg.exploration_enabled is True
+    assert cfg.feedback_accelerator_enabled is True
+    assert cfg.exploration_tiny_size_enabled is True
+    assert cfg.mode == "paper_train"
+    # high discovery throughput is set explicitly by the profile (no accel override
+    # that would clobber an explicit scan_limit)
+    assert cfg.scan_limit >= 2000 and cfg.shortlist_limit >= 200
+
+
+def test_acceleration_report_proves_100x_active_under_vps_env(tmp_path, monkeypatch):
+    # VPS env seeded by the hermes-training entrypoint before config init.
+    for k, v in (("AGGRESSIVE_PAPER_TRAINING", "1"), ("FEEDBACK_ACCELERATOR_ENABLED", "1"),
+                 ("FEEDBACK_ACCELERATOR_TARGET_MULTIPLIER", "100"),
+                 ("HERMES_ACCELERATED_DISCOVERY", "1"),
+                 ("POLYMARKET_ACTIVE_LEARNING_ENABLED", "1"),
+                 ("POLYMARKET_EXPLORATION_ENABLED", "1"),
+                 ("EXPLORATION_TINY_SIZE_ENABLED", "1"),
+                 ("PAPER_PROFIT_DISCOVERY_PROFILE", "1")):
+        monkeypatch.setenv(k, v)
+    clean_live_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("AGGRESSIVE_PAPER_TRAINING", "1")
+    t = PolymarketPaperTrainer(TrainingConfig.aggressive_paper(), data_dir=tmp_path)
+    acc = t.paper_trade_acceleration_report()
+    assert acc["aggressive_paper_training_enabled"] is True
+    assert acc["feedback_accelerator_enabled"] is True
+    assert acc["feedback_accelerator_target_multiplier"] == 100   # 100X (env-sourced proof)
+    assert acc["paper_profit_discovery_profile_enabled"] is True
+    assert acc["active_learning_enabled"] is True                 # config posture reached
+    assert acc["real_execution_possible"] is False
+    assert acc["live_flags_forced_off"] is True
+
+
+def test_aggressive_profile_env_fails_closed_on_live_flag():
+    # The VPS entrypoint seeds the 100X profile then applies the paper-only lock; a
+    # live/real-money flag must make activation FAIL CLOSED (never start).
+    import pytest
+    from engine.aggressive_paper import AggressivePaperUnsafe, apply_aggressive_paper_env
+    env = {"AGGRESSIVE_PAPER_TRAINING": "1", "FEEDBACK_ACCELERATOR_TARGET_MULTIPLIER": "100",
+           "BTC_AUTOTRADE_ENABLED": "1"}     # a live flag is on
+    with pytest.raises(AggressivePaperUnsafe):
+        apply_aggressive_paper_env(env)

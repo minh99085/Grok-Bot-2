@@ -239,23 +239,68 @@ def run(argv=None) -> int:
                          "closed if any real-money flag is on. Real orders stay impossible.")
     args = ap.parse_args(argv)
 
-    # AGGRESSIVE PAPER MODE: apply the named mode + global paper-only safety lock
-    # BEFORE anything else. Fail closed if a real-money flag is enabled.
+    # 100X AGGRESSIVE PAPER MODE: apply the named mode + global paper-only safety lock
+    # BEFORE any trainer/config/env value is read. This is the DEFAULT for the VPS
+    # hermes-training entrypoint (opt out with AGGRESSIVE_PAPER_TRAINING=0 or
+    # --campaign-safe-profile). Fail closed if any real-money flag is enabled.
     import os as _os0
-    if getattr(args, "aggressive_paper_training", False) \
-            or str(_os0.getenv("AGGRESSIVE_PAPER_TRAINING", "")).strip().lower() \
-            in ("1", "true", "yes", "on"):
+    _agg_flag = str(_os0.getenv("AGGRESSIVE_PAPER_TRAINING", "")).strip().lower()
+    _explicit_off = _agg_flag in ("0", "false", "no", "off")
+    _explicit_on = (getattr(args, "aggressive_paper_training", False)
+                    or _agg_flag in ("1", "true", "yes", "on"))
+    # Default ON for the VPS entrypoint unless explicitly disabled or the campaign-safe
+    # profile is requested. The auto-default NEVER mutates os.environ during the test
+    # suite (pytest), so unit tests that call run() can't leak the 100X env globally;
+    # production (no pytest) gets the 100X profile by default. Explicit activation
+    # (env or --aggressive-paper-training) still applies everywhere.
+    _auto_on = (not _explicit_off and not args.campaign_safe_profile
+                and "pytest" not in sys.modules)
+    _want_aggressive = _explicit_on or _auto_on
+    if _want_aggressive:
+        # Seed the 100X paper profit-discovery env BEFORE apply (each only if unset, so
+        # an explicit operator value still wins). apply_aggressive_paper_env then forces
+        # the paper-only locks + remaining defaults and fails closed on live flags.
+        _profile_env = {
+            "AGGRESSIVE_PAPER_TRAINING": "1", "HERMES_ACCELERATED_DISCOVERY": "1",
+            "FEEDBACK_ACCELERATOR_ENABLED": "1",
+            "FEEDBACK_ACCELERATOR_TARGET_MULTIPLIER": "100",
+            "PAPER_PROFIT_DISCOVERY_PROFILE": "1",
+            "POLYMARKET_ACTIVE_LEARNING_ENABLED": "1",
+            "POLYMARKET_EXPLORATION_ENABLED": "1", "EXPLORATION_TINY_SIZE_ENABLED": "1",
+        }
+        for _k, _v in _profile_env.items():
+            if not str(_os0.environ.get(_k, "")).strip():
+                _os0.environ[_k] = _v
         from engine.aggressive_paper import (AggressivePaperUnsafe,
-                                             apply_aggressive_paper_env)
+                                             apply_aggressive_paper_env,
+                                             aggressive_paper_proof)
         try:
             _agg = apply_aggressive_paper_env(_os0.environ)
         except AggressivePaperUnsafe as exc:
             print(f"\n\033[91m*** REFUSING aggressive paper mode: {exc} ***\033[0m")
             return 2
+        # PROOF: log the final EFFECTIVE 100X values (read straight back from env), so
+        # the VPS log proves the profile is active before config init. No secrets.
+        _proof = aggressive_paper_proof(_os0.environ)
         logging.getLogger("hte.training.start").info(
-            "AGGRESSIVE_PAPER_TRAINING=1: paper-only locks=%d defaults=%d "
+            "100X PAPER PROFILE ACTIVE (before config init): "
+            "AGGRESSIVE_PAPER_TRAINING=%s HERMES_ACCELERATED_DISCOVERY=%s "
+            "FEEDBACK_ACCELERATOR_ENABLED=%s FEEDBACK_ACCELERATOR_TARGET_MULTIPLIER=%s "
+            "POLYMARKET_ACTIVE_LEARNING_ENABLED=%s POLYMARKET_EXPLORATION_ENABLED=%s "
+            "EXPLORATION_TINY_SIZE_ENABLED=%s | proof=%s | paper-locks=%d defaults=%d "
             "real_execution_possible=False (PAPER ONLY)",
+            _os0.environ.get("AGGRESSIVE_PAPER_TRAINING"),
+            _os0.environ.get("HERMES_ACCELERATED_DISCOVERY"),
+            _os0.environ.get("FEEDBACK_ACCELERATOR_ENABLED"),
+            _os0.environ.get("FEEDBACK_ACCELERATOR_TARGET_MULTIPLIER"),
+            _os0.environ.get("POLYMARKET_ACTIVE_LEARNING_ENABLED"),
+            _os0.environ.get("POLYMARKET_EXPLORATION_ENABLED"),
+            _os0.environ.get("EXPLORATION_TINY_SIZE_ENABLED"), _proof,
             len(_agg["locks"]), len(_agg["defaults_applied"]))
+        print("100X paper profit-discovery profile ACTIVE: "
+              f"feedback_accelerator_target_multiplier="
+              f"{_proof['feedback_accelerator_target_multiplier']} "
+              f"active_learning=on exploration=on (PAPER ONLY, real orders impossible)")
         args.aggressive_paper = True   # drive the aggressive TrainingConfig profile
 
     pf = preflight()

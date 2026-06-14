@@ -3492,6 +3492,11 @@ class PolymarketPaperTrainer:
                 f"tiny_directional={tiny_blocker}", f"btc_pulse={btc_blocker}"]))
         return {
             **proof,
+            # effective learning posture (proves the 100X profile reached config)
+            "active_learning_enabled": bool(getattr(self.cfg, "active_learning_enabled", False)),
+            "exploration_enabled": bool(getattr(self.cfg, "exploration_enabled", False)),
+            "accelerated_discovery_enabled": bool(
+                getattr(self.cfg, "accelerated_discovery_enabled", False)),
             # lane trade accounting
             "active_learning_tiny_trades_selected": int(self._tiny_directional_selected),
             "active_learning_tiny_trades_opened": tiny_opened,

@@ -2191,8 +2191,9 @@ def _build_report_md(rj, feats, status, docker, api, tests, comparison,
         L.append("")
         for k in ("aggressive_paper_training_enabled", "feedback_accelerator_enabled",
                   "feedback_accelerator_target_multiplier",
-                  "paper_profit_discovery_profile_enabled", "real_execution_possible",
-                  "live_flags_forced_off"):
+                  "paper_profit_discovery_profile_enabled", "active_learning_enabled",
+                  "exploration_enabled", "accelerated_discovery_enabled",
+                  "real_execution_possible", "live_flags_forced_off"):
             L.append(f"- {k}: {_yn(a.get(k))}")
         L.append("")
         L.append("Tiny paper-learning lanes (exploration PnL excluded from readiness):")
