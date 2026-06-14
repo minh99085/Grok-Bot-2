@@ -1,24 +1,38 @@
 #!/usr/bin/env python3
-"""Laptop Hermes Agent — coordinator CLI (Phase 2).
+"""Laptop Hermes **Mission-Control Agent** — operator CLI.
 
-Drives the real operator handoff workflow from a laptop (PowerShell or any shell):
+The laptop agent does the mechanical operator work autonomously (PAPER ONLY) so a
+non-coder operator can run one command and get exact, staged diagnostics:
 
-    Laptop -> GitHub main -> Vultr VPS -> collect light-mode report
-           -> package artifact -> ChatGPT inspection handoff
+    Laptop -> GitHub main -> VPS (staged checks) -> canonical light report
+           -> ChatGPT inspection handoff   (Cursor handoff FILE only on a blocker)
 
-This is **coordinator / runtime-operator tooling only**. It NEVER changes trading
-strategy, trade gates, paper-realism, or live-trading behavior, and it NEVER prints
-secrets (VPS host/user/key) or API keys.
+``mission-control`` is the RECOMMENDED main workflow. It runs staged checks and
+continues as far as is safely possible, then prints a final status table with the exact
+next command, the report path (if any), and the Cursor handoff path (if blocked). It
+NEVER enables live trading, NEVER changes trading strategy / trade gates / paper-realism
+/ Bregman logic / Docker topology, NEVER auto-runs Cursor, NEVER executes ChatGPT free
+text, and NEVER prints secrets (VPS host/user/key) or API keys.
 
-Commands
---------
-* ``doctor``               local environment check (repo/plugin path, git, ssh/scp,
-                           python, artifact dirs).
-* ``vps-smoke``            read-only VPS checks over SSH (reachable, remote plugin path
-                           exists, Docker present, hermes-training inspectable).
-* ``collect-light-report`` run the standard light-report collection on the VPS and copy
-                           a timestamped zip back to the laptop artifact directory.
-* ``handoff-summary``      print a concise ChatGPT upload checklist for the latest zip.
+Main command
+------------
+* ``mission-control``      ONE-COMMAND mission. ``--mode inspect-only`` (default) is
+                           read-only and never starts/restarts a container. ``--mode
+                           proof2h`` (needs ``--approved-paper-run``) runs the safe
+                           approved rebuild + 100X env proof + canonical report. ``--mode
+                           long`` additionally needs ``--approved-by-chatgpt``.
+
+Supporting commands
+-------------------
+* ``status``               one-glance status; recommends ``mission-control`` next.
+* ``doctor`` / ``vps-smoke`` local + read-only VPS checks (staged, classified).
+* ``collect-report`` / ``collect-light-report`` run the canonical VPS report script
+                           (``scripts/vps_generate_light_report.sh``) and copy the FULL
+                           bundle zip back (a THIN zip is refused).
+* ``operator-cycle``       the older multi-step safe cycle (kept; ``mission-control`` is
+                           the recommended path).
+* ``start-paper-run``      back-compatible alias that now routes through the SAME safe
+                           ``mission-control`` rebuild/status/100X-proof path.
 
 Config is loaded from ``.laptop_agent.json`` (template: ``.laptop_agent.example.json``).
 The config file is git-ignored and is never committed.
@@ -29,6 +43,7 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import json
+import os
 import re
 import shlex
 import shutil
@@ -291,28 +306,54 @@ def setup_message(path_name: str) -> str:   # back-compat thin wrapper
 
 
 # --------------------------------------------------------------------------- #
-# Secret redaction
+# Secret redaction (centralized: one source of truth for console, --debug traces,
+# Cursor handoff files, and the ledger/status records). Robust by construction —
+# no brittle "<redacted> not in s" conditionals.
 # --------------------------------------------------------------------------- #
-def redact(argv, cfg: Config) -> str:
-    """Render a command for display with secret values (host/user/key) masked."""
-    secrets = set()
-    for k in SECRET_KEYS:
-        v = str(getattr(cfg, k, "") or "")
+REDACTED = "<redacted>"
+
+
+def _secret_values(cfg: Config) -> list:
+    """Every literal secret string to mask, LONGEST first so composite values
+    (user@host, full key paths) are replaced before their substrings."""
+    host = str(getattr(cfg, "vps_host", "") or "").strip()
+    user = str(getattr(cfg, "vps_user", "") or "").strip()
+    key = str(getattr(cfg, "vps_ssh_key", "") or "").strip()
+    vals = set()
+    if host and user:
+        vals.add(f"{user}@{host}")
+    for v in (key, host, user):
         if v:
-            secrets.add(v)
-            secrets.add(v.rstrip("/\\"))
-    secrets = sorted((s for s in secrets if s), key=len, reverse=True)
-    parts = []
-    for tok in argv:
-        s = str(tok)
-        for sec in secrets:
-            if sec and sec in s:
-                s = s.replace(sec, "<redacted>")
-        # belt-and-suspenders: never leak a residual user@host
-        if cfg.vps_host and (cfg.vps_host in str(tok) or "@" in s) and "<redacted>" not in s:
-            s = s.replace("@", "@<redacted>") if "@" in s else s
-        parts.append(s)
-    return " ".join(shlex.quote(p) for p in parts)
+            vals.add(v)
+            vals.add(v.rstrip("/\\"))
+    if key:
+        # also mask the bare key filename (it can appear without its directory)
+        base = os.path.basename(key.rstrip("/\\"))
+        if base:
+            vals.add(base)
+    return sorted((v for v in vals if v), key=len, reverse=True)
+
+
+def redact_text(text, cfg: Config) -> str:
+    """Mask host, user, user@host, the SSH key path (and its filename), and any config
+    secret values anywhere in an ARBITRARY string. Safe for console, debug traces,
+    handoff files, and ledger/status output. Idempotent."""
+    s = str(text)
+    for sec in _secret_values(cfg):
+        if sec and sec != REDACTED:
+            s = s.replace(sec, REDACTED)
+    # final guard: collapse any residual `something@something` into a redacted host part
+    # so a host that slipped through (e.g. embedded in remote stderr) never leaks.
+    host = str(getattr(cfg, "vps_host", "") or "").strip()
+    if host:
+        s = re.sub(r"(\S+@)" + re.escape(host), r"\1" + REDACTED, s)
+    return s
+
+
+def redact(argv, cfg: Config) -> str:
+    """Render a command for display with all secrets masked (delegates to redact_text)."""
+    line = " ".join(shlex.quote(str(t)) for t in argv)
+    return redact_text(line, cfg)
 
 
 # --------------------------------------------------------------------------- #
@@ -429,8 +470,8 @@ def _remote_evidence(ctx: "Ctx", *, label: str, remote_cmd: str, rc: int, out: s
         "stage": label,
         "remote_command": redact(build_ssh_cmd(ctx.cfg, remote_cmd), ctx.cfg),
         "exit_code": rc,
-        "stdout_tail": _tail_text(out),
-        "stderr_tail": _tail_text(err),
+        "stdout_tail": redact_text(_tail_text(out), ctx.cfg),
+        "stderr_tail": redact_text(_tail_text(err), ctx.cfg),
         "ok": bool(ok),
         "failure_class": fc,
         "suggested_action": (suggested_action(fc) if not ok else ""),
@@ -598,9 +639,9 @@ class Ctx:
         if self.debug:
             self.say(f"    [debug] exit={rc}")
             if out.strip():
-                self.say("    [debug] stdout: " + _tail_text(out))
+                self.say("    [debug] stdout: " + redact_text(_tail_text(out), self.cfg))
             if err.strip():
-                self.say("    [debug] stderr: " + _tail_text(err))
+                self.say("    [debug] stderr: " + redact_text(_tail_text(err), self.cfg))
         return rc, out, err
 
 
@@ -971,12 +1012,15 @@ def _local_commit(ctx: Ctx) -> str:
 
 
 def _append_ledger(ctx: Ctx, record: dict) -> None:
-    """Append one cycle record to the artifact ledger (JSONL). Never raises."""
+    """Append one cycle record to the artifact ledger (JSONL). The serialized line is
+    secret-redacted (host/user/user@host/key path/config secrets) before it is written,
+    so a leaked stderr tail in a blocker can never persist a secret. Never raises."""
     art = _artifact_dir(ctx)
     try:
         art.mkdir(parents=True, exist_ok=True)
+        line = redact_text(json.dumps(record, default=str), ctx.cfg)
         with (art / LEDGER_NAME).open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(record, default=str) + "\n")
+            fh.write(line + "\n")
     except OSError:
         pass
 
@@ -1224,7 +1268,8 @@ def _write_cycle_blocker_handoff(ctx: Ctx, blockers: list, evidence: dict = None
     try:
         out_dir.mkdir(parents=True, exist_ok=True)
         dest = out_dir / f"cursor_blocker_{ts}.md"
-        dest.write_text(body, encoding="utf-8")
+        # final guard: the entire handoff file is secret-redacted before it is written.
+        dest.write_text(redact_text(body, ctx.cfg), encoding="utf-8")
         return str(dest)
     except OSError:
         return ""
@@ -1363,8 +1408,9 @@ def cmd_operator_cycle(ctx: Ctx, *, dry_run: bool = False,
             ctx.say("\nSTOP — blockers detected; refusing to start an approved paper run.")
         else:
             ctx.say(f"\n[run] approved paper run requested (mode={mode}) — PAPER ONLY")
-            run_rc = cmd_start_paper_run(ctx, mode=mode, approved_by_chatgpt=True,
-                                         dry_run=dry_run)
+            # Use the SAME safe rebuild primitive as mission-control (rebuilds BOTH
+            # services via existing compose commands); no divergent legacy path.
+            run_rc = _remote_rebuild(ctx, dry_run=dry_run)
             run_started = (run_rc == 0)
             if not run_started:
                 blockers.append(f"approved paper run failed to start (rc={run_rc})")
@@ -1643,53 +1689,39 @@ def build_remote_paper_run_cmd(cfg: Config) -> str:
             f"docker compose up -d --build {shlex.quote(container)}")
 
 
+# Back-compat: start-paper-run modes map onto the unified mission-control safe path so
+# there is no divergent legacy "down && up --build hermes-training" route. short -> a
+# proof2h rebuild that collects immediately (no long wait); long -> the long mission.
+_START_RUN_MODE_MAP = {"short": "proof2h", "long": "long"}
+
+
 def cmd_start_paper_run(ctx: Ctx, *, mode: str = "short",
                         approved_by_chatgpt: bool = False, dry_run: bool = False) -> int:
-    """Start/restart PAPER training on the VPS (live trading stays disabled). Default is
-    SHORT; a LONG run REQUIRES the explicit --approved-by-chatgpt flag."""
-    cfg = ctx.cfg
+    """Start/restart PAPER training on the VPS (live trading stays disabled).
+
+    This is now a thin back-compatible wrapper that ROUTES THROUGH mission-control so it
+    uses the EXACT same safety path: live-flag check, `docker compose config -q`, the
+    approved rebuild of BOTH services, container status, and the 100X env proof after
+    start. Default is SHORT (a proof2h rebuild collected immediately); a LONG run REQUIRES
+    --approved-by-chatgpt. start-paper-run itself is the operator's explicit approval to
+    start, so it supplies mission-control's --approved-paper-run internally."""
     mode = (mode or "short").lower()
-    if mode not in ("short", "long"):
+    if mode not in _START_RUN_MODE_MAP:
         ctx.say(f"STOP — unknown mode '{mode}' (use short|long).")
         return 2
     if mode == "long" and not approved_by_chatgpt:
         ctx.say("STOP — a LONG paper run requires explicit ChatGPT approval. Re-run with "
                 "--approved-by-chatgpt (only after ChatGPT approved a long run).")
         return 3
-    if not ctx.config_found or cfg.missing_required():
-        ctx.say("STOP — config missing required fields for a VPS run.")
-        return 2
-    key_ok, key_msg = validate_ssh_key(cfg)
-    if not key_ok:
-        ctx.say(f"STOP — {key_msg}")
-        return 2
-
-    remote = build_remote_paper_run_cmd(cfg)
-    ssh_cmd = build_ssh_cmd(cfg, remote)
-    ctx.say(f"Laptop coordinator — start PAPER run (mode={mode})")
-    ctx.say("  PAPER TRAINING ONLY — live trading is DISABLED; no trade gates are changed.")
-    ctx.say("  This restarts the hermes-training container via existing compose commands:")
-    ctx.say(f"    {remote}")
-    if dry_run:
-        ctx.say("  [DRY-RUN] would run (secrets redacted):")
-        ctx.say(f"    {redact(ssh_cmd, cfg)}")
-        ctx.say("  (omit --dry-run to execute)")
-        return 0
-    rc, out, err = ctx.run(ssh_cmd, timeout=1800, redact_display=True)
-    if out.strip():
-        ctx.say(out.rstrip())
-    _append_ledger(ctx, {
-        "timestamp": _dt.datetime.now().replace(microsecond=0).isoformat(),
-        "event": "start-paper-run", "mode": mode,
-        "approved_by_chatgpt": bool(approved_by_chatgpt),
-        "local_commit": _local_commit(ctx), "rc": rc})
-    if rc != 0:
-        ctx.say(f"STOP — paper run start failed (rc={rc}).")
-        if err.strip():
-            ctx.say(f"  detail: {err.strip().splitlines()[-1]}")
-        return 1
-    ctx.say(f"PAPER {mode.upper()} run started/restarted (paper training only).")
-    return 0
+    mc_mode = _START_RUN_MODE_MAP[mode]
+    ctx.say(f"start-paper-run (mode={mode}) -> routing through mission-control "
+            f"--mode {mc_mode} (same safe rebuild/status/100X-proof path).")
+    return cmd_mission_control(
+        ctx, mode=mc_mode, approved_paper_run=True,
+        approved_by_chatgpt=bool(approved_by_chatgpt), dry_run=dry_run,
+        # start-paper-run STARTS the run + verifies + collects immediately; it never blocks
+        # for the (2h/11h) proof window — that belongs to `mission-control --mode proof2h/long`.
+        proof_wait_seconds=0)
 
 
 # ---- status ---------------------------------------------------------------- #
@@ -1741,8 +1773,9 @@ def _status_next_command(ctx: Ctx, vps_ssh: str, latest_zip) -> str:
     if not ctx.config_found:
         return f"{base} init-config --config {DEFAULT_CONFIG}"
     if vps_ssh != "reachable":
-        return f"{base} vps-smoke --config {cfg_name}   (VPS not reachable / configure it)"
-    return f"{base} operator-cycle --config {cfg_name}"
+        return f"{base} mission-control --config {cfg_name} --mode inspect-only   (will show the exact VPS blocker)"
+    # mission-control is the RECOMMENDED main workflow (staged checks + canonical report).
+    return f"{base} mission-control --config {cfg_name} --mode inspect-only"
 
 
 # --------------------------------------------------------------------------- #
@@ -1827,6 +1860,49 @@ def _remote_100x_proof(ctx: Ctx) -> "tuple[bool, dict, list]":
     return (not mismatched and bool(env)), present, mismatched
 
 
+# Generated report artifacts that may dirty a git tree (local OR on the VPS). These are
+# gitignored outputs of the report pipeline — they must never block a pull as if they
+# were source changes, and they must NEVER be deleted silently.
+GENERATED_ARTIFACT_MARKERS = (
+    "validation_light_latest.txt", "vps_light_report_latest.zip", "vps_light_report_",
+    "hermes_light_report_", "report_logs/", ".report_venv", "git_commit_proof.txt",
+    "runtime_data_light_", "inspection_reports_light_",
+)
+
+
+def _porcelain_path(line: str) -> str:
+    """Extract the path from one `git status --porcelain` line (handles 'R old -> new')."""
+    p = line[3:].strip() if len(line) > 3 else line.strip()
+    if " -> " in p:
+        p = p.split(" -> ", 1)[1].strip()
+    return p.strip('"')
+
+
+def classify_dirty_paths(porcelain: str) -> "tuple[list, list]":
+    """Split `git status --porcelain` output into (generated_artifacts, source_files).
+    Pure + shared by the local and VPS hygiene checks so they classify identically."""
+    generated, source = [], []
+    for ln in porcelain.splitlines():
+        if not ln.strip():
+            continue
+        path = _porcelain_path(ln)
+        if any(m in path for m in GENERATED_ARTIFACT_MARKERS):
+            generated.append(path)
+        else:
+            source.append(path)
+    return generated, source
+
+
+def _cleanup_cmd_for(paths: list, *, plugin_path: str = "") -> str:
+    """The EXACT safe cleanup command the operator runs THEMSELVES (never auto-run): stop
+    tracking the generated artifacts (they are gitignored) without deleting source."""
+    if not paths:
+        return ""
+    prefix = f"cd {shlex.quote(plugin_path)} && " if plugin_path else ""
+    return prefix + "git rm --cached -r --ignore-unmatch " + " ".join(
+        shlex.quote(p) for p in paths)
+
+
 def _mission_dirty_artifacts(ctx: Ctx) -> "tuple[list, str]":
     """Return (dirty_generated_paths, safe_cleanup_command_text). Read-only: it NEVER
     deletes anything — it only reports generated artifacts dirtying git status + offers
@@ -1834,16 +1910,28 @@ def _mission_dirty_artifacts(ctx: Ctx) -> "tuple[list, str]":
     rc, out, _ = ctx.run(["git", "status", "--porcelain"], timeout=30)
     if rc != 0:
         return [], ""
-    markers = ("validation_light_latest.txt", "vps_light_report", "hermes_light_report",
-               "report_logs/", ".report_venv", "git_commit_proof.txt",
-               "runtime_data_light_", "inspection_reports_light_")
-    dirty = []
-    for ln in out.splitlines():
-        path = ln[3:].strip() if len(ln) > 3 else ln.strip()
-        if any(m in path for m in markers):
-            dirty.append(path)
-    cleanup = ("git rm --cached -r --ignore-unmatch " + " ".join(dirty)) if dirty else ""
-    return dirty, cleanup
+    dirty, _source = classify_dirty_paths(out)
+    return dirty, _cleanup_cmd_for(dirty)
+
+
+def _remote_vps_dirty_check(ctx: Ctx) -> dict:
+    """Read-only VPS hygiene BEFORE a VPS git pull. Runs `git status --porcelain` on the
+    VPS plugin dir and classifies the dirty tree into generated artifacts vs source files
+    so the caller can: (a) GIT_DIRTY_GENERATED_ARTIFACTS -> print exact safe cleanup, do
+    not pull, do not delete; or (b) GIT_PULL_BLOCKED -> stop and report the exact source
+    files. Never starts/stops anything. Secrets stay redacted in evidence."""
+    cfg = ctx.cfg
+    remote = f"cd {shlex.quote(cfg.vps_remote_plugin_path)} && git status --porcelain"
+    rc, out, err = ctx.run(build_ssh_cmd(cfg, remote), timeout=60, redact_display=True)
+    generated, source = classify_dirty_paths(out) if rc == 0 else ([], [])
+    return {
+        "rc": rc,
+        "generated": generated,
+        "source": source,
+        "cleanup_cmd": _cleanup_cmd_for(generated, plugin_path=cfg.vps_remote_plugin_path),
+        "stderr_tail": redact_text(_tail_text(err), cfg),
+        "remote_command": redact(build_ssh_cmd(cfg, remote), cfg),
+    }
 
 
 def _remote_rebuild(ctx: Ctx, *, dry_run: bool) -> int:
@@ -1863,14 +1951,28 @@ def _remote_rebuild(ctx: Ctx, *, dry_run: bool) -> int:
     return rc
 
 
+def _mission_next_command(ctx: Ctx, *, safe: bool, cursor_file: str, mode: str) -> str:
+    """The EXACT next command for the operator (never a generic instruction)."""
+    base = "python scripts/laptop_agent_coordinator.py"
+    cfg = ctx.cfg.source_file or DEFAULT_CONFIG
+    if not safe and cursor_file:
+        return (f"{base} post-cursor-verify --config {cfg}   "
+                "(after fixing in web Cursor using the handoff above)")
+    if not safe:
+        return (f"{base} mission-control --config {cfg} --mode {mode}   "
+                "(re-run after resolving the blocker above)")
+    return f"{base} mission-control --config {cfg} --mode inspect-only"
+
+
 def _print_mission_summary(ctx: Ctx, *, mode: str, safe: bool, local_commit: str,
                            vps_commit: str, compose_config_ok, paper_running: bool,
                            container_status: str, env100_ok, zip_path, zip_complete,
                            instr: str, cursor_needed: bool, cursor_file: str,
                            dirty_artifacts: list, cleanup_cmd: str,
                            engine_running: bool = False, engine_status: str = "unknown",
-                           api_health: str = "not checked",
-                           blockers: list = None, evidence: dict = None) -> None:
+                           api_health: str = "not checked", run_started: bool = False,
+                           next_command: str = "", blockers: list = None,
+                           evidence: dict = None) -> None:
     ctx.say("\n" + "=" * 64)
     ctx.say(f"MISSION-CONTROL — FINAL STATUS (mode={mode})")
     ctx.say("=" * 64)
@@ -1892,10 +1994,12 @@ def _print_mission_summary(ctx: Ctx, *, mode: str, safe: bool, local_commit: str
             f"({engine_status})")
     ctx.say(f"  API health          : {api_health}")
     ctx.say(f"  100X env proof      : {'OK' if env100_ok else 'NOT proven' if env100_ok is False else 'not checked'}")
+    ctx.say(f"  trading run started : {'YES (PAPER ONLY)' if run_started else 'no'}")
     ctx.say(f"  report zip (local)  : {zip_path if zip_path else '(none)'}")
     ctx.say(f"  report bundle       : {'COMPLETE' if zip_complete else 'THIN/incomplete' if zip_complete is False else 'n/a'}")
-    ctx.say(f"  Cursor needed       : {'YES' if cursor_needed else 'no'}"
-            + (f" -> {cursor_file}" if cursor_needed and cursor_file else ""))
+    ctx.say(f"  Cursor handoff      : {cursor_file if (cursor_needed and cursor_file) else '(none)'}")
+    ctx.say(f"  Cursor needed       : {'YES' if cursor_needed else 'no'}")
+    ctx.say(f"  NEXT COMMAND        : {next_command}")
     if dirty_artifacts:
         ctx.say(f"  WARNING: generated artifacts dirty git status: {dirty_artifacts}")
         ctx.say(f"    safe cleanup (run yourself; never auto-run): {cleanup_cmd}")
@@ -1927,7 +2031,8 @@ def cmd_mission_control(ctx: Ctx, *, mode: str = "inspect-only",
     state = {"compose_config_ok": None, "env100_ok": None, "vps_commit": "",
              "paper_running": False, "container_status": "unknown",
              "engine_running": False, "engine_status": "unknown", "api_health": "not checked",
-             "zip": None, "zip_complete": None, "instr": "", "blocker_evidence": None}
+             "zip": None, "zip_complete": None, "instr": "", "blocker_evidence": None,
+             "run_started": False}
 
     ctx.say("=" * 64)
     ctx.say(f"MISSION-CONTROL — {mode} (PAPER ONLY; live trading disabled)")
@@ -1946,7 +2051,7 @@ def cmd_mission_control(ctx: Ctx, *, mode: str = "inspect-only",
             "vps_commit": state["vps_commit"], "compose_config_ok": state["compose_config_ok"],
             "paper_running": state["paper_running"], "env100_ok": state["env100_ok"],
             "engine_running": state["engine_running"], "engine_status": state["engine_status"],
-            "api_health": state["api_health"],
+            "api_health": state["api_health"], "run_started": state["run_started"],
             "report_zip": (str(state["zip"]) if state["zip"] else ""),
             "zip_complete": state["zip_complete"], "approved_paper_run": bool(approved_paper_run),
             "approved_by_chatgpt": bool(approved_by_chatgpt), "blockers": blockers,
@@ -1960,8 +2065,10 @@ def cmd_mission_control(ctx: Ctx, *, mode: str = "inspect-only",
             cursor_needed=bool(cursor_file), cursor_file=cursor_file,
             dirty_artifacts=dirty, cleanup_cmd=cleanup,
             engine_running=state["engine_running"], engine_status=state["engine_status"],
-            api_health=state["api_health"], blockers=blockers,
-            evidence=state.get("blocker_evidence"))
+            api_health=state["api_health"], run_started=state["run_started"],
+            next_command=_mission_next_command(ctx, safe=rc_safe, cursor_file=cursor_file,
+                                               mode=mode),
+            blockers=blockers, evidence=state.get("blocker_evidence"))
         return rc
 
     # --- mode + approval gating (NO run starts without explicit approval) ---
@@ -2090,12 +2197,64 @@ def cmd_mission_control(ctx: Ctx, *, mode: str = "inspect-only",
 
     # --- APPROVED rebuild (proof2h / long only) ---
     if approved_paper_run and mode in ("proof2h", "long"):
-        ctx.say(f"\n[7] APPROVED rebuild + proof run (mode={mode})")
+        # VPS generated-artifact hygiene BEFORE the VPS git pull. Generated artifacts must
+        # never be treated as source changes, and are NEVER deleted silently.
+        ctx.say(f"\n[7] VPS generated-artifact hygiene + pull latest main (mode={mode})")
+        dchk = _remote_vps_dirty_check(ctx)
+        if dchk["source"]:
+            ev = {"stage": "VPS git status (pre-pull hygiene)",
+                  "remote_command": dchk["remote_command"], "exit_code": 1,
+                  "stdout_tail": "dirty SOURCE files: " + ", ".join(dchk["source"]),
+                  "stderr_tail": dchk["stderr_tail"], "ok": False,
+                  "failure_class": "GIT_PULL_BLOCKED",
+                  "suggested_action": suggested_action("GIT_PULL_BLOCKED")}
+            print_remote_evidence(ctx, ev)
+            ctx.say(f"    dirty source files: {dchk['source']}")
+            state["blocker_evidence"] = ev
+            blockers.append("VPS source files dirty — pull blocked [GIT_PULL_BLOCKED]: "
+                            + ", ".join(dchk["source"]))
+            cursor_needed = True
+            return _finish(False, 2)
+        if dchk["generated"]:
+            ev = {"stage": "VPS git status (pre-pull hygiene)",
+                  "remote_command": dchk["remote_command"], "exit_code": 1,
+                  "stdout_tail": "dirty GENERATED artifacts: " + ", ".join(dchk["generated"]),
+                  "stderr_tail": dchk["stderr_tail"], "ok": False,
+                  "failure_class": "GIT_DIRTY_GENERATED_ARTIFACTS",
+                  "suggested_action": suggested_action("GIT_DIRTY_GENERATED_ARTIFACTS")}
+            print_remote_evidence(ctx, ev)
+            ctx.say("    safe cleanup (run yourself on the VPS; NEVER auto-run): "
+                    f"{dchk['cleanup_cmd']}")
+            state["blocker_evidence"] = ev
+            blockers.append("VPS generated artifacts dirty — refusing pull until clean "
+                            "[GIT_DIRTY_GENERATED_ARTIFACTS]")
+            cursor_needed = True
+            return _finish(False, 2)
+        if not dry_run:
+            pulled_ok, vps_head, perr = _remote_vps_git_pull(ctx)
+            if not pulled_ok:
+                ev = {"stage": "VPS git pull --ff-only origin main",
+                      "remote_command": redact(build_ssh_cmd(cfg, build_remote_vps_sync_cmd(cfg)), cfg),
+                      "exit_code": 1, "stdout_tail": "", "stderr_tail": redact_text(perr, cfg),
+                      "ok": False, "failure_class": "GIT_PULL_BLOCKED",
+                      "suggested_action": suggested_action("GIT_PULL_BLOCKED")}
+                print_remote_evidence(ctx, ev)
+                state["blocker_evidence"] = ev
+                blockers.append(f"VPS git pull failed [GIT_PULL_BLOCKED]: {redact_text(perr, cfg)}")
+                cursor_needed = True
+                return _finish(False, 2)
+            state["vps_commit"] = vps_head or state["vps_commit"]
+            ctx.say(f"  [PASS] VPS clean + pulled latest main (commit {state['vps_commit'] or 'unknown'})")
+        else:
+            ctx.say("  [DRY-RUN] VPS clean; would pull latest main (skipped)")
+
+        ctx.say(f"\n[7b] APPROVED rebuild + proof run (mode={mode})")
         if _remote_rebuild(ctx, dry_run=dry_run) != 0:
             blockers.append("approved rebuild failed (docker compose down/build/up)")
             cursor_needed = True
             return _finish(False, 1)
         if not dry_run:
+            state["run_started"] = True               # both services rebuilt + started
             state["env100_ok"], _present, _missing = _remote_100x_proof(ctx)
             ctx.say(f"  100X runtime env    : {'OK' if state['env100_ok'] else 'NOT proven: ' + str(_missing)}")
             if not state["env100_ok"]:
@@ -2179,9 +2338,13 @@ COMMANDS = {
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="laptop_agent_coordinator",
-        description="Laptop Hermes Agent coordinator (Phase 2): operator handoff "
-                    "workflow. Coordinator tooling only — never changes trading "
-                    "strategy, gates, or live-trading behavior; never prints secrets.")
+        description="Laptop Hermes Mission-Control Agent. RECOMMENDED main workflow: "
+                    "`mission-control` (inspect-only by default; approved proof2h/long "
+                    "rebuild + 100X env proof + canonical report). PAPER ONLY — never "
+                    "enables live trading, never changes trading strategy/gates/Bregman/"
+                    "Docker topology, never auto-runs Cursor, never prints secrets.",
+        epilog="Start here: python scripts/laptop_agent_coordinator.py mission-control "
+               "--config .laptop_agent.json --mode inspect-only")
     sub = p.add_subparsers(dest="command", metavar="<command>")
     helps = {
         "init-config": "write a clean, BOM-free .laptop_agent.json (no secrets)",
@@ -2198,8 +2361,9 @@ def build_parser() -> argparse.ArgumentParser:
         "prepare-cursor-handoff": "extract+save a Cursor prompt from ChatGPT's response",
         "sync-main": "fast-forward-only pull of origin/main (refuses dirty tree)",
         "post-cursor-verify": "sync-main + tests + doctor + vps-smoke after a Cursor push",
-        "start-paper-run": "start/restart PAPER training on the VPS (long needs approval)",
-        "status": "one-glance operator status + suggested next command",
+        "start-paper-run": "back-compat: routes through the SAME safe mission-control "
+                           "rebuild/status/100X-proof path (long needs --approved-by-chatgpt)",
+        "status": "one-glance operator status + recommends mission-control next",
     }
     for name in COMMANDS:
         sp = sub.add_parser(name, help=helps.get(name, ""))

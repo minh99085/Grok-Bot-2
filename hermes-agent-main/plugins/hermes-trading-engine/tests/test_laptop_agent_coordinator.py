@@ -651,23 +651,49 @@ def test_start_paper_run_long_requires_approval(tmp_path):
     assert not started                                               # nothing started
 
 
-def test_start_paper_run_long_with_approval_uses_compose(tmp_path):
+def _mission_capable_runner(tmp_path, *, started=None, dirty="", branch="main"):
+    """A cycle runner that ALSO satisfies the mission-control safe path that
+    start-paper-run now routes through: clean VPS git status + 100X env present."""
+    art = tmp_path / "artifacts"
+    base = _cycle_runner(tmp_path, dirty=dirty, branch=branch, started=started)
+
+    def runner(argv, cwd=None, timeout=None):
+        s = " ".join(str(a) for a in argv)
+        if argv and argv[0] == "ssh" and "git status --porcelain" in s:
+            return (0, "", "")                                   # VPS clean (no dirty tree)
+        if "Config.Env" in s:                                    # 100X env proof
+            return (0, "\n".join(f"{k}={v}" for k, v in co.REQUIRED_100X_ENV.items()) + "\n", "")
+        return base(argv, cwd=cwd, timeout=timeout)
+    return runner
+
+
+def test_start_paper_run_long_with_approval_routes_through_mission_control(tmp_path):
+    _plugin(tmp_path)
     write_cfg(tmp_path)
     started = []
     rc, lines = _run(["start-paper-run", "--config", str(tmp_path / co.DEFAULT_CONFIG),
                       "--mode", "long", "--approved-by-chatgpt"],
-                     tmp_path, runner=_cycle_runner(tmp_path, started=started))
+                     tmp_path, runner=_mission_capable_runner(tmp_path, started=started))
+    out = "\n".join(lines)
     assert rc == 0
-    assert started and "docker compose down --remove-orphans" in started[0]
-    assert "docker compose up -d --build" in started[0]
-    assert "live trading is DISABLED" in "\n".join(lines)
+    # routed through mission-control's unified safe rebuild (BOTH services), not a
+    # divergent "up -d --build hermes-training" legacy path.
+    assert started and any("docker compose down --remove-orphans" in s for s in started)
+    assert any("docker compose build --no-cache" in s for s in started)
+    assert any("docker compose up -d" in s for s in started)
+    assert not any("up -d --build hermes-training" in s for s in started)
+    assert "routing through mission-control" in out
+    assert "MISSION-CONTROL — FINAL STATUS" in out
+    assert "trading run started : YES" in out
 
 
 def test_start_paper_run_short_is_default_and_dry_run_safe(tmp_path):
+    _plugin(tmp_path)
     write_cfg(tmp_path)
     started = []
     rc, lines = _run(["start-paper-run", "--config", str(tmp_path / co.DEFAULT_CONFIG),
-                      "--dry-run"], tmp_path, runner=_cycle_runner(tmp_path, started=started))
+                      "--dry-run"], tmp_path,
+                     runner=_mission_capable_runner(tmp_path, started=started))
     assert rc == 0 and not started                                   # dry-run executes nothing
     assert "DRY-RUN" in "\n".join(lines)
 
@@ -682,7 +708,7 @@ def test_status_prints_sections_and_next_command(tmp_path):
     for label in ("local branch", "local commit", "config parsed", "latest report zip",
                   "VPS SSH", "hermes-training", "remote Python deps", "NEXT SUGGESTED"):
         assert label in out
-    assert "operator-cycle" in out                                   # suggested next command
+    assert "mission-control" in out                                  # recommends mission-control
 
 
 def test_post_cursor_verify_runs_chain(tmp_path):

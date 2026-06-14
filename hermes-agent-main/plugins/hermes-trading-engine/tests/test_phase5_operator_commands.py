@@ -431,6 +431,8 @@ def _mission_runner(tmp_path, *, started=None, env_100x=True, running=True, dirt
         # message, so check "import pydantic" BEFORE the canonical-report branch.
         if "import pydantic" in s:
             return (0, "remote python: /usr/bin/python3\n", "")
+        if "git status --porcelain" in s:                   # VPS pre-pull hygiene: clean
+            return (0, "", "")
         if "docker compose config" in s:
             return (0, "", "")
         if "git rev-parse HEAD" in s:                       # VPS git sync
@@ -869,3 +871,176 @@ def test_mission_engine_status_in_ledger(tmp_path):
     led = tmp_path / "artifacts" / co.LEDGER_NAME
     txt = led.read_text(encoding="utf-8") if led.exists() else ""
     assert "engine_status" in txt and "api_health" in txt
+
+
+# --------------------------------------------------------------------------- #
+# Final polish: VPS-side generated-artifact hygiene + robust redaction +
+# start-paper-run unified through mission-control + strengthened final output
+# --------------------------------------------------------------------------- #
+def _vps_status_runner(tmp_path, porcelain, *, started=None, calls=None):
+    """mission-control proof2h runner whose VPS `git status --porcelain` returns the
+    supplied dirty tree (everything else clean/healthy)."""
+    base = _mission_runner(tmp_path, started=started, calls=calls)
+
+    def runner(argv, cwd=None, timeout=None):
+        s = " ".join(str(a) for a in argv)
+        if argv and argv[0] == "ssh" and "git status --porcelain" in s:
+            return (0, porcelain, "")
+        return base(argv, cwd=cwd, timeout=timeout)
+    return runner
+
+
+def _proof2h(tmp_path, runner):
+    return _run(["mission-control", "--config", _cfg_arg(tmp_path), "--mode", "proof2h",
+                 "--approved-paper-run", "--proof-wait-seconds", "0"], tmp_path, runner)
+
+
+def test_vps_generated_artifacts_block_pull_with_safe_cleanup(tmp_path):
+    _plugin(tmp_path)
+    _write_cfg(tmp_path)
+    started, calls = [], []
+    porcelain = (" M validation_light_latest.txt\n"
+                 "?? vps_light_report_latest.zip\n"
+                 "?? report_logs/run.log\n")
+    rc, out = _proof2h(tmp_path, _vps_status_runner(tmp_path, porcelain,
+                                                    started=started, calls=calls))
+    assert rc == 2
+    assert "GIT_DIRTY_GENERATED_ARTIFACTS" in out
+    assert "git rm --cached" in out                     # exact safe cleanup PRINTED
+    assert "validation_light_latest.txt" in out
+    assert not started                                  # never rebuilt
+    # the cleanup command is NEVER executed (no silent deletion)
+    assert not any("git rm --cached" in c for c in calls)
+    assert not any("docker compose build" in c for c in calls)
+    hand = _handoff_text(tmp_path)
+    assert "GIT_DIRTY_GENERATED_ARTIFACTS" in hand
+
+
+def test_vps_source_dirty_blocks_pull_separately(tmp_path):
+    _plugin(tmp_path)
+    _write_cfg(tmp_path)
+    started, calls = [], []
+    porcelain = " M engine/training/polymarket_trainer.py\n"
+    rc, out = _proof2h(tmp_path, _vps_status_runner(tmp_path, porcelain,
+                                                    started=started, calls=calls))
+    assert rc == 2
+    assert "GIT_PULL_BLOCKED" in out
+    assert "engine/training/polymarket_trainer.py" in out   # exact source file reported
+    assert "GIT_DIRTY_GENERATED_ARTIFACTS" not in out       # classified separately
+    assert not started                                      # never rebuilt
+    assert not any("docker compose build" in c for c in calls)
+
+
+def test_vps_mixed_dirty_treated_as_source_block(tmp_path):
+    # a generated artifact AND a source file dirty -> source wins (safe: block the pull).
+    _plugin(tmp_path)
+    _write_cfg(tmp_path)
+    started = []
+    porcelain = (" M validation_light_latest.txt\n M engine/app.py\n")
+    rc, out = _proof2h(tmp_path, _vps_status_runner(tmp_path, porcelain, started=started))
+    assert rc == 2 and "GIT_PULL_BLOCKED" in out and "engine/app.py" in out
+    assert not started
+
+
+def test_classify_dirty_paths_units():
+    gen, src = co.classify_dirty_paths(
+        " M validation_light_latest.txt\n?? vps_light_report_latest.zip\n"
+        " M engine/training/config.py\nR  a.txt -> runtime_data_light_x/b.txt\n")
+    assert "validation_light_latest.txt" in gen
+    assert "vps_light_report_latest.zip" in gen
+    assert "runtime_data_light_x/b.txt" in gen               # rename target classified
+    assert "engine/training/config.py" in src
+    assert all("engine/" not in g for g in gen)
+
+
+# ---- redaction (robust, centralized) -------------------------------------- #
+def test_redact_text_hides_all_secret_forms():
+    cfg = co.Config(vps_host="myhost.example.com", vps_user="deployer",
+                    vps_ssh_key="/home/me/.ssh/id_secretkey")
+    raw = ("ssh -i /home/me/.ssh/id_secretkey deployer@myhost.example.com 'x'; "
+           "err: connect to myhost.example.com as deployer using id_secretkey")
+    red = co.redact_text(raw, cfg)
+    for leak in ("myhost.example.com", "deployer@myhost.example.com",
+                 "/home/me/.ssh/id_secretkey", "id_secretkey"):
+        assert leak not in red
+    assert co.REDACTED in red
+
+
+def test_mission_debug_traces_and_handoff_redact_host(tmp_path):
+    _plugin(tmp_path)
+    _write_cfg(tmp_path)                 # vps_host=SECRET-HOST, user=ubuntu, key under tmp
+    rc, out = _run(["mission-control", "--config", _cfg_arg(tmp_path), "--debug"], tmp_path,
+                   _diag_runner(tmp_path, fail="ssh", fail_rc=255,
+                                fail_err="ssh: connect to host SECRET-HOST port 22: "
+                                         "Connection refused (user ubuntu@SECRET-HOST)"))
+    assert "[debug]" in out                          # traces were printed
+    assert "SECRET-HOST" not in out                  # ...but the host never leaks
+    assert "ubuntu@SECRET-HOST" not in out
+    hand = _handoff_text(tmp_path)
+    assert "SECRET-HOST" not in hand and "ubuntu@SECRET-HOST" not in hand
+
+
+def test_ledger_is_redacted(tmp_path):
+    _plugin(tmp_path)
+    _write_cfg(tmp_path)
+    _run(["mission-control", "--config", _cfg_arg(tmp_path)], tmp_path,
+         _diag_runner(tmp_path, fail="ssh", fail_rc=255,
+                      fail_err="Permission denied for ubuntu@SECRET-HOST (publickey)."))
+    led = (tmp_path / "artifacts" / co.LEDGER_NAME)
+    txt = led.read_text(encoding="utf-8") if led.exists() else ""
+    assert "SECRET-HOST" not in txt and "ubuntu@SECRET-HOST" not in txt
+
+
+# ---- start-paper-run unified through mission-control ---------------------- #
+def test_start_paper_run_routes_through_mission_control(tmp_path):
+    _plugin(tmp_path)
+    _write_cfg(tmp_path)
+    started = []
+    rc, out = _run(["start-paper-run", "--config", _cfg_arg(tmp_path), "--mode", "long",
+                    "--approved-by-chatgpt"], tmp_path, _mission_runner(tmp_path, started=started))
+    assert rc == 0
+    assert "routing through mission-control" in out
+    assert started and any("docker compose build --no-cache" in s for s in started)
+    assert any("docker compose up -d" in s for s in started)
+    assert not any("up -d --build hermes-training" in s for s in started)   # no legacy path
+    assert "trading run started : YES" in out
+
+
+def test_start_paper_run_long_still_requires_chatgpt_approval(tmp_path):
+    _plugin(tmp_path)
+    _write_cfg(tmp_path)
+    started = []
+    rc, out = _run(["start-paper-run", "--config", _cfg_arg(tmp_path), "--mode", "long"],
+                   tmp_path, _mission_runner(tmp_path, started=started))
+    assert rc == 3 and "ChatGPT approval" in out and not started
+
+
+# ---- canonical report collection (both command names) --------------------- #
+def test_both_collect_commands_call_canonical_script(tmp_path):
+    for cmd in ("collect-report", "collect-light-report"):
+        _plugin(tmp_path)
+        _write_cfg(tmp_path)
+        calls = []
+        _run([cmd, "--config", _cfg_arg(tmp_path)], tmp_path,
+             _mission_runner(tmp_path, calls=calls))
+        assert any("bash scripts/vps_generate_light_report.sh" in c for c in calls)
+
+
+# ---- strengthened final output ------------------------------------------- #
+def test_mission_final_summary_always_has_next_command(tmp_path):
+    _plugin(tmp_path)
+    _write_cfg(tmp_path)
+    rc, out = _run(["mission-control", "--config", _cfg_arg(tmp_path)], tmp_path,
+                   _mission_runner(tmp_path))
+    final = out.split("FINAL STATUS", 1)[1]
+    assert "NEXT COMMAND" in final
+    assert "trading run started" in final
+    assert "hermes-trading-engine:" in final
+    assert "Cursor handoff" in final
+
+
+def test_help_recommends_mission_control_as_main_workflow():
+    p = co.build_parser()
+    text = p.format_help()
+    assert "mission-control" in text
+    assert "RECOMMENDED" in text or "recommended" in text
