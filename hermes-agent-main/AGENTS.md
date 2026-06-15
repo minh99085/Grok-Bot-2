@@ -2,6 +2,11 @@
 
 Instructions for AI coding assistants and developers working on the hermes-agent codebase.
 
+## Assistant communication preferences
+
+- ALWAYS end every response with the exact line `I AM DONE THINKING` on its own line, as
+  the very last thing in the message, so the user knows the turn is complete.
+
 ## Development Environment
 
 ```bash
