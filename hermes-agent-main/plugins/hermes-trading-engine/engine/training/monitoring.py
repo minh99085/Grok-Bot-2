@@ -120,7 +120,10 @@ def build_dashboard(raw: dict, *, runtime_seconds: float,
         "ambiguous_rate": round(float(raw.get("ambiguous_rate", 0.0) or 0.0), 6),
         "learner_rollbacks": int(raw.get("learner_rollbacks", 0) or 0),
         "profile": raw.get("profile", "aggressive"),
-        "samples": int(raw.get("useful_feedback", 0) or 0),
+        # kill-switch statistical-alert gating uses READINESS sample count when provided
+        # (so bounded-loss exploration feedback alone can't satisfy min_samples and trip
+        # calibration/label/partial-fill/Bregman-FP downgrades); falls back to useful_feedback.
+        "samples": int(raw.get("samples", raw.get("useful_feedback", 0)) or 0),
     }
 
 
