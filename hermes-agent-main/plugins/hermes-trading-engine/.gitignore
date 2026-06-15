@@ -40,3 +40,10 @@ runtime_data_light_*/
 inspection_reports_light_*/
 **light_report**.zip
 git_commit_proof.txt
+# full-diagnostic report exports (canonical vps_generate_full_report.sh + ad-hoc)
+vps_full_report_*.zip
+vps_full_report_*/
+vps_full_issue_report_*.zip
+vps_full_issue_report_*/
+vps_issue_report_*.zip
+vps_issue_report_*/
