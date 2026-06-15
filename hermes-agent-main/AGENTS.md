@@ -7,6 +7,22 @@ Instructions for AI coding assistants and developers working on the hermes-agent
 - ALWAYS end every response with the exact line `I AM DONE THINKING` on its own line, as
   the very last thing in the message, so the user knows the turn is complete.
 
+## Deployment invariant: keep GitHub `main` and the VPS codebase matching
+
+- ALWAYS keep the GitHub `main` branch and the VPS codebase
+  (`/opt/hermes-agent-main`, plugin at
+  `/opt/hermes-agent-main/hermes-agent-main/plugins/hermes-trading-engine`) in sync.
+- Any code fix MUST be committed and pushed to `main` AND deployed to the VPS so the two
+  match. Never leave the VPS on a different commit than `main`, and never leave the VPS
+  working tree dirty with ad-hoc edits.
+- Preferred deploy path: on the VPS run `git pull --ff-only origin main`, then rebuild the
+  affected container(s) (`docker compose build <svc> && docker compose up -d <svc>`) so the
+  running image matches the repo (code is baked into the image, not volume-mounted).
+- If files were patched directly on the VPS (e.g. via `scp`), commit/push the SAME content
+  to `main` and then reconcile the VPS to a clean `git` state at that commit (discard the
+  now-redundant local edits and fast-forward) so `git status` is clean and future pulls
+  work. After any deploy, verify `git rev-parse HEAD` on the VPS equals `origin/main`.
+
 ## Development Environment
 
 ```bash
