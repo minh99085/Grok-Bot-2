@@ -346,6 +346,24 @@ def test_canonical_funnel_overrides_legacy_zero_scan(tmp_path, monkeypatch):
     assert "certified" in warns.lower()
 
 
+# --- active-learning: selected explore candidates never disappear -----------
+
+def test_explore_selected_candidates_never_disappear(tmp_path, monkeypatch):
+    """A candidate SELECTED for tiny exploration must enter the tiny directional evaluator
+    and either open a <=$1 paper trade or record an EXACT blocker — it can never be counted
+    as selected and then silently dropped. Here exploration is OFF, so every explore-
+    selected candidate must record the exact 'exploration_disabled' blocker (not vanish)."""
+    t = _run(tmp_path, monkeypatch, active_learning_enabled=True, exploration_enabled=False)
+    al = t.active_learning_report()
+    explore_selected = (int(al["active_learning_candidates_selected"])
+                        - int(al["active_learning_shadow_selected"]))
+    if explore_selected > 0:                       # only meaningful when some were selected
+        assert al["active_learning_tiny_evaluator_called"] > 0
+        assert al["active_learning_selected_but_not_evaluated_count"] == 0
+        assert al["active_learning_tiny_blocked_by_reason"]      # exact blocker(s) recorded
+        assert sum(al["active_learning_tiny_blocked_by_reason"].values()) >= explore_selected
+
+
 # --- end-to-end: a healthy run is run-ready ---------------------------------
 
 def test_healthy_run_is_run_ready_and_ledger_records_decisions(tmp_path, monkeypatch):

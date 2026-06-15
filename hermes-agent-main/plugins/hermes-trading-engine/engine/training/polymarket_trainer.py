@@ -2495,6 +2495,24 @@ class PolymarketPaperTrainer:
                     and budget_ok and al_decision.get("decision") == "explore"):
                 exploratory = True
             else:
+                # A candidate SELECTED for tiny exploration (decision == 'explore') must
+                # NEVER silently disappear: if it is blocked BEFORE the open path (mode,
+                # exploration disabled, or budget), it has still entered the tiny evaluator
+                # and we record an EXACT canonical blocker (no Bregman arbitrage is required
+                # for this lane; hard realism/risk/fill gates are unchanged downstream).
+                if al_decision.get("decision") == "explore":
+                    self._tiny_directional_evaluator_called += 1
+                    self._tiny_directional_selected += 1
+                    if self.mode != "paper_train":
+                        _tiny_rsn = "observe_only_mode"
+                    elif not bool(getattr(self.cfg, "exploration_enabled", False)):
+                        _tiny_rsn = "exploration_disabled"
+                    elif not budget_ok:
+                        _tiny_rsn = "exploration_budget_exhausted"
+                    else:
+                        _tiny_rsn = "exploration_precondition_failed"
+                    self._tiny_directional_blocked[_tiny_rsn] = \
+                        self._tiny_directional_blocked.get(_tiny_rsn, 0) + 1
                 self.rejection_count += 1
                 self.learner.record_decision(traded=False, reason=reason)
                 # CLOSED LOOP: a rejected/near-miss candidate is still a structured

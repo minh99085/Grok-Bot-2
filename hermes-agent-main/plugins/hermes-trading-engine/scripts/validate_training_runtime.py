@@ -188,6 +188,20 @@ def validate_runtime(status: dict, *, data_dir: Optional[str] = None,
              f"config_source={al_src} runtime_enabled={al_eff} — aggressive_paper profile "
              f"ALWAYS enables active learning; mismatch => container STALE, rebuild "
              f"(mission-control --mode proof2h --approved-paper-run)")
+        # selected EXPLORE candidates (selected minus shadow) must reach the tiny evaluator
+        # or record an exact blocker — they can never silently disappear.
+        _sel = int(al.get("active_learning_candidates_selected", 0) or 0)
+        _shadow = int(al.get("active_learning_shadow_selected", 0) or 0)
+        _eval = int(al.get("active_learning_tiny_evaluator_called", 0) or 0)
+        _blocked = al.get("active_learning_tiny_blocked_by_reason", {}) or {}
+        _snE = al.get("active_learning_selected_but_not_evaluated_count")
+        _not_eval = int(_snE) if _snE is not None else max(0, (_sel - _shadow) - _eval)
+        _accounted = not (_not_eval > 0 and not _blocked)
+        if al_eff:
+            _chk(checks, "active_learning_selected_candidates_accounted", _accounted,
+                 f"explore_selected_not_evaluated={_not_eval} tiny_evaluator_called={_eval} "
+                 f"blocked_by_reason={_blocked} — a selected candidate must open a <=$1 paper "
+                 f"trade or record an exact blocker")
 
     # --- inspection collector bundles required artifacts ---
     try:

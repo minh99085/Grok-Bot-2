@@ -660,6 +660,29 @@ def build_report_run_ready(manifest: dict, status: dict, algo_audit: dict,
             "relative to the repo. Rebuild it (mission-control --mode proof2h "
             "--approved-paper-run) so the tiny-exploration lane is active before a long run.")
     config_consistent = not al_mismatch
+    # TRUTH-CHAIN: a SELECTED active-learning *explore* candidate must enter the tiny
+    # directional evaluator (open a <=$1 paper trade if hard gates pass, else record an
+    # exact blocker). Shadow/no-trade learning examples legitimately do NOT trade, so we
+    # only count EXPLORE selections (selected minus shadow). If an explore-selected
+    # candidate vanished without evaluation (and no exact blocker), block run-readiness.
+    al_sel = int(al_block.get("active_learning_candidates_selected", 0) or 0)
+    al_shadow = int(al_block.get("active_learning_shadow_selected", 0) or 0)
+    al_eval = int(al_block.get("active_learning_tiny_evaluator_called", 0) or 0)
+    al_blocked = al_block.get("active_learning_tiny_blocked_by_reason", {}) or {}
+    _snE = al_block.get("active_learning_selected_but_not_evaluated_count")
+    explore_selected = max(0, al_sel - al_shadow)
+    selected_not_evaluated = (int(_snE) if _snE is not None
+                              else max(0, explore_selected - al_eval))
+    no_exact_blocker = not bool(al_blocked)
+    al_candidates_accounted = not (selected_not_evaluated > 0 and no_exact_blocker)
+    if al_effective and not al_candidates_accounted:
+        blocking.append(
+            f"active_learning: {selected_not_evaluated} explore-selected candidate(s) did "
+            "not enter the tiny directional evaluator and no exact blocker was recorded "
+            "(active_learning_tiny_evaluator_called=%d, tiny_blocked_by_reason empty). A "
+            "selected candidate must open a <=$1 paper trade or record an exact blocker."
+            % al_eval)
+    config_consistent = config_consistent and al_candidates_accounted
     closed_loop_durable = event_files_non_empty and artifact_files_real
 
     proof = {
@@ -675,7 +698,8 @@ def build_report_run_ready(manifest: dict, status: dict, algo_audit: dict,
         "tail_samples_fresh_same_run": not bool(
             manifest.get("stale_or_mixed_training_tail_samples")),
         "single_source_data_dir": not bool(manifest.get("mixed_source_roots")),
-        "active_learning_config_consistent": bool(config_consistent),
+        "active_learning_config_consistent": bool(not al_mismatch),
+        "active_learning_candidates_accounted": bool(al_candidates_accounted),
         "live_trading_disabled": True,
     }
     run_ready = (not blocking) and all(proof.values())

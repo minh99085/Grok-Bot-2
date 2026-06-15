@@ -371,6 +371,29 @@ def run(argv=None) -> int:
             setattr(cfg, k, v)
         cfg.__post_init__()  # re-apply freeze/clamp invariants after overrides
 
+    # TRUTH-CHAIN (env wins): the paper LEARNING toggles must reflect their env flags in
+    # the EFFECTIVE config regardless of which build path produced cfg, so the runtime/
+    # report can never contradict the container env (the active_learning_enabled=false
+    # while POLYMARKET_ACTIVE_LEARNING_ENABLED=1 mismatch). These are PAPER-only learning/
+    # exploration feature toggles — enabling them NEVER loosens a hard realism/risk/fill
+    # gate (stale book, missing ask, reference/synthetic fill, RiskEngine, notional cap,
+    # and paper-realism all still hard-reject downstream), and live trading stays disabled.
+    _env_truth = (
+        ("active_learning_enabled", "POLYMARKET_ACTIVE_LEARNING_ENABLED"),
+        ("exploration_enabled", "POLYMARKET_EXPLORATION_ENABLED"),
+        ("exploration_tiny_size_enabled", "EXPLORATION_TINY_SIZE_ENABLED"),
+        ("feedback_accelerator_enabled", "FEEDBACK_ACCELERATOR_ENABLED"),
+    )
+    _forced = []
+    for _field, _envname in _env_truth:
+        if _envb(_envname, False) and not bool(getattr(cfg, _field, False)):
+            setattr(cfg, _field, True)
+            _forced.append(f"{_field}<-{_envname}=1")
+    if _forced:
+        logging.getLogger("hte.training.start").info(
+            "EFFECTIVE CONFIG: forced paper-learning toggles ON from env (paper-only, no "
+            "hard gate loosened, live disabled): %s", ", ".join(_forced))
+
     # PROOF (fix #4): log the final EFFECTIVE 100X runtime config values that the report
     # must show, resolved from the built TrainingConfig (not just env). Aggressive paper
     # mode is active iff the env flag was applied above (paper-only; never live).
