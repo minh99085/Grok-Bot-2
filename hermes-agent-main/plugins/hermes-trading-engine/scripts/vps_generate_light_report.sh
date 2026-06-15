@@ -98,6 +98,11 @@ chown -R "$(id -u):$(id -g)" runtime_data 2>/dev/null || true
 # --- 5) regenerate the light report + validation (venv python ONLY) ------------
 echo "==> deleting old inspection_reports"
 rm -rf inspection_reports
+# Delete the OLD latest zip BEFORE regenerating so a FAILED run can never leave a stale
+# (possibly thin) vps_light_report_latest.zip for collect-report/mission-control to grab.
+# A fresh latest is written ONLY after the complete-bundle check passes (step 6).
+echo "==> removing stale ${ZIP_LATEST} (rewritten only after a complete bundle)"
+rm -f "${ZIP_LATEST}"
 
 echo "==> generating light-mode inspection report (.report_venv python)"
 set +e

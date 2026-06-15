@@ -2093,10 +2093,29 @@ class PolymarketPaperTrainer:
                     f"best_after_cost_edge={round(best_edge, 4)}; "
                     f"best_reject={self._relaxed_best_reject or '{}'}")
             else:
+                # Positive-edge real-book candidates existed but NONE opened. The exact
+                # reason must come from the candidate-STREAM reject reasons
+                # (self._relaxed_blocked_by_reason — e.g. incomplete_event_family), NOT the
+                # open-time dict (which is empty when nothing reached GATE_TRADABLE). A
+                # candidate rejected BEFORE the open path (e.g. an incomplete event family)
+                # must never be mislabeled "unfilled". Bregman strictness is unchanged —
+                # this is reporting only.
+                stream_rejects = dict(self._relaxed_blocked_by_reason)
+                combined = dict(stream_rejects)
+                for k, v in self._micro_exploration_reject_reasons.items():
+                    combined[k] = combined.get(k, 0) + int(v)
+                dom = (max(combined.items(), key=lambda kv: kv[1])[0] if combined
+                       else ((self._relaxed_best_reject or {}).get("reject_reason")
+                             or "unknown"))
+                # nothing reached the open path (no GATE_TRADABLE candidate) => the positive
+                # candidates were rejected BEFORE opening, not left unfilled at the broker.
+                rejected_before_open = int(self._micro_exploration_candidates_total) <= 0
+                label = ("positive_candidates_rejected_before_open" if rejected_before_open
+                         else "positive_candidates_found_but_unfilled")
                 m["zero_trade_blocker_if_any"] = (
-                    f"positive_candidates_found_but_unfilled: "
-                    f"positive={pos_seen}; reject_reasons="
-                    f"{dict(self._micro_exploration_reject_reasons)}")
+                    f"{label}: positive={pos_seen}; dominant_reject_reason={dom}; "
+                    f"reject_reasons={combined}; "
+                    f"best_reject={self._relaxed_best_reject or '{}'}")
 
     def _open_bregman(self, opp: CertifiedBregmanOpportunity, rec_by_id: dict,
                       now: float, *, exploration: bool = False,

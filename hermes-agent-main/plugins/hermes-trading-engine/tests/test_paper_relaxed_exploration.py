@@ -284,3 +284,49 @@ def test_full_readiness_gates_not_loosened(tmp_path, monkeypatch):
     assert m["paper_relaxed_trades_opened"] >= 1       # but the paper lane traded
     rep = t.paper_realism_report()
     assert rep["readiness_pnl"] == 0.0                # readiness PnL excludes exploration
+
+
+def test_positive_candidates_rejected_before_open_have_exact_reasons(tmp_path, monkeypatch):
+    """Regression for the contradictory relaxed blocker: when positive real-book
+    candidates exist (e.g. 6) but were REJECTED before opening (incomplete_event_family),
+    the zero-trade blocker must carry the EXACT stream-level reject reasons (never an empty
+    dict), must name the dominant reason, and must NOT mislabel them as 'unfilled'. Bregman
+    incomplete_event_family stays strict — this asserts reporting only."""
+    t = _trainer(tmp_path, monkeypatch)
+    # simulate the uploaded-report state: positive real-book candidates seen, but every
+    # one rejected at the candidate-STREAM stage (incomplete_event_family) so NONE reached
+    # the open path (GATE_TRADABLE == 0) and the open-time reject dict is empty.
+    t._relaxed_real_book_seen = 48015
+    t._relaxed_positive_real_book_seen = 6
+    t._relaxed_blocked_by_reason = {"incomplete_event_family": 6}
+    t._relaxed_best_reject = {"reject_reason": "incomplete_event_family", "after_cost_edge": 0.02}
+    t._micro_exploration_candidates_total = 0          # nothing reached GATE_TRADABLE
+    t._micro_exploration_reject_reasons = {}           # open-time dict legitimately empty
+
+    t._update_micro_metrics(enabled=True)
+    blocker = t.bregman_exec_metrics["zero_trade_blocker_if_any"]
+
+    # exact reasons are surfaced (no empty reject_reasons when positive candidates exist)
+    assert "incomplete_event_family" in blocker
+    assert "reject_reasons={}" not in blocker
+    assert "dominant_reject_reason=incomplete_event_family" in blocker
+    # rejected BEFORE the open path -> must NOT be called 'unfilled'
+    assert "positive_candidates_rejected_before_open" in blocker
+    assert "positive_candidates_found_but_unfilled" not in blocker
+
+
+def test_positive_candidates_unfilled_at_open_still_reported(tmp_path, monkeypatch):
+    """If positive candidates DID reach the open path (GATE_TRADABLE > 0) but failed at
+    open time, the open-time reject reasons are surfaced and the 'unfilled' label is used."""
+    t = _trainer(tmp_path, monkeypatch)
+    t._relaxed_real_book_seen = 100
+    t._relaxed_positive_real_book_seen = 3
+    t._relaxed_blocked_by_reason = {}
+    t._micro_exploration_candidates_total = 3          # reached the open path
+    t._micro_exploration_reject_reasons = {"missing_executable_ask": 3}
+
+    t._update_micro_metrics(enabled=True)
+    blocker = t.bregman_exec_metrics["zero_trade_blocker_if_any"]
+    assert "positive_candidates_found_but_unfilled" in blocker
+    assert "missing_executable_ask" in blocker
+    assert "reject_reasons={}" not in blocker
