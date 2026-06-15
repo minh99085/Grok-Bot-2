@@ -143,11 +143,20 @@ with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as z:
 PYPACK
 fi
 
-# Refuse a full report whose embedded light bundle is missing/thin (so a degraded export
-# is never shipped as success). The light runner already refuses thin bundles (exit 13).
-if [[ "${LIGHT_RC}" -ne 0 || ! -s "${OUT_DIR}/${LIGHT_ZIP}" ]]; then
-  echo "FATAL: full report incomplete — light bundle failed (rc=${LIGHT_RC}) or missing." >&2
+# Refuse a full report ONLY when the embedded light BUNDLE is actually missing/thin. A
+# NON-ZERO light_report_rc is usually the run-ready VERDICT (e.g. rc=6 = "not run ready"),
+# NOT a generation failure — the bundle is still complete (the light runner only writes
+# the zip after its own completeness check passes). We MUST still ship the full report in
+# that case so the inspector can see WHY it is not run-ready. Fail only when the complete
+# light bundle is absent.
+if [[ ! -s "${OUT_DIR}/${LIGHT_ZIP}" ]]; then
+  echo "FATAL: full report incomplete — complete light bundle missing (light_report_rc=${LIGHT_RC})." >&2
   exit 13
+fi
+if [[ "${LIGHT_RC}" -ne 0 ]]; then
+  echo "NOTE: light_report_rc=${LIGHT_RC} (run-ready VERDICT, not a generation failure)." \
+       "Shipping the full report so the not-run-ready reason is inspectable." \
+       | tee -a "${OUT_DIR}/generate_full_report.txt"
 fi
 cp -f "${ZIP_NAME}" "${ZIP_LATEST}"
 

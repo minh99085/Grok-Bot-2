@@ -202,3 +202,26 @@ def test_active_learning_metrics_emitted(tmp_path, monkeypatch):
         assert key in rep
     assert rep["active_learning_enabled"] is True
     assert rep["random_exploration_enabled"] is False
+
+
+def test_kill_switch_risk_signals_exclude_exploration(tmp_path, monkeypatch):
+    """Bounded-loss exploration probes must NOT count toward the kill-switch's
+    drawdown / loss-streak / calibration samples (they are intentional, budget-capped
+    learning spend separated from readiness). Otherwise tiny losing probes self-trip the
+    kill-switch and disable profit-discovery. A losing READINESS trade still counts."""
+    from types import SimpleNamespace
+    t = _trainer(tmp_path, monkeypatch)
+    # 15 losing EXPLORATION probes (the VPS scenario)
+    t.positions = [SimpleNamespace(closed=True, realized_pnl=-0.1, exploration=True,
+                                   p_final=0.4, cost=1.0) for _ in range(15)]
+    raw = t._monitoring_raw()
+    assert raw["loss_streak"] == 0          # exploration excluded
+    assert raw["drawdown"] == 0.0
+    assert raw["samples"] == 0
+    # a genuine READINESS loss DOES count (real risk protection intact)
+    t.positions.append(SimpleNamespace(closed=True, realized_pnl=-5.0, exploration=False,
+                                       p_final=0.4, cost=1.0))
+    raw2 = t._monitoring_raw()
+    assert raw2["loss_streak"] == 1
+    assert raw2["samples"] == 1
+    assert raw2["drawdown"] < 0.0

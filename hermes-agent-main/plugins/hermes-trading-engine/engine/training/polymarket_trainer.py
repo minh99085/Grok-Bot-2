@@ -4219,9 +4219,27 @@ class PolymarketPaperTrainer:
     def _monitoring_raw(self) -> dict:
         from engine.replay import metrics as _m
         closed = [p for p in self.positions if p.closed]
-        closed_pnls = [p.realized_pnl for p in closed]
-        preds = [p.p_final for p in closed]
-        outs = [1.0 if p.realized_pnl > 0 else 0.0 for p in closed]
+        # KILL-SWITCH RISK SIGNALS are computed on READINESS trades only. Bounded-loss
+        # exploration probes (tagged p.exploration) are intentional learning spend — already
+        # separated from readiness PnL and capped by exploration_budget_usd +
+        # exploration_max_expected_loss_usd — so they must NOT count as strategy drawdown /
+        # loss-streak / calibration samples. Otherwise a handful of tiny losing probes
+        # self-trips the kill-switch and downgrades the bot, killing profit-discovery
+        # learning. Hard realism/risk gates and the exploration budget cap are UNCHANGED;
+        # this only stops exploration's expected cost from masquerading as a drawdown
+        # emergency. (Tighten later by reintroducing exploration into these signals.)
+        readiness_closed = [p for p in closed if not getattr(p, "exploration", False)]
+        closed_pnls = [p.realized_pnl for p in readiness_closed]
+        preds = [p.p_final for p in readiness_closed]
+        outs = [1.0 if p.realized_pnl > 0 else 0.0 for p in readiness_closed]
+        # readiness-only drawdown, SAME sign convention as pnl_summary (negative = trough
+        # of cumulative readiness PnL); exploration probes are excluded.
+        _eq = 0.0
+        readiness_drawdown = 0.0
+        for _p in self.positions:
+            if _p.closed and not getattr(_p, "exploration", False):
+                _eq += _p.realized_pnl
+                readiness_drawdown = min(readiness_drawdown, _eq)
         lq = self.learner.label_quality()
         ntr_total = sum((self.learner.no_trade_reasons or {}).values())
         stale = self._stale_data_rejections()
@@ -4237,8 +4255,10 @@ class PolymarketPaperTrainer:
             "bregman": bregman_monitoring(self.bregman_summary()),
             "chainlink_linked_performance": self._chainlink_linked_performance(),
             "exploration_budget_used": float(self.exploration_budget_used),
-            "drawdown": float(self.pnl_summary().get("max_drawdown", 0.0) or 0.0),
+            # readiness-only risk signals (exploration probes excluded — see above)
+            "drawdown": float(readiness_drawdown),
             "loss_streak": loss_streak(closed_pnls),
+            "samples": len(readiness_closed),
             "stale_data_rejections": stale,
             "stale_data_rejection_rate": round(stale / ntr_total, 6) if ntr_total else 0.0,
             "partial_fill_rate": round(int(bstat.get("rejects", 0)) / orders, 6),
