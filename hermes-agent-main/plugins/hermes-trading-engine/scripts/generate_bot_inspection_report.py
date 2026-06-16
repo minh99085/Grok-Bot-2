@@ -1389,6 +1389,11 @@ def _write_metrics(bundle, feats, status, comparison):
         "btc_fast_price_age_seconds": feats.get("btc_fast_price_age_seconds"),
         "btc_fast_price_disagreement_bps": feats.get("btc_fast_price_disagreement_bps"),
         "raw": fast})
+    # consolidated READ-ONLY feed health with EXACT valid/stale/disabled reasons
+    # (chainlink + btc fast price). Sourced from status() so the bundle always shows
+    # the explicit reason, not just booleans. No secrets; no live-trading dependency.
+    bundle.write_json("metrics/feeds_health.json",
+                      (status or {}).get("feeds_health", {}) or {})
     bundle.write_json("metrics/grok_research.json", {
         "grok_enabled": feats.get("grok_enabled"),
         "grok_has_api_key": feats.get("grok_has_api_key"),
@@ -1744,17 +1749,23 @@ def _build_report_md(rj, feats, status, docker, api, tests, comparison,
     L.append("")
 
     # 6-15. Feature sections
+    fh = (status or {}).get("feeds_health", {}) or {}
     L.append("## 6. Chainlink / Oracle Health")
     L.append("")
     for k in ("chainlink_enabled", "chainlink_valid", "chainlink_stale",
               "chainlink_age_seconds", "chainlink_price"):
-        L.append(f"- {k}: {_yn(feats.get(k))}")
+        L.append(f"- {k}: {_yn(feats.get(k, fh.get(k)))}")
+    # EXACT stale/invalid reason (read-only diagnostics; no secrets).
+    L.append(f"- chainlink_stale_reason: {fh.get('chainlink_stale_reason') or 'none'}")
     L.append("")
     L.append("## 7. BTC Fast Price Feed Health")
     L.append("")
     for k in ("btc_fast_price_enabled", "btc_fast_price_valid",
               "btc_fast_price_age_seconds", "btc_fast_price_disagreement_bps"):
-        L.append(f"- {k}: {_yn(feats.get(k))}")
+        L.append(f"- {k}: {_yn(feats.get(k, fh.get(k)))}")
+    # EXACT disabled/invalid reason.
+    L.append(f"- btc_fast_price_disabled_reason: "
+             f"{fh.get('btc_fast_price_disabled_reason') or 'none'}")
     L.append("")
     L.append("## 8. BTC Pulse Status")
     L.append("")
