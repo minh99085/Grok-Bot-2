@@ -1334,7 +1334,11 @@ class TrainingConfig:
             # caps, and an explicit exploration budget.
             max_event_exposure_usd=8.0, max_category_exposure_usd=20.0,
             max_bregman_bundle_exposure_usd=15.0, diversity_target=8,
-            exploration_budget_usd=15.0, max_drawdown_usd=40.0,
+            # total bounded-loss exploration budget (env-tunable; profile no longer hard-
+            # pins it so the operator can let learning probe more). Clamped to <=$200 by
+            # __post_init__; paper-only, never loosens a hard realism/risk gate.
+            exploration_budget_usd=_envf("POLYMARKET_EXPLORATION_BUDGET_USD", 100.0),
+            max_drawdown_usd=40.0,
             kelly_max_fraction=0.03, leg_failure_haircut=0.6,
             # anti-overfitting: walk-forward governance ON, but aggressive mode
             # CANNOT promote production-like params until walk-forward validation

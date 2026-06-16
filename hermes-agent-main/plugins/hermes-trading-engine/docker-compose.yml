@@ -149,7 +149,7 @@ services:
       POLYMARKET_EXPLORATION_RATE: "0.5"
       POLYMARKET_EXPLORATION_MIN_EDGE: "-0.05"
       POLYMARKET_EXPLORATION_NOTIONAL_USD: "2"
-      POLYMARKET_EXPLORATION_BUDGET_USD: "20"
+      POLYMARKET_EXPLORATION_BUDGET_USD: "100"
       # v2 probability shrink + (relaxed) edge gates
       POLYMARKET_BASE_SHRINK_FACTOR: "0.25"
       POLYMARKET_MAX_SHRINK_FACTOR: "0.60"
@@ -563,7 +563,7 @@ services:
       # PAPER_MAX_ORDER_NOTIONAL_USD are defined exactly ONCE in the 100X profile block
       # above (loosened soft selection gates + tiny <=$2 hard cap). Do NOT redefine them
       # here — duplicate YAML mapping keys make docker compose config fail to parse.
-      POLYMARKET_EXPLORATION_BUDGET_USD: "20"
+      POLYMARKET_EXPLORATION_BUDGET_USD: "100"
       PAPER_MAX_TOTAL_EXPOSURE_USD: "100"
       PAPER_MAX_DAILY_LOSS_USD: "50"
     # BTC_PULSE_ENABLED=1 (above) unfreezes the pulse experiment on its own.
