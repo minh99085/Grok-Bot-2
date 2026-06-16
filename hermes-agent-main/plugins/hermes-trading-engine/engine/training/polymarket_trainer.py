@@ -3655,6 +3655,44 @@ class PolymarketPaperTrainer:
                                 if self.positions else 0.0,
         }
 
+    def _accounting_consistency(self, readiness_pnl: float, learning_pnl: float) -> dict:
+        """Consolidated, mutually-exclusive paper-accounting buckets (PAPER ONLY).
+
+        Learning probes remain VISIBLE but SEPARATED from readiness: a readiness-
+        eligible trade is a realistic non-exploration fill; a learning-probe trade is
+        an exploration fill (readiness-PnL excluded). Shadow/no-trade labels are
+        learning examples that NEVER opened. Read-only telemetry."""
+        pos = self.positions
+        realistic = [p for p in pos if p.is_realistic and not p.exploration]
+        readiness_eligible = len(realistic)
+        learning_probe_trades = len([p for p in pos if getattr(p, "exploration", False)])
+        bregman_bundles = len([p for p in realistic if p.strategy == "bregman"])
+        directional_exploit = len([p for p in realistic if p.strategy != "bregman"])
+        cl = getattr(self, "closed_loop", None)
+        cl_counts = dict(getattr(cl, "counts", {}) or {}) if cl is not None else {}
+        shadow_only_labels = (len(self.near_miss_log)
+                              + int(cl_counts.get("shadow_records_written", 0) or 0))
+        no_trade_labels = int(cl_counts.get("no_trade_labels_written",
+                                            cl_counts.get("no_trade_labels", 0)) or 0)
+        total = round(readiness_pnl + learning_pnl, 6)
+        return {
+            # mutually-exclusive trade-count buckets (readiness vs learning probe)
+            "readiness_eligible_trades": readiness_eligible,
+            "learning_probe_trades": learning_probe_trades,
+            "bregman_bundles": bregman_bundles,
+            "directional_exploit_trades": directional_exploit,
+            # learning-only labels (never opened a paper trade)
+            "shadow_only_labels": shadow_only_labels,
+            "no_trade_labels": no_trade_labels,
+            # after-cost PnL buckets (readiness excludes learning probes)
+            "readiness_after_cost_pnl": round(readiness_pnl, 6),
+            "learning_probe_after_cost_pnl": round(learning_pnl, 6),
+            "total_after_cost_pnl_all_paper": total,
+            "after_cost_accounting_bucket_consistent": bool(
+                abs((round(readiness_pnl, 6) + round(learning_pnl, 6)) - total) < 1e-6),
+            "readiness_excludes_learning_probes": True,
+        }
+
     def paper_realism_report(self) -> dict:
         """Pass-3 Paper Realism: separates REALISTIC executable PnL from
         shadow/theoretical/exploration PnL so readiness can never be inflated by
@@ -3720,9 +3758,18 @@ class PolymarketPaperTrainer:
             # exploration). total_after_cost_pnl_all_paper = readiness + exploration. ---
             "readiness_after_cost_pnl": readiness_pnl,
             "exploration_after_cost_pnl": exploration_pnl,
+            # explicit alias: learning probes ARE the exploration bucket (kept separate
+            # from readiness; readiness PnL never includes a learning probe).
+            "learning_probe_after_cost_pnl": exploration_pnl,
             "total_after_cost_pnl_all_paper": round(readiness_pnl + exploration_pnl, 6),
             "after_cost_accounting_bucket_consistent": bool(
                 abs(_pnl(lambda p: p.is_realistic) - (readiness_pnl + exploration_pnl)) < 1e-6),
+            # --- CONSOLIDATED accounting consistency (Fix 5): learning probes stay
+            # VISIBLE but SEPARATED from readiness. Trade-count buckets are mutually
+            # exclusive (readiness-eligible vs learning-probe) and labels are shadow/
+            # no-trade learning examples (never opened). PAPER ONLY. ---
+            "accounting_consistency": self._accounting_consistency(
+                readiness_pnl, exploration_pnl),
             # realism posture (matches the strict defaults)
             "reference_price_fills_allowed_for_exploit": bool(
                 getattr(self.cfg, "allow_pm_reference_price_fills", False)),

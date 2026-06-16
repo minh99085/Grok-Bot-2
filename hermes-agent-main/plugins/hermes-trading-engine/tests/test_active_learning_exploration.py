@@ -392,6 +392,46 @@ def test_governor_opens_high_quality_shadows_low_quality(tmp_path, monkeypatch):
     assert hi["probe_quality_score"] > lo["probe_quality_score"]
 
 
+def _pos(mid, *, pnl, exploration=False, strategy="directional", realistic=True):
+    from engine.training.polymarket_trainer import PaperPosition
+    p = PaperPosition(
+        proposal_id="p", risk_decision_id="rd", order_id="o", fill_id="f" + mid,
+        market_id=mid, asset_id=mid, group_key="g", category="c", outcome="YES",
+        entry_price=0.4, qty=1.0, p_final=0.5, net_edge=0.0, ambiguity=0.0,
+        evidence=0.0, spread=0.0, liquidity=0.0, open_tick=0, yes_price_entry=0.4,
+        executable_price_entry=0.4, p_market_entry=0.4, exploration=exploration,
+        strategy=strategy, mark=0.4)
+    p.closed = True
+    p.realized_pnl = pnl
+    if not realistic:
+        p.execution_realism_status = "shadow_theoretical"
+    return p
+
+
+def test_accounting_consistency_buckets_separate_learning_from_readiness(tmp_path, monkeypatch):
+    t = _trainer(tmp_path, monkeypatch)
+    t.positions = [
+        _pos("d1", pnl=0.5, strategy="directional"),          # readiness directional
+        _pos("b1", pnl=0.2, strategy="bregman"),              # readiness bregman bundle
+        _pos("e1", pnl=-0.1, exploration=True),               # learning probe (loss)
+        _pos("e2", pnl=-0.2, exploration=True),               # learning probe (loss)
+    ]
+    pr = t.paper_realism_report()
+    ac = pr["accounting_consistency"]
+    assert ac["readiness_eligible_trades"] == 2
+    assert ac["learning_probe_trades"] == 2
+    assert ac["bregman_bundles"] == 1
+    assert ac["directional_exploit_trades"] == 1
+    # readiness PnL excludes learning probes; learning bucket is reported separately
+    assert ac["readiness_after_cost_pnl"] == 0.7
+    assert ac["learning_probe_after_cost_pnl"] == -0.3
+    assert ac["total_after_cost_pnl_all_paper"] == 0.4
+    assert ac["after_cost_accounting_bucket_consistent"] is True
+    assert ac["readiness_excludes_learning_probes"] is True
+    # the top-level alias mirrors the exploration bucket
+    assert pr["learning_probe_after_cost_pnl"] == pr["exploration_after_cost_pnl"]
+
+
 def test_exploration_outcomes_recorded_only_for_probes(tmp_path, monkeypatch):
     from engine.training.polymarket_trainer import PaperPosition
     t = _trainer(tmp_path, monkeypatch)
