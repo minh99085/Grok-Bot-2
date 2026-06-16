@@ -16,6 +16,27 @@ def env(monkeypatch, tmp_path):
     return tmp_path
 
 
+# --- Chainlink read-only anchor freshness (turn-on diagnostics) -------------
+
+def test_aggressive_profile_honors_chainlink_anchor_freshness_env(monkeypatch):
+    # the aggressive profile must read the on-chain BTC/USD heartbeat env (it was
+    # falling back to the BTC-pulse-tight 120/180 defaults, flagging a genuine
+    # ~hourly round as stale). Read-only anchor; gates no paper trade.
+    monkeypatch.setenv("CHAINLINK_BTC_USD_HEARTBEAT_SECONDS", "3600")
+    monkeypatch.setenv("CHAINLINK_BTC_USD_MAX_AGE_SECONDS", "7200")
+    cfg = AggressivePaperTrainingConfig()
+    assert cfg.btc_pulse_chainlink_heartbeat_seconds == 3600
+    assert cfg.btc_pulse_chainlink_max_age_seconds == 7200
+
+
+def test_aggressive_profile_chainlink_anchor_default_matches_hourly_feed(monkeypatch):
+    for k in ("CHAINLINK_BTC_USD_HEARTBEAT_SECONDS", "CHAINLINK_BTC_USD_MAX_AGE_SECONDS"):
+        monkeypatch.delenv(k, raising=False)
+    cfg = AggressivePaperTrainingConfig()
+    # default now matches the real BTC/USD hourly heartbeat (not the 180s default)
+    assert cfg.btc_pulse_chainlink_max_age_seconds >= 3600
+
+
 # --- profile enables every non-live learning feature ------------------------
 
 def test_aggressive_profile_enables_all_nonlive_features():

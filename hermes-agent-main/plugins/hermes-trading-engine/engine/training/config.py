@@ -1302,6 +1302,18 @@ class TrainingConfig:
             feedback_interval_seconds=60.0, chainlink_enabled=True,
             feature_extraction_enabled=True, grouping_enabled=True,
             exploration_enabled=True,
+            # READ-ONLY Chainlink BTC/USD anchor freshness: honor the real on-chain
+            # feed heartbeat (env-tunable) so a genuine latest round is judged VALID
+            # rather than flagged stale by a BTC-pulse-tight 180s default. The public
+            # BTC/USD aggregator updates on an hourly heartbeat (or ~0.5% deviation),
+            # so a fresh round can legitimately be up to ~1h old. This is diagnostics
+            # only — Chainlink is advisory/read-only and gates NO paper trade.
+            btc_pulse_chainlink_heartbeat_seconds=_envi(
+                "CHAINLINK_BTC_USD_HEARTBEAT_SECONDS", 3600),
+            btc_pulse_chainlink_max_age_seconds=_envi(
+                "CHAINLINK_BTC_USD_MAX_AGE_SECONDS", 7200),
+            # read-only fast BTC spot feed (short-horizon features); env-tunable.
+            btc_fast_price_enabled=_envb("BTC_FAST_PRICE_ENABLED", False),
             # SOFT tiny-exploration SELECTION gates — loosened so paper trades happen
             # faster (env-tunable; loosened 100X defaults). These select MORE near-miss
             # candidates for tiny capped paper exploration; they NEVER loosen a hard
