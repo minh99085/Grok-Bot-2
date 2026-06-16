@@ -36,6 +36,22 @@ def test_btc_fast_price_disabled_reason_is_explicit(tmp_path, monkeypatch):
     assert "btc_fast_price_disabled" in fh["btc_fast_price_disabled_reason"]
 
 
+def test_feeds_health_written_as_inspection_artifact(tmp_path, monkeypatch):
+    # the training artifact writer must emit metrics/feeds_health.json with reasons
+    t = _trainer(tmp_path, monkeypatch)
+    out = tmp_path / "insp"
+    t.write_inspection_artifacts(out)
+    import json
+    fh_path = out / "metrics" / "feeds_health.json"
+    assert fh_path.exists()
+    fh = json.loads(fh_path.read_text())
+    for k in ("chainlink_enabled", "chainlink_valid", "chainlink_age_seconds",
+              "chainlink_stale_reason", "btc_fast_price_enabled", "btc_fast_price_valid",
+              "btc_fast_price_disabled_reason"):
+        assert k in fh
+    assert fh["read_only"] is True and fh["secrets_leaked"] is False
+
+
 def test_valid_feeds_have_empty_reason(tmp_path, monkeypatch):
     t = _trainer(tmp_path, monkeypatch)
     monkeypatch.setattr(t, "chainlink_oracle_status", lambda: {

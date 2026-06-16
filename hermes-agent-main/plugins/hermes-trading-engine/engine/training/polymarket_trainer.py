@@ -4360,6 +4360,8 @@ class PolymarketPaperTrainer:
                 "active_learning.json": self.active_learning_report(),
                 "correlation_risk.json": self.correlation_risk_report(),
                 "bregman_execution.json": self.bregman_summary().get("execution", {}),
+                # READ-ONLY feed health with EXACT chainlink/btc reasons (Fix 3).
+                "feeds_health.json": self.feeds_health_report(),
             }
             for _name, _payload in _per_pass.items():
                 (m_out / _name).write_text(
@@ -4831,61 +4833,9 @@ class PolymarketPaperTrainer:
         # consolidated READ-ONLY feed health: explicit valid/enabled + the EXACT
         # stale/disabled reason. No live-trading or order-execution dependency; no secrets.
         try:
-            _cl = out.get("chainlink_oracle", {}) or {}
-            _bf = out.get("btc_fast_price", {}) or {}
-            cl_enabled = bool(_cl.get("enabled"))
-            cl_init = bool(_cl.get("initialized"))
-            cl_valid = (bool(_cl.get("valid")) if "valid" in _cl
-                        else (cl_enabled and not bool(_cl.get("stale", True))))
-            cl_age = _cl.get("age_seconds")
-            cl_max_age = _cl.get("max_age_seconds")
-            # EXACT chainlink stale/invalid reason (read-only diagnostics; no secrets).
-            if cl_valid:
-                cl_reason = ""
-            elif not cl_enabled:
-                cl_reason = "chainlink_disabled (CHAINLINK feed not enabled)"
-            elif not cl_init:
-                cl_reason = "chainlink_not_initialized (no on-chain source/provider)"
-            elif _cl.get("error") in ("invalid_price", "missing_price", "missing_timestamp"):
-                cl_reason = f"chainlink_{_cl.get('error')}"
-            elif _cl.get("error") and str(_cl.get("error")).startswith("provider_error"):
-                cl_reason = str(_cl.get("error"))
-            elif cl_age is not None and cl_max_age is not None and float(cl_age) > float(cl_max_age):
-                cl_reason = (f"stale: age {float(cl_age):.1f}s > max_age "
-                             f"{float(cl_max_age):g}s (anchor not refreshed)")
-            else:
-                cl_reason = _cl.get("stale_reason") or _cl.get("error") or "no_valid_round"
-            bf_enabled = bool(_bf.get("enabled"))
-            bf_valid = bool(_bf.get("valid"))
-            bf_age = _bf.get("age_seconds")
-            bf_max_age = int(getattr(self.cfg, "btc_fast_price_max_age_seconds", 10) or 10)
-            # EXACT btc-fast-price disabled/invalid reason.
-            if bf_valid:
-                bf_reason = ""
-            elif not bf_enabled:
-                bf_reason = ("btc_fast_price_disabled (BTC_FAST_PRICE_ENABLED not set; "
-                             "read-only spot feed off — no live-trading impact)")
-            elif _bf.get("error") and str(_bf.get("error")).startswith("provider_error"):
-                bf_reason = str(_bf.get("error"))
-            elif bf_age is not None and float(bf_age) > float(bf_max_age):
-                bf_reason = (f"stale_quote: age {float(bf_age):.1f}s > max_age "
-                             f"{bf_max_age:g}s")
-            else:
-                bf_reason = _bf.get("error") or "no_valid_quote"
-            out["feeds_health"] = {
-                "chainlink_enabled": cl_enabled, "chainlink_valid": cl_valid,
-                "chainlink_age_seconds": (round(float(cl_age), 3)
-                                          if cl_age is not None else None),
-                "chainlink_max_age_seconds": cl_max_age,
-                "chainlink_stale": bool(_cl.get("stale", not cl_valid)),
-                "chainlink_stale_reason": cl_reason,
-                "btc_fast_price_enabled": bf_enabled, "btc_fast_price_valid": bf_valid,
-                "btc_fast_price_age_seconds": (round(float(bf_age), 3)
-                                               if bf_age is not None else None),
-                "btc_fast_price_disabled_reason": bf_reason,
-                "read_only": True, "affects_live_trading": False,
-                "affects_order_execution": False, "secrets_leaked": False,
-            }
+            out["feeds_health"] = self.feeds_health_report(
+                chainlink=out.get("chainlink_oracle", {}),
+                btc_fast=out.get("btc_fast_price", {}))
         except Exception as exc:  # noqa: BLE001
             out["feeds_health"] = {"error": str(exc)}
         # canonical Bregman funnel + grok evidence + readiness + multi-hour run-ready
@@ -4936,6 +4886,71 @@ class PolymarketPaperTrainer:
             out["paper_trade_acceleration"] = {
                 "paper_trade_acceleration_blocker_if_any": f"report_error: {exc}"}
         return out
+
+    def feeds_health_report(self, *, chainlink: Optional[dict] = None,
+                            btc_fast: Optional[dict] = None) -> dict:
+        """Consolidated READ-ONLY feed health (PAPER ONLY): explicit enabled/valid +
+        the EXACT chainlink/btc-fast-price stale/disabled reason and age. No live-
+        trading or order-execution dependency; never prints/leaks a secret. Callers
+        may pass already-read status dicts to avoid a second (cheap, cached) read."""
+        _cl = (chainlink if chainlink is not None
+               else self.chainlink_oracle_status()) or {}
+        if btc_fast is not None:
+            _bf = btc_fast or {}
+        else:
+            _bf = (self.btc_fast_price.status()
+                   if getattr(self, "btc_fast_price", None) is not None
+                   else {"enabled": False})
+        cl_enabled = bool(_cl.get("enabled"))
+        cl_init = bool(_cl.get("initialized"))
+        cl_valid = (bool(_cl.get("valid")) if "valid" in _cl
+                    else (cl_enabled and not bool(_cl.get("stale", True))))
+        cl_age = _cl.get("age_seconds")
+        cl_max_age = _cl.get("max_age_seconds")
+        if cl_valid:
+            cl_reason = ""
+        elif not cl_enabled:
+            cl_reason = "chainlink_disabled (CHAINLINK feed not enabled)"
+        elif not cl_init:
+            cl_reason = "chainlink_not_initialized (no on-chain source/provider)"
+        elif _cl.get("error") in ("invalid_price", "missing_price", "missing_timestamp"):
+            cl_reason = f"chainlink_{_cl.get('error')}"
+        elif _cl.get("error") and str(_cl.get("error")).startswith("provider_error"):
+            cl_reason = str(_cl.get("error"))
+        elif cl_age is not None and cl_max_age is not None and float(cl_age) > float(cl_max_age):
+            cl_reason = (f"stale: age {float(cl_age):.1f}s > max_age "
+                         f"{float(cl_max_age):g}s (anchor not refreshed)")
+        else:
+            cl_reason = _cl.get("stale_reason") or _cl.get("error") or "no_valid_round"
+        bf_enabled = bool(_bf.get("enabled"))
+        bf_valid = bool(_bf.get("valid"))
+        bf_age = _bf.get("age_seconds")
+        bf_max_age = int(getattr(self.cfg, "btc_fast_price_max_age_seconds", 10) or 10)
+        if bf_valid:
+            bf_reason = ""
+        elif not bf_enabled:
+            bf_reason = ("btc_fast_price_disabled (BTC_FAST_PRICE_ENABLED not set; "
+                         "read-only spot feed off — no live-trading impact)")
+        elif _bf.get("error") and str(_bf.get("error")).startswith("provider_error"):
+            bf_reason = str(_bf.get("error"))
+        elif bf_age is not None and float(bf_age) > float(bf_max_age):
+            bf_reason = (f"stale_quote: age {float(bf_age):.1f}s > max_age {bf_max_age:g}s")
+        else:
+            bf_reason = _bf.get("error") or "no_valid_quote"
+        return {
+            "chainlink_enabled": cl_enabled, "chainlink_valid": cl_valid,
+            "chainlink_age_seconds": (round(float(cl_age), 3)
+                                      if cl_age is not None else None),
+            "chainlink_max_age_seconds": cl_max_age,
+            "chainlink_stale": bool(_cl.get("stale", not cl_valid)),
+            "chainlink_stale_reason": cl_reason,
+            "btc_fast_price_enabled": bf_enabled, "btc_fast_price_valid": bf_valid,
+            "btc_fast_price_age_seconds": (round(float(bf_age), 3)
+                                           if bf_age is not None else None),
+            "btc_fast_price_disabled_reason": bf_reason,
+            "read_only": True, "affects_live_trading": False,
+            "affects_order_execution": False, "secrets_leaked": False,
+        }
 
     def chainlink_oracle_status(self) -> dict:
         """Chainlink BTC/USD oracle status (validated, read-only, PAPER ONLY)."""
