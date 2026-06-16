@@ -432,6 +432,95 @@ def test_accounting_consistency_buckets_separate_learning_from_readiness(tmp_pat
     assert pr["learning_probe_after_cost_pnl"] == pr["exploration_after_cost_pnl"]
 
 
+# --- explicit probe_reason (Fix 2) ------------------------------------------
+
+def test_probe_reason_maps_each_signal(tmp_path, monkeypatch):
+    t = _trainer(tmp_path, monkeypatch)
+    rec, est, edge = _rec(), _est(), _edge(net_edge=0.0, p_final=0.42)
+    # positive-EV sentinel
+    assert t._learning_probe_reason(rec, est, _edge(net_edge=0.02), {}, "edge_too_low",
+                                    {"ev_class": "expected_value_positive"}) == \
+        "expected_value_positive_probe"
+    # grok/news wins first
+    assert t._learning_probe_reason(rec, est, edge, {}, "edge_too_low",
+                                    {"ev_class": "near_zero_learning", "grok_supported": True}) == \
+        "news_relevance_probe"
+    # chainlink-linked
+    rc = _rec(); rc.chainlink_linked = True
+    assert t._learning_probe_reason(rc, est, edge, {}, "edge_too_low",
+                                    {"ev_class": "near_zero_learning"}) == \
+        "chainlink_disagreement_probe"
+    # liquidity probe (fresh-but-thin reason)
+    assert t._learning_probe_reason(rec, est, edge, {}, "depth_too_thin",
+                                    {"ev_class": "near_zero_learning"}) == "liquidity_probe"
+    # uncertainty reduction
+    al = {"active_learning_components": {"uncertainty_score": 0.5}}
+    assert t._learning_probe_reason(rec, est, edge, al, "edge_too_low",
+                                    {"ev_class": "near_zero_learning"}) == \
+        "uncertainty_reduction_probe"
+
+
+def test_probe_reason_none_when_all_signals_weak(tmp_path, monkeypatch):
+    t = _trainer(tmp_path, monkeypatch)
+    al = {"active_learning_components": {"uncertainty_score": 0.05, "calibration_gap_score": 0.0,
+                                         "disagreement_score": 0.05}, "learning_bucket": "other"}
+    r = t._learning_probe_reason(_rec(), _est(), _edge(net_edge=0.0, p_final=0.85), al,
+                                 "edge_too_low", {"ev_class": "near_zero_learning",
+                                                  "grok_supported": False})
+    assert r is None
+
+
+def test_admit_rejects_near_zero_probe_without_reason(tmp_path, monkeypatch):
+    t = _trainer(tmp_path, monkeypatch)
+    monkeypatch.setattr(t, "_learning_probe_reason", lambda *a, **k: None)
+    d = t._active_learning_admit(_rec(), _est(unc=0.9), _edge(net_edge=0.0), "edge_too_low")
+    assert d["decision"] == "near_miss" and d["reason"] == "missing_learning_probe_reason"
+
+
+def test_admit_positive_ev_probe_exempt_from_reason_gate(tmp_path, monkeypatch):
+    t = _trainer(tmp_path, monkeypatch)
+    monkeypatch.setattr(t, "_learning_probe_reason", lambda *a, **k: None)
+    d = t._active_learning_admit(_rec(), _est(unc=0.9), _edge(net_edge=0.02), "edge_too_low")
+    assert d["decision"] == "explore"        # positive-EV needs no explicit reason
+
+
+def test_opened_probe_record_is_enriched(tmp_path, monkeypatch):
+    t = _trainer(tmp_path, monkeypatch)
+    d = t._active_learning_admit(_rec(), _est(unc=0.9), _edge(net_edge=0.0), "edge_too_low")
+    assert d["decision"] == "explore"
+    row = t._probe_quality_opened[-1]
+    for k in ("probe_reason", "expected_after_cost_edge", "expected_after_cost_roi",
+              "readiness_pnl_excluded", "side", "spread", "active_learning_score",
+              "execution_quality_score", "token_id"):
+        assert k in row
+    assert row["readiness_pnl_excluded"] is True
+    assert row["probe_reason"]               # near-zero probe carries an explicit reason
+
+
+def test_throttle_tightens_per_event_cap_when_losing(tmp_path, monkeypatch):
+    t = _trainer(tmp_path, monkeypatch, exploration_max_per_event=5,
+                 exploration_max_per_cluster=9, exploration_max_per_category_per_tick=9,
+                 exploration_max_trades_per_tick=9, learning_throttle_quality_bump=0.0)
+    t._exploration_outcomes.extend([-0.1] * 12)      # throttle active + negative pnl
+    a = t._active_learning_admit(_rec("a", group="event:E", cluster="ca"),
+                                 _est(unc=0.9), _edge(net_edge=0.008), "edge_too_low")
+    b = t._active_learning_admit(_rec("b", group="event:E", cluster="cb"),
+                                 _est(unc=0.9), _edge(net_edge=0.008), "edge_too_low")
+    assert a["decision"] == "explore"
+    assert b["decision"] == "skip" and b["reason"] == "max_per_event"   # clamped to 1
+
+
+def test_profitability_ranking_explains_probes_and_reasons(tmp_path, monkeypatch):
+    t = _trainer(tmp_path, monkeypatch)
+    t._active_learning_admit(_rec(), _est(unc=0.9), _edge(net_edge=0.0), "edge_too_low")
+    pr = t.profitability_ranking_report()
+    assert pr["learning_probes_readiness_pnl_excluded"] is True
+    assert pr["learning_probe_reason_required"] is True
+    assert isinstance(pr["opened_probe_reason_counts"], dict)
+    assert pr["top_opened_learning_probes"]
+    assert "probe_reason" in pr["top_opened_learning_probes"][0]
+
+
 def test_exploration_outcomes_recorded_only_for_probes(tmp_path, monkeypatch):
     from engine.training.polymarket_trainer import PaperPosition
     t = _trainer(tmp_path, monkeypatch)

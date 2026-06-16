@@ -2792,18 +2792,102 @@ class PolymarketPaperTrainer:
             "grok_supported": bool(grok), "ev_class": ev_class,
         }
 
-    def _record_probe_quality(self, rec, *, opened: bool, pq: dict, reason: str) -> None:
+    _PROBE_REASONS = ("calibration_learning_probe", "uncertainty_reduction_probe",
+                      "liquidity_probe", "chainlink_disagreement_probe",
+                      "news_relevance_probe", "model_boundary_probe")
+
+    def _learning_probe_reason(self, rec, est, edge, al: dict, reason: str,
+                               pq: dict) -> Optional[str]:
+        """Explicit learning rationale for a near-zero / controlled-negative-EV probe.
+
+        Derived from the (already-computed) active-learning signals — it NEVER
+        loosens a hard gate. Priority: news > chainlink-disagreement > liquidity >
+        uncertainty > model-boundary > calibration. Returns None when no signal is
+        strong enough (the probe is then rejected as ``missing_learning_probe_reason``
+        rather than opened blindly). Positive-EV probes get a sentinel reason."""
+        if pq.get("ev_class") == "expected_value_positive":
+            return "expected_value_positive_probe"
+        comps = al.get("active_learning_components", {}) or {}
+        bucket = str(al.get("learning_bucket", "") or "")
+        unc = float(comps.get("uncertainty_score", al.get("uncertainty_score", 0.0)) or 0.0)
+        calib = float(comps.get("calibration_gap_score", 0.0) or 0.0)
+        disagree = float(comps.get("disagreement_score", 0.0) or 0.0)
+        p_final = float(getattr(edge, "p_final", 0.5) or 0.5)
+        if bool(pq.get("grok_supported")):
+            return "news_relevance_probe"
+        if bool(getattr(rec, "chainlink_linked", False)) or bucket == "chainlink_disagreement_case":
+            return "chainlink_disagreement_probe"
+        if reason == "depth_too_thin":
+            return "liquidity_probe"
+        if unc >= 0.15 or bucket == "model_uncertain_high_liquidity":
+            return "uncertainty_reduction_probe"
+        if disagree >= 0.15 or abs(p_final - 0.5) <= 0.12 or bucket == "near_miss_positive_edge":
+            return "model_boundary_probe"
+        if calib > 0.0 or bucket in ("calibration_gap_bucket", "category_under_sampled"):
+            return "calibration_learning_probe"
+        return None
+
+    def _record_probe_quality(self, rec, *, opened: bool, pq: dict, reason: str,
+                              est=None, edge=None, size: float = 0.0, al: Optional[dict] = None,
+                              throttle: Optional[dict] = None) -> None:
         """Capped audit of learning-probe quality (opened vs rejected) for the
-        profitability ranking — proves WHY each probe opened or was rejected."""
+        profitability ranking — proves WHY each probe opened or was rejected, with the
+        full book/score/edge/reason context. Learning probes are ALWAYS readiness-PnL
+        excluded (recorded here as a hard invariant)."""
+        al = al or {}
+        exec_price = float(getattr(edge, "executable_price", 0.0) or 0.0) if edge is not None else 0.0
+        net_edge = float(getattr(edge, "net_edge", 0.0) or 0.0) if edge is not None else 0.0
+        spread = float(getattr(est, "spread", 0.0) or 0.0) if est is not None else pq.get("spread", 0.0)
+        roi = round(net_edge / exec_price, 6) if exec_price > 0 else 0.0
         row = {"market_id": getattr(rec, "market_id", ""),
                "event_id": self._rec_event_key(rec),
+               "token_id": getattr(rec, "asset_id", None) or getattr(rec, "token_id", None),
                "category": getattr(rec, "category", None),
                "question": (getattr(rec, "question", "") or "")[:120],
-               "reason": reason, **pq}
+               "side": getattr(rec, "preferred_side", None) or "YES",
+               "bid": getattr(rec, "best_bid", None), "ask": getattr(rec, "best_ask", None),
+               "spread": round(spread, 5), "book_age_sec": pq.get("book_age_sec"),
+               "depth": pq.get("depth"), "probe_size_usd": round(float(size), 4),
+               "active_learning_score": al.get("active_learning_score", pq.get("active_learning_score")),
+               "execution_quality_score": al.get("execution_quality_score",
+                                                  pq.get("execution_quality")),
+               "expected_after_cost_edge": round(net_edge, 6),
+               "expected_after_cost_roi": roi,
+               "probe_reason": pq.get("probe_reason"),
+               "grok_supported": bool(pq.get("grok_supported")),
+               "throttle_active": bool((throttle or {}).get("learning_probe_throttle_active", False)),
+               "quality_threshold": (throttle or {}).get("learning_probe_quality_threshold"),
+               "reason": reason, "actual_pnl": None,
+               "readiness_pnl_excluded": True, **pq}
         log = self._probe_quality_opened if opened else self._probe_quality_rejected
         log.append(row)
         if len(log) > 200:
             del log[:-200]
+
+    def _probe_reason_counts(self, log: list) -> dict:
+        """Tally of explicit probe_reason across opened/rejected learning probes."""
+        out: dict = {}
+        for r in log:
+            pr = r.get("probe_reason") or "none"
+            out[pr] = out.get(pr, 0) + 1
+        return dict(sorted(out.items(), key=lambda kv: kv[1], reverse=True))
+
+    def _opened_probes_with_pnl(self) -> list:
+        """Opened-probe audit rows with ``actual_pnl`` backfilled (best-effort) from
+        the most recent CLOSED exploration position for the same market — so the
+        ranking shows realized outcomes. Read-only; readiness PnL stays excluded."""
+        last_pnl: dict = {}
+        for p in self.positions:
+            if getattr(p, "closed", False) and getattr(p, "exploration", False):
+                last_pnl[getattr(p, "market_id", "")] = p.realized_pnl
+        rows = []
+        for r in self._probe_quality_opened:
+            row = dict(r)
+            mid = row.get("market_id")
+            if mid in last_pnl:
+                row["actual_pnl"] = last_pnl[mid]
+            rows.append(row)
+        return rows
 
     def _learning_probe_throttle(self) -> dict:
         """LOSS-AWARE learning throttle (PAPER ONLY, selection-only governor).
@@ -2951,10 +3035,19 @@ class PolymarketPaperTrainer:
         if st.get("opened", 0) >= tick_cap:
             am["exploration_rejected_by_budget"] += 1
             return {"decision": "skip", "reason": "max_trades_per_tick", **al}
-        if st.get("per_event", {}).get(evt, 0) >= int(getattr(cfg, "exploration_max_per_event", 1)):
+        # When the loss-aware throttle is active AND recent after-cost PnL is negative,
+        # CLAMP the per-event / per-cluster caps to 1 so we stop concentrating losing
+        # probes in one event/cluster (a small high-information trickle still opens).
+        _throttle_tight = bool(thr["learning_probe_throttle_active"]
+                               and (thr.get("learning_probe_recent_after_cost_pnl") or 0.0) < 0.0)
+        evt_cap = (min(1, int(getattr(cfg, "exploration_max_per_event", 1))) if _throttle_tight
+                   else int(getattr(cfg, "exploration_max_per_event", 1)))
+        clu_cap = (min(1, int(getattr(cfg, "exploration_max_per_cluster", 1))) if _throttle_tight
+                   else int(getattr(cfg, "exploration_max_per_cluster", 1)))
+        if st.get("per_event", {}).get(evt, 0) >= evt_cap:
             am["exploration_rejected_by_diversity"] += 1
             return {"decision": "skip", "reason": "max_per_event", **al}
-        if st.get("per_cluster", {}).get(clu, 0) >= int(getattr(cfg, "exploration_max_per_cluster", 1)):
+        if st.get("per_cluster", {}).get(clu, 0) >= clu_cap:
             am["exploration_rejected_by_diversity"] += 1
             return {"decision": "skip", "reason": "max_per_cluster", **al}
         if st.get("per_category", {}).get(cat, 0) >= int(
@@ -2975,16 +3068,21 @@ class PolymarketPaperTrainer:
         # we stop chasing losing fills. Nothing here loosens a hard gate.
         pq = self._learning_probe_quality(rec, est, edge, al, size)
         floor = float(thr["learning_probe_quality_threshold"])
+        # derive the explicit learning rationale up-front so EVERY record (opened or
+        # shadowed) can carry it (positive-EV probes get a sentinel reason).
+        probe_reason = self._learning_probe_reason(rec, est, edge, al, reason, pq)
+        pq["probe_reason"] = probe_reason
 
-        def _shadow(reason: str, dist) -> dict:
+        def _shadow(shadow_reason: str, dist) -> dict:
             am["exploration_rejected_by_quality"] = am.get("exploration_rejected_by_quality", 0) + 1
             self._probes_shadowed_due_to_quality += 1
-            self._record_probe_quality(rec, opened=False, pq=pq, reason=reason)
+            self._record_probe_quality(rec, opened=False, pq=pq, reason=shadow_reason,
+                                       est=est, edge=edge, size=size, al=al, throttle=thr)
             self._record_near_miss(rec, est, edge, {
-                "failed_gate": reason, "near_miss_reason": reason,
+                "failed_gate": shadow_reason, "near_miss_reason": shadow_reason,
                 "distance_to_threshold": dist,
                 "condition_needed_to_trade": f"probe quality >= {floor:g}"}, al)
-            return {"decision": "near_miss", "reason": reason,
+            return {"decision": "near_miss", "reason": shadow_reason,
                     "shadowed_due_to_quality": True,
                     "throttle_active": thr["learning_probe_throttle_active"],
                     **al, **pq}
@@ -2999,9 +3097,20 @@ class PolymarketPaperTrainer:
             if st.get("neg_ev_opened", 0) >= neg_cap:
                 return _shadow("negative_ev_probe_budget_exhausted", None)
             st["neg_ev_opened"] = st.get("neg_ev_opened", 0) + 1
+        # EXPLICIT PROBE-REASON gate: a positive-EV probe needs no extra rationale, but
+        # every opened NEAR-ZERO or controlled-negative-EV probe must carry one explicit
+        # learning reason (calibration / uncertainty / liquidity / chainlink-disagreement
+        # / news-relevance / model-boundary). Without one it is rejected (no blind weak
+        # opens). Reason is derived from the AL signals — never loosens a hard gate.
+        if (pq["ev_class"] != "expected_value_positive"
+                and bool(getattr(cfg, "exploration_require_probe_reason", True))
+                and not probe_reason):
+            return _shadow("missing_learning_probe_reason", None)
         # SELECTED for exploration
         self._probes_opened_due_to_quality += 1
-        self._record_probe_quality(rec, opened=True, pq=pq, reason="passed_quality_threshold")
+        self._record_probe_quality(rec, opened=True, pq=pq,
+                                   reason="passed_quality_threshold", est=est, edge=edge,
+                                   size=size, al=al, throttle=thr)
         am["active_learning_candidates_selected"] += 1
         st["opened"] = st.get("opened", 0) + 1
         st["capital"] = st.get("capital", 0.0) + size
@@ -3997,13 +4106,18 @@ class PolymarketPaperTrainer:
             "learning_probe_quality_floor": float(
                 getattr(self.cfg, "exploration_min_probe_quality", 0.0) or 0.0),
             "top_opened_learning_probes": sorted(
-                self._probe_quality_opened, key=lambda r: r.get("probe_quality_score", 0.0),
-                reverse=True)[:25],
+                self._opened_probes_with_pnl(),
+                key=lambda r: r.get("probe_quality_score", 0.0), reverse=True)[:25],
             "top_rejected_near_misses": sorted(
                 self._probe_quality_rejected, key=lambda r: r.get("probe_quality_score", 0.0),
                 reverse=True)[:25],
             "opened_learning_probes_count": len(self._probe_quality_opened),
             "rejected_learning_probes_count": len(self._probe_quality_rejected),
+            "learning_probe_reason_required": bool(
+                getattr(self.cfg, "exploration_require_probe_reason", True)),
+            "opened_probe_reason_counts": self._probe_reason_counts(self._probe_quality_opened),
+            "rejected_probe_reason_counts": self._probe_reason_counts(self._probe_quality_rejected),
+            "learning_probes_readiness_pnl_excluded": True,
             # loss-aware throttle posture (effective threshold the governor used).
             "learning_probe_throttle": self._learning_probe_throttle(),
             "probes_shadowed_due_to_quality": int(self._probes_shadowed_due_to_quality),

@@ -189,6 +189,12 @@ class TrainingConfig:
     # 0.0 = open every eligible probe (legacy). Production (aggressive_paper) sets a modest
     # floor so the lowest-quality probes are not opened blindly.
     exploration_min_probe_quality: float = 0.0
+    # require an explicit learning rationale for every opened near-zero / controlled-
+    # negative-EV probe (calibration / uncertainty / liquidity / chainlink-disagreement
+    # / news-relevance / model-boundary). Probes with no rationale are rejected as
+    # ``missing_learning_probe_reason`` instead of opened blindly. Positive-EV probes
+    # are exempt. Selection-only; never loosens a hard realism/risk gate.
+    exploration_require_probe_reason: bool = True
     # ---- Loss-aware learning throttle (PAPER ONLY; selection-only governor) ----
     # When recent learning-probe outcomes are poor (low win rate OR negative recent
     # after-cost PnL over the window), RAISE the effective quality threshold, REDUCE
@@ -1333,6 +1339,8 @@ class TrainingConfig:
             # blindly (selection-only; hard realism/risk gates unchanged). env-tunable.
             exploration_min_probe_quality=_envf(
                 "POLYMARKET_EXPLORATION_MIN_PROBE_QUALITY", 0.25),
+            exploration_require_probe_reason=_envb(
+                "POLYMARKET_EXPLORATION_REQUIRE_PROBE_REASON", True),
             # loss-aware learning throttle: when recent probe outcomes are poor, raise
             # the quality bar, reduce probe frequency, and shadow marginal/negative-EV
             # probes (labels still collected). Selection-only; env-tunable. PAPER ONLY.
