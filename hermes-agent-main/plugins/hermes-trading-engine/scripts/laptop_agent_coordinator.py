@@ -939,7 +939,8 @@ def cmd_sync_vps(ctx: Ctx, *, dry_run: bool = False) -> int:
     ctx.say("  [PASS] pushed local main to origin")
     # fast path: direct ff-only pull on the VPS (works if its key is unencrypted)
     ok, vps_head, err = _remote_vps_git_pull(ctx)
-    if ok and _hex_commit(vps_head) == local_head:
+    if ok and vps_head and local_head and (
+            local_head.startswith(vps_head) or vps_head.startswith(local_head)):
         ctx.say(f"  [PASS] VPS pulled main directly (commit {vps_head})")
         return 0
     ctx.say("  direct VPS pull unavailable/behind (likely passphrase-protected deploy key) "
@@ -948,7 +949,10 @@ def cmd_sync_vps(ctx: Ctx, *, dry_run: bool = False) -> int:
     if not ok:
         ctx.say(f"STOP — VPS bundle sync failed: {err}")
         return 1
-    if local_head and vps_head and vps_head != local_head:
+    # prefix-tolerant: git may print a short hash; treat short==prefix-of-long as equal.
+    in_sync = bool(vps_head) and bool(local_head) and (
+        local_head.startswith(vps_head) or vps_head.startswith(local_head))
+    if not in_sync:
         ctx.say(f"STOP — VPS commit {vps_head} != local main {local_head} after sync.")
         return 1
     ctx.say(f"  [PASS] VPS synced to main via bundle (commit {vps_head})")
@@ -1424,12 +1428,19 @@ def _read_text_file(path: Path):
 # ---- operator-cycle -------------------------------------------------------- #
 def _hex_commit(text: str) -> str:
     """Extract a git commit hash (7–40 hex chars) from output, else '' (so a mocked or
-    noisy SSH reply is never shown as a fake commit)."""
+    noisy SSH reply is never shown as a fake commit). Prefers a FULL 40-char hash (e.g.
+    the trailing ``git rev-parse HEAD`` line) over a short hash (e.g. ``git reset``'s
+    'HEAD is now at <short> …'); falls back to the last short hash."""
+    full = short = ""
     for tok in (text or "").split():
-        t = tok.strip()
-        if 7 <= len(t) <= 40 and all(c in "0123456789abcdef" for c in t.lower()):
-            return t
-    return ""
+        t = tok.strip().lower()
+        if not (7 <= len(t) <= 40 and all(c in "0123456789abcdef" for c in t)):
+            continue
+        if len(t) == 40:
+            full = t
+        elif not short:
+            short = t
+    return full or short
 
 
 def _remote_vps_commit(ctx: Ctx) -> str:
