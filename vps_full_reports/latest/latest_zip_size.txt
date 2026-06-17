@@ -1,1 +1,1 @@
-light_zip_size_bytes=16347275
+light_zip_size_bytes=16616212
