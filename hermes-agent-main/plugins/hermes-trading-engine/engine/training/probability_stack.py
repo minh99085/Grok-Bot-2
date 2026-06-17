@@ -120,7 +120,7 @@ class ProbabilityEstimate:
 
 class ProbabilityStack:
     def __init__(self, cfg, learner=None, chainlink=None, calibrator=None,
-                 grok_calibration=None):
+                 grok_calibration=None, member_calibration=None):
         self.cfg = cfg
         self.learner = learner
         # optional engine.chainlink_scanner.ChainlinkScanner (additive, default off)
@@ -128,6 +128,9 @@ class ProbabilityStack:
         # optional engine.training.grok_calibration.GrokCalibration (advisory-only):
         # scales the research blend weight by Grok's MEASURED calibration. Never gates.
         self.grok_calibration = grok_calibration
+        # optional engine.training.member_calibration.MemberCalibration (advisory-only):
+        # per-member (model/market) calibration weights for the ensemble. Never gates.
+        self.member_calibration = member_calibration
         # optional engine.calibration_models.InstitutionalCalibrator (additive).
         # When present it annotates `calibrated_probability` + a confidence
         # interval; it NEVER changes the executable `p_final` or the edge gate.
@@ -216,6 +219,27 @@ class ProbabilityStack:
             p_raw = (1 - w_res) * p_model + w_res * p_research
         else:
             p_raw = p_model  # == mid unless a learned bias exists
+
+        # #4 CALIBRATION-WEIGHTED ENSEMBLE (advisory-only): blend the SIGNAL members —
+        # statistical model + research — each weighted by its base prior x MEASURED
+        # calibration. The base priors reproduce the prior 2-way blend ((1-conf) model +
+        # conf research) when calibration is unmeasured, so behavior only changes once a
+        # member has *earned* it. The MARKET stays the anchor via ``shrink`` below (it is
+        # not double-counted here). Produces a probability only — gates are unchanged.
+        ensemble = None
+        mc = getattr(self, "member_calibration", None)
+        if mc is not None and bool(getattr(self.cfg, "probability_ensemble_enabled", True)):
+            from engine.training.probability_ensemble import calibration_weighted_stack
+            cat = getattr(rec, "category", None)
+            w_conf = max(0.0, min(1.0, confidence))
+            members = {"model": {"p": p_model,
+                                 "weight": (1.0 - w_conf) * mc.weight("model", cat)}}
+            if research_usable:
+                members["research"] = {"p": p_research,
+                                       "weight": w_conf * research_trust * research_quality}
+            ensemble = calibration_weighted_stack(
+                members, ci_k=float(getattr(self.cfg, "ensemble_ci_k", 1.0)), fallback=p_model)
+            p_raw = ensemble["p_ensemble"]
 
         # shrink toward market (v2): start at the conservative base and only move
         # away from the market price when the signal is well-supported. Clamp to

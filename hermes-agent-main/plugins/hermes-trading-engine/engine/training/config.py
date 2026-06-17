@@ -217,6 +217,18 @@ class TrainingConfig:
     research_structured_enabled: bool = True
     grok_news_half_life_s: float = 1800.0     # default half-life for grok news signals
     research_freshness_floor: float = 0.1     # min freshness multiplier (never below)
+    # ---- Calibration-weighted probability ENSEMBLE (PAPER ONLY; advisory-only) ----
+    # p_raw becomes a weighted blend of model + market + research, each weighted by its
+    # base prior x MEASURED calibration. Self-correcting: the bot leans on whichever
+    # source is measurably most accurate. Produces a probability only — never a gate.
+    probability_ensemble_enabled: bool = True
+    ensemble_base_weight_market: float = 1.0   # market mid is the anchor
+    ensemble_base_weight_model: float = 0.5
+    ensemble_base_weight_research: float = 0.6
+    member_calibration_window: int = 200
+    member_calibration_min_samples: int = 20
+    member_calibration_weight_min: float = 0.05
+    ensemble_ci_k: float = 1.0                  # CI half-width = k * member disagreement
     # firm soft-quality floors the QUALITY GOVERNOR enforces BEFORE opening a probe
     # (selection-only; never loosen a hard gate). Grok/news support can NEVER bypass a
     # low execution-quality book. A near-zero/negative-EV probe must also clear a
@@ -1396,6 +1408,13 @@ class TrainingConfig:
                 "POLYMARKET_RESEARCH_STRUCTURED_ENABLED", True),
             grok_news_half_life_s=_envf("POLYMARKET_GROK_NEWS_HALF_LIFE_S", 1800.0),
             research_freshness_floor=_envf("POLYMARKET_RESEARCH_FRESHNESS_FLOOR", 0.1),
+            # calibration-weighted ensemble (advisory-only); env-tunable.
+            probability_ensemble_enabled=_envb("POLYMARKET_PROBABILITY_ENSEMBLE_ENABLED", True),
+            ensemble_base_weight_market=_envf("POLYMARKET_ENSEMBLE_W_MARKET", 1.0),
+            ensemble_base_weight_model=_envf("POLYMARKET_ENSEMBLE_W_MODEL", 0.5),
+            ensemble_base_weight_research=_envf("POLYMARKET_ENSEMBLE_W_RESEARCH", 0.6),
+            member_calibration_min_samples=_envi(
+                "POLYMARKET_MEMBER_CALIBRATION_MIN_SAMPLES", 20),
             exploration_min_execution_quality=_envf(
                 "POLYMARKET_EXPLORATION_MIN_EXECUTION_QUALITY", 0.18),
             exploration_min_information_value=_envf(

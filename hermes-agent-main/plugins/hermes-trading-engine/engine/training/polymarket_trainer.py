@@ -261,9 +261,10 @@ class PaperPosition:
     experiment_id: str = ""
     strategy_variant: str = "directional_edge"
     mark: float = 0.0
-    # research provenance for calibration-weighted Grok trust (advisory-only telemetry)
+    # research provenance for calibration-weighted Grok trust + ensemble (advisory-only)
     p_research: float = 0.0
     research_source: str = ""
+    p_model_entry: float = 0.0       # statistical-model P(YES) at open (ensemble calib)
     closed: bool = False
     exit_price: float = 0.0
     realized_pnl: float = 0.0
@@ -341,8 +342,18 @@ class PolymarketPaperTrainer:
             trust_min=float(getattr(self.cfg, "grok_calibration_trust_min", 0.2)),
             trust_default=float(getattr(self.cfg, "grok_calibration_trust_default", 1.0)),
             enabled=bool(getattr(self.cfg, "grok_calibration_enabled", True)))
+        # calibration-weighted ensemble (#4): per-member (model/market) calibration so
+        # each source earns its blend weight from measured accuracy. Advisory-only.
+        from engine.training.member_calibration import MemberCalibration
+        self.member_calibration = MemberCalibration(
+            path=str(self.data_dir / "member_calibration.json"),
+            window=int(getattr(self.cfg, "member_calibration_window", 200)),
+            min_samples=int(getattr(self.cfg, "member_calibration_min_samples", 20)),
+            weight_min=float(getattr(self.cfg, "member_calibration_weight_min", 0.05)),
+            enabled=bool(getattr(self.cfg, "probability_ensemble_enabled", True)))
         self.prob = ProbabilityStack(self.cfg, learner=self.learner, chainlink=self.chainlink,
-                                     grok_calibration=self.grok_calibration)
+                                     grok_calibration=self.grok_calibration,
+                                     member_calibration=self.member_calibration)
         # Chainlink BTC/USD oracle (validated, auditable; PAPER ONLY). Reuses the
         # Chainlink scanner's source so it shares the same read-only RPC feed.
         try:
@@ -3706,6 +3717,7 @@ class PolymarketPaperTrainer:
             mark=fill["fill_price"],
             p_research=float(getattr(est, "p_research", 0.0) or 0.0),
             research_source=str(getattr(est, "research_source", "") or ""),
+            p_model_entry=float(getattr(est, "p_model", 0.0) or 0.0),
             experiment_id=self.experiments.experiment_id, strategy_variant=variant,
             execution_realism_status=realism.execution_realism_status,
             fill_source=realism.fill_source, book_source=realism.book_source,
@@ -3812,6 +3824,16 @@ class PolymarketPaperTrainer:
                     p_research=float(getattr(pos, "p_research", 0.0) or 0.0),
                     side=pos.outcome, won=win, source=pos.research_source,
                     category=pos.category)
+        except Exception:  # noqa: BLE001 — telemetry must never break a close
+            pass
+        # #4 ensemble: record per-member (model/market) directional calibration outcomes.
+        try:
+            self.member_calibration.record_position(
+                "model", p_yes=float(getattr(pos, "p_model_entry", 0.0) or 0.0),
+                side=pos.outcome, won=win)
+            self.member_calibration.record_position(
+                "market", p_yes=float(getattr(pos, "p_market_entry", 0.0) or 0.0),
+                side=pos.outcome, won=win)
         except Exception:  # noqa: BLE001 — telemetry must never break a close
             pass
         self.feedback.record_outcome(
@@ -5411,6 +5433,19 @@ class PolymarketPaperTrainer:
             # the ONLY trade gate). Top Grok-flagged mispriced/incoherent groups + how
             # many the certifier actually certified (proves proposals are validated).
             "grok_bregman_candidates": self._grok_bregman_candidates()[1],
+            # calibration-weighted ENSEMBLE (#4): per-member measured calibration ->
+            # blend weight. Advisory-only: produces p_raw, never a gate/size.
+            "probability_ensemble": {
+                "enabled": bool(getattr(cfg, "probability_ensemble_enabled", True)),
+                "base_weights": {
+                    "market": float(getattr(cfg, "ensemble_base_weight_market", 1.0)),
+                    "model": float(getattr(cfg, "ensemble_base_weight_model", 0.5)),
+                    "research": float(getattr(cfg, "ensemble_base_weight_research", 0.6))},
+                "member_calibration": (self.member_calibration.metrics()
+                                       if getattr(self, "member_calibration", None) is not None
+                                       else {"enabled": False}),
+                "advisory_only": True,
+            },
             # bounded advisory scheduler telemetry (research only; never execution)
             "grok_advisory_enabled": bool(getattr(cfg, "grok_advisory_enabled", True)),
             "grok_advisory_max_calls_per_hour": int(proof.get(
