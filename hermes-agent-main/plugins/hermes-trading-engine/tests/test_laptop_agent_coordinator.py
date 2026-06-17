@@ -831,11 +831,55 @@ def test_collect_full_report_saves_and_commits(tmp_path):
     out = "\n".join(lines)
     assert rc == 0
     assert "COLLECTED full report" in out
-    assert "extracted into vps_full_reports/latest" in out
+    assert "[PASS] extracted into" in out and "vps_full_reports/latest" in out
     assert "committed + pushed" in out
     assert any("save_full_report_to_repo.py" in c for c in calls)
     assert any(c.startswith("git") and "commit" in c for c in calls)
     assert any("git push origin main" in c for c in calls)
+
+
+def test_full_report_extraction_targets_git_toplevel_not_repo_root(tmp_path):
+    # repo_root is MIS-SET to a subfolder; the report must still land at the true git
+    # toplevel (where vps_full_reports/ lives), never <subfolder>/vps_full_reports.
+    top = tmp_path                                   # real git root
+    sub = tmp_path / "hermes-agent-main"             # mis-set repo_root (a subfolder)
+    plug = sub / "plugins" / "hte"
+    (plug / "scripts").mkdir(parents=True)
+    (plug / "scripts" / "save_full_report_to_repo.py").write_text("#", encoding="utf-8")
+    write_cfg(tmp_path, repo_root=str(sub), plugin_path=str(plug),
+              local_artifact_dir=str(sub / "artifacts"))
+    art = sub / "artifacts"
+    calls = []
+
+    def _wfr(z):
+        z.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(z, "w") as zf:
+            zf.writestr("r/validation_full.txt", "SAFE TO RUN: True")
+            zf.writestr("r/runtime_metrics/run_ready.json", "{}")
+            zf.writestr("r/runtime_metrics/active_learning.json", "{}")
+            zf.writestr("r/git_commit.txt", "x")
+            zf.writestr("r/docker_compose_ps.txt", "x")
+            zf.writestr("r/hermes_training_env_proof.txt", "x")
+            zf.writestr("r/validation_light_latest.txt", "x")
+            zf.writestr("r/vps_light_report_latest.zip", "PKstub")
+
+    def runner(argv, cwd=None, timeout=None):
+        s = " ".join(str(a) for a in argv)
+        calls.append(s)
+        if argv and argv[0] == "git" and "--show-toplevel" in argv:
+            return (0, str(top) + "\n", "")          # true git root != repo_root
+        if argv and argv[0] == "scp":
+            _wfr(art / co.FULL_REPORT_ZIP)
+            return (0, "", "")
+        if "save_full_report_to_repo.py" in s:
+            return (0, "saved 31 files\n", "")
+        return (0, "", "")
+    rc, lines = _run(["collect-full-report", "--config", str(tmp_path / co.DEFAULT_CONFIG),
+                      "--save-to-repo"], tmp_path, runner=runner)
+    assert rc == 0
+    save_calls = [c for c in calls if "save_full_report_to_repo.py" in c]
+    assert save_calls and f"--repo-root {top}" in save_calls[0]
+    assert f"--repo-root {sub}" not in save_calls[0]    # NOT the mis-set subfolder
 
 
 def test_auto_deploy_dry_run_inspect_only_never_rebuilds(tmp_path):

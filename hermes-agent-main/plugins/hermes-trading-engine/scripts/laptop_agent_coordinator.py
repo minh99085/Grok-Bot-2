@@ -1034,15 +1034,17 @@ def cmd_collect_full_report(ctx: Ctx, *, dry_run: bool = False,
         return 0
     # extract into vps_full_reports/latest using the canonical (redacting) extractor.
     # The extractor script lives under the PLUGIN dir; the extraction target (and git
-    # ops) are at the repo root (where vps_full_reports/ lives) — handles both a flat
-    # layout (repo_root == plugin) and a nested one (plugin under the repo root).
+    # ops) are the TRUE git toplevel (where vps_full_reports/ lives) — discovered via
+    # git, NOT trusted from repo_root, so a mis-set repo_root pointing at a subfolder can
+    # never scatter the report into <subfolder>/vps_full_reports.
     plugin_local = Path(cfg.plugin_path) if cfg.plugin_path else ctx.repo_root
     save_py = plugin_local / SAVE_REPORT_TO_REPO
     if not save_py.is_file():
         save_py = ctx.repo_root / SAVE_REPORT_TO_REPO
+    top = _git_toplevel(ctx)
     py = sys.executable or "python3"
     rc, sout, serr = ctx.run([py, str(save_py), "--zip", str(local_zip),
-                              "--repo-root", str(ctx.repo_root)], timeout=300)
+                              "--repo-root", str(top)], timeout=300)
     if sout.strip():
         ctx.say("  " + sout.strip().splitlines()[-1])
     if rc != 0:
@@ -1050,10 +1052,12 @@ def cmd_collect_full_report(ctx: Ctx, *, dry_run: bool = False,
         if serr.strip():
             ctx.say(f"  detail: {serr.strip().splitlines()[-1]}")
         return 1
-    ctx.say(f"  [PASS] extracted into {VPS_FULL_REPORTS_DIR}")
+    ctx.say(f"  [PASS] extracted into {top / VPS_FULL_REPORTS_DIR}")
     if not commit:
         return 0
-    ctx.run(["git", "add", VPS_FULL_REPORTS_DIR], timeout=60)
+    # add by ABSOLUTE toplevel path so the commit lands at <git root>/vps_full_reports
+    # regardless of the cwd / repo_root.
+    ctx.run(["git", "add", str(top / VPS_FULL_REPORTS_DIR)], timeout=60)
     msg = f"vps_full_reports: refresh latest (auto-deploy; source_commit {_local_commit(ctx)[:12]})"
     rc, _o, cerr = ctx.run(["git", "commit", "-m", msg], timeout=60)
     if rc != 0:
@@ -1272,6 +1276,24 @@ def _artifact_dir(ctx: Ctx) -> Path:
 def _local_commit(ctx: Ctx) -> str:
     rc, out, _ = ctx.runner(["git", "rev-parse", "HEAD"], cwd=str(ctx.repo_root), timeout=20)
     return out.strip() if rc == 0 else ""
+
+
+def _git_toplevel(ctx: Ctx) -> Path:
+    """The TRUE git repository root (where ``.git`` lives), discovered via
+    ``git rev-parse --show-toplevel``. This is where ``vps_full_reports/`` lives, so the
+    report must be extracted + committed there REGARDLESS of how ``repo_root`` is set in
+    the config (a mis-set repo_root pointing at a subfolder must never scatter the report
+    into ``<subfolder>/vps_full_reports``). Falls back to ``repo_root`` if discovery
+    fails."""
+    rc, out, _ = ctx.runner(["git", "rev-parse", "--show-toplevel"],
+                            cwd=str(ctx.repo_root), timeout=20)
+    top = (out or "").strip().splitlines()
+    if rc == 0 and top:
+        try:
+            return Path(top[0].strip())
+        except Exception:  # noqa: BLE001
+            pass
+    return ctx.repo_root
 
 
 def _append_ledger(ctx: Ctx, record: dict) -> None:
