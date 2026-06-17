@@ -1,20 +1,20 @@
   [PASS] paper_training_running: mode=paper_train
-  [PASS] status_fresh: age=202.4s
+  [PASS] status_fresh: age=223.1s
   [PASS] live_trading_disabled: paper-only build
   [PASS] strict_paper_realism: reference fills off
   [PASS] core_metrics_non_null: {"after_cost_pnl": 0, "fill_realism_enabled": true, "fantasy_fill_rejections": 0}
   [PASS] closed_loop_metrics_present: status=collecting
-  [PASS] closed_loop_records_positive: records=19439 considered=19440
-  [PASS] decision_count_reconciles_with_events: events=19439
-  [PASS] rejection_becomes_learning_object: no_trade+shadow=19642 diagnostic=0
+  [PASS] closed_loop_records_positive: records=21479 considered=21480
+  [PASS] decision_count_reconciles_with_events: events=21479
+  [PASS] rejection_becomes_learning_object: no_trade+shadow=21693 diagnostic=0
   [PASS] pending_labels_or_diagnostic_without_target: pending=5000 diag_no_label=0
-  [PASS] no_trade_or_shadow_labels_positive: no_trade+shadow=19642 diagnostic=0
-  [PASS] active_learning_selection_or_reason_present: selected=19439 zero_reason=None
+  [PASS] no_trade_or_shadow_labels_positive: no_trade+shadow=21693 diagnostic=0
+  [PASS] active_learning_selection_or_reason_present: selected=21479 zero_reason=None
   [PASS] pending_label_store_present: 
   [PASS] learning_state_saved: 
-  [PASS] bregman_metrics_consistent: discovered=537 certified=0 opened=0
-  [PASS] bregman_funnel_non_silent: detected=537 scanned=537 adapter_failed=0
-  [PASS] ledger_records_decisions: ledger.decisions=552251 decision_count=19440
+  [PASS] bregman_metrics_consistent: discovered=536 certified=0 opened=0
+  [PASS] bregman_funnel_non_silent: detected=536 scanned=536 adapter_failed=0
+  [PASS] ledger_records_decisions: ledger.decisions=554291 decision_count=21480
   [PASS] audit_win_rate_known: 
   [PASS] audit_clob_v2_executable_known: 
   [PASS] audit_production_readiness_score_known: 
@@ -23,14 +23,15 @@
   [PASS] active_learning_selected_candidates_accounted: explore_selected_not_evaluated=0 tiny_evaluator_called=19 blocked_by_reason={'collision_blocked': 1} — a selected candidate must open a <=$1 paper trade or record an exact blocker
   [PASS] inspection_collector_includes_artifacts: 
   [PASS] inspection_artifacts_present: all present
-  [PASS] decision_count_has_event_file_rows: decision_count=19440 events.jsonl_rows=3511623
-  [PASS] decision_records_counter_matches_file: counter=19439 decision_records.jsonl_rows=552251
-  [PASS] pending_labels_counter_matches_file: counter=5000 pending_labels.jsonl_rows=552084
-  [PASS] training_tail_streams_same_run: same run
+  [PASS] decision_count_has_event_file_rows: decision_count=21480 events.jsonl_rows=3521464
+  [PASS] decision_records_counter_matches_file: counter=21479 decision_records.jsonl_rows=554291
+  [PASS] pending_labels_counter_matches_file: counter=5000 pending_labels.jsonl_rows=554124
+  [FAIL] training_tail_streams_same_run: events_run_id=pmtrain-1781701317 stale=['decision_records.jsonl=pmtrain-1781675639', 'no_trade_labels.jsonl=pmtrain-1781675639', 'pending_labels.jsonl=pmtrain-1781675639']
   [PASS] training_tail_streams_fresh_window: within freshness window
   [PASS] artifact_present:training_reconciliation.json: metrics/training_reconciliation.json
   [PASS] artifact_present:inspection_summary.json: metrics/inspection_summary.json
   [PASS] artifact_present:run_ready.json: metrics/run_ready.json
 
-SAFE TO RUN: True
-validate_rc=0
+SAFE TO RUN: False
+BLOCKING: ['training_tail_streams_same_run']
+validate_rc=1

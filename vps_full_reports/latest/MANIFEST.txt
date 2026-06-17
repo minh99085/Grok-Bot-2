@@ -1,7 +1,7 @@
 # VPS full report — extracted for ChatGPT inspection
-generated_utc: 2026-06-17 12:26:52 UTC
+generated_utc: 2026-06-17 13:04:39 UTC
 source_zip: vps_full_report_latest.zip
-source_commit: 6947dad045026efbdce6028d4c0dd28a1019a774
+source_commit: 65f7b3ede3c7c1894a10e206ef7de4b97147f8e9
 files_captured: 31
 
 ## captured
