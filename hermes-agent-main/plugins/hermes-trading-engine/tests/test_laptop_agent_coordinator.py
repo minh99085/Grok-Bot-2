@@ -801,11 +801,23 @@ def test_collect_full_report_saves_and_commits(tmp_path):
     art = tmp_path / "artifacts"
     calls = []
 
+    def _write_full_report(z):                              # full-report-shaped bundle
+        z.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(z, "w") as zf:
+            zf.writestr("vps_full_report_x/validation_full.txt", "SAFE TO RUN: True")
+            zf.writestr("vps_full_report_x/validation_light_latest.txt", "ok")
+            zf.writestr("vps_full_report_x/git_commit.txt", "HEAD: deadbeef")
+            zf.writestr("vps_full_report_x/docker_compose_ps.txt", "up")
+            zf.writestr("vps_full_report_x/hermes_training_env_proof.txt", "AGGRESSIVE=1")
+            zf.writestr("vps_full_report_x/runtime_metrics/run_ready.json", "{}")
+            zf.writestr("vps_full_report_x/runtime_metrics/active_learning.json", "{}")
+            zf.writestr("vps_full_report_x/vps_light_report_latest.zip", "PK\x03\x04stub")
+
     def runner(argv, cwd=None, timeout=None):
         s = " ".join(str(a) for a in argv)
         calls.append(s)
         if argv and argv[0] == "scp":
-            _write_full_bundle(art / co.FULL_REPORT_ZIP)   # pulled full report zip
+            _write_full_report(art / co.FULL_REPORT_ZIP)   # pulled full report zip
             return (0, "", "")
         if "save_full_report_to_repo.py" in s:
             return (0, "saved 31 files -> vps_full_reports/latest\n", "")

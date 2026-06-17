@@ -1014,10 +1014,16 @@ def cmd_collect_full_report(ctx: Ctx, *, dry_run: bool = False,
         ctx.say(f"STOP — copying the full-report zip back failed (rc={rc}).")
         return 1
     local_zip = art / FULL_REPORT_ZIP
+    # A real FULL report embeds the COMPLETE light bundle (vps_light_report_latest.zip)
+    # plus the full validation output and the runtime_metrics the report is built from.
+    # (report.json/report.md live INSIDE the embedded light zip, not at the top level.)
     try:
         with zipfile.ZipFile(local_zip) as zf:
             names = zf.namelist()
-        usable = any(n.endswith("report.json") for n in names) and len(names) >= 8
+        usable = (len(names) >= 8
+                  and any(n.endswith(CANONICAL_REPORT_ZIP) for n in names)
+                  and any(n.endswith("validation_full.txt") for n in names)
+                  and any("runtime_metrics/" in n for n in names))
     except (OSError, zipfile.BadZipFile):
         usable = False
     if not usable:
