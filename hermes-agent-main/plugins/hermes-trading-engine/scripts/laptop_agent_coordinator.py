@@ -1004,11 +1004,17 @@ def cmd_collect_full_report(ctx: Ctx, *, dry_run: bool = False,
     rc, out, err = ctx.run(ssh_cmd, timeout=3600, redact_display=True)
     if out.strip():
         ctx.say(out.rstrip()[-2000:])
+    # The canonical full-report script INTENTIONALLY ships a COMPLETE zip even when the
+    # run-ready VERDICT is non-zero (e.g. rc=6 "not run ready", or a transient
+    # status_fresh / same_run right after a rebuild) — that is a verdict, NOT a
+    # generation failure. So we do NOT hard-stop on a non-zero rc here; we still copy
+    # the zip back and let the usability check decide. We only fail if the bundle is
+    # actually missing/thin below.
     if rc != 0:
-        ctx.say(f"STOP — remote full-report generation failed (rc={rc}).")
+        ctx.say(f"  NOTE: remote report exited rc={rc} (run-ready VERDICT, not a "
+                "generation failure) — copying the shipped full bundle anyway.")
         if err.strip():
             ctx.say(f"  detail: {redact_text(err.strip().splitlines()[-1], cfg)}")
-        return 1
     rc, _o, err = ctx.run(scp_cmd, timeout=900, redact_display=True)
     if rc != 0:
         ctx.say(f"STOP — copying the full-report zip back failed (rc={rc}).")

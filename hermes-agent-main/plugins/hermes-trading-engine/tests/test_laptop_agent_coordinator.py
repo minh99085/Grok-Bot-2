@@ -838,6 +838,41 @@ def test_collect_full_report_saves_and_commits(tmp_path):
     assert any("git push origin main" in c for c in calls)
 
 
+def test_collect_full_report_ships_when_not_run_ready_rc(tmp_path):
+    # the VPS full-report script exits rc=6 ("not run ready" VERDICT) but still produces
+    # a COMPLETE zip; the agent must still collect it (not treat rc!=0 as a failure).
+    _plugin(tmp_path)
+    write_cfg(tmp_path)
+    art = tmp_path / "artifacts"
+
+    def _wfr(z):
+        z.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(z, "w") as zf:
+            zf.writestr("r/validation_full.txt", "SAFE TO RUN: False")
+            zf.writestr("r/runtime_metrics/run_ready.json", "{}")
+            zf.writestr("r/runtime_metrics/active_learning.json", "{}")
+            zf.writestr("r/git_commit.txt", "x")
+            zf.writestr("r/docker_compose_ps.txt", "x")
+            zf.writestr("r/hermes_training_env_proof.txt", "x")
+            zf.writestr("r/validation_light_latest.txt", "x")
+            zf.writestr("r/vps_light_report_latest.zip", "PKstub")
+
+    def runner(argv, cwd=None, timeout=None):
+        s = " ".join(str(a) for a in argv)
+        if argv and argv[0] == "ssh" and "vps_generate_full_report.sh" in s:
+            return (6, "light_report_rc=6 ... DONE\n", "")     # not-run-ready verdict
+        if argv and argv[0] == "scp":
+            _wfr(art / co.FULL_REPORT_ZIP)
+            return (0, "", "")
+        return (0, "", "")
+    rc, lines = _run(["collect-full-report", "--config", str(tmp_path / co.DEFAULT_CONFIG)],
+                     tmp_path, runner=runner)
+    out = "\n".join(lines)
+    assert rc == 0                                   # collected despite rc=6
+    assert "run-ready VERDICT" in out
+    assert "COLLECTED full report" in out
+
+
 def test_full_report_extraction_targets_git_toplevel_not_repo_root(tmp_path):
     # repo_root is MIS-SET to a subfolder; the report must still land at the true git
     # toplevel (where vps_full_reports/ lives), never <subfolder>/vps_full_reports.
