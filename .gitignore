@@ -7,6 +7,10 @@
 # `mission-control` / `sync-main` refuses to pull ("uncommitted changes"), blocking the
 # operator workflow. Ignore them here so the working tree stays clean.
 
+# Laptop coordinator config (operator-local; contains the VPS host/user/key path —
+# never commit it). The coordinator already treats it as git-ignored.
+.laptop_agent.json
+
 # Cursor handoff markdown the coordinator writes on a blocker
 cursor_handoffs/
 
