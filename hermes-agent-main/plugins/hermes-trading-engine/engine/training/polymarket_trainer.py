@@ -4918,6 +4918,23 @@ class PolymarketPaperTrainer:
         oos_eq = [float(self.cfg.starting_bankroll)]
         for p in oos:
             oos_eq.append(oos_eq[-1] + p.realized_pnl)
+        # 6C: out-of-sample after-cost expectancy on a HELD-OUT window of READINESS
+        # (non-exploration) trades only — exploration probes intentionally learn at/below
+        # zero and must never count toward promotion. Lower bound = one-sided ~95%
+        # (mean − 1.645·SE); below 2 samples the LB collapses to the mean.
+        readiness_closed = [p for p in closed if not getattr(p, "exploration", False)]
+        rc_mid = len(readiness_closed) // 2
+        oos_ready = readiness_closed[rc_mid:]
+        oos_pnls = [float(p.realized_pnl) for p in oos_ready]
+        oos_exp_n = len(oos_pnls)
+        oos_after_cost_exp = (sum(oos_pnls) / oos_exp_n) if oos_exp_n else 0.0
+        if oos_exp_n >= 2:
+            import statistics as _stats
+            from math import sqrt as _sqrt
+            _se = _stats.pstdev(oos_pnls) / _sqrt(oos_exp_n)
+            oos_after_cost_lb = oos_after_cost_exp - 1.645 * _se
+        else:
+            oos_after_cost_lb = oos_after_cost_exp
         preds = [p.p_final for p in closed]
         outs = [1.0 if p.realized_pnl > 0 else 0.0 for p in closed]
         lq = self.learner.label_quality()
@@ -4940,6 +4957,9 @@ class PolymarketPaperTrainer:
             "realistic_fill_expectancy": round(realistic, 6),
             "oos_sharpe": _m.sharpe(oos_eq), "oos_sortino": _m.sortino(oos_eq),
             "oos_calmar": _m.calmar(oos_eq),
+            "oos_after_cost_expectancy": round(oos_after_cost_exp, 6),
+            "oos_after_cost_expectancy_lb": round(oos_after_cost_lb, 6),
+            "oos_expectancy_samples": oos_exp_n,
             "max_drawdown_pct": round(dd_usd / start, 6),
             "calibration_error": float(self.learner.calibration_error()),
             "ece": _m.ece(preds, outs),

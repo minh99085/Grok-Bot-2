@@ -512,6 +512,14 @@ class TrainingConfig:
     readiness_min_oos_sortino: float = 1.0
     readiness_min_oos_calmar: float = 0.5
     readiness_max_drawdown_pct: float = 0.15
+    # 6C: out-of-sample expectancy promotion gate. A walk-forward HELD-OUT window of
+    # readiness (non-exploration) trades must be CREDIBLY profitable after costs before a
+    # run may promote past paper_learning — in-sample profitability alone is not enough
+    # (guards against overfit). Applies only once the held-out window has enough samples;
+    # never enables live trading.
+    readiness_min_oos_expectancy_samples: int = 20
+    readiness_min_oos_after_cost_expectancy: float = 0.0
+    readiness_oos_require_positive_lower_bound: bool = True
     readiness_max_calibration_error: float = 0.10
     readiness_max_ece: float = 0.10
     readiness_max_label_suppression_rate: float = 0.20
@@ -1298,6 +1306,13 @@ class TrainingConfig:
             readiness_min_eval_samples=_envi("POLYMARKET_READINESS_MIN_EVAL_SAMPLES", 30),
             readiness_min_qualified_samples=_envi("POLYMARKET_READINESS_MIN_QUALIFIED_SAMPLES", 200),
             readiness_min_canary_samples=_envi("POLYMARKET_READINESS_MIN_CANARY_SAMPLES", 500),
+            # 6C out-of-sample expectancy promotion gate (env-tunable; stricter only).
+            readiness_min_oos_expectancy_samples=_envi(
+                "POLYMARKET_READINESS_MIN_OOS_EXPECTANCY_SAMPLES", 20),
+            readiness_min_oos_after_cost_expectancy=_envf(
+                "POLYMARKET_READINESS_MIN_OOS_AFTER_COST_EXPECTANCY", 0.0),
+            readiness_oos_require_positive_lower_bound=_envb(
+                "POLYMARKET_READINESS_OOS_REQUIRE_POSITIVE_LB", True),
             readiness_min_canary_full_samples=_envi("POLYMARKET_READINESS_MIN_CANARY_FULL_SAMPLES", 1000),
             readiness_max_drawdown_pct=_envf("POLYMARKET_READINESS_MAX_DRAWDOWN_PCT", 0.15),
             live_micro_canary_notional_usd=_envf("POLYMARKET_LIVE_MICRO_CANARY_NOTIONAL_USD", 5.0),

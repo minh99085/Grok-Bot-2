@@ -72,6 +72,10 @@ class ReadinessCriteria:
     # edge / execution realism (strictly positive)
     min_after_cost_expectancy: float = 0.0
     min_realistic_fill_expectancy: float = 0.0
+    # 6C out-of-sample expectancy promotion gate (held-out readiness trades)
+    min_oos_expectancy_samples: int = 20
+    min_oos_after_cost_expectancy: float = 0.0
+    oos_require_positive_lower_bound: bool = True
     # out-of-sample risk-adjusted return
     min_oos_sharpe: float = 1.0
     min_canary_sharpe: float = 1.5
@@ -110,7 +114,11 @@ class ReadinessCriteria:
             max_label_suppression_rate=float(g("readiness_max_label_suppression_rate", 0.20)),
             max_unresolved_rate=float(g("readiness_max_unresolved_rate", 0.20)),
             max_ambiguous_rate=float(g("readiness_max_ambiguous_rate", 0.20)),
-            max_stale_rejection_rate=float(g("readiness_max_stale_rejection_rate", 0.10)))
+            max_stale_rejection_rate=float(g("readiness_max_stale_rejection_rate", 0.10)),
+            min_oos_expectancy_samples=int(g("readiness_min_oos_expectancy_samples", 20)),
+            min_oos_after_cost_expectancy=float(g("readiness_min_oos_after_cost_expectancy", 0.0)),
+            oos_require_positive_lower_bound=bool(
+                g("readiness_oos_require_positive_lower_bound", True)))
 
 
 @dataclass
@@ -212,6 +220,21 @@ def evaluate_live_readiness(evidence: dict,
          observed=_f(e.get("realistic_fill_expectancy")),
          threshold=c.min_realistic_fill_expectancy, applies=enough_eval,
          reason="not profitable under realistic fills (optimistic-only)")
+    # 6C: held-out (out-of-sample) after-cost expectancy must be CREDIBLY positive before
+    # promotion — in-sample profit alone can be overfit. Applies only once the held-out
+    # window has enough samples; below that it stays paper_learning (not blocked).
+    oos_n = int(_f(e.get("oos_expectancy_samples"), 0))
+    oos_exp = _f(e.get("oos_after_cost_expectancy"))
+    oos_lb = _f(e.get("oos_after_cost_expectancy_lb"))
+    oos_applicable = oos_n >= c.min_oos_expectancy_samples
+    oos_credible = (oos_exp > c.min_oos_after_cost_expectancy
+                    and (not c.oos_require_positive_lower_bound
+                         or oos_lb > c.min_oos_after_cost_expectancy))
+    crit("positive_out_of_sample_expectancy", (not oos_applicable) or oos_credible,
+         observed={"oos_expectancy": round(oos_exp, 6), "oos_lower_bound": round(oos_lb, 6),
+                   "oos_samples": oos_n},
+         threshold=c.min_oos_after_cost_expectancy, applies=oos_applicable,
+         reason="held-out after-cost expectancy not credibly positive (overfit guard)")
     crit("calibrated_probabilities",
          (not enough_eval) or (_f(e.get("calibration_error")) <= c.max_calibration_error
                                and _f(e.get("ece")) <= c.max_ece),
