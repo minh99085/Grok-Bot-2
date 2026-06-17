@@ -79,7 +79,9 @@ def advisory_features_for(near_miss: Optional[dict], news_packet,
 def select_advisory_target(*, near_misses: Optional[list] = None, news_packet=None,
                            watch_markets: Optional[list] = None,
                            grok_candidates: Optional[list] = None,
+                           voi_targets: Optional[list] = None,
                            min_candidate_score: float = 0.02,
+                           min_voi: float = 0.05,
                            min_liquidity_usd: float = 0.0) -> dict:
     """Choose ONE advisory target. Returns a dict with ``market_ctx`` (or ``None``)
     plus ``target_kind``, ``reason``, the analyzed-counter increments, and advisory
@@ -92,9 +94,11 @@ def select_advisory_target(*, near_misses: Optional[list] = None, news_packet=No
     near_misses = near_misses or []
     watch_markets = watch_markets or []
     grok_candidates = grok_candidates or []
+    voi_targets = voi_targets or []
     news_ids = set(_news_market_ids(news_packet))
     # eligible-target census (so "0 scheduled calls" is never implied without reason)
-    eligible = len(near_misses) + len(news_ids) + len(watch_markets) + len(grok_candidates)
+    eligible = (len(near_misses) + len(news_ids) + len(watch_markets)
+                + len(grok_candidates) + len(voi_targets))
 
     # 0) STRONGEST Grok-flagged Bregman candidate (research what Grok itself flagged).
     strong = [c for c in grok_candidates
@@ -153,6 +157,27 @@ def select_advisory_target(*, near_misses: Optional[list] = None, news_packet=No
             "malformed_groups_analyzed": malformed,
             "news_linked_analyzed": 1 if news_linked else 0,
             "advisory_features": advisory_features_for(chosen, news_packet, kind),
+        }
+
+    # 1b) HIGHEST value-of-information market (#5): uncertain + near-threshold + liquid —
+    # where a bounded Grok call most reduces edge uncertainty. Above news/liquidity.
+    strong_voi = [v for v in voi_targets if float(v.get("voi", 0.0)) >= float(min_voi)]
+    if strong_voi:
+        strong_voi.sort(key=lambda v: float(v.get("voi", 0.0)), reverse=True)
+        v = strong_voi[0]
+        return {
+            "market_ctx": {"market_id": str(v.get("market_id") or "voi_target"),
+                           "question": v.get("question") or "high_value_of_information"},
+            "target_kind": "value_of_information",
+            "reason": "highest_value_of_information", "eligible_targets": eligible,
+            "groups_analyzed": 1, "near_misses_analyzed": 0,
+            "incomplete_groups_analyzed": 0, "malformed_groups_analyzed": 0,
+            "news_linked_analyzed": 0,
+            "advisory_features": {"advisory_target_kind": "value_of_information",
+                                  "voi_score": float(v.get("voi", 0.0)),
+                                  "ensemble_disagreement": float(
+                                      v.get("ensemble_disagreement", 0.0)),
+                                  "advisory_only": True},
         }
 
     # 2) news-linked market (no near-misses available this run).

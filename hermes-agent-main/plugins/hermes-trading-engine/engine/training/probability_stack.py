@@ -92,6 +92,8 @@ class ProbabilityEstimate:
     confidence_interval_low: float = 0.0
     confidence_interval_high: float = 0.0
     uncertainty_components: dict = field(default_factory=dict)
+    # ensemble member disagreement (#4) — drives value-of-information targeting (#5)
+    ensemble_disagreement: float = 0.0
     effective_sample_size: float = 0.0
     calibration_method: str = "identity"
     chainlink_features: dict = field(default_factory=dict)
@@ -336,7 +338,8 @@ class ProbabilityStack:
             effective_sample_size=ess, calibration_method=cal_method,
             chainlink_features=cl_features, bregman_group_id=bregman_group_id,
             no_trade_probability_reason=no_trade_reason,
-            research_uncertainty=research_uncertainty)
+            research_uncertainty=research_uncertainty,
+            ensemble_disagreement=(float(ensemble["disagreement"]) if ensemble else 0.0))
 
     def _no_trade_probability_reason(self, *, cl_block: bool, fresh: bool,
                                      ambiguity: float, research_usable: bool,

@@ -623,6 +623,9 @@ class PolymarketPaperTrainer:
         self._probed_markets_run: dict = {}
         self._probed_events_run: dict = {}
         self._probed_clusters_run: dict = {}
+        # #5 value-of-information: per-tick markets ranked by where a Grok call is worth
+        # the most (uncertain + near-threshold + liquid). Read-only targeting hint.
+        self._voi_candidates: list = []
         # durable per-candidate audit log (git-ignored metrics dir)
         self._relaxed_candidates_path = self.data_dir / "metrics" / "paper_relaxed_candidates.jsonl"
         self._relaxed_records_written = 0
@@ -771,6 +774,9 @@ class PolymarketPaperTrainer:
                        if getattr(r, "best_bid", None) is not None else None),
             "top_depth_usd": round(float(getattr(r, "top_depth_usd", 0.0) or 0.0), 2),
         } for r in watch[:15]]
+        # reset per-tick value-of-information candidates (#5): markets where a Grok call
+        # is worth the most (uncertain + near-threshold + liquid). Populated in _consider.
+        self._voi_candidates = []
         self._last_scan_ts = now
         # Chainlink BTC/USD oracle read each tick (auditable; logs price+freshness
         # when debug enabled). Read-only; never blocks the tick.
@@ -2498,6 +2504,30 @@ class PolymarketPaperTrainer:
         would_trade = gates_ok and (adjusted_net > edge.threshold)
         reason = "trade" if would_trade else (
             edge.reason if not gates_ok else "edge_too_low")
+
+        # #5 value-of-information: record where a bounded Grok call is worth the most
+        # (high ensemble disagreement + near the trade threshold + liquid). Read-only;
+        # only ranks what Grok should research next — never trades/sizes/gates.
+        try:
+            from engine.research.value_of_information import voi_score
+            _voi = voi_score(
+                disagreement=float(getattr(est, "ensemble_disagreement", 0.0) or 0.0),
+                uncertainty=float((getattr(est, "uncertainty_components", {}) or {}).get(
+                    "total", 0.0) or 0.0),
+                liquidity_usd=float(getattr(est, "liquidity_usd", 0.0) or 0.0),
+                edge=float(getattr(edge, "net_edge", 0.0) or 0.0),
+                min_edge=float(getattr(edge, "threshold", 0.0) or 0.0))
+            if _voi > 1e-6 and getattr(self, "_voi_candidates", None) is not None:
+                self._voi_candidates.append({
+                    "market_id": rec.market_id,
+                    "question": (getattr(rec, "question", "") or rec.market_id)[:100],
+                    "voi": _voi,
+                    "ensemble_disagreement": round(
+                        float(getattr(est, "ensemble_disagreement", 0.0) or 0.0), 5),
+                    "edge": round(float(getattr(edge, "net_edge", 0.0) or 0.0), 5),
+                    "liquidity_usd": round(float(getattr(est, "liquidity_usd", 0.0) or 0.0))})
+        except Exception:  # noqa: BLE001 — VOI telemetry never breaks a tick
+            pass
 
         # hierarchical signal resolution (Bregman P1 already preempts upstream;
         # here we classify P2 statistical vs P3 directional + attribute alpha).
@@ -5262,7 +5292,7 @@ class PolymarketPaperTrainer:
         sel = select_advisory_target(
             near_misses=list(getattr(self, "_bregman_near_miss_best", {}).values()),
             news_packet=news_packet, watch_markets=getattr(self, "_watch_sample", []),
-            grok_candidates=gc_ranked)
+            grok_candidates=gc_ranked, voi_targets=self._voi_targets())
         target_ctx = market_ctx or sel.get("market_ctx")
         if client is None:
             caller.last_reason = "no_market_link_available" if not target_ctx else "provider_error"
@@ -5317,6 +5347,12 @@ class PolymarketPaperTrainer:
         ranked = rank_candidates(groups, top_n=top_n)
         summ = summarize(groups, certified_ids=certified, top_n=top_n)
         return ranked, summ
+
+    def _voi_targets(self, top_n: int = 10):
+        """Top value-of-information markets this tick (#5): where a bounded Grok call is
+        worth the most (uncertain + near-threshold + liquid). Read-only targeting."""
+        from engine.research.value_of_information import rank_voi
+        return rank_voi(list(getattr(self, "_voi_candidates", []) or []), top_n=top_n)
 
     def research_status(self) -> dict:
         """Aggregate research-evidence status: news packet + Chainlink + Grok
@@ -5444,6 +5480,14 @@ class PolymarketPaperTrainer:
                 "member_calibration": (self.member_calibration.metrics()
                                        if getattr(self, "member_calibration", None) is not None
                                        else {"enabled": False}),
+                "advisory_only": True,
+            },
+            # #5 value-of-information targeting: top markets where a bounded Grok call is
+            # worth the most (uncertain + near-threshold + liquid). Read-only — only
+            # directs Grok's compute; never trades/sizes/gates.
+            "value_of_information": {
+                "top_targets": self._voi_targets(top_n=10),
+                "candidates_this_tick": len(getattr(self, "_voi_candidates", []) or []),
                 "advisory_only": True,
             },
             # bounded advisory scheduler telemetry (research only; never execution)
