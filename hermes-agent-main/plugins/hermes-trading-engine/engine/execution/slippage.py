@@ -74,7 +74,10 @@ class SlippageModel:
 
 
 def drag_breakdown(ask: float, bid: Optional[float], tick: float, *,
-                   slippage_bps: float, fee_bps: float) -> dict:
+                   slippage_bps: float, fee_bps: float,
+                   order_usd: float = 0.0, depth_usd: float = 0.0,
+                   volatility: float = 0.0, impact_coeff: float = 0.0,
+                   error_coeff: float = 0.0) -> dict:
     """Decompose a BUY leg's conservative executable price into its cost drags.
 
     Bregman-certification primitive (CLOB v2 Execution + Risk): the executable
@@ -82,7 +85,15 @@ def drag_breakdown(ask: float, bid: Optional[float], tick: float, *,
     + taker fee — only ever WORSE than the touch. Returns per-share
     ``base`` (ask), ``tick_rounding`` (tick-up), ``slippage``, ``fee``,
     ``half_spread`` (ask − mid; diagnostic, already in the ask), and the final
-    ``exec_price``. Pure + deterministic so certification is reproducible."""
+    ``exec_price``. Pure + deterministic so certification is reproducible.
+
+    6D cost-model refinement (opt-in via ``order_usd``/``depth_usd``/``*_coeff``):
+    adds a size/depth-aware ``market_impact`` drag (grows with the order's share of
+    executable depth and with volatility — captures walking the book / partial-fill
+    on oversized orders) and a 1σ ``slippage_error_band`` (forecast-error widening).
+    Both ONLY ever make the price worse. ``depth_share`` and ``fillable_fraction``
+    are reported for partial-fill diagnostics. With the defaults (all 0) the result is
+    byte-for-byte identical to the prior bps + tick + fee model (backward compatible)."""
     import math as _math
     a = max(0.0, float(ask))
     t = float(tick or 0.0)
@@ -90,13 +101,28 @@ def drag_breakdown(ask: float, bid: Optional[float], tick: float, *,
     slip = px_tick * (float(slippage_bps) / 10000.0)
     fee = px_tick * (float(fee_bps) / 10000.0)
     half_spread = max(0.0, (a - float(bid)) / 2.0) if bid is not None else 0.0
+    # 6D: size/depth-aware market-impact + forecast-error band (conservative).
+    depth = max(1e-9, float(depth_usd or 0.0))
+    share = max(0.0, float(order_usd or 0.0)) / depth
+    impact_frac = float(impact_coeff) * share + 0.5 * max(0.0, float(volatility))
+    market_impact = px_tick * impact_frac
+    error_band = px_tick * (float(error_coeff) * share / 10000.0)
+    # fraction of the order that fills at/inside the touch depth; the remainder is the
+    # part that 'walks the book' (captured by the impact term). 1.0 when order <= depth.
+    fillable_fraction = 1.0 if share <= 1.0 else round(1.0 / share, 8)
+    exec_price = px_tick + slip + fee + market_impact + error_band
     return {
         "base": round(a, 8),
         "tick_rounding": round(px_tick - a, 8),
         "slippage": round(slip, 8),
         "fee": round(fee, 8),
         "half_spread": round(half_spread, 8),
-        "exec_price": round(px_tick + slip + fee, 8),
+        "market_impact": round(market_impact, 8),
+        "slippage_error_band": round(error_band, 8),
+        "depth_share": round(share, 8),
+        "fillable_fraction": fillable_fraction,
+        "partial_fill_expected": bool(share > 1.0),
+        "exec_price": round(exec_price, 8),
     }
 
 

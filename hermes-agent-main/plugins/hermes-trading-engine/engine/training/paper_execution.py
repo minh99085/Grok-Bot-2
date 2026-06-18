@@ -78,6 +78,11 @@ class PaperExecutionDecision:
     fee_estimate: float = 0.0
     tick_rounding_drag: float = 0.0
     half_spread_drag: float = 0.0
+    market_impact_drag: float = 0.0
+    slippage_error_drag: float = 0.0
+    depth_share: float = 0.0
+    fillable_fraction: float = 1.0
+    partial_fill_expected: bool = False
     after_cost_edge: Optional[float] = None
     after_cost_roi: Optional[float] = None
     fill_source: str = SRC_LIVE_CLOB
@@ -138,17 +143,33 @@ class PaperExecutionPolicy:
         self.reject_missing_ask = b("reject_missing_ask", True)
         self.reject_offline_stub = b("reject_offline_stub_fills", True)
         self.slippage_bps = g("slippage_bps", 25.0)
-        self.fee_bps = g("taker_fee_bps", 0.0)
+        # Crossing the spread (the paper default) is a TAKER fill; a resting/passive
+        # fill is a maker. We charge the worse of the two by default (taker) — the
+        # conservative paper assumption — but both are configurable (6D).
+        self.taker_fee_bps = g("taker_fee_bps", 0.0)
+        self.maker_fee_bps = g("maker_fee_bps", 0.0)
+        self.fee_bps = self.taker_fee_bps
+        # 6D size/depth-aware cost model (conservative; defaults reproduce prior model).
+        self.cost_model_size_aware = b("cost_model_size_aware", True)
+        self.impact_coeff = g("paper_impact_coeff", 0.5) if self.cost_model_size_aware else 0.0
+        self.slippage_error_coeff = g("paper_slippage_error_coeff", 50.0) \
+            if self.cost_model_size_aware else 0.0
 
     # -- after-cost economics (conservative; rounds against us) --------------
     def _after_cost(self, ctx: PaperExecutionContext) -> dict:
         from engine.execution.slippage import drag_breakdown
         ask = float(ctx.ask or 0.0)
         b = drag_breakdown(ask, ctx.bid, ctx.tick_size,
-                           slippage_bps=self.slippage_bps, fee_bps=self.fee_bps)
+                           slippage_bps=self.slippage_bps, fee_bps=self.fee_bps,
+                           order_usd=float(getattr(ctx, "notional_usd", 0.0) or 0.0),
+                           depth_usd=float(getattr(ctx, "depth_usd", 0.0) or 0.0),
+                           impact_coeff=self.impact_coeff,
+                           error_coeff=self.slippage_error_coeff)
         exec_price = float(b["exec_price"])
         drag = (float(b["tick_rounding"]) + float(b["slippage"])
-                + float(b["fee"]) + float(b["half_spread"]))
+                + float(b["fee"]) + float(b["half_spread"])
+                + float(b.get("market_impact", 0.0))
+                + float(b.get("slippage_error_band", 0.0)))
         after_cost_edge = None
         after_cost_roi = None
         if ctx.gross_edge is not None:
@@ -170,6 +191,11 @@ class PaperExecutionPolicy:
             fee_estimate=float(ac["drag"]["fee"]),
             tick_rounding_drag=float(ac["drag"]["tick_rounding"]),
             half_spread_drag=float(ac["drag"]["half_spread"]),
+            market_impact_drag=float(ac["drag"].get("market_impact", 0.0)),
+            slippage_error_drag=float(ac["drag"].get("slippage_error_band", 0.0)),
+            depth_share=float(ac["drag"].get("depth_share", 0.0)),
+            fillable_fraction=float(ac["drag"].get("fillable_fraction", 1.0)),
+            partial_fill_expected=bool(ac["drag"].get("partial_fill_expected", False)),
             after_cost_edge=ac["after_cost_edge"], after_cost_roi=ac["after_cost_roi"],
             fill_source=src, book_source=src, price_source=src,
             was_reference_price_fill=(src == SRC_REFERENCE),

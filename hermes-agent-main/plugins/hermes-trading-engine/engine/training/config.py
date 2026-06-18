@@ -121,6 +121,15 @@ class TrainingConfig:
     taker_fee_bps: float = 0.0
     slippage_bps: float = 25.0
     max_fill_depth_fraction: float = 0.35
+    # 6D cost-model refinement (conservative; only ever makes paper fills WORSE). The
+    # after-cost economics that GATE paper trades now add a size/depth-aware market-impact
+    # drag + a slippage forecast-error band on top of bps + tick-up + half-spread, and
+    # charge the maker vs taker fee per fill side. Crossing the spread (the paper default)
+    # is a TAKER fill; a passive/resting fill would be a maker. PAPER ONLY; env-tunable.
+    maker_fee_bps: float = 0.0
+    cost_model_size_aware: bool = True
+    paper_impact_coeff: float = 0.5          # market-impact ~ coeff * (order/depth share)
+    paper_slippage_error_coeff: float = 50.0  # 1σ forecast-error band (bps) per depth share
     # ---- paper policy / sizing ----
     # Minimum paper order/probe size (USD). Orders never open below this (no sub-$1
     # probes); a book that cannot support the floor is rejected by realism, not shrunk
@@ -981,7 +990,11 @@ class TrainingConfig:
             max_spread=_envf("POLYMARKET_MAX_SPREAD", 0.08),
             min_depth_at_price=_envf("POLYMARKET_MIN_DEPTH_AT_PRICE", 50.0),
             taker_fee_bps=_envf("PAPER_TAKER_FEE_BPS", 0.0),
+            maker_fee_bps=_envf("PAPER_MAKER_FEE_BPS", 0.0),
             slippage_bps=_envf("PAPER_SLIPPAGE_BPS", 25.0),
+            cost_model_size_aware=_envb("PAPER_COST_MODEL_SIZE_AWARE", True),
+            paper_impact_coeff=_envf("PAPER_IMPACT_COEFF", 0.5),
+            paper_slippage_error_coeff=_envf("PAPER_SLIPPAGE_ERROR_COEFF", 50.0),
             max_fill_depth_fraction=_envf("PAPER_MAX_FILL_DEPTH_FRACTION", 0.35),
             fixed_notional_usd=_envf("POLYMARKET_PAPER_FIXED_NOTIONAL_USD", 5.0),
             min_order_notional_usd=_envf("POLYMARKET_MIN_ORDER_NOTIONAL_USD", 1.0),
