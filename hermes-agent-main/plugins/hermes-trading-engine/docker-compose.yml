@@ -567,6 +567,23 @@ services:
       PAPER_DEPTH_REQUIREMENT_CAP_USD: "10"
       PAPER_MIN_DEPTH_FLOOR_USD: "1"
       PAPER_DEPTH_SAFETY_FACTOR: "1.0"
+      # ---- Option 1: fast proxy labels (closed-loop DISCOVERY feedback) ----
+      # The settlement learner only trains on final-settlement labels (days away). A
+      # short-horizon proxy label (did mid move toward the model's side within the window)
+      # gives the closed loop fast feedback for active-learning + telemetry within a run.
+      # Flagged not-final-settlement; NEVER mutates settlement calibration. 6C OOS gate
+      # remains the promotion authority.
+      CLOSED_LOOP_FAST_PROXY_ENABLED: "1"
+      CLOSED_LOOP_PROXY_HORIZON_S: "600"
+      # ---- Option 2: broaden Grok directional coverage (research edge) ----
+      # Coverage was the bottleneck: only ~4 Grok calls/hour (15-min spacing) meant
+      # virtually every directional candidate defaulted to the market mid (zero edge). Raise
+      # the advisory budget + tighten spacing so far more candidates get a real Grok
+      # settlement probability. Grok stays ADVISORY-ONLY — it never gates/sizes/places.
+      GROK_ADVISORY_MAX_CALLS_PER_HOUR: "60"
+      GROK_ADVISORY_MIN_INTERVAL_SECONDS: "45"
+      GROK_ADVISORY_MAX_CALLS_PER_RUN: "2000"
+      GROK_ADVISORY_REQUIRE_NEWS: "0"
       # ---- Chainlink real price feed (READ-ONLY oracle input) ----
       # Live Chainlink mainnet aggregator reads (latestRoundData over JSON-RPC),
       # used ONLY as a probability/edge input feature for crypto-linked markets.

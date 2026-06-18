@@ -338,14 +338,24 @@ class ClosedLoopLearning:
             r.label_status = "none"
             r.label_type = "no_label_target"
             self.counts["diagnostic_without_label_target"] += 1
-        elif end_ts:
-            r.label_status = "pending"; r.label_type = "final_settlement"
-            r.label_due_at = float(end_ts)
-            self._add_pending(r)
         else:
-            r.label_status = "pending"; r.label_type = "proxy"
-            r.label_due_at = round(now + 300.0, 3)   # short-horizon proxy window
-            self._add_pending(r)
+            proxy_h = float(getattr(self.cfg, "closed_loop_proxy_horizon_s", 600.0) or 600.0) \
+                if self.cfg is not None else 600.0
+            fast_proxy = self._b("closed_loop_fast_proxy_enabled", True)
+            if end_ts:
+                r.label_status = "pending"; r.label_type = "final_settlement"
+                r.label_due_at = float(end_ts)
+                self._add_pending(r)
+                # Option-1: ALSO emit a short-horizon PROXY label so the closed loop gets
+                # fast discovery feedback within a run instead of waiting days for
+                # settlement. The proxy never feeds the settlement calibration (flagged
+                # not_final_settlement); it only powers active-learning + telemetry.
+                if fast_proxy:
+                    self._add_pending_proxy(r, due_at=round(now + proxy_h, 3))
+            else:
+                r.label_status = "pending"; r.label_type = "proxy"
+                r.label_due_at = round(now + proxy_h, 3)   # short-horizon proxy window
+                self._add_pending(r)
 
         rd = r.to_dict()
         # counts + per-type durable event files (the canonical stream)
@@ -398,6 +408,25 @@ class ClosedLoopLearning:
                "candidate_id": r.candidate_id, "market_id": r.market_id,
                "condition_id": r.condition_id, "event_id": r.event_id,
                "label_due_at": r.label_due_at, "label_type": r.label_type,
+               "model_probability": r.model_probability, "market_probability": r.market_probability,
+               "decision": r.decision, "after_cost_edge": r.after_cost_edge,
+               "created_at": r.timestamp, "resolution_source": getattr(r, "_rs", "")}
+        self.pending.append(row)
+        self.counts["pending_labels_created"] += 1
+        self._append_jsonl("pending_labels.jsonl", row)
+        if len(self.pending) > 5000:
+            self.pending = self.pending[-5000:]
+
+    def _add_pending_proxy(self, r: TrainingDecisionRecord, *, due_at: float) -> None:
+        """Option-1: add a SECOND, short-horizon PROXY pending label for a decision that
+        already has a (far-future) final-settlement label, so the closed loop gets fast
+        discovery feedback. Distinct candidate_id suffix so it never collides with the
+        final-settlement row. Proxy resolution is flagged not-final-settlement and never
+        mutates the settlement calibration."""
+        row = {"run_id": r.run_id, "tick": r.tick, "timestamp": r.timestamp,
+               "candidate_id": f"{r.candidate_id}:proxy", "market_id": r.market_id,
+               "condition_id": r.condition_id, "event_id": r.event_id,
+               "label_due_at": float(due_at), "label_type": "proxy",
                "model_probability": r.model_probability, "market_probability": r.market_probability,
                "decision": r.decision, "after_cost_edge": r.after_cost_edge,
                "created_at": r.timestamp, "resolution_source": getattr(r, "_rs", "")}

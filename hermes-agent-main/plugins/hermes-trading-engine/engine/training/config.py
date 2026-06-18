@@ -359,6 +359,14 @@ class TrainingConfig:
     grok_advisory_min_interval_seconds: int = 900
     grok_advisory_require_news: bool = True
     grok_advisory_max_calls_per_run: int = 48
+    # Option-1 fast proxy labels (closed-loop DISCOVERY feedback). The settlement learner
+    # only trains on clean final-settlement labels (days away), so in a short run it never
+    # warms. A short-horizon PROXY label (did the mid move toward the model's side within
+    # the window) gives the closed loop fast feedback for active-learning + telemetry. It is
+    # flagged not-final-settlement and NEVER mutates the settlement calibration (no
+    # poisoning); the 6C out-of-sample SETTLEMENT gate remains the promotion authority.
+    closed_loop_fast_proxy_enabled: bool = False   # base off; aggressive_paper turns ON
+    closed_loop_proxy_horizon_s: float = 600.0
     active_learning_require_realistic_fill_for_trade: bool = True
     active_learning_allow_shadow_without_fill: bool = True
     # ---- Pass-7: cluster/correlation risk is an ACTIVE hard gate + allocator ----
@@ -1152,6 +1160,10 @@ class TrainingConfig:
                 "GROK_ADVISORY_MIN_INTERVAL_SECONDS", 900),
             grok_advisory_require_news=_envb("GROK_ADVISORY_REQUIRE_NEWS", True),
             grok_advisory_max_calls_per_run=_envi("GROK_ADVISORY_MAX_CALLS_PER_RUN", 48),
+            # Option-1 fast proxy labels (env-tunable; discovery feedback only). Base loader
+            # defaults OFF; the aggressive_paper profile enables it.
+            closed_loop_fast_proxy_enabled=_envb("CLOSED_LOOP_FAST_PROXY_ENABLED", False),
+            closed_loop_proxy_horizon_s=_envf("CLOSED_LOOP_PROXY_HORIZON_S", 600.0),
             grok_proof_call_advisory_only=_envb(
                 "GROK_PROOF_CALL_ADVISORY_ONLY",
                 _envb("POLYMARKET_GROK_PROOF_CALL_ADVISORY_ONLY", True)),
@@ -1527,6 +1539,14 @@ class TrainingConfig:
             depth_requirement_cap_usd=_envf("PAPER_DEPTH_REQUIREMENT_CAP_USD", 10.0),
             min_depth_floor_usd=_envf("PAPER_MIN_DEPTH_FLOOR_USD", 1.0),
             depth_safety_factor=_envf("PAPER_DEPTH_SAFETY_FACTOR", 1.0),
+            # Option 1 fast proxy labels (discovery feedback; never feeds settlement calib).
+            closed_loop_fast_proxy_enabled=_envb("CLOSED_LOOP_FAST_PROXY_ENABLED", True),
+            closed_loop_proxy_horizon_s=_envf("CLOSED_LOOP_PROXY_HORIZON_S", 600.0),
+            # Option 2 broaden Grok directional coverage (advisory-only research edge).
+            grok_advisory_max_calls_per_hour=_envi("GROK_ADVISORY_MAX_CALLS_PER_HOUR", 60),
+            grok_advisory_min_interval_seconds=_envi("GROK_ADVISORY_MIN_INTERVAL_SECONDS", 45),
+            grok_advisory_max_calls_per_run=_envi("GROK_ADVISORY_MAX_CALLS_PER_RUN", 2000),
+            grok_advisory_require_news=_envb("GROK_ADVISORY_REQUIRE_NEWS", False),
             # calibration-weighted ensemble (advisory-only); env-tunable.
             probability_ensemble_enabled=_envb("POLYMARKET_PROBABILITY_ENSEMBLE_ENABLED", True),
             ensemble_base_weight_market=_envf("POLYMARKET_ENSEMBLE_W_MARKET", 1.0),
