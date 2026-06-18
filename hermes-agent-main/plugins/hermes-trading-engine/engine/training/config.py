@@ -27,6 +27,27 @@ FORBIDDEN_LIVE_FLAGS = (
 MODES = ("disabled", "observe_only", "paper_train")
 
 
+def size_aware_min_depth_usd(cfg, order_notional_usd, *, fallback: float) -> float:
+    """Option A — the executable-depth requirement for an order of ``order_notional_usd``.
+
+    When ``size_aware_depth_enabled`` is set and the order notional is known, the required
+    depth scales with the size we actually trade (``depth_safety_factor`` x notional),
+    floored at ``min_depth_floor_usd`` and capped at ``depth_requirement_cap_usd``. Otherwise
+    returns ``fallback`` (the legacy fixed ``min_depth_at_price``). This is size-accurate
+    realism, never a blanket loosening: required depth is tied to the fill size, and the
+    Bregman certifier still sizes sets DOWN to the real available depth."""
+    try:
+        notional = float(order_notional_usd or 0.0)
+    except (TypeError, ValueError):
+        notional = 0.0
+    if not bool(getattr(cfg, "size_aware_depth_enabled", False)) or notional <= 0.0:
+        return float(fallback)
+    cap = float(getattr(cfg, "depth_requirement_cap_usd", 10.0))
+    floor = float(getattr(cfg, "min_depth_floor_usd", 1.0))
+    factor = float(getattr(cfg, "depth_safety_factor", 1.0))
+    return max(floor, min(notional * factor, cap))
+
+
 def _envf(name: str, default: float) -> float:
     try:
         return float(os.getenv(name, str(default)))
@@ -128,6 +149,18 @@ class TrainingConfig:
     # is a TAKER fill; a passive/resting fill would be a maker. PAPER ONLY; env-tunable.
     maker_fee_bps: float = 0.0
     cost_model_size_aware: bool = True
+    # Option A — SIZE-ACCURATE depth requirement. The fixed min_depth_at_price ($25) was
+    # calibrated for large orders; with $1-$10 paper probes it rejected ~all books even
+    # when they easily support the size we actually trade. When enabled, the executable-
+    # depth requirement scales with the ORDER notional (depth_safety_factor x notional),
+    # floored at min_depth_floor_usd and CAPPED at depth_requirement_cap_usd ($10 = the max
+    # order). This is MORE realistic, not looser: required depth = the size we actually
+    # fill; we never assume more fill than real depth, and Bregman still sizes sets DOWN to
+    # available depth. base OFF (legacy $25); aggressive_paper turns it ON.
+    size_aware_depth_enabled: bool = False
+    depth_requirement_cap_usd: float = 10.0
+    min_depth_floor_usd: float = 1.0
+    depth_safety_factor: float = 1.0
     # Priority-C maker/passive-fill model: fraction of the spread a patient passive entry
     # is credited with capturing (vs crossing it), floored at the real bid and gated to
     # fresh/deep/tight books. 0 = taker-only (legacy); aggressive_paper turns it on. Never
@@ -1013,6 +1046,11 @@ class TrainingConfig:
             slippage_bps=_envf("PAPER_SLIPPAGE_BPS", 25.0),
             cost_model_size_aware=_envb("PAPER_COST_MODEL_SIZE_AWARE", True),
             maker_capture_fraction=_envf("PAPER_MAKER_CAPTURE_FRACTION", 0.0),
+            # Option A size-accurate depth (base default OFF; aggressive_paper enables).
+            size_aware_depth_enabled=_envb("PAPER_SIZE_AWARE_DEPTH_ENABLED", False),
+            depth_requirement_cap_usd=_envf("PAPER_DEPTH_REQUIREMENT_CAP_USD", 10.0),
+            min_depth_floor_usd=_envf("PAPER_MIN_DEPTH_FLOOR_USD", 1.0),
+            depth_safety_factor=_envf("PAPER_DEPTH_SAFETY_FACTOR", 1.0),
             paper_impact_coeff=_envf("PAPER_IMPACT_COEFF", 0.5),
             paper_slippage_error_coeff=_envf("PAPER_SLIPPAGE_ERROR_COEFF", 50.0),
             # Priority-1 targeted event-family completion (env-tunable; read-only).
@@ -1483,6 +1521,12 @@ class TrainingConfig:
             # Priority-C maker/passive-fill model ON for the live aggressive profile
             # (conservative spread capture; env-tunable).
             maker_capture_fraction=_envf("PAPER_MAKER_CAPTURE_FRACTION", 0.3),
+            # Option A size-accurate depth ON for the live aggressive profile: depth
+            # required = order notional (factor 1.0), floor $1, cap $10 ("keep $10").
+            size_aware_depth_enabled=_envb("PAPER_SIZE_AWARE_DEPTH_ENABLED", True),
+            depth_requirement_cap_usd=_envf("PAPER_DEPTH_REQUIREMENT_CAP_USD", 10.0),
+            min_depth_floor_usd=_envf("PAPER_MIN_DEPTH_FLOOR_USD", 1.0),
+            depth_safety_factor=_envf("PAPER_DEPTH_SAFETY_FACTOR", 1.0),
             # calibration-weighted ensemble (advisory-only); env-tunable.
             probability_ensemble_enabled=_envb("POLYMARKET_PROBABILITY_ENSEMBLE_ENABLED", True),
             ensemble_base_weight_market=_envf("POLYMARKET_ENSEMBLE_W_MARKET", 1.0),

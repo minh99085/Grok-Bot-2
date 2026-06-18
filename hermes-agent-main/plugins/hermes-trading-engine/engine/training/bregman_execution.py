@@ -238,6 +238,19 @@ class BregmanArbitrageEngine:
             getattr(cfg, "bregman_target_capital_usd", target_capital_usd))
         self.divergence_method = divergence_method
 
+    def _effective_min_depth_usd(self) -> float:
+        """Option A — per-leg executable-depth floor for a Bregman set, sized to the set
+        notional we actually trade (capped at $10), instead of the fixed $25. The certifier
+        already sizes sets DOWN to available depth, so a thinner book just yields a smaller
+        (still fully-hedged, still positive) set — never an over-fill. Falls back to the
+        fixed min_depth_at_price when size-aware depth is disabled."""
+        from engine.training.config import size_aware_min_depth_usd
+        # the intended per-leg notional is bounded by the paper order cap (== the $10 cap)
+        order_notional = min(float(self.target_capital_usd),
+                             float(getattr(self.cfg, "depth_requirement_cap_usd", 10.0))) \
+            if self.cfg is not None else self.target_capital_usd
+        return size_aware_min_depth_usd(self.cfg, order_notional, fallback=self.min_depth_usd)
+
     # -- certification -------------------------------------------------------
     def certify(self, group: SimplexGroup, *, now: Optional[float] = None,
                 fill_model=None, min_all_leg_fill_prob: float = 0.95
@@ -358,7 +371,7 @@ class BregmanArbitrageEngine:
                 spreads.append(sp)
                 if sp > self.max_spread:
                     return reject("spread_too_wide")
-            if leg.depth_usd < self.min_depth_usd:
+            if leg.depth_usd < self._effective_min_depth_usd():
                 return reject("depth_too_thin")
             # conservative executable price + cost-drag decomposition (tick-up,
             # slippage, fee — only ever WORSE than the touch).

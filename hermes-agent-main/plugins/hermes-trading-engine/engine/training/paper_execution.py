@@ -166,6 +166,15 @@ class PaperExecutionPolicy:
         self.maker_capture_fraction = max(0.0, min(1.0, g("maker_capture_fraction", 0.0)))
         self.maker_model_enabled = self.maker_capture_fraction > 0.0
 
+    def _effective_min_depth_usd(self, ctx: PaperExecutionContext) -> float:
+        """Option A — size-accurate executable-depth floor for a directional paper fill:
+        scales with the order notional we actually trade (capped at $10), falling back to
+        the fixed min_depth_at_price when size-aware depth is disabled or size is unknown."""
+        from engine.training.config import size_aware_min_depth_usd
+        return size_aware_min_depth_usd(
+            self.cfg, float(getattr(ctx, "notional_usd", 0.0) or 0.0),
+            fallback=self.min_depth_usd)
+
     def _maker_capture_fraction(self, ctx: PaperExecutionContext) -> float:
         """Conservative fraction of the spread a passive entry can realistically capture
         for THIS book. 0 unless the maker model is enabled AND the book is fresh, deep, and
@@ -174,7 +183,7 @@ class PaperExecutionPolicy:
             return 0.0
         fresh = bool(ctx.fresh_book) and (ctx.book_age_sec is None
                                           or float(ctx.book_age_sec) <= self.max_book_age_sec)
-        deep = float(ctx.depth_usd or 0.0) >= self.min_depth_usd
+        deep = float(ctx.depth_usd or 0.0) >= self._effective_min_depth_usd(ctx)
         tight = ctx.spread is None or float(ctx.spread) <= self.max_spread
         return self.maker_capture_fraction if (fresh and deep and tight) else 0.0
 
@@ -277,9 +286,10 @@ class PaperExecutionPolicy:
         if stale and self.reject_on_stale:
             return self._decision(ctx, SHADOW, "stale_book", STATUS_SHADOW_STALE, ac=ac,
                                   would_if=f"book age <= {self.max_book_age_sec:g}s")
-        if float(ctx.depth_usd or 0.0) < self.min_depth_usd:
+        eff_min_depth = self._effective_min_depth_usd(ctx)
+        if float(ctx.depth_usd or 0.0) < eff_min_depth:
             return self._decision(ctx, SHADOW, "thin_depth", STATUS_SHADOW_THIN_DEPTH, ac=ac,
-                                  would_if=f"depth >= ${self.min_depth_usd:g}")
+                                  would_if=f"depth >= ${eff_min_depth:g}")
         if ctx.spread is not None and float(ctx.spread) > self.max_spread:
             return self._decision(ctx, SHADOW, "wide_spread", STATUS_SHADOW_WIDE_SPREAD, ac=ac,
                                   would_if=f"spread <= {self.max_spread:g}")

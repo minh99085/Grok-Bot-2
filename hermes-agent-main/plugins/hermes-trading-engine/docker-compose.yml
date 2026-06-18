@@ -558,6 +558,15 @@ services:
       # after-cost entry cost so more directional candidates clear the credible-edge gate.
       # Uses REAL CLOB bid/ask — never a fabricated/reference fill.
       PAPER_MAKER_CAPTURE_FRACTION: "0.3"
+      # ---- Option A: size-accurate executable-depth requirement ----
+      # The fixed $25 depth gate rejected ~all books for $1-$10 paper probes. Required depth
+      # now scales with the ORDER notional (factor 1.0), floored at $1 and capped at $10
+      # ("keep $10" = the max order). MORE realistic, not looser: depth required = the size
+      # we actually fill; Bregman still sizes sets DOWN to real available depth.
+      PAPER_SIZE_AWARE_DEPTH_ENABLED: "1"
+      PAPER_DEPTH_REQUIREMENT_CAP_USD: "10"
+      PAPER_MIN_DEPTH_FLOOR_USD: "1"
+      PAPER_DEPTH_SAFETY_FACTOR: "1.0"
       # ---- Chainlink real price feed (READ-ONLY oracle input) ----
       # Live Chainlink mainnet aggregator reads (latestRoundData over JSON-RPC),
       # used ONLY as a probability/edge input feature for crypto-linked markets.
