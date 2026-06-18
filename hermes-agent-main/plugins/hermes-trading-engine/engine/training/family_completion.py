@@ -121,7 +121,11 @@ def expand_event_families(records: list, *, now: Optional[float] = None,
     capped = False
     _event_cache: dict[str, list] = {}
 
-    for key, members in fam_members.items():
+    # Priority-2: complete the DEEPEST/most-liquid families first so the per-tick cap is
+    # spent where legs can actually clear the depth gate (selection-only ordering).
+    ordered_families = sorted(fam_members.items(),
+                              key=lambda kv: -_family_liquidity(kv[1]))
+    for key, members in ordered_families:
         families_examined += 1
         ev = fam_event[key]
         sibs = _sibling_markets(ev)

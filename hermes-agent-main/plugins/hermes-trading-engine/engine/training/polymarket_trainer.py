@@ -856,6 +856,15 @@ class PolymarketPaperTrainer:
         # Capped to bound cost; falls back to candidates when eligible is absent.
         disc_limit = int(getattr(self.cfg, "bregman_discovery_limit", 1000))
         eligible = getattr(scan, "eligible", None) or records
+        # Priority-2 LIQUIDITY-FIRST selection: when the eligible catalog is larger than
+        # the discovery cap, fill the Bregman slice with the DEEPEST books first so the
+        # completion/hydration/certification budget is spent where legs can actually clear
+        # the depth gate (the report showed depth_too_thin/no_depth dominating). This is
+        # SELECTION ONLY — it reorders which markets are scanned, never a depth/spread/
+        # freshness/edge gate, and never drops a market from broader discovery.
+        if (getattr(self.cfg, "bregman_liquidity_first_selection", True)
+                and len(eligible) > disc_limit):
+            eligible = self._liquidity_first_order(eligible)
         self._bregman_records = eligible[:disc_limit]
         opened = 0
         evaluated = 0
@@ -949,6 +958,52 @@ class PolymarketPaperTrainer:
         self._bregman_clob_hydrator = BregmanClobHydrator(
             book_fetcher=fetcher, max_book_age_s=age, max_groups_per_tick=cap)
         return self._bregman_clob_hydrator.enabled
+
+    def _bregman_selection_telemetry(self, records: list) -> dict:
+        """Read-only depth profile of the Bregman discovery slice (Priority-2). Lets the
+        report verify liquidity-first selection raised the scanned slice's depth and
+        thereby reduced depth_too_thin. Never gates anything."""
+        min_depth = float(getattr(self.bregman, "min_depth_usd", 50.0))
+        depths = []
+        for r in (records or []):
+            try:
+                depths.append(float(getattr(r, "top_depth_usd", 0.0) or 0.0))
+            except (TypeError, ValueError):
+                continue
+        n = len(depths)
+        depths_sorted = sorted(depths)
+        median = depths_sorted[n // 2] if n else 0.0
+        deep = sum(1 for d in depths if d >= min_depth)
+        return {
+            "bregman_liquidity_first_selection": bool(
+                getattr(self.cfg, "bregman_liquidity_first_selection", True)),
+            "bregman_selection_slice_size": n,
+            "bregman_selection_median_depth_usd": round(median, 4),
+            "bregman_selection_depth_ge_min_count": deep,
+            "bregman_selection_depth_ge_min_rate": round(deep / n, 4) if n else 0.0,
+            "bregman_selection_min_depth_threshold_usd": round(min_depth, 4),
+        }
+
+    @staticmethod
+    def _liquidity_first_order(records: list) -> list:
+        """Stable-sort records DEEPEST-book-first (top-of-book depth, then liquidity, then
+        24h volume) for Bregman discovery-slice selection. Selection-only — never a gate,
+        never drops a record. Ties keep the prior (candidate-ranked) order."""
+        def _key(rec):
+            try:
+                depth = float(getattr(rec, "top_depth_usd", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                depth = 0.0
+            try:
+                liq = float(getattr(rec, "liquidity_usd", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                liq = 0.0
+            try:
+                vol = float(getattr(rec, "volume_24h_usd", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                vol = 0.0
+            return (-depth, -liq, -vol)
+        return sorted(list(records or []), key=_key)
 
     def _family_event_fetcher(self):
         """Lazily build (and cache) the READ-ONLY Polymarket ``/events`` fetcher used to
@@ -1165,6 +1220,7 @@ class PolymarketPaperTrainer:
             **nx_tel,
             **hydration_tel,
             **family_tel,
+            **self._bregman_selection_telemetry(records),
             **self._bregman_family_completeness_telemetry(groups, certs),
             **self._accelerated_discovery_telemetry(records, groups, certs, all_near),
         }
