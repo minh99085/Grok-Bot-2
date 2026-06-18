@@ -359,6 +359,10 @@ class TrainingConfig:
     grok_advisory_min_interval_seconds: int = 900
     grok_advisory_require_news: bool = True
     grok_advisory_max_calls_per_run: int = 48
+    # Option-2 coverage rotation: a market researched within this cooldown is skipped by
+    # the advisory target selector so Grok advances across the directional shortlist instead
+    # of re-picking (and re-caching) the same top target. 0 disables rotation.
+    grok_advisory_target_cooldown_s: float = 1800.0
     # Option-1 fast proxy labels (closed-loop DISCOVERY feedback). The settlement learner
     # only trains on clean final-settlement labels (days away), so in a short run it never
     # warms. A short-horizon PROXY label (did the mid move toward the model's side within
@@ -1547,6 +1551,7 @@ class TrainingConfig:
             grok_advisory_min_interval_seconds=_envi("GROK_ADVISORY_MIN_INTERVAL_SECONDS", 45),
             grok_advisory_max_calls_per_run=_envi("GROK_ADVISORY_MAX_CALLS_PER_RUN", 2000),
             grok_advisory_require_news=_envb("GROK_ADVISORY_REQUIRE_NEWS", False),
+            grok_advisory_target_cooldown_s=_envf("GROK_ADVISORY_TARGET_COOLDOWN_S", 1800.0),
             # calibration-weighted ensemble (advisory-only); env-tunable.
             probability_ensemble_enabled=_envb("POLYMARKET_PROBABILITY_ENSEMBLE_ENABLED", True),
             ensemble_base_weight_market=_envf("POLYMARKET_ENSEMBLE_W_MARKET", 1.0),

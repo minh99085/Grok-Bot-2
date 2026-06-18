@@ -82,7 +82,8 @@ def select_advisory_target(*, near_misses: Optional[list] = None, news_packet=No
                            voi_targets: Optional[list] = None,
                            min_candidate_score: float = 0.02,
                            min_voi: float = 0.05,
-                           min_liquidity_usd: float = 0.0) -> dict:
+                           min_liquidity_usd: float = 0.0,
+                           exclude_market_ids: Optional[set] = None) -> dict:
     """Choose ONE advisory target. Returns a dict with ``market_ctx`` (or ``None``)
     plus ``target_kind``, ``reason``, the analyzed-counter increments, and advisory
     features. Read-only; never executes. Works even with zero executable trades.
@@ -95,6 +96,20 @@ def select_advisory_target(*, near_misses: Optional[list] = None, news_packet=No
     watch_markets = watch_markets or []
     grok_candidates = grok_candidates or []
     voi_targets = voi_targets or []
+    # COVERAGE ROTATION (Option 2): drop targets already researched recently this run so
+    # the scheduler advances to a FRESH market each call instead of re-picking the same
+    # top target (which returns a cached result and wastes the budget). Read-only.
+    excl = {str(x) for x in (exclude_market_ids or set())}
+    if excl:
+        def _keep(mid) -> bool:
+            return str(mid) not in excl
+        near_misses = [n for n in near_misses
+                       if _keep(n.get("group_key"))
+                       and not (set(map(str, n.get("market_ids", []) or [])) <= excl
+                                and (n.get("market_ids")))]
+        voi_targets = [v for v in voi_targets if _keep(v.get("market_id"))]
+        watch_markets = [w for w in watch_markets if _keep(w.get("market_id"))]
+        grok_candidates = [c for c in grok_candidates if _keep(c.get("group_id"))]
     news_ids = set(_news_market_ids(news_packet))
     # eligible-target census (so "0 scheduled calls" is never implied without reason)
     eligible = (len(near_misses) + len(news_ids) + len(watch_markets)

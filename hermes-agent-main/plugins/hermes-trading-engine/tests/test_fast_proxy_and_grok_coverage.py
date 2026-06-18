@@ -127,3 +127,18 @@ def test_require_news_true_skips_newsless_call():
     r = c.maybe_call(client=_FakeClient(), online=True, has_key=True,
                      news_packet=None, market_ctx={"market_id": "m1"})
     assert r["called"] is False and r["reason"] == "no_news_packet_available"
+
+
+def test_advisory_target_rotates_with_exclusion():
+    from engine.research.advisory_targets import select_advisory_target
+    wm = [{"market_id": "A", "question": "qa", "liquidity_usd": 9000, "mid": 0.5},
+          {"market_id": "B", "question": "qb", "liquidity_usd": 8000, "mid": 0.5}]
+    s1 = select_advisory_target(watch_markets=wm)
+    first = s1["market_ctx"]["market_id"]
+    s2 = select_advisory_target(watch_markets=wm, exclude_market_ids={first})
+    second = s2["market_ctx"]["market_id"]
+    assert first != second                          # rotated to a fresh target
+    # excluding both falls through to no watch target
+    s3 = select_advisory_target(watch_markets=wm, exclude_market_ids={"A", "B"})
+    assert (s3.get("market_ctx") is None
+            or s3["market_ctx"]["market_id"] not in ("A", "B"))

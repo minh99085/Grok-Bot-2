@@ -5435,11 +5435,28 @@ class PolymarketPaperTrainer:
         # choose a high-value advisory target. Priority: a STRONG Grok-flagged Bregman
         # candidate (Grok researches what it itself flagged) > near-miss > news > liquidity.
         gc_ranked, _gc_summ = self._grok_bregman_candidates()
+        # COVERAGE ROTATION (Option 2): exclude markets researched within the cooldown so
+        # Grok advances across the directional shortlist instead of re-picking (and
+        # re-caching) the same top target. Read-only; advisory-only.
+        now_ts = float(now if now is not None else time.time())
+        cooldown = float(getattr(self.cfg, "grok_advisory_target_cooldown_s", 1800.0) or 0.0)
+        researched = getattr(self, "_grok_researched_ts", None)
+        if researched is None:
+            researched = self._grok_researched_ts = {}
+        exclude = {mid for mid, ts in researched.items() if (now_ts - ts) < cooldown} \
+            if cooldown > 0 else set()
         sel = select_advisory_target(
             near_misses=list(getattr(self, "_bregman_near_miss_best", {}).values()),
             news_packet=news_packet, watch_markets=getattr(self, "_watch_sample", []),
-            grok_candidates=gc_ranked, voi_targets=self._voi_targets())
+            grok_candidates=gc_ranked, voi_targets=self._voi_targets(),
+            exclude_market_ids=exclude)
         target_ctx = market_ctx or sel.get("market_ctx")
+        # record the selected target so the next call rotates to a fresh market
+        if target_ctx and target_ctx.get("market_id"):
+            researched[str(target_ctx["market_id"])] = now_ts
+            if len(researched) > 5000:           # bound memory; keep most-recent
+                for k in sorted(researched, key=researched.get)[:1000]:
+                    researched.pop(k, None)
         if client is None:
             caller.last_reason = "no_market_link_available" if not target_ctx else "provider_error"
             return {"called": False, "reason": caller.last_reason}
