@@ -1,8 +1,8 @@
 {
   "schema_version": "1.0",
-  "generated_at": "2026-06-18T02:11:29.910973+00:00",
+  "generated_at": "2026-06-18T03:36:58.853180+00:00",
   "repo_root": "/opt/hermes-agent-main/hermes-agent-main/plugins/hermes-trading-engine",
-  "classification": "PASS_RUN_READY",
+  "classification": "FAIL_NOT_RUN_READY",
   "scorecard": {
     "score": 79.0,
     "max": 100,
@@ -44,8 +44,11 @@
   "baseline_path": null,
   "git": {
     "branch": "main",
-    "status": "## main...origin/main [ahead 66]",
+    "status": "## main...origin/main [ahead 69]",
     "recent_log": [
+      "3e30572 2026-06-18 Cursor Agent feat(P1): targeted event-family completion \u2014 assemble + hydrate near-complete MECE families",
+      "dc83177 2026-06-18 Cursor Agent report: refresh vps_full_reports/latest with 2h matured run (6B/6C/6D live; PASS_RUN_READY)",
+      "4b01498 2026-06-18 Cursor Agent vps_full_reports: refresh latest (auto-deploy; source_commit a84bac1bb004)",
       "a84bac1 2026-06-18 Cursor Agent feat(6D): size/depth-aware cost-model refinement for paper-fill gating (Bregman cert unchanged)",
       "7c86d5d 2026-06-17 Cursor Agent feat(6C): out-of-sample expectancy promotion gate (overfit guard; never enables live)",
       "7559a7f 2026-06-17 Cursor Agent vps_full_reports: refresh latest (auto-deploy; source_commit b87241d9b07a)",
@@ -62,23 +65,23 @@
       "cf7b061 2026-06-17 Cursor Agent vps_full_reports: refresh latest (auto-deploy; source_commit 85666d0563b9)",
       "85666d0 2026-06-17 Cursor Agent feat(grok #2): structured research signal \u2014 per-call conviction + news freshness decay",
       "ff143c9 2026-06-17 Cursor Agent vps_full_reports: refresh latest (auto-deploy; source_commit 86bc739ad1a3)",
-      "86bc739 2026-06-17 Cursor Agent feat(grok): calibration-weighted Grok trust (advisory-only) for sharper edge",
-      "eb781f0 2026-06-17 Cursor Agent vps_full_reports: refresh latest (auto-deploy; source_commit c5021a11e00c)",
-      "c5021a1 2026-06-17 Cursor Agent fix(compose): hard-pin $1-$10 paper sizing so a stale VPS .env cannot override it",
-      "4477c90 2026-06-17 Cursor Agent vps_full_reports: refresh latest (auto-deploy; source_commit 5b456fc1d052)"
+      "86bc739 2026-06-17 Cursor Agent feat(grok): calibration-weighted Grok trust (advisory-only) for sharper edge"
     ],
     "changed_files": [
+      ".gitignore",
       "hermes-agent-main/plugins/hermes-trading-engine/engine/execution/slippage.py",
-      "hermes-agent-main/plugins/hermes-trading-engine/engine/training/bregman_grouping.py",
+      "hermes-agent-main/plugins/hermes-trading-engine/engine/training/clob_hydration.py",
       "hermes-agent-main/plugins/hermes-trading-engine/engine/training/config.py",
+      "hermes-agent-main/plugins/hermes-trading-engine/engine/training/family_completion.py",
       "hermes-agent-main/plugins/hermes-trading-engine/engine/training/live_readiness.py",
       "hermes-agent-main/plugins/hermes-trading-engine/engine/training/paper_execution.py",
       "hermes-agent-main/plugins/hermes-trading-engine/engine/training/polymarket_trainer.py",
-      "hermes-agent-main/plugins/hermes-trading-engine/tests/test_bregman_negrisk_completeness.py",
       "hermes-agent-main/plugins/hermes-trading-engine/tests/test_cost_model_refinement.py",
+      "hermes-agent-main/plugins/hermes-trading-engine/tests/test_family_completion.py",
       "hermes-agent-main/plugins/hermes-trading-engine/tests/test_oos_expectancy_promotion_gate.py",
       "vps_full_reports/latest/MANIFEST.txt",
       "vps_full_reports/latest/algorithmic_edge_audit.json",
+      "vps_full_reports/latest/docker_compose_ps.txt",
       "vps_full_reports/latest/generate_full_report.txt",
       "vps_full_reports/latest/git_commit.txt",
       "vps_full_reports/latest/latest_zip_listing.txt",
@@ -91,6 +94,7 @@
       "vps_full_reports/latest/runtime_metrics/bregman_funnel.json",
       "vps_full_reports/latest/runtime_metrics/bregman_source_reconciliation.json",
       "vps_full_reports/latest/runtime_metrics/closed_loop_learning.json",
+      "vps_full_reports/latest/runtime_metrics/correlation_risk.json",
       "vps_full_reports/latest/runtime_metrics/feeds_health.json",
       "vps_full_reports/latest/runtime_metrics/grok_news_evidence.json",
       "vps_full_reports/latest/runtime_metrics/inspection_summary.json",
@@ -256,8 +260,8 @@
         "mode": "paper",
         "autotrade": true,
         "daily_loss_breached": false,
-        "now_utc": "02:11:24",
-        "round": 9050,
+        "now_utc": "03:36:50",
+        "round": 9068,
         "portfolio": {
           "equity": 500.0,
           "starting_balance": 500.0,
@@ -271,290 +275,72 @@
           "sharpe": 0.0
         },
         "latency_ms": 0.0,
-        "uptime_seconds": 7413,
+        "uptime_seconds": 0,
         "pulse": {
-          "round": 9050,
+          "round": 9068,
           "symbol": "BTCUSDT",
-          "start_price": 64521.99,
-          "current_price": 64490.0,
-          "start_ts": 1781748509.5560775,
-          "end_ts": 1781748809.5560775,
-          "crowd_bias": 0.06571140331594348,
-          "market_up": 0.467,
-          "up_price": 0.49,
-          "down_price": 0.55,
-          "p_model": 0.534,
-          "p_cal": 0.536,
-          "p_feat": 0.337,
-          "p_feat_raw": 0.337443270641978,
+          "start_price": 64247.43,
+          "current_price": 64247.43,
+          "start_ts": 1781753809.7241218,
+          "end_ts": 1781754109.7241218,
+          "crowd_bias": -0.04608247684545025,
+          "market_up": 0.454,
+          "up_price": 0.47,
+          "down_price": 0.57,
+          "p_model": 0.504,
+          "p_cal": 0.532,
+          "p_feat": 0.581,
+          "p_feat_raw": 0.5805021284231368,
           "feats": [
-            -0.7502420135528376,
-            -0.17570578342979842,
-            -0.0054153395147485215,
-            2.195685176831524,
-            -0.054455688225142816,
-            0.0999
+            -1.0,
+            -0.2303709515153185,
+            0.6606034753502829,
+            -0.9710977209677417,
+            -0.5263492540257886,
+            0.0068
           ],
-          "ev_up": 0.094,
-          "ev_down": -0.157,
+          "ev_up": 0.132,
+          "ev_down": -0.179,
           "edge": 0.0,
           "kelly": 0.0,
           "stake_frac": 0.0,
           "bet": null,
           "samples": [
-            64521.99,
-            64521.99,
-            64521.99,
-            64527.51,
-            64527.51,
-            64523.12,
-            64523.12,
-            64526.18,
-            64526.18,
-            64526.18,
-            64548.21,
-            64548.21,
-            64533.79,
-            64533.79,
-            64533.79,
-            64535.89,
-            64523.86,
-            64532.0,
-            64532.0,
-            64532.0,
-            64526.17,
-            64523.54,
-            64526.17,
-            64523.54,
-            64526.17,
-            64526.17,
-            64526.17,
-            64526.17,
-            64526.17,
-            64526.17,
-            64526.17,
-            64526.17,
-            64518.85,
-            64518.85,
-            64518.85,
-            64520.42,
-            64518.85,
-            64518.85,
-            64518.85,
-            64518.85,
-            64506.78,
-            64518.85,
-            64502.78,
-            64501.82,
-            64501.82,
-            64490.0,
-            64490.0,
-            64490.0,
-            64490.0,
-            64490.0,
-            64490.0,
-            64490.0,
-            64490.0
+            64247.43,
+            64247.43,
+            64247.43,
+            64247.43
           ],
-          "history": [
-            {
-              "round": 9026,
-              "start": 64562.56,
-              "close": 64555.67,
-              "result": "DOWN",
-              "outcome": null
-            },
-            {
-              "round": 9027,
-              "start": 64555.67,
-              "close": 64587.68,
-              "result": "UP",
-              "outcome": null
-            },
-            {
-              "round": 9028,
-              "start": 64587.68,
-              "close": 64629.04,
-              "result": "UP",
-              "outcome": null
-            },
-            {
-              "round": 9029,
-              "start": 64629.04,
-              "close": 64630.49,
-              "result": "UP",
-              "outcome": null
-            },
-            {
-              "round": 9030,
-              "start": 64630.49,
-              "close": 64616.56,
-              "result": "DOWN",
-              "outcome": null
-            },
-            {
-              "round": 9031,
-              "start": 64616.56,
-              "close": 64488.86,
-              "result": "DOWN",
-              "outcome": null
-            },
-            {
-              "round": 9032,
-              "start": 64488.86,
-              "close": 64488.06,
-              "result": "DOWN",
-              "outcome": null
-            },
-            {
-              "round": 9033,
-              "start": 64488.06,
-              "close": 64551.43,
-              "result": "UP",
-              "outcome": null
-            },
-            {
-              "round": 9034,
-              "start": 64551.43,
-              "close": 64466.0,
-              "result": "DOWN",
-              "outcome": null
-            },
-            {
-              "round": 9035,
-              "start": 64466.0,
-              "close": 64415.68,
-              "result": "DOWN",
-              "outcome": null
-            },
-            {
-              "round": 9036,
-              "start": 64415.68,
-              "close": 64542.07,
-              "result": "UP",
-              "outcome": null
-            },
-            {
-              "round": 9037,
-              "start": 64542.07,
-              "close": 64617.43,
-              "result": "UP",
-              "outcome": null
-            },
-            {
-              "round": 9038,
-              "start": 64617.43,
-              "close": 64722.46,
-              "result": "UP",
-              "outcome": null
-            },
-            {
-              "round": 9039,
-              "start": 64722.46,
-              "close": 64652.34,
-              "result": "DOWN",
-              "outcome": null
-            },
-            {
-              "round": 9040,
-              "start": 64652.34,
-              "close": 64636.79,
-              "result": "DOWN",
-              "outcome": null
-            },
-            {
-              "round": 9041,
-              "start": 64636.79,
-              "close": 64616.04,
-              "result": "DOWN",
-              "outcome": null
-            },
-            {
-              "round": 9042,
-              "start": 64616.04,
-              "close": 64636.64,
-              "result": "UP",
-              "outcome": null
-            },
-            {
-              "round": 9043,
-              "start": 64636.64,
-              "close": 64562.18,
-              "result": "DOWN",
-              "outcome": null
-            },
-            {
-              "round": 9044,
-              "start": 64562.18,
-              "close": 64561.96,
-              "result": "DOWN",
-              "outcome": null
-            },
-            {
-              "round": 9045,
-              "start": 64561.96,
-              "close": 64516.04,
-              "result": "DOWN",
-              "outcome": null
-            },
-            {
-              "round": 9046,
-              "start": 64516.04,
-              "close": 64420.14,
-              "result": "DOWN",
-              "outcome": null
-            },
-            {
-              "round": 9047,
-              "start": 64420.14,
-              "close": 64492.32,
-              "result": "UP",
-              "outcome": null
-            },
-            {
-              "round": 9048,
-              "start": 64492.32,
-              "close": 64548.0,
-              "result": "UP",
-              "outcome": null
-            },
-            {
-              "round": 9049,
-              "start": 64548.0,
-              "close": 64521.99,
-              "result": "DOWN",
-              "outcome": null
-            }
-          ],
-          "seconds_left": 124,
-          "delta": -31.99
+          "history": [],
+          "seconds_left": 299,
+          "delta": 0.0
         },
         "regime": {
           "matrix": [
             [
-              0.3,
-              0.2,
-              0.5
+              0.35,
+              0.19,
+              0.46
             ],
             [
-              0.3,
-              0.3,
+              0.28,
+              0.31,
               0.41
             ],
             [
-              0.27,
-              0.25,
+              0.23,
+              0.29,
               0.48
             ]
           ],
           "stationary": [
-            0.29,
-            0.25,
+            0.28,
+            0.27,
             0.46
           ],
-          "current_state": "BEAR",
-          "p_up": 0.5,
-          "regime_strength": 0.3,
+          "current_state": "SIDE",
+          "p_up": 0.469,
+          "regime_strength": 0.48,
           "labels": [
             "BULL",
             "BEAR",
@@ -562,393 +348,393 @@
           ]
         },
         "montecarlo": {
-          "spot": 64541.52,
+          "spot": 64289.94,
           "horizon_steps": 60,
           "paths": 500,
-          "p_up": 0.568,
-          "expected": 64594.51,
+          "p_up": 0.54,
+          "expected": 64315.91,
           "quantiles": {
             "p05": [
-              64484.68,
-              64466.16,
-              64444.93,
-              64442.12,
-              64422.03,
-              64408.05,
-              64393.38,
-              64389.41,
-              64401.02,
-              64386.79,
-              64370.85,
-              64380.56,
-              64372.33,
-              64361.69,
-              64351.54,
-              64348.03,
-              64332.22,
-              64318.81,
-              64318.12,
-              64316.35,
-              64297.81,
-              64307.6,
-              64287.6,
-              64285.15,
-              64291.72,
-              64278.93,
-              64281.41,
-              64270.41,
-              64268.05,
-              64270.67,
-              64267.89,
-              64260.37,
-              64254.5,
-              64259.6,
-              64263.56,
-              64251.66,
-              64253.24,
-              64241.33,
-              64234.22,
-              64232.25,
-              64227.38,
-              64220.93,
-              64218.07,
-              64235.62,
-              64204.47,
-              64211.88,
-              64215.19,
-              64208.33,
-              64204.5,
-              64202.58,
-              64197.67,
-              64196.3,
-              64192.4,
-              64196.59,
-              64188.13,
-              64188.87,
-              64199.56,
-              64190.19,
-              64177.32,
-              64171.24
+              64235.03,
+              64213.74,
+              64200.45,
+              64187.87,
+              64186.2,
+              64167.05,
+              64156.56,
+              64160.98,
+              64148.84,
+              64135.15,
+              64120.71,
+              64113.89,
+              64108.98,
+              64105.13,
+              64100.43,
+              64079.07,
+              64070.34,
+              64054.51,
+              64042.5,
+              64053.34,
+              64052.83,
+              64048.33,
+              64033.23,
+              64036.28,
+              64045.46,
+              64034.97,
+              64036.93,
+              64032.35,
+              64023.14,
+              64016.78,
+              64007.5,
+              64010.62,
+              64022.23,
+              64024.09,
+              64013.67,
+              64010.05,
+              64000.14,
+              63988.37,
+              63994.26,
+              63987.26,
+              63979.97,
+              63972.0,
+              63971.78,
+              63967.39,
+              63950.02,
+              63954.87,
+              63955.54,
+              63954.23,
+              63953.77,
+              63940.43,
+              63951.94,
+              63950.9,
+              63948.5,
+              63938.07,
+              63938.28,
+              63955.41,
+              63948.39,
+              63946.05,
+              63957.84,
+              63943.05
             ],
             "p25": [
-              64522.67,
-              64516.45,
-              64509.95,
-              64506.64,
-              64502.35,
-              64501.36,
-              64498.18,
-              64490.13,
-              64489.54,
-              64487.21,
-              64486.97,
-              64480.92,
-              64478.7,
-              64471.5,
-              64467.85,
-              64465.34,
-              64464.41,
-              64468.0,
-              64464.46,
-              64464.74,
-              64468.88,
-              64463.97,
-              64462.44,
-              64456.23,
-              64460.66,
-              64458.43,
-              64455.29,
-              64460.69,
-              64454.49,
-              64456.06,
-              64447.73,
-              64442.03,
-              64435.2,
-              64430.58,
-              64430.07,
-              64421.37,
-              64418.67,
-              64425.69,
-              64429.82,
-              64423.13,
-              64422.45,
-              64424.15,
-              64417.45,
-              64412.26,
-              64416.0,
-              64418.48,
-              64412.05,
-              64408.71,
-              64403.07,
-              64406.2,
-              64412.35,
-              64409.09,
-              64406.84,
-              64404.72,
-              64408.38,
-              64411.86,
-              64414.24,
-              64415.06,
-              64408.83,
-              64410.98
+              64265.37,
+              64259.57,
+              64252.86,
+              64251.6,
+              64245.63,
+              64239.94,
+              64235.92,
+              64228.24,
+              64229.71,
+              64226.25,
+              64219.56,
+              64212.97,
+              64219.42,
+              64221.91,
+              64215.41,
+              64218.56,
+              64215.7,
+              64220.11,
+              64212.01,
+              64219.52,
+              64215.16,
+              64202.78,
+              64194.33,
+              64188.03,
+              64195.26,
+              64196.55,
+              64195.61,
+              64196.7,
+              64189.14,
+              64186.95,
+              64186.0,
+              64187.92,
+              64186.01,
+              64190.9,
+              64184.57,
+              64177.13,
+              64185.04,
+              64175.12,
+              64174.31,
+              64180.63,
+              64188.97,
+              64179.01,
+              64177.99,
+              64180.46,
+              64177.37,
+              64185.15,
+              64186.9,
+              64177.6,
+              64171.2,
+              64160.84,
+              64157.99,
+              64155.35,
+              64152.43,
+              64154.81,
+              64151.27,
+              64158.89,
+              64152.82,
+              64150.75,
+              64157.06,
+              64159.44
             ],
             "p50": [
-              64543.19,
-              64545.74,
-              64547.14,
-              64546.64,
-              64552.0,
-              64550.75,
-              64550.91,
-              64550.72,
-              64553.55,
-              64557.96,
-              64559.33,
-              64565.56,
-              64563.23,
-              64560.82,
-              64564.84,
-              64562.2,
-              64559.36,
-              64561.74,
-              64565.86,
-              64572.88,
-              64564.33,
-              64567.51,
-              64567.38,
-              64573.21,
-              64571.73,
-              64566.45,
-              64574.49,
-              64563.72,
-              64568.21,
-              64566.49,
-              64571.36,
-              64561.31,
-              64564.19,
-              64557.57,
-              64560.16,
-              64560.77,
-              64571.97,
-              64574.13,
-              64573.92,
-              64571.05,
-              64568.41,
-              64571.21,
-              64568.92,
-              64563.31,
-              64567.68,
-              64571.22,
-              64571.63,
-              64583.7,
-              64578.83,
-              64579.08,
-              64574.48,
-              64578.17,
-              64574.28,
-              64586.23,
-              64576.47,
-              64577.56,
-              64574.67,
-              64588.04,
-              64588.07,
-              64591.2
+              64290.79,
+              64291.28,
+              64292.03,
+              64291.32,
+              64288.99,
+              64290.34,
+              64288.59,
+              64290.1,
+              64287.01,
+              64292.89,
+              64295.36,
+              64298.87,
+              64300.08,
+              64301.63,
+              64305.84,
+              64303.53,
+              64305.14,
+              64296.0,
+              64308.71,
+              64303.32,
+              64308.59,
+              64308.25,
+              64312.03,
+              64308.09,
+              64309.05,
+              64312.72,
+              64310.04,
+              64305.97,
+              64315.9,
+              64310.15,
+              64307.29,
+              64308.35,
+              64308.84,
+              64306.89,
+              64309.79,
+              64313.5,
+              64312.26,
+              64308.98,
+              64309.44,
+              64310.91,
+              64313.32,
+              64317.2,
+              64315.51,
+              64318.78,
+              64315.65,
+              64310.48,
+              64323.21,
+              64322.48,
+              64316.45,
+              64316.35,
+              64315.72,
+              64315.34,
+              64318.26,
+              64322.6,
+              64309.47,
+              64312.69,
+              64308.54,
+              64317.59,
+              64316.24,
+              64315.21
             ],
             "p75": [
-              64568.83,
-              64577.24,
-              64588.64,
-              64593.06,
-              64601.92,
-              64603.39,
-              64606.32,
-              64615.82,
-              64616.78,
-              64626.14,
-              64625.41,
-              64630.5,
-              64629.6,
-              64633.88,
-              64632.02,
-              64640.46,
-              64647.2,
-              64655.65,
-              64659.38,
-              64667.65,
-              64679.3,
-              64682.02,
-              64683.91,
-              64687.83,
-              64682.81,
-              64688.88,
-              64693.96,
-              64697.54,
-              64700.26,
-              64690.65,
-              64700.73,
-              64701.85,
-              64710.64,
-              64712.98,
-              64721.94,
-              64726.1,
-              64720.93,
-              64731.02,
-              64723.78,
-              64733.68,
-              64738.35,
-              64746.96,
-              64745.83,
-              64750.84,
-              64747.47,
-              64743.88,
-              64751.86,
-              64759.94,
-              64753.19,
-              64757.3,
-              64766.95,
-              64759.18,
-              64774.03,
-              64773.0,
-              64775.86,
-              64768.79,
-              64774.48,
-              64776.84,
-              64780.12,
-              64772.71
+              64309.32,
+              64319.6,
+              64324.61,
+              64330.28,
+              64335.63,
+              64339.43,
+              64347.55,
+              64351.24,
+              64357.82,
+              64361.45,
+              64363.48,
+              64364.06,
+              64371.85,
+              64372.98,
+              64377.12,
+              64389.11,
+              64393.79,
+              64401.24,
+              64394.2,
+              64401.46,
+              64398.95,
+              64409.69,
+              64397.57,
+              64403.89,
+              64407.07,
+              64410.37,
+              64414.51,
+              64412.71,
+              64411.36,
+              64424.55,
+              64420.21,
+              64417.65,
+              64424.8,
+              64426.82,
+              64424.35,
+              64444.76,
+              64433.64,
+              64437.29,
+              64436.62,
+              64432.43,
+              64434.21,
+              64452.11,
+              64444.0,
+              64446.83,
+              64454.89,
+              64445.77,
+              64445.15,
+              64452.15,
+              64451.68,
+              64458.81,
+              64460.22,
+              64469.65,
+              64468.05,
+              64479.62,
+              64467.32,
+              64478.59,
+              64479.09,
+              64477.68,
+              64471.53,
+              64487.19
             ],
             "p95": [
-              64601.5,
-              64621.25,
-              64636.44,
-              64657.73,
-              64675.45,
-              64685.13,
-              64692.7,
-              64705.42,
-              64713.63,
-              64718.27,
-              64736.73,
-              64738.91,
-              64735.38,
-              64748.29,
-              64757.81,
-              64771.87,
-              64774.73,
-              64780.76,
-              64792.36,
-              64795.76,
-              64807.18,
-              64804.35,
-              64824.53,
-              64822.2,
-              64839.15,
-              64842.21,
-              64835.09,
-              64838.42,
-              64859.07,
-              64865.35,
-              64861.61,
-              64875.83,
-              64887.47,
-              64915.52,
-              64911.13,
-              64921.13,
-              64923.89,
-              64918.53,
-              64912.28,
-              64927.86,
-              64942.34,
-              64933.72,
-              64949.29,
-              64950.02,
-              64955.76,
-              64957.43,
-              64961.16,
-              64977.08,
-              64968.55,
-              64963.12,
-              64960.34,
-              64968.12,
-              64981.79,
-              64979.92,
-              64978.64,
-              65005.66,
-              65010.23,
-              64997.41,
-              64998.27,
-              64999.17
+              64337.98,
+              64361.27,
+              64377.25,
+              64394.28,
+              64401.37,
+              64416.18,
+              64431.94,
+              64430.79,
+              64431.91,
+              64458.0,
+              64460.92,
+              64463.44,
+              64483.53,
+              64485.0,
+              64489.27,
+              64489.63,
+              64509.91,
+              64516.32,
+              64512.07,
+              64521.89,
+              64537.57,
+              64537.85,
+              64536.95,
+              64545.68,
+              64549.14,
+              64546.54,
+              64547.21,
+              64555.3,
+              64567.09,
+              64577.59,
+              64573.64,
+              64578.09,
+              64573.07,
+              64583.63,
+              64584.85,
+              64592.99,
+              64606.77,
+              64607.17,
+              64619.77,
+              64616.29,
+              64620.45,
+              64622.93,
+              64634.97,
+              64644.57,
+              64660.42,
+              64657.5,
+              64661.11,
+              64656.56,
+              64667.93,
+              64672.43,
+              64678.41,
+              64680.31,
+              64679.59,
+              64705.21,
+              64693.53,
+              64691.86,
+              64695.02,
+              64687.58,
+              64675.55,
+              64690.86
             ]
           },
           "terminal_hist": {
             "bins": [
-              63853.7,
-              63920.9,
-              63988.0,
-              64055.1,
-              64122.2,
-              64189.4,
-              64256.5,
-              64323.6,
-              64390.8,
-              64457.9,
-              64525.0,
-              64592.2,
-              64659.3,
-              64726.4,
-              64793.6,
-              64860.7,
-              64927.8,
-              64994.9,
-              65062.1,
-              65129.2,
-              65196.3,
-              65263.5,
-              65330.6,
-              65397.7
+              63656.6,
+              63710.7,
+              63764.7,
+              63818.8,
+              63872.8,
+              63926.8,
+              63980.9,
+              64034.9,
+              64089.0,
+              64143.0,
+              64197.0,
+              64251.1,
+              64305.1,
+              64359.2,
+              64413.2,
+              64467.2,
+              64521.3,
+              64575.3,
+              64629.4,
+              64683.4,
+              64737.4,
+              64791.5,
+              64845.5,
+              64899.5
             ],
             "counts": [
               1,
               1,
               3,
-              5,
-              11,
-              13,
-              24,
-              31,
-              47,
-              49,
-              41,
-              53,
-              45,
-              41,
-              36,
-              28,
-              32,
-              18,
               6,
-              7,
-              5,
-              1,
-              1,
-              1
+              2,
+              17,
+              24,
+              25,
+              26,
+              27,
+              36,
+              44,
+              50,
+              54,
+              37,
+              24,
+              36,
+              38,
+              14,
+              13,
+              9,
+              4,
+              6,
+              3
             ]
           },
           "converged": true
         },
         "patterns": {
           "bos": {
-            "signal": true,
-            "dir": "up"
-          },
-          "choch": {
             "signal": false,
             "dir": "flat"
+          },
+          "choch": {
+            "signal": true,
+            "dir": "down"
           },
           "liquidity_sweep": {
             "signal": false,
             "dir": "flat"
           },
-          "bias": "bullish"
+          "bias": "bearish"
         },
         "brain": {
           "enabled": true,
@@ -959,32 +745,32 @@
           "default_model": "grok-4.3",
           "model": "grok-4.3",
           "stance": "cautious",
-          "action": "WAIT",
-          "direction": "HOLD",
-          "confidence": 0.65,
-          "urgency": "low",
-          "rationale": "Mixed signals, weak bear regime, ranging market, no clear edge",
-          "fresh": true,
-          "age_seconds": 6.2,
-          "regime": "range",
+          "action": null,
+          "direction": null,
+          "confidence": null,
+          "urgency": null,
+          "rationale": null,
+          "fresh": false,
+          "age_seconds": null,
+          "regime": null,
           "memory_lessons": 0,
           "last_error": null
         },
         "calibration": {
-          "samples": 2002,
+          "samples": 2019,
           "brier_raw": 0.2486,
           "brier_cal": 0.2471,
-          "ece_raw": 0.0176,
+          "ece_raw": 0.0174,
           "ece_cal": 0.0035,
           "calibrated": true
         },
         "signal": {
-          "obi": 0.0999,
-          "feat_brier": 0.2244,
-          "base_brier": 0.2589,
+          "obi": 0.0068,
+          "feat_brier": null,
+          "base_brier": null,
           "active": false,
           "ready": true,
-          "samples": 24
+          "samples": 0
         },
         "readiness": {
           "score": 40,
@@ -1067,12 +853,12 @@
             "last_message_age_ms": null,
             "messages_received": 0,
             "parse_errors": 0,
-            "reconnect_count": 1,
+            "reconnect_count": 0,
             "subscribed_asset_count": 0,
             "tracked_asset_count": 0,
             "stale_asset_count": 0,
             "resolved_market_count": 0,
-            "last_error": "ws: no close frame received or sent",
+            "last_error": null,
             "last_warning": null
           },
           "assets": [],
@@ -1092,7 +878,7 @@
           "reconciliation": {
             "severity": "info",
             "warnings": [],
-            "ts_ms": 1781748669755,
+            "ts_ms": 1781753810111,
             "position_count": 0
           }
         },
@@ -1140,1807 +926,1807 @@
           "notification": null
         },
         "prices": {
-          "BTCUSDT": 64490.0,
-          "ETHUSDT": 1754.2,
-          "SOLUSDT": 72.24
+          "BTCUSDT": 64247.43,
+          "ETHUSDT": 1743.9,
+          "SOLUSDT": 71.67
         },
         "equity_curve": [
           {
-            "ts": 1781747644.7,
+            "ts": 1781752763.6,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747649.6,
+            "ts": 1781752768.1,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747652.7,
+            "ts": 1781752772.1,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747655.7,
+            "ts": 1781752775.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747660.3,
+            "ts": 1781752778.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747663.5,
+            "ts": 1781752781.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747666.6,
+            "ts": 1781752784.6,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747669.6,
+            "ts": 1781752788.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747672.6,
+            "ts": 1781752791.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747676.2,
+            "ts": 1781752794.2,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747679.1,
+            "ts": 1781752797.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747682.3,
+            "ts": 1781752801.8,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747687.7,
+            "ts": 1781752805.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747690.7,
+            "ts": 1781752808.2,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747693.8,
+            "ts": 1781752812.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747696.9,
+            "ts": 1781752816.6,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747700.1,
+            "ts": 1781752820.8,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747703.1,
+            "ts": 1781752824.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747706.1,
+            "ts": 1781752827.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747709.2,
+            "ts": 1781752830.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747712.3,
+            "ts": 1781752834.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747715.3,
+            "ts": 1781752837.2,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747718.9,
+            "ts": 1781752840.8,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747722.4,
+            "ts": 1781752845.4,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747726.9,
+            "ts": 1781752848.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747730.0,
+            "ts": 1781752851.6,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747733.2,
+            "ts": 1781752855.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747737.1,
+            "ts": 1781752860.1,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747740.3,
+            "ts": 1781752863.2,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747743.4,
+            "ts": 1781752866.4,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747746.5,
+            "ts": 1781752869.6,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747749.7,
+            "ts": 1781752872.7,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747752.9,
+            "ts": 1781752875.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747756.2,
+            "ts": 1781752879.6,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747759.3,
+            "ts": 1781752882.7,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747763.9,
+            "ts": 1781752885.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747768.7,
+            "ts": 1781752889.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747771.8,
+            "ts": 1781752892.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747775.1,
+            "ts": 1781752895.7,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747778.1,
+            "ts": 1781752899.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747781.3,
+            "ts": 1781752904.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747784.3,
+            "ts": 1781752907.2,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747788.3,
+            "ts": 1781752910.4,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747791.3,
+            "ts": 1781752913.8,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747794.4,
+            "ts": 1781752916.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747797.4,
+            "ts": 1781752920.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747801.7,
+            "ts": 1781752923.4,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747808.7,
+            "ts": 1781752927.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747812.0,
+            "ts": 1781752930.2,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747814.9,
+            "ts": 1781752933.2,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747818.0,
+            "ts": 1781752936.4,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747821.1,
+            "ts": 1781752939.6,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747824.2,
+            "ts": 1781752943.2,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747827.6,
+            "ts": 1781752946.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747830.7,
+            "ts": 1781752949.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747833.6,
+            "ts": 1781752953.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747836.7,
+            "ts": 1781752959.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747841.3,
+            "ts": 1781752962.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747844.9,
+            "ts": 1781752965.2,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747848.0,
+            "ts": 1781752968.2,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747851.4,
+            "ts": 1781752971.4,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747854.5,
+            "ts": 1781752974.7,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747857.8,
+            "ts": 1781752977.8,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747860.8,
+            "ts": 1781752980.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747864.8,
+            "ts": 1781752984.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747868.0,
+            "ts": 1781752987.8,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747871.1,
+            "ts": 1781752990.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747874.3,
+            "ts": 1781752994.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747878.0,
+            "ts": 1781752997.1,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747881.2,
+            "ts": 1781753001.8,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747884.4,
+            "ts": 1781753005.4,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747889.3,
+            "ts": 1781753008.8,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747892.4,
+            "ts": 1781753012.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747895.5,
+            "ts": 1781753015.2,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747899.1,
+            "ts": 1781753018.4,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747902.1,
+            "ts": 1781753022.1,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747905.4,
+            "ts": 1781753025.2,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747908.5,
+            "ts": 1781753028.4,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747911.6,
+            "ts": 1781753031.6,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747914.9,
+            "ts": 1781753034.7,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747926.1,
+            "ts": 1781753038.2,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747933.8,
+            "ts": 1781753041.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747937.0,
+            "ts": 1781753047.6,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747940.1,
+            "ts": 1781753051.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747943.2,
+            "ts": 1781753054.4,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747946.8,
+            "ts": 1781753057.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747949.8,
+            "ts": 1781753060.6,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747953.1,
+            "ts": 1781753064.1,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747956.2,
+            "ts": 1781753067.4,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747959.9,
+            "ts": 1781753070.6,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747964.8,
+            "ts": 1781753074.2,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747968.0,
+            "ts": 1781753077.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747971.1,
+            "ts": 1781753080.6,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747974.4,
+            "ts": 1781753083.8,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747977.3,
+            "ts": 1781753087.2,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747980.4,
+            "ts": 1781753093.1,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747983.4,
+            "ts": 1781753096.2,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747986.5,
+            "ts": 1781753099.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747989.6,
+            "ts": 1781753102.7,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747992.5,
+            "ts": 1781753105.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747995.9,
+            "ts": 1781753108.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781747999.3,
+            "ts": 1781753112.1,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748004.0,
+            "ts": 1781753115.6,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748007.2,
+            "ts": 1781753118.7,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748010.5,
+            "ts": 1781753122.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748013.7,
+            "ts": 1781753125.7,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748017.3,
+            "ts": 1781753128.8,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748020.4,
+            "ts": 1781753133.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748023.6,
+            "ts": 1781753137.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748026.7,
+            "ts": 1781753140.2,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748029.8,
+            "ts": 1781753143.4,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748033.3,
+            "ts": 1781753146.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748036.5,
+            "ts": 1781753149.8,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748041.5,
+            "ts": 1781753153.1,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748044.5,
+            "ts": 1781753156.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748047.7,
+            "ts": 1781753159.4,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748050.9,
+            "ts": 1781753162.7,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748054.1,
+            "ts": 1781753166.6,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748057.3,
+            "ts": 1781753169.7,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748060.4,
+            "ts": 1781753172.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748063.7,
+            "ts": 1781753177.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748067.2,
+            "ts": 1781753181.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748070.4,
+            "ts": 1781753184.6,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748073.5,
+            "ts": 1781753187.7,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748076.8,
+            "ts": 1781753190.8,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748081.8,
+            "ts": 1781753194.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748085.0,
+            "ts": 1781753197.2,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748088.7,
+            "ts": 1781753200.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748091.9,
+            "ts": 1781753203.8,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748095.1,
+            "ts": 1781753206.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748098.4,
+            "ts": 1781753210.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748102.4,
+            "ts": 1781753213.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748105.6,
+            "ts": 1781753216.6,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748108.7,
+            "ts": 1781753221.7,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748111.9,
+            "ts": 1781753225.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748115.1,
+            "ts": 1781753228.1,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748121.0,
+            "ts": 1781753231.8,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748124.0,
+            "ts": 1781753235.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748127.1,
+            "ts": 1781753238.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748130.2,
+            "ts": 1781753242.1,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748133.8,
+            "ts": 1781753245.4,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748136.8,
+            "ts": 1781753248.6,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748139.9,
+            "ts": 1781753253.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748142.9,
+            "ts": 1781753256.6,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748146.2,
+            "ts": 1781753259.8,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748149.2,
+            "ts": 1781753263.6,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748152.4,
+            "ts": 1781753266.8,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748155.6,
+            "ts": 1781753271.4,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748160.5,
+            "ts": 1781753275.1,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748163.7,
+            "ts": 1781753278.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748166.9,
+            "ts": 1781753281.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748170.6,
+            "ts": 1781753285.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748173.7,
+            "ts": 1781753288.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748177.0,
+            "ts": 1781753291.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748180.2,
+            "ts": 1781753295.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748183.4,
+            "ts": 1781753298.1,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748186.7,
+            "ts": 1781753301.2,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748190.0,
+            "ts": 1781753304.7,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748193.4,
+            "ts": 1781753307.8,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748196.6,
+            "ts": 1781753310.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748199.9,
+            "ts": 1781753315.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748204.8,
+            "ts": 1781753319.2,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748208.2,
+            "ts": 1781753322.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748211.7,
+            "ts": 1781753326.1,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748214.9,
+            "ts": 1781753329.2,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748218.0,
+            "ts": 1781753332.4,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748221.3,
+            "ts": 1781753335.4,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748224.9,
+            "ts": 1781753338.8,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748227.9,
+            "ts": 1781753341.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748231.1,
+            "ts": 1781753345.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748235.1,
+            "ts": 1781753348.2,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748238.3,
+            "ts": 1781753351.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748242.1,
+            "ts": 1781753354.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748246.3,
+            "ts": 1781753360.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748249.5,
+            "ts": 1781753363.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748252.7,
+            "ts": 1781753366.7,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748255.8,
+            "ts": 1781753370.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748258.9,
+            "ts": 1781753373.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748262.0,
+            "ts": 1781753376.4,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748265.8,
+            "ts": 1781753379.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748268.9,
+            "ts": 1781753383.1,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748272.0,
+            "ts": 1781753386.1,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748275.7,
+            "ts": 1781753389.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748278.8,
+            "ts": 1781753392.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748283.9,
+            "ts": 1781753396.2,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748286.9,
+            "ts": 1781753400.7,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748290.0,
+            "ts": 1781753404.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748293.1,
+            "ts": 1781753407.7,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748296.6,
+            "ts": 1781753410.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748299.7,
+            "ts": 1781753414.6,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748303.0,
+            "ts": 1781753417.7,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748306.1,
+            "ts": 1781753420.8,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748309.1,
+            "ts": 1781753423.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748312.2,
+            "ts": 1781753428.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748315.5,
+            "ts": 1781753431.1,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748319.5,
+            "ts": 1781753434.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748323.8,
+            "ts": 1781753437.4,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748327.0,
+            "ts": 1781753440.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748338.4,
+            "ts": 1781753445.6,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748345.4,
+            "ts": 1781753448.7,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748348.5,
+            "ts": 1781753452.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748352.1,
+            "ts": 1781753456.1,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748355.7,
+            "ts": 1781753460.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748361.7,
+            "ts": 1781753463.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748364.7,
+            "ts": 1781753466.8,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748368.2,
+            "ts": 1781753470.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748371.1,
+            "ts": 1781753473.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748374.5,
+            "ts": 1781753477.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748377.8,
+            "ts": 1781753481.1,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748381.2,
+            "ts": 1781753484.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748384.3,
+            "ts": 1781753490.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748387.4,
+            "ts": 1781753493.1,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748390.5,
+            "ts": 1781753496.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748393.6,
+            "ts": 1781753499.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748397.5,
+            "ts": 1781753502.8,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748402.0,
+            "ts": 1781753506.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748405.1,
+            "ts": 1781753509.1,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748408.2,
+            "ts": 1781753512.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748411.4,
+            "ts": 1781753515.4,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748414.5,
+            "ts": 1781753519.4,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748417.5,
+            "ts": 1781753522.6,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748420.7,
+            "ts": 1781753525.7,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748423.7,
+            "ts": 1781753528.8,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748427.1,
+            "ts": 1781753534.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748430.2,
+            "ts": 1781753537.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748433.4,
+            "ts": 1781753540.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748439.1,
+            "ts": 1781753543.8,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748442.2,
+            "ts": 1781753546.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748445.2,
+            "ts": 1781753549.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748448.3,
+            "ts": 1781753553.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748451.7,
+            "ts": 1781753556.2,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748454.8,
+            "ts": 1781753559.6,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748458.0,
+            "ts": 1781753562.7,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748461.3,
+            "ts": 1781753565.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748464.4,
+            "ts": 1781753569.1,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748468.0,
+            "ts": 1781753572.1,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748471.1,
+            "ts": 1781753575.6,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748474.3,
+            "ts": 1781753583.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748480.3,
+            "ts": 1781753586.8,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748484.0,
+            "ts": 1781753589.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748487.2,
+            "ts": 1781753593.1,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748490.3,
+            "ts": 1781753596.2,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748493.4,
+            "ts": 1781753599.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748497.1,
+            "ts": 1781753603.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748500.4,
+            "ts": 1781753606.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748503.5,
+            "ts": 1781753609.2,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748506.6,
+            "ts": 1781753613.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748509.6,
+            "ts": 1781753616.6,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748512.6,
+            "ts": 1781753619.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748515.7,
+            "ts": 1781753625.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748519.7,
+            "ts": 1781753628.2,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748523.8,
+            "ts": 1781753631.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748526.7,
+            "ts": 1781753634.4,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748529.8,
+            "ts": 1781753637.8,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748532.7,
+            "ts": 1781753641.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748536.3,
+            "ts": 1781753644.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748539.2,
+            "ts": 1781753647.6,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748542.3,
+            "ts": 1781753650.8,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748545.4,
+            "ts": 1781753653.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748548.5,
+            "ts": 1781753657.1,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748551.5,
+            "ts": 1781753660.7,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748555.1,
+            "ts": 1781753665.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748559.7,
+            "ts": 1781753669.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748563.5,
+            "ts": 1781753672.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748566.7,
+            "ts": 1781753676.2,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748569.8,
+            "ts": 1781753679.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748572.9,
+            "ts": 1781753682.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748576.4,
+            "ts": 1781753686.2,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748579.5,
+            "ts": 1781753689.8,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748582.8,
+            "ts": 1781753693.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748586.1,
+            "ts": 1781753696.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748589.2,
+            "ts": 1781753699.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748592.3,
+            "ts": 1781753704.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748596.1,
+            "ts": 1781753708.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748601.1,
+            "ts": 1781753711.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748604.4,
+            "ts": 1781753714.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748607.5,
+            "ts": 1781753718.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748610.6,
+            "ts": 1781753721.6,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748614.0,
+            "ts": 1781753724.8,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748617.1,
+            "ts": 1781753727.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748620.4,
+            "ts": 1781753731.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748623.5,
+            "ts": 1781753734.3,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748626.5,
+            "ts": 1781753737.5,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748629.6,
+            "ts": 1781753740.6,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748632.7,
+            "ts": 1781753743.6,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748638.1,
+            "ts": 1781753748.7,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748641.1,
+            "ts": 1781753751.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748644.2,
+            "ts": 1781753755.1,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748647.3,
+            "ts": 1781753758.7,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748650.3,
+            "ts": 1781753761.8,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748653.7,
+            "ts": 1781753764.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748656.7,
+            "ts": 1781753768.1,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748659.8,
+            "ts": 1781753771.9,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748663.0,
+            "ts": 1781753775.0,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748666.6,
+            "ts": 1781753778.2,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748669.8,
+            "ts": 1781753781.4,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748674.6,
+            "ts": 1781753785.1,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748677.9,
+            "ts": 1781753790.6,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748681.1,
+            "ts": 1781753793.8,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
           },
           {
-            "ts": 1781748684.9,
+            "ts": 1781753810.1,
             "equity": 500.0,
             "realized": 0.0,
             "unrealized": 0.0
@@ -3012,26 +2798,26 @@
           "initialized": true,
           "symbol": "BTC/USD",
           "source": "chainlink",
-          "price": 64595.98,
-          "updated_at": 1781746007.0,
-          "observed_at": 1781748534.4519076,
-          "age_seconds": 2527.452,
+          "price": 64358.569,
+          "updated_at": 1781753015.0,
+          "observed_at": 1781753500.7694356,
+          "age_seconds": 485.769,
           "heartbeat_seconds": 3600,
           "max_age_seconds": 7200,
           "stale": false,
           "valid": true,
           "error": null,
           "consecutive_failures": 0,
-          "last_success_at": 1781748534.4519076
+          "last_success_at": 1781753500.7694356
         },
         "scanner": {
           "feeds_scanned": 0,
           "stale_feeds": 0,
-          "matched_markets": 22332,
+          "matched_markets": 40306,
           "unmatched_feeds": 0,
-          "avg_probability_impact": 0.041625,
-          "avg_signal_impact": 0.416895,
-          "signals_emitted": 16033
+          "avg_probability_impact": 0.04146,
+          "avg_signal_impact": 0.415383,
+          "signals_emitted": 28944
         }
       },
       "ok": true
@@ -3047,33 +2833,38 @@
         "trade_gate_enabled": false,
         "news_provider_mode": "live_read_only",
         "news_live_read_only": true,
-        "news_ticks": 52,
-        "rejected_low_relevance": 832,
+        "news_ticks": 81,
+        "rejected_low_relevance": 1232,
         "rejected_low_credibility": 0,
         "rejected_unclear_date": 0,
         "rejected_stale": 0,
-        "rejected_duplicate": 1,
-        "news_markets_scanned": 156,
-        "news_queries": 317,
-        "news_items_fetched": 2361,
-        "news_items_used": 898,
-        "news_items_rejected": 1463,
+        "rejected_duplicate": 9,
+        "news_markets_scanned": 243,
+        "news_queries": 500,
+        "news_items_fetched": 3946,
+        "news_items_used": 1477,
+        "news_items_rejected": 2469,
         "news_stale_count": 0,
         "news_contradiction_count": 0,
         "news_ambiguity_count": 0,
         "news_provider_errors": 0,
-        "news_items_used_per_hour": 442.858,
-        "news_last_scan_ts": 1781748534.4519076,
+        "news_items_used_per_hour": 428.948,
+        "news_last_scan_ts": 1781753500.7694356,
         "news_last_error": null,
         "news_last_packet_sample": [
           {
-            "title": "Sport event hosting and provincial economic growth: Evidence from the Bangsaen21 Half Marathon in Thailand - Nature",
-            "source_name": "Nature",
+            "title": "Iran vs New Zealand Extended Highlights | 2026 FIFA World Cup\u2122 - FOX Sports",
+            "source_name": "FOX Sports",
             "direction": "unclear"
           },
           {
-            "title": "Inequality and unease are rising as elite Davos event opens with pro-business Trump set to attend - AP News",
-            "source_name": "AP News",
+            "title": "What happens if Iran win, tie or lose vs New Zealand today in their 2026 World Cup debut? - bolavip.com",
+            "source_name": "bolavip.com",
+            "direction": "unclear"
+          },
+          {
+            "title": "How to live stream Iran vs New Zealand: FIFA World Cup 2026, TV channel - The Big Lead",
+            "source_name": "The Big Lead",
             "direction": "unclear"
           }
         ],
@@ -3096,12 +2887,12 @@
         "grok_brain_ready": true,
         "grok_brain_blocker": null,
         "research_mode": "online_paper",
-        "grok_calls_total": 5,
-        "grok_calls_with_news": 5,
-        "grok_evidence_records_written": 5,
+        "grok_calls_total": 8,
+        "grok_calls_with_news": 8,
+        "grok_evidence_records_written": 8,
         "grok_proof_call_enabled": true,
         "grok_proof_call_advisory_only": true,
-        "grok_advisory_only_count": 5,
+        "grok_advisory_only_count": 8,
         "grok_calibration": {
           "grok_calibration_enabled": true,
           "grok_calibration_samples": 0,
@@ -3159,87 +2950,87 @@
         "value_of_information": {
           "top_targets": [
             {
-              "market_id": "pm9",
-              "question": "Will synthetic event 9 resolve YES?",
+              "market_id": "558943",
+              "question": "Will USA win the 2026 FIFA World Cup?",
               "voi": 0.4375,
               "ensemble_disagreement": 0.0,
               "edge": 0.0,
-              "liquidity_usd": 20000
+              "liquidity_usd": 3282193
             },
             {
-              "market_id": "pm8",
-              "question": "Will synthetic event 8 resolve YES?",
+              "market_id": "558946",
+              "question": "Will Belgium win the 2026 FIFA World Cup?",
               "voi": 0.4375,
               "ensemble_disagreement": 0.0,
               "edge": 0.0,
-              "liquidity_usd": 20000
+              "liquidity_usd": 4919279
             },
             {
-              "market_id": "pm7",
-              "question": "Will synthetic event 7 resolve YES?",
+              "market_id": "2506679",
+              "question": "Will the price of Bitcoin be above $52,000 on June 18?",
               "voi": 0.4375,
               "ensemble_disagreement": 0.0,
               "edge": 0.0,
-              "liquidity_usd": 20000
+              "liquidity_usd": 100029
             },
             {
-              "market_id": "pm6",
-              "question": "Will synthetic event 6 resolve YES?",
+              "market_id": "2506714",
+              "question": "Will the price of Bitcoin be above $70,000 on June 18?",
               "voi": 0.4375,
               "ensemble_disagreement": 0.0,
               "edge": 0.0,
-              "liquidity_usd": 20000
+              "liquidity_usd": 37549
             },
             {
-              "market_id": "pm59",
-              "question": "Will synthetic event 59 resolve YES?",
+              "market_id": "2506684",
+              "question": "Will the price of Bitcoin be above $56,000 on June 18?",
               "voi": 0.4375,
               "ensemble_disagreement": 0.0,
               "edge": 0.0,
-              "liquidity_usd": 20000
+              "liquidity_usd": 77180
             },
             {
-              "market_id": "pm58",
-              "question": "Will synthetic event 58 resolve YES?",
+              "market_id": "2410562",
+              "question": "Will Bitcoin reach $90,000 in June?",
               "voi": 0.4375,
               "ensemble_disagreement": 0.0,
               "edge": 0.0,
-              "liquidity_usd": 20000
+              "liquidity_usd": 90445
             },
             {
-              "market_id": "pm57",
-              "question": "Will synthetic event 57 resolve YES?",
+              "market_id": "2410562",
+              "question": "Will Bitcoin reach $90,000 in June?",
               "voi": 0.4375,
               "ensemble_disagreement": 0.0,
               "edge": 0.0,
-              "liquidity_usd": 20000
+              "liquidity_usd": 90445
             },
             {
-              "market_id": "pm56",
-              "question": "Will synthetic event 56 resolve YES?",
+              "market_id": "2506718",
+              "question": "Will the price of Bitcoin be above $72,000 on June 18?",
               "voi": 0.4375,
               "ensemble_disagreement": 0.0,
               "edge": 0.0,
-              "liquidity_usd": 20000
+              "liquidity_usd": 67941
             },
             {
-              "market_id": "pm55",
-              "question": "Will synthetic event 55 resolve YES?",
+              "market_id": "2410561",
+              "question": "Will Bitcoin reach $92,500 in June?",
               "voi": 0.4375,
               "ensemble_disagreement": 0.0,
               "edge": 0.0,
-              "liquidity_usd": 20000
+              "liquidity_usd": 81595
             },
             {
-              "market_id": "pm54",
-              "question": "Will synthetic event 54 resolve YES?",
+              "market_id": "2410560",
+              "question": "Will Bitcoin reach $100,000 in June?",
               "voi": 0.4375,
               "ensemble_disagreement": 0.0,
               "edge": 0.0,
-              "liquidity_usd": 20000
+              "liquidity_usd": 203486
             }
           ],
-          "candidates_this_tick": 60,
+          "candidates_this_tick": 120,
           "advisory_only": true
         },
         "grok_advisory_enabled": true,
@@ -3247,29 +3038,29 @@
         "grok_advisory_min_interval_seconds": 900,
         "grok_advisory_calls_per_hour": 2,
         "grok_proof_calls_total": 0,
-        "grok_scheduler_calls_total": 5,
+        "grok_scheduler_calls_total": 8,
         "grok_total_calls_reconciled": true,
-        "grok_scheduler_eligible_targets": 698,
-        "grok_scheduler_targets_selected": 5,
-        "grok_scheduler_targets_skipped": 21,
+        "grok_scheduler_eligible_targets": 815,
+        "grok_scheduler_targets_selected": 8,
+        "grok_scheduler_targets_skipped": 35,
         "grok_scheduler_skip_reasons": {
-          "not_due_yet": 21
+          "not_due_yet": 35
         },
-        "grok_scheduler_rate_limited_count": 21,
+        "grok_scheduler_rate_limited_count": 35,
         "grok_scheduler_no_target_count": 0,
-        "grok_bregman_incomplete_groups_analyzed": 2,
-        "grok_bregman_malformed_groups_analyzed": 0,
-        "grok_learning_features_written": 5,
+        "grok_bregman_incomplete_groups_analyzed": 5,
+        "grok_bregman_malformed_groups_analyzed": 1,
+        "grok_learning_features_written": 8,
         "grok_best_bregman_group_analyzed": true,
         "grok_best_bregman_group_skip_reason": null,
-        "grok_market_groups_analyzed": 4,
-        "grok_bregman_near_misses_analyzed": 4,
-        "grok_news_linked_markets_analyzed": 5,
+        "grok_market_groups_analyzed": 7,
+        "grok_bregman_near_misses_analyzed": 7,
+        "grok_news_linked_markets_analyzed": 8,
         "grok_contributed_learning_features": true,
         "grok_cache_hits": 0,
-        "grok_offline_stub_calls": 4967,
+        "grok_offline_stub_calls": 8431,
         "grok_eligible_markets": 0,
-        "grok_scheduled_calls": 5,
+        "grok_scheduled_calls": 8,
         "grok_skipped_rate_limit": 0,
         "grok_skipped_no_news_packet": 0,
         "grok_skipped_no_market_link": 0,
@@ -3278,10 +3069,10 @@
         "news_enable_grok_packet": true,
         "news_scanner_enabled": true,
         "news_provider_mode": "live_read_only",
-        "news_items_used": 898,
+        "news_items_used": 1477,
         "chainlink_btc_usd_valid": true,
-        "chainlink_btc_usd_price": 64595.98,
-        "chainlink_btc_usd_age_seconds": 2527.452,
+        "chainlink_btc_usd_price": 64358.569,
+        "chainlink_btc_usd_age_seconds": 485.769,
         "note": "PAPER ONLY \u2014 Grok is advisory; evidence packets are read-only and never include wallet/positions/orders/secrets."
       },
       "ok": true
@@ -3402,14 +3193,14 @@
   },
   "features": {
     "paper_training_running": true,
-    "runtime_minutes": 121.47,
-    "scanned_markets": 60,
-    "kept_markets": 60,
-    "open_positions": 0,
+    "runtime_minutes": 206.4,
+    "scanned_markets": 2000,
+    "kept_markets": 1669,
+    "open_positions": 4,
     "closed_positions": 5,
     "paper_trades": 5,
-    "equity": 499.9678,
-    "total_pnl": -0.0322,
+    "equity": 499.9175,
+    "total_pnl": -0.0836,
     "after_cost_pnl": 0,
     "after_cost_pnl_sample_count": 5,
     "readiness_after_cost_pnl": 0,
@@ -3419,7 +3210,7 @@
     "win_rate_traded_only": 0.4,
     "win_rate_sample_count": 5,
     "expectancy_sample_count": 5,
-    "readiness_sample_count": 5,
+    "readiness_sample_count": 9,
     "brier": 0.0,
     "ece": 0.0,
     "sharpe": null,
@@ -3438,12 +3229,12 @@
     "chainlink_enabled": true,
     "chainlink_valid": true,
     "chainlink_stale": false,
-    "chainlink_age_seconds": 2527.452,
-    "chainlink_price": 64595.98,
+    "chainlink_age_seconds": 485.769,
+    "chainlink_price": 64358.569,
     "btc_fast_price_enabled": true,
     "btc_fast_price_valid": true,
     "btc_fast_price_age_seconds": 0.0,
-    "btc_fast_price_disagreement_bps": 10.805,
+    "btc_fast_price_disagreement_bps": 8.887,
     "btc_pulse_enabled": false,
     "btc_pulse_frozen": true,
     "btc_pulse_oracle_gate_active": null,
@@ -3457,23 +3248,23 @@
     "btc_pulse_regime": null,
     "news_scanner_enabled": true,
     "news_provider_mode": "live_read_only",
-    "news_items_fetched": 2361,
-    "news_items_used": 898,
+    "news_items_fetched": 3946,
+    "news_items_used": 1477,
     "news_rejected_stale": null,
     "news_rejected_unclear_date": null,
     "news_rejected_low_credibility": null,
     "grok_enabled": true,
     "grok_has_api_key": true,
-    "grok_with_news_count": 5,
+    "grok_with_news_count": 8,
     "grok_cache_hits": 0,
-    "grok_calls_total": 5,
-    "grok_calls_with_news": 5,
+    "grok_calls_total": 8,
+    "grok_calls_with_news": 8,
     "grok_calls_without_news": 0,
     "grok_news_market_links": 0,
-    "grok_advisory_only_count": 5,
+    "grok_advisory_only_count": 8,
     "grok_affected_probability_count": 0,
     "grok_affected_trade_count": 0,
-    "grok_evidence_records_written": 5,
+    "grok_evidence_records_written": 8,
     "xai_api_key_present": true,
     "xai_api_key_source": "<REDACTED>",
     "grok_online_active": true,
@@ -3483,40 +3274,40 @@
     "bregman_paper_enabled": true,
     "bregman_enabled": true,
     "bregman_arbitrage_disabled": false,
-    "bregman_constraint_groups_scanned": 60,
-    "bregman_funnel_constraint_groups_scanned": 60,
-    "legacy_bregman_constraint_groups_scanned": 830,
+    "bregman_constraint_groups_scanned": 494,
+    "bregman_funnel_constraint_groups_scanned": 494,
+    "legacy_bregman_constraint_groups_scanned": 841,
     "abcas_enabled": true,
     "abcas_mode": "aggressive_paper",
-    "normalized_markets": 830,
-    "constraint_groups_discovered": 830,
+    "normalized_markets": 841,
+    "constraint_groups_discovered": 841,
     "aggressive_paper_training_enabled": "${AGGRESSIVE_PAPER_TRAINING:-1}",
-    "bregman_groups_skipped": 1402,
+    "bregman_groups_skipped": 1393,
     "bregman_candidates_found": 0,
     "bregman_certified_count": null,
     "bregman_certified_profit": 0.0,
     "bregman_false_positive_rate": 0.0,
     "bregman_fill_feasible": null,
     "bregman_opportunity_decay": null,
-    "market_scan_limit_effective": 60,
+    "market_scan_limit_effective": 2000,
     "paper_attribution_enabled": true,
     "exploration_validation_separated": true,
     "fill_realism_enabled": true,
     "fantasy_fill_rejections": 0,
     "reference_fills_blocked": 0,
-    "stale_book_rejections": 0,
+    "stale_book_rejections": 1,
     "missing_ask_rejections": 0,
     "thin_depth_rejections": 0,
     "wide_spread_rejections": 0,
-    "fill_realism_sample_count": 5,
+    "fill_realism_sample_count": 9,
     "fill_realism_rejection_rate": 0.0,
     "clob_v2_executable": true,
     "closed_loop_enabled": true,
-    "decision_records_written": 5279,
-    "no_trade_labels_written": 4043,
-    "shadow_records_written": 410,
-    "active_learning_shadow_selected": 5274,
-    "pending_labels_total": 4319,
+    "decision_records_written": 8759,
+    "no_trade_labels_written": 7029,
+    "shadow_records_written": 929,
+    "active_learning_shadow_selected": 8750,
+    "pending_labels_total": 5000,
     "completed_labels_total": 0,
     "learning_growth_status": "collecting",
     "learning_growth_score": 0.75,
@@ -3640,8 +3431,8 @@
     }
   },
   "metrics": {
-    "equity": 499.9678,
-    "total_pnl": -0.0322,
+    "equity": 499.9175,
+    "total_pnl": -0.0836,
     "after_cost_pnl": 0,
     "closed_positions": 5,
     "paper_trades": 5,
@@ -3654,34 +3445,34 @@
     "max_drawdown": -0.0322,
     "btc_pulse_after_cost_pnl": null,
     "bregman_certified_profit": 0.0,
-    "news_quality_ratio": 0.3803
+    "news_quality_ratio": 0.3743
   },
   "artifacts": {
     "host_found": [
       {
         "name": "metrics",
         "path": "runtime_data/metrics",
-        "bytes": 77728092,
+        "bytes": 78853154,
         "copied": false,
         "reason": "skipped: bundle size cap reached"
       },
       {
         "name": "reports",
         "path": "runtime_data/reports",
-        "bytes": 13939,
+        "bytes": 14870,
         "copied": true
       },
       {
         "name": "training",
         "path": "runtime_data/training",
-        "bytes": 8783370891,
+        "bytes": 8823508454,
         "copied": false,
         "reason": "skipped: bundle size cap reached"
       },
       {
         "name": "micro_live_artifacts",
         "path": "/opt/hermes-agent-main/hermes-agent-main/plugins/hermes-trading-engine/micro_live_artifacts",
-        "bytes": 4828248,
+        "bytes": 4917660,
         "copied": true
       }
     ],
@@ -3695,7 +3486,7 @@
       "production_review_artifacts",
       "guarded_live_artifacts"
     ],
-    "copied_bytes": 4842187,
+    "copied_bytes": 4932530,
     "container": {},
     "any_found": true
   },
@@ -4142,7 +3933,7 @@
     "max_status_age_s": 3600.0,
     "bregman_enabled": true,
     "tests_passing": true,
-    "equity_mismatch_pct": 0.0064,
+    "equity_mismatch_pct": 0.0165,
     "hard_failures": [],
     "required_field_violations": [],
     "missing_core_fields": [],
@@ -4152,25 +3943,25 @@
     "sections": {
       "strategy_attribution": {
         "trades_by_strategy": null,
-        "gross_pnl": -0.0322,
+        "gross_pnl": -0.0836,
         "after_cost_pnl": 0.0,
         "win_rate": 0.4,
         "win_rate_sample_count": 5,
         "avg_edge_at_entry": null,
         "avg_realized_edge": null,
         "rejected_trades": null,
-        "open_exposure": 0.0,
+        "open_exposure": 4.0,
         "realized_pnl": -0.0322,
-        "unrealized_pnl": 0.0
+        "unrealized_pnl": -0.0514
       },
       "bregman": {
-        "constraint_groups_scanned": 60.0,
-        "raw_groups_discovered": 60.0,
+        "constraint_groups_scanned": 494.0,
+        "raw_groups_discovered": 494.0,
         "incoherent_groups": 0.0,
         "candidate_arbitrages": 0.0,
         "certified_arbitrages": 0.0,
         "executable_depth_certified": 0.0,
-        "rejected_fees_spread_depth_slippage": 9929,
+        "rejected_fees_spread_depth_slippage": 17615,
         "expected_min_profit": 0.0,
         "worst_case_payoff": 0.0,
         "execution_atomicity_risk": false,
@@ -4178,10 +3969,10 @@
         "canonical_source": "metrics/bregman_funnel.json"
       },
       "btc_pulse": {
-        "chainlink_anchor_price": 64595.98,
-        "fast_btc_price": 64526.185,
+        "chainlink_anchor_price": 64358.569,
+        "fast_btc_price": 64301.375,
         "feed_disagreement_bps": null,
-        "market_stale_time_s": 2527.452,
+        "market_stale_time_s": 485.769,
         "volatility_regime": null,
         "trend_persistence": null,
         "trade_trigger_reason": null,
@@ -4247,11 +4038,11 @@
   },
   "ledger_reconciliation": {
     "ok": true,
-    "max_rel_diff_pct": 0.0064,
+    "max_rel_diff_pct": 0.0165,
     "values": {
       "dashboard": 500.0,
-      "paper_training": 499.9678,
-      "report": 499.9678,
+      "paper_training": 499.9175,
+      "report": 499.9175,
       "ledger": 500.0
     },
     "failed_pairs": [],
@@ -4272,7 +4063,7 @@
       {
         "name": "groups_scanned_positive",
         "passed": true,
-        "detail": "constraint_groups_scanned=60.0"
+        "detail": "constraint_groups_scanned=494.0"
       },
       {
         "name": "fill_realism_enabled",
@@ -4325,6 +4116,7 @@
   "warnings": [
     "safety audit raised warnings",
     "1 benchmark(s) failing",
+    "NOT RUN-READY: stale_or_mixed_training_tail_samples: decision_records.jsonl: last_run_id=pmtrain-1781741271 != events run_id=pmtrain-1781753809; no_trade_labels.jsonl: last_run_id=pmtrain-1781741271 != events run_id=pmtrain-1781753809; pending_labels.jsonl: last_run_id=pmtrain-1781741271 != events run_id=pmtrain-1781753809",
     "No certified Bregman opportunities found yet; continue paper training."
   ],
   "errors": [],
@@ -4430,9 +4222,11 @@
     "validation_contract.json"
   ],
   "run_ready": {
-    "run_ready_for_hours": true,
-    "max_safe_runtime_minutes": null,
-    "blocking_reasons": [],
+    "run_ready_for_hours": false,
+    "max_safe_runtime_minutes": 10,
+    "blocking_reasons": [
+      "stale_or_mixed_training_tail_samples: decision_records.jsonl: last_run_id=pmtrain-1781741271 != events run_id=pmtrain-1781753809; no_trade_labels.jsonl: last_run_id=pmtrain-1781741271 != events run_id=pmtrain-1781753809; pending_labels.jsonl: last_run_id=pmtrain-1781741271 != events run_id=pmtrain-1781753809"
+    ],
     "warnings": [
       "1 non-required artifact(s) present but empty (legitimate when zero events): ['data/training/completed_labels.jsonl']"
     ],
@@ -4446,7 +4240,7 @@
       "bregman_funnel_non_silent": true,
       "closed_loop_durable": true,
       "inspection_artifacts_complete": true,
-      "tail_samples_fresh_same_run": true,
+      "tail_samples_fresh_same_run": false,
       "single_source_data_dir": true,
       "active_learning_config_consistent": true,
       "active_learning_candidates_accounted": true,
@@ -4457,47 +4251,55 @@
     "source_event_files_verified": true,
     "tail_samples_included": true,
     "tail_freshness": {
-      "events_last_run_id": "pmtrain-1781741271",
-      "events_last_timestamp": 1781748617.185,
+      "events_last_run_id": "pmtrain-1781753809",
+      "events_last_timestamp": 1781753811.048,
       "freshness_max_gap_sec": 21600.0,
       "per_stream": {
         "decision_records.jsonl": {
           "last_run_id": "pmtrain-1781741271",
-          "last_timestamp": 1781748559.919,
-          "events_run_id": "pmtrain-1781741271",
-          "events_last_timestamp": 1781748617.185,
-          "compatible_run_id": true,
+          "last_timestamp": 1781753655.734,
+          "events_run_id": "pmtrain-1781753809",
+          "events_last_timestamp": 1781753811.048,
+          "compatible_run_id": false,
           "fresh_window_ok": true,
-          "gap_vs_events_sec": 57.266,
-          "stale_reason": null
+          "gap_vs_events_sec": 155.314,
+          "stale_reason": "different_run_id_than_events"
         },
         "no_trade_labels.jsonl": {
           "last_run_id": "pmtrain-1781741271",
-          "last_timestamp": 1781748456.255,
-          "events_run_id": "pmtrain-1781741271",
-          "events_last_timestamp": 1781748617.185,
-          "compatible_run_id": true,
+          "last_timestamp": 1781753655.734,
+          "events_run_id": "pmtrain-1781753809",
+          "events_last_timestamp": 1781753811.048,
+          "compatible_run_id": false,
           "fresh_window_ok": true,
-          "gap_vs_events_sec": 160.93,
-          "stale_reason": null
+          "gap_vs_events_sec": 155.314,
+          "stale_reason": "different_run_id_than_events"
         },
         "pending_labels.jsonl": {
           "last_run_id": "pmtrain-1781741271",
-          "last_timestamp": 1781748456.255,
-          "events_run_id": "pmtrain-1781741271",
-          "events_last_timestamp": 1781748617.185,
-          "compatible_run_id": true,
+          "last_timestamp": 1781753655.734,
+          "events_run_id": "pmtrain-1781753809",
+          "events_last_timestamp": 1781753811.048,
+          "compatible_run_id": false,
           "fresh_window_ok": true,
-          "gap_vs_events_sec": 160.93,
-          "stale_reason": null
+          "gap_vs_events_sec": 155.314,
+          "stale_reason": "different_run_id_than_events"
         }
       },
-      "incompatible_streams": [],
-      "compatible": true,
-      "reasons": [],
+      "incompatible_streams": [
+        "decision_records.jsonl",
+        "no_trade_labels.jsonl",
+        "pending_labels.jsonl"
+      ],
+      "compatible": false,
+      "reasons": [
+        "decision_records.jsonl: last_run_id=pmtrain-1781741271 != events run_id=pmtrain-1781753809",
+        "no_trade_labels.jsonl: last_run_id=pmtrain-1781741271 != events run_id=pmtrain-1781753809",
+        "pending_labels.jsonl: last_run_id=pmtrain-1781741271 != events run_id=pmtrain-1781753809"
+      ],
       "source_strict": true
     },
-    "stale_or_mixed_training_tail_samples": false,
+    "stale_or_mixed_training_tail_samples": true,
     "grok_brain_ready": true,
     "grok_brain_blocker": null,
     "source": "inspection_report (artifact-reality verdict)"
@@ -4515,7 +4317,7 @@
     "collector_metrics_dir": "/opt/hermes-agent-main/hermes-agent-main/plugins/hermes-trading-engine/metrics",
     "collector_reports_dir": "/opt/hermes-agent-main/hermes-agent-main/plugins/hermes-trading-engine/reports",
     "collector_training_data_dir": "/opt/hermes-agent-main/hermes-agent-main/plugins/hermes-trading-engine/data/training",
-    "inspection_bundle_dir": "inspection_reports/bot_inspection_20260618_021129",
+    "inspection_bundle_dir": "inspection_reports/bot_inspection_20260618_033658",
     "hint": "If runtime_*_dir_exists is false, pass --data-dir <HTE_DATA_DIR> (or the Docker volume host path) so the collector packages the REAL runtime files instead of synthesizing empty placeholders."
   },
   "closed_loop_artifacts_manifest": {
@@ -4564,7 +4366,7 @@
         "source": "runtime_data/metrics/inspection_summary.json",
         "selected_root": "runtime_data",
         "fallback_used": false,
-        "source_size_bytes": 790892
+        "source_size_bytes": 812416
       },
       {
         "path": "metrics/closed_loop_learning.json",
@@ -4603,7 +4405,7 @@
         "source": "runtime_data/metrics/active_learning.json",
         "selected_root": "runtime_data",
         "fallback_used": false,
-        "source_size_bytes": 34832
+        "source_size_bytes": 38711
       },
       {
         "path": "metrics/paper_realism.json",
@@ -4616,7 +4418,7 @@
         "source": "runtime_data/metrics/paper_realism.json",
         "selected_root": "runtime_data",
         "fallback_used": false,
-        "source_size_bytes": 1634
+        "source_size_bytes": 1636
       },
       {
         "path": "metrics/bregman_execution.json",
@@ -4629,7 +4431,7 @@
         "source": "runtime_data/metrics/bregman_execution.json",
         "selected_root": "runtime_data",
         "fallback_used": false,
-        "source_size_bytes": 431138
+        "source_size_bytes": 433017
       },
       {
         "path": "metrics/strategy_priority.json",
@@ -4642,7 +4444,7 @@
         "source": "runtime_data/metrics/strategy_priority.json",
         "selected_root": "runtime_data",
         "fallback_used": false,
-        "source_size_bytes": 1244
+        "source_size_bytes": 1245
       },
       {
         "path": "metrics/profitability_ranking.json",
@@ -4655,7 +4457,7 @@
         "source": "runtime_data/metrics/profitability_ranking.json",
         "selected_root": "runtime_data",
         "fallback_used": false,
-        "source_size_bytes": 30359
+        "source_size_bytes": 34264
       },
       {
         "path": "metrics/correlation_risk.json",
@@ -4668,7 +4470,7 @@
         "source": "runtime_data/metrics/correlation_risk.json",
         "selected_root": "runtime_data",
         "fallback_used": false,
-        "source_size_bytes": 997
+        "source_size_bytes": 1246
       },
       {
         "path": "metrics/training_reconciliation.json",
@@ -4707,7 +4509,7 @@
         "source": "runtime_data/metrics/bregman_funnel.json",
         "selected_root": "runtime_data",
         "fallback_used": false,
-        "source_size_bytes": 632013
+        "source_size_bytes": 639207
       },
       {
         "path": "metrics/grok_news_evidence.json",
@@ -4720,7 +4522,7 @@
         "source": "runtime_data/metrics/grok_news_evidence.json",
         "selected_root": "runtime_data",
         "fallback_used": false,
-        "source_size_bytes": 1574
+        "source_size_bytes": 1575
       },
       {
         "path": "reports/paper_training_inspection.md",
@@ -4733,7 +4535,7 @@
         "source": "runtime_data/reports/paper_training_inspection.md",
         "selected_root": "runtime_data",
         "fallback_used": false,
-        "source_size_bytes": 10336
+        "source_size_bytes": 11267
       },
       {
         "path": "reports/closed_loop_learning_audit.md",
@@ -4759,7 +4561,7 @@
         "source": "runtime_data/training/events.jsonl",
         "selected_root": "runtime_data",
         "fallback_used": false,
-        "source_size_bytes": 3856757076
+        "source_size_bytes": 3873664793
       },
       {
         "path": "data/training/decision_records.jsonl",
@@ -4772,7 +4574,7 @@
         "source": "runtime_data/training/decision_records.jsonl",
         "selected_root": "runtime_data",
         "fallback_used": false,
-        "source_size_bytes": 792769513
+        "source_size_bytes": 797461684
       },
       {
         "path": "data/training/no_trade_labels.jsonl",
@@ -4785,7 +4587,7 @@
         "source": "runtime_data/training/no_trade_labels.jsonl",
         "selected_root": "runtime_data",
         "fallback_used": false,
-        "source_size_bytes": 774084967
+        "source_size_bytes": 778098913
       },
       {
         "path": "data/training/shadow_labels.jsonl",
@@ -4798,7 +4600,7 @@
         "source": "runtime_data/training/shadow_labels.jsonl",
         "selected_root": "runtime_data",
         "fallback_used": false,
-        "source_size_bytes": 32656262
+        "source_size_bytes": 33406995
       },
       {
         "path": "data/training/diagnostics.jsonl",
@@ -4811,7 +4613,7 @@
         "source": "runtime_data/training/diagnostics.jsonl",
         "selected_root": "runtime_data",
         "fallback_used": false,
-        "source_size_bytes": 3034374813
+        "source_size_bytes": 3046421931
       },
       {
         "path": "data/training/pending_labels.jsonl",
@@ -4824,7 +4626,7 @@
         "source": "runtime_data/training/pending_labels.jsonl",
         "selected_root": "runtime_data",
         "fallback_used": false,
-        "source_size_bytes": 292727649
+        "source_size_bytes": 294453527
       },
       {
         "path": "data/training/completed_labels.jsonl",
@@ -4861,22 +4663,23 @@
         "selected_root": "runtime_data",
         "bundle_sample_path": "samples/events_tail_500.jsonl",
         "exists": true,
-        "size_bytes": 3856757076,
-        "mtime": 1781748618.0,
-        "total_rows_exact_if_available": 3681495,
+        "size_bytes": 3873664793,
+        "mtime": 1781753811.0,
+        "total_rows_exact_if_available": 3697308,
         "included_rows": 500,
-        "source_sha256_head_tail": "c728b3da5cc5d646f5ae7d85f1c114a8",
+        "source_sha256_head_tail": "01135b313c74a943aaa4fb5827274b7a",
         "truncated": true,
         "source_verified_from_data_dir": true,
         "fallback_used": false,
-        "first_tail_timestamp": 1781748456.24,
-        "last_tail_timestamp": 1781748617.185,
+        "first_tail_timestamp": 1781753711.146,
+        "last_tail_timestamp": 1781753811.048,
         "first_tail_run_id": "pmtrain-1781741271",
-        "last_tail_run_id": "pmtrain-1781741271",
+        "last_tail_run_id": "pmtrain-1781753809",
         "run_ids_seen": [
-          "pmtrain-1781741271"
+          "pmtrain-1781741271",
+          "pmtrain-1781753809"
         ],
-        "first_tail_tick": 51,
+        "first_tail_tick": 0,
         "last_tail_tick": 0
       },
       {
@@ -4886,23 +4689,23 @@
         "selected_root": "runtime_data",
         "bundle_sample_path": "samples/decision_records_tail_500.jsonl",
         "exists": true,
-        "size_bytes": 792769513,
-        "mtime": 1781748618.0,
-        "total_rows_exact_if_available": 590067,
+        "size_bytes": 797461684,
+        "mtime": 1781753714.0,
+        "total_rows_exact_if_available": 593547,
         "included_rows": 500,
-        "source_sha256_head_tail": "d07842752a4a43c3fa8288140873f269",
+        "source_sha256_head_tail": "f28154ed7b17aaf083dde28e6cad9436",
         "truncated": true,
         "source_verified_from_data_dir": true,
         "fallback_used": false,
-        "first_tail_timestamp": 1781747929.828,
-        "last_tail_timestamp": 1781748559.919,
+        "first_tail_timestamp": 1781752798.337,
+        "last_tail_timestamp": 1781753655.734,
         "first_tail_run_id": "pmtrain-1781741271",
         "last_tail_run_id": "pmtrain-1781741271",
         "run_ids_seen": [
           "pmtrain-1781741271"
         ],
-        "first_tail_tick": 47,
-        "last_tail_tick": 52
+        "first_tail_tick": 77,
+        "last_tail_tick": 81
       },
       {
         "logical_name": "no_trade_labels.jsonl",
@@ -4911,23 +4714,23 @@
         "selected_root": "runtime_data",
         "bundle_sample_path": "samples/no_trade_labels_tail_500.jsonl",
         "exists": true,
-        "size_bytes": 774084967,
-        "mtime": 1781748618.0,
-        "total_rows_exact_if_available": 576399,
+        "size_bytes": 778098913,
+        "mtime": 1781753714.0,
+        "total_rows_exact_if_available": 579385,
         "included_rows": 500,
-        "source_sha256_head_tail": "088902025db84e64b274e1ce414e082a",
+        "source_sha256_head_tail": "f28154ed7b17aaf083dde28e6cad9436",
         "truncated": true,
         "source_verified_from_data_dir": true,
         "fallback_used": false,
-        "first_tail_timestamp": 1781747584.96,
-        "last_tail_timestamp": 1781748456.255,
+        "first_tail_timestamp": 1781752506.603,
+        "last_tail_timestamp": 1781753655.734,
         "first_tail_run_id": "pmtrain-1781741271",
         "last_tail_run_id": "pmtrain-1781741271",
         "run_ids_seen": [
           "pmtrain-1781741271"
         ],
-        "first_tail_tick": 44,
-        "last_tail_tick": 51
+        "first_tail_tick": 76,
+        "last_tail_tick": 81
       },
       {
         "logical_name": "shadow_labels.jsonl",
@@ -4936,24 +4739,23 @@
         "selected_root": "runtime_data",
         "bundle_sample_path": "samples/shadow_labels_tail_500.jsonl",
         "exists": true,
-        "size_bytes": 32656262,
-        "mtime": 1781748618.0,
-        "total_rows_exact_if_available": 18468,
+        "size_bytes": 33406995,
+        "mtime": 1781753795.0,
+        "total_rows_exact_if_available": 18988,
         "included_rows": 500,
-        "source_sha256_head_tail": "11f7178af31ba81cfa08c893f6ca1691",
+        "source_sha256_head_tail": "f2d559a07a839fc77938a221202e4a22",
         "truncated": true,
         "source_verified_from_data_dir": true,
         "fallback_used": false,
-        "first_tail_timestamp": 1781740032.763,
-        "last_tail_timestamp": 1781747584.801,
-        "first_tail_run_id": "pmtrain-1781739918",
+        "first_tail_timestamp": 1781749449.06,
+        "last_tail_timestamp": 1781753795.777,
+        "first_tail_run_id": "pmtrain-1781741271",
         "last_tail_run_id": "pmtrain-1781741271",
         "run_ids_seen": [
-          "pmtrain-1781739918",
           "pmtrain-1781741271"
         ],
-        "first_tail_tick": 1,
-        "last_tail_tick": 44
+        "first_tail_tick": 57,
+        "last_tail_tick": 82
       },
       {
         "logical_name": "diagnostics.jsonl",
@@ -4962,20 +4764,21 @@
         "selected_root": "runtime_data",
         "bundle_sample_path": "samples/diagnostics_tail_500.jsonl",
         "exists": true,
-        "size_bytes": 3034374813,
-        "mtime": 1781748618.0,
-        "total_rows_exact_if_available": 3086380,
+        "size_bytes": 3046421931,
+        "mtime": 1781753811.0,
+        "total_rows_exact_if_available": 3098683,
         "included_rows": 500,
-        "source_sha256_head_tail": "c728b3da5cc5d646f5ae7d85f1c114a8",
+        "source_sha256_head_tail": "01135b313c74a943aaa4fb5827274b7a",
         "truncated": true,
         "source_verified_from_data_dir": true,
         "fallback_used": false,
-        "first_tail_timestamp": 1781748373.364,
-        "last_tail_timestamp": 1781748617.185,
+        "first_tail_timestamp": 1781753711.146,
+        "last_tail_timestamp": 1781753811.048,
         "first_tail_run_id": "pmtrain-1781741271",
-        "last_tail_run_id": "pmtrain-1781741271",
+        "last_tail_run_id": "pmtrain-1781753809",
         "run_ids_seen": [
-          "pmtrain-1781741271"
+          "pmtrain-1781741271",
+          "pmtrain-1781753809"
         ],
         "first_tail_tick": 0,
         "last_tail_tick": 0
@@ -4987,23 +4790,23 @@
         "selected_root": "runtime_data",
         "bundle_sample_path": "samples/pending_labels_tail_500.jsonl",
         "exists": true,
-        "size_bytes": 292727649,
-        "mtime": 1781748618.0,
-        "total_rows_exact_if_available": 588940,
+        "size_bytes": 294453527,
+        "mtime": 1781753714.0,
+        "total_rows_exact_if_available": 592420,
         "included_rows": 500,
-        "source_sha256_head_tail": "0fc0475e71cb65a3c8954c80b0f956d0",
+        "source_sha256_head_tail": "82994fecc180b7d5379521c07d43d07c",
         "truncated": true,
         "source_verified_from_data_dir": true,
         "fallback_used": false,
-        "first_tail_timestamp": 1781747584.96,
-        "last_tail_timestamp": 1781748456.255,
+        "first_tail_timestamp": 1781752798.337,
+        "last_tail_timestamp": 1781753655.734,
         "first_tail_run_id": "pmtrain-1781741271",
         "last_tail_run_id": "pmtrain-1781741271",
         "run_ids_seen": [
           "pmtrain-1781741271"
         ],
-        "first_tail_tick": 44,
-        "last_tail_tick": 51
+        "first_tail_tick": 77,
+        "last_tail_tick": 81
       },
       {
         "logical_name": "completed_labels.jsonl",
@@ -5013,7 +4816,7 @@
         "bundle_sample_path": "samples/completed_labels_tail_500.jsonl",
         "exists": true,
         "size_bytes": 0,
-        "mtime": 1781748618.0,
+        "mtime": 1781753714.0,
         "total_rows_exact_if_available": 0,
         "included_rows": 0,
         "source_sha256_head_tail": "e3b0c44298fc1c149afbf4c8996fb924",
@@ -5030,44 +4833,52 @@
       }
     ],
     "tail_freshness": {
-      "events_last_run_id": "pmtrain-1781741271",
-      "events_last_timestamp": 1781748617.185,
+      "events_last_run_id": "pmtrain-1781753809",
+      "events_last_timestamp": 1781753811.048,
       "freshness_max_gap_sec": 21600.0,
       "per_stream": {
         "decision_records.jsonl": {
           "last_run_id": "pmtrain-1781741271",
-          "last_timestamp": 1781748559.919,
-          "events_run_id": "pmtrain-1781741271",
-          "events_last_timestamp": 1781748617.185,
-          "compatible_run_id": true,
+          "last_timestamp": 1781753655.734,
+          "events_run_id": "pmtrain-1781753809",
+          "events_last_timestamp": 1781753811.048,
+          "compatible_run_id": false,
           "fresh_window_ok": true,
-          "gap_vs_events_sec": 57.266,
-          "stale_reason": null
+          "gap_vs_events_sec": 155.314,
+          "stale_reason": "different_run_id_than_events"
         },
         "no_trade_labels.jsonl": {
           "last_run_id": "pmtrain-1781741271",
-          "last_timestamp": 1781748456.255,
-          "events_run_id": "pmtrain-1781741271",
-          "events_last_timestamp": 1781748617.185,
-          "compatible_run_id": true,
+          "last_timestamp": 1781753655.734,
+          "events_run_id": "pmtrain-1781753809",
+          "events_last_timestamp": 1781753811.048,
+          "compatible_run_id": false,
           "fresh_window_ok": true,
-          "gap_vs_events_sec": 160.93,
-          "stale_reason": null
+          "gap_vs_events_sec": 155.314,
+          "stale_reason": "different_run_id_than_events"
         },
         "pending_labels.jsonl": {
           "last_run_id": "pmtrain-1781741271",
-          "last_timestamp": 1781748456.255,
-          "events_run_id": "pmtrain-1781741271",
-          "events_last_timestamp": 1781748617.185,
-          "compatible_run_id": true,
+          "last_timestamp": 1781753655.734,
+          "events_run_id": "pmtrain-1781753809",
+          "events_last_timestamp": 1781753811.048,
+          "compatible_run_id": false,
           "fresh_window_ok": true,
-          "gap_vs_events_sec": 160.93,
-          "stale_reason": null
+          "gap_vs_events_sec": 155.314,
+          "stale_reason": "different_run_id_than_events"
         }
       },
-      "incompatible_streams": [],
-      "compatible": true,
-      "reasons": [],
+      "incompatible_streams": [
+        "decision_records.jsonl",
+        "no_trade_labels.jsonl",
+        "pending_labels.jsonl"
+      ],
+      "compatible": false,
+      "reasons": [
+        "decision_records.jsonl: last_run_id=pmtrain-1781741271 != events run_id=pmtrain-1781753809",
+        "no_trade_labels.jsonl: last_run_id=pmtrain-1781741271 != events run_id=pmtrain-1781753809",
+        "pending_labels.jsonl: last_run_id=pmtrain-1781741271 != events run_id=pmtrain-1781753809"
+      ],
       "source_strict": true
     },
     "present_from_runtime": [
@@ -5100,7 +4911,7 @@
     ],
     "hard_required_invalid": [],
     "mixed_source_roots": [],
-    "stale_or_mixed_training_tail_samples": false,
+    "stale_or_mixed_training_tail_samples": true,
     "full_event_files_omitted_intentionally": true,
     "omitted_full_event_files": [
       "data/training/events.jsonl",
@@ -5149,11 +4960,11 @@
     "accelerated_discovery_enabled": true,
     "active_learning_runtime_enabled": true,
     "active_learning_config_source": "aggressive_paper_profile",
-    "active_learning_tiny_evaluator_called": 6,
+    "active_learning_tiny_evaluator_called": 10,
     "active_learning_config_mismatch": false,
     "active_learning_config_mismatch_reason": "",
-    "active_learning_tiny_trades_selected": 6,
-    "active_learning_tiny_trades_opened": 5,
+    "active_learning_tiny_trades_selected": 10,
+    "active_learning_tiny_trades_opened": 9,
     "active_learning_tiny_trades_blocked_by_reason": {
       "collision_blocked": 1
     },
@@ -5162,11 +4973,11 @@
     },
     "relaxed_bregman_trades_opened": 0,
     "btc_pulse_paper_trades_opened": 0,
-    "readiness_paper_trades_opened": 5,
+    "readiness_paper_trades_opened": 9,
     "exploration_pnl": -0.0322,
     "readiness_pnl": 0.0,
     "readiness_pnl_excludes_exploration": true,
-    "bregman_blocker": "no_certified_bregman_opportunity: dominant_reject=not_exhaustive(8348)",
+    "bregman_blocker": "no_certified_bregman_opportunity: dominant_reject=not_exhaustive(14523)",
     "relaxed_bregman_blocker": "no_relaxed_bregman_real_book_candidate",
     "tiny_directional_blocker": "",
     "btc_pulse_blocker": "btc_pulse_disabled",
