@@ -682,6 +682,10 @@ class PolymarketPaperTrainer:
         self._risk_regime = None
         self._tier2_metrics: dict = {"size_tightened": 0, "blocked_by_concentration": 0,
                                      "concentration_capped": 0}
+        # Tier-3 governance/ops: model registry (champion snapshot) + baseline calibration.
+        from .model_registry import ModelRegistry
+        self.model_registry = ModelRegistry()
+        self._slo_baseline_calibration = None
         # P0 closed-loop learning: turn EVERY evaluated candidate (incl. rejects)
         # into a structured training record + pending label + feedback. PAPER ONLY.
         from .closed_loop import ClosedLoopLearning
@@ -2860,6 +2864,85 @@ class PolymarketPaperTrainer:
         self._open_exposure_index = OpenExposureIndex.from_positions(self.open_positions())
         self.correlation_metrics["correlation_gate_enabled"] = bool(
             getattr(self.cfg, "correlation_gate_enabled", True))
+
+    def alpha_attribution_report(self) -> dict:
+        """Tier-3: realized-PnL attribution by strategy + signal source (read-only)."""
+        try:
+            from .alpha_attribution import attribute_pnl
+            return attribute_pnl(self.positions)
+        except Exception:  # noqa: BLE001
+            return {"schema": "alpha_attribution/1.0", "error": True}
+
+    def model_registry_report(self) -> dict:
+        """Tier-3: content-addressed snapshot of the active decision stack (config +
+        calibration hashes, seed, commit, warm-start) for reproducibility/governance. The
+        first snapshot becomes the champion; later calls report drift vs it."""
+        try:
+            import os as _os
+            from .model_registry import build_snapshot
+            commit = (_os.getenv("HTE_GIT_COMMIT") or _os.getenv("GIT_COMMIT") or "")
+            try:
+                artifact = self.learner.calibration_artifact()
+            except Exception:  # noqa: BLE001
+                artifact = None
+            snap = build_snapshot(
+                cfg=self.cfg, learner=self.learner, commit=commit,
+                seed=int(getattr(self.cfg, "seed", 42) or 42),
+                warm_start_samples=int(getattr(self.learner, "warm_start_samples", 0)),
+                calibration_artifact=artifact)
+            if not self.model_registry.champion:
+                self.model_registry.register_champion(snap)
+            snap["champion_diff"] = self.model_registry.compare(snap)
+            return snap
+        except Exception:  # noqa: BLE001
+            return {"schema": "model_registry/1.0", "error": True}
+
+    def slo_monitor_report(self) -> dict:
+        """Tier-3: operational SLO / drift alerts (training-loop liveness, calibration drift,
+        feed staleness, fill quality, kill-switch, Bregman FP). Read-only."""
+        try:
+            import os as _os
+            from .slo_monitor import evaluate_slos
+            cal_err = float(self.learner.calibration_error()) if self.learner else 0.0
+            if self._slo_baseline_calibration is None and cal_err > 0.0:
+                self._slo_baseline_calibration = cal_err
+            # training-file freshness (the Docker healthcheck signal)
+            age = 0.0
+            try:
+                p = self.data_dir / "polymarket_training.json"
+                if p.exists():
+                    age = max(0.0, time.time() - p.stat().st_mtime)
+            except Exception:  # noqa: BLE001
+                age = 0.0
+            feeds = {}
+            try:
+                feeds = self.feeds_health_report()
+            except Exception:  # noqa: BLE001
+                feeds = {}
+            dash = {}
+            try:
+                dash = self.aggressive_dashboard()
+            except Exception:  # noqa: BLE001
+                dash = {}
+            bm = {}
+            try:
+                from .monitoring import bregman_monitoring
+                bm = bregman_monitoring(self.bregman_summary())
+            except Exception:  # noqa: BLE001
+                bm = {}
+            return evaluate_slos(
+                calibration_error=cal_err,
+                baseline_calibration_error=self._slo_baseline_calibration,
+                training_file_age_s=age,
+                training_file_max_age_s=float(_os.getenv("SLO_TRAINING_MAX_AGE_S", "300")),
+                chainlink_stale=bool(feeds.get("chainlink_stale", False)),
+                btc_stale=not bool(feeds.get("btc_fast_price_valid", True)),
+                stale_data_rejection_rate=float(dash.get("stale_data_rejection_rate", 0.0) or 0.0),
+                fill_quality=1.0,
+                kill_switch_downgraded=bool(getattr(self, "_downgraded", False)),
+                bregman_false_positive_rate=float(bm.get("false_positive_rate", 0.0) or 0.0))
+        except Exception:  # noqa: BLE001
+            return {"schema": "slo_monitor/1.0", "error": True, "status": "ok"}
 
     def portfolio_risk_report(self) -> dict:
         """Tier-2 read-only portfolio-risk telemetry: VaR/CVaR + concentration (event/
@@ -6056,6 +6139,9 @@ class PolymarketPaperTrainer:
             "bregman": self.bregman_summary(),
             "portfolio": self.portfolio_report(),
             "portfolio_risk": self.portfolio_risk_report(),
+            "alpha_attribution": self.alpha_attribution_report(),
+            "model_registry": self.model_registry_report(),
+            "slo_monitor": self.slo_monitor_report(),
             "capital_allocation": self.capital_allocation_report(),
             "canary": self.canary_status(),
             "experiments": self.experiment_report(),

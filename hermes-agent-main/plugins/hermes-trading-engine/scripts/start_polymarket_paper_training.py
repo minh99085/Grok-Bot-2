@@ -799,6 +799,15 @@ def run(argv=None) -> int:
                     json.dumps(trainer.portfolio_risk_report(), default=str), encoding="utf-8")
             except Exception:  # noqa: BLE001 — telemetry write never blocks the loop
                 pass
+            # Tier-3: governance/ops — alpha attribution, model registry, SLO monitor.
+            for _name, _fn in (("alpha_attribution.json", trainer.alpha_attribution_report),
+                               ("model_registry.json", trainer.model_registry_report),
+                               ("slo_monitor.json", trainer.slo_monitor_report)):
+                try:
+                    (metrics_dir / _name).write_text(
+                        json.dumps(_fn(), default=str), encoding="utf-8")
+                except Exception:  # noqa: BLE001 — telemetry never blocks the loop
+                    pass
             # Pass-8: unified inspection summary (machine + human readable) written to
             # the RESOLVED absolute metrics/reports dirs.
             _insp = trainer.write_inspection_artifacts(
