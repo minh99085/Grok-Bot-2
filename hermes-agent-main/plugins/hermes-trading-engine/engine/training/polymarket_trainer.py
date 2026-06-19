@@ -755,6 +755,13 @@ class PolymarketPaperTrainer:
         if self.mode == "disabled":
             return {"tick": self.tick_count, "mode": "disabled", "opened": 0}
         self.tick_count += 1
+        # bound LIVE Grok research to a few NEW markets per tick (the rest use cache/stub
+        # fast) so a tick can never stall on serial live research calls.
+        try:
+            if hasattr(self.signal_model, "begin_tick"):
+                self.signal_model.begin_tick()
+        except Exception:  # noqa: BLE001 — never block a tick
+            pass
         scan = self.scanner.scan(raw_catalog, client=client, now=now)
         records = scan.records  # ranked + shortlisted
 

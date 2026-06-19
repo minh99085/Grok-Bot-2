@@ -584,6 +584,11 @@ services:
       GROK_ADVISORY_MIN_INTERVAL_SECONDS: "45"
       GROK_ADVISORY_MAX_CALLS_PER_RUN: "2000"
       GROK_ADVISORY_REQUIRE_NEWS: "0"
+      # HOT-PATH GUARD: cap LIVE Grok research calls per training tick. A live call costs
+      # ~seconds; researching every uncached candidate per tick stalled the tick (stale
+      # training file -> unhealthy). Uncached markets beyond the cap use cache/stub fast and
+      # are researched on later ticks (coverage still grows). Keep small.
+      GROK_MAX_LIVE_CALLS_PER_TICK: "6"
       # Research-CLIENT budget (the REAL coverage cap): the default $5/day cost cap was
       # exhausted after ~7 Grok calls, so coverage plateaued no matter the scheduler knobs.
       # Raise the bounded daily cost + request caps so far more directional candidates get a

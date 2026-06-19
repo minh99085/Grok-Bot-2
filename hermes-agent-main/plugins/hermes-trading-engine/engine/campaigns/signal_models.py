@@ -119,6 +119,16 @@ class ResearchSignalModel:
         self.calls_online = 0
         self.calls_cache = 0
         self.calls_stub = 0
+        # HOT-PATH GUARD: a live Grok call costs ~seconds; researching every uncached
+        # candidate per tick made a single tick take many minutes (stale training file ->
+        # unhealthy). Bound LIVE calls per tick — uncached markets beyond the cap fall back
+        # to cache/stub FAST this tick and are researched on a later tick (coverage still
+        # grows across ticks). 0 disables the cap.
+        try:
+            self.max_grok_calls_per_tick = int(os.getenv("GROK_MAX_LIVE_CALLS_PER_TICK", "6"))
+        except (TypeError, ValueError):
+            self.max_grok_calls_per_tick = 6
+        self._tick_live_calls = 0
         if self.grok_online:
             try:
                 from engine.research.grok_client import GrokResearchClient
@@ -186,12 +196,25 @@ class ResearchSignalModel:
             news_half_life_s=_opt_float(getattr(res, "news_half_life_s", None)),
             key_evidence=(list(ev)[:10] if isinstance(ev, (list, tuple)) else None))
 
+    def begin_tick(self) -> None:
+        """Reset the per-tick live-Grok-call budget. Called once at the start of each
+        training tick so live research is bounded per tick (keeps ticks fast)."""
+        self._tick_live_calls = 0
+
     def evaluate(self, rec: um.MarketRecord) -> SignalResult:
         now = time.time()
         hit = self._cache.get(rec.market_id)
         if hit and (now - hit[0]) < self.cache_ttl_s:
             return hit[1]
-        res = self._from_grok(rec) or self._from_storage(rec) or self._offline_stub(rec)
+        # only attempt a LIVE Grok call while under the per-tick cap; otherwise this tick
+        # falls back to cache/stub FAST and the market is researched on a later tick.
+        cap = int(getattr(self, "max_grok_calls_per_tick", 0) or 0)
+        grok = None
+        if cap <= 0 or self._tick_live_calls < cap:
+            grok = self._from_grok(rec)
+            if grok is not None and grok.source == "grok_online":
+                self._tick_live_calls += 1
+        res = grok or self._from_storage(rec) or self._offline_stub(rec)
         if res.source == "grok_online":
             self.calls_online += 1
         elif res.source == "grok_cache":
