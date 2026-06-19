@@ -1,0 +1,1 @@
+{"schema": "profit_discovery/1.0", "paper_only": true, "live_trading_enabled": false, "hard_gates_intact": true, "exploration_probes_opened": 1, "exploration_probes_rejected": 52, "learning_probe_throttle_active": false, "regime": "calm", "regime_aggression_multiplier": 1.0, "rv_candidates": 144, "rv_routed_to_research": 10, "bregman_certified": 0, "readiness_credible_trades": 0}

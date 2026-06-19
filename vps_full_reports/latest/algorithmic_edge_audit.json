@@ -6,7 +6,7 @@
   "max_status_age_s": 3600.0,
   "bregman_enabled": true,
   "tests_passing": true,
-  "equity_mismatch_pct": 0.0311,
+  "equity_mismatch_pct": 0.0002,
   "hard_failures": [],
   "required_field_violations": [],
   "missing_core_fields": [],
@@ -16,25 +16,25 @@
   "sections": {
     "strategy_attribution": {
       "trades_by_strategy": null,
-      "gross_pnl": -0.1567,
+      "gross_pnl": 0.0009,
       "after_cost_pnl": 0.0,
-      "win_rate": 0.25,
-      "win_rate_sample_count": 8,
+      "win_rate": 0.0,
+      "win_rate_sample_count": 0,
       "avg_edge_at_entry": null,
       "avg_realized_edge": null,
       "rejected_trades": null,
-      "open_exposure": 0.0,
-      "realized_pnl": -0.1567,
-      "unrealized_pnl": 0.0
+      "open_exposure": 1.0,
+      "realized_pnl": 0.0,
+      "unrealized_pnl": 0.0009
     },
     "bregman": {
-      "constraint_groups_scanned": 519.0,
-      "raw_groups_discovered": 519.0,
+      "constraint_groups_scanned": 516.0,
+      "raw_groups_discovered": 516.0,
       "incoherent_groups": 0.0,
       "candidate_arbitrages": 0.0,
       "certified_arbitrages": 0.0,
       "executable_depth_certified": 0.0,
-      "rejected_fees_spread_depth_slippage": 39731,
+      "rejected_fees_spread_depth_slippage": 1289,
       "expected_min_profit": 0.0,
       "worst_case_payoff": 0.0,
       "execution_atomicity_risk": false,
@@ -43,9 +43,9 @@
     },
     "btc_pulse": {
       "chainlink_anchor_price": 62461.0780779,
-      "fast_btc_price": 62506.285,
+      "fast_btc_price": 62563.815,
       "feed_disagreement_bps": null,
-      "market_stale_time_s": 1106.118,
+      "market_stale_time_s": 2010.74,
       "volatility_regime": null,
       "trend_persistence": null,
       "trade_trigger_reason": null,
@@ -75,7 +75,7 @@
       "sharpe": null,
       "sortino": null,
       "calmar": null,
-      "max_drawdown": -0.1576,
+      "max_drawdown": 0.0,
       "exposure_by_market": null,
       "exposure_by_event": null,
       "exposure_by_strategy": null,
@@ -101,11 +101,7 @@
       "readiness_cap": 100
     }
   },
-  "top_5_blockers": [
-    "benchmark failing: win_rate_traded_only"
-  ],
-  "top_5_recommendations": [
-    "Traded-only win rate below target \u2014 recalibrate entry edge."
-  ],
+  "top_5_blockers": [],
+  "top_5_recommendations": [],
   "note": "PAPER-only audit; fails loudly + caps readiness when the edge engine is inactive (Bregman off / 0 scans), pytest is red, fill realism or after-cost PnL is missing, or equity mismatches > 1%."
 }
