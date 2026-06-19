@@ -84,6 +84,7 @@ class OnlineLearner:
         self.markouts = dict(d.get("markouts", self.markouts))
         self.signal_strategies = dict(d.get("signal_strategies", {}))
         self.alpha_attribution = dict(d.get("alpha_attribution", {}))
+        self.warm_start_samples = int(d.get("warm_start_samples", 0))
 
     def _load(self) -> None:
         if self.path and self.path.exists():
@@ -214,6 +215,45 @@ class OnlineLearner:
                 m["n"] += 1
                 m["sum"] = round(m["sum"] + float(v), 6)
         return True
+
+    def warm_start(self, observations) -> int:
+        """Tier-1 WARM-START: seed probability-calibration buckets + per-category reliability
+        from historical RESOLVED-market observations ``(predicted_prob, outcome, category)``
+        so the model is calibrated from day one instead of cold (where ``p_model == mid`` and
+        no directional candidate is ever after-cost-positive).
+
+        These are clean, settlement-grounded labels (resolved markets), so they update the
+        SAME calibration state as a closed clean trade — but are tallied separately
+        (``warm_start_samples``) for auditability. Accepts ResolvedObservation objects or
+        ``(prob, outcome[, category])`` tuples. Returns the number ingested."""
+        ingested = 0
+        for ob in (observations or []):
+            if hasattr(ob, "observed_prob"):
+                p = float(ob.observed_prob); win = int(ob.outcome) == 1
+                cat = getattr(ob, "category", "uncategorized") or "uncategorized"
+            else:
+                try:
+                    p = float(ob[0]); win = int(ob[1]) == 1
+                    cat = (ob[2] if len(ob) > 2 else "uncategorized") or "uncategorized"
+                except (TypeError, ValueError, IndexError):
+                    continue
+            p = max(0.0, min(1.0, p))
+            w = 1 if win else 0
+            b = self.prob_buckets.setdefault(prob_bucket(p),
+                                             {"n": 0, "sum_pred": 0.0, "wins": 0})
+            b["n"] += 1
+            b["sum_pred"] += p
+            b["wins"] += w
+            c = self.categories.setdefault(cat, {"n": 0, "wins": 0, "reliability": 0.5,
+                                                 "ewma_capture": 0.0})
+            c["n"] += 1
+            c["wins"] += w
+            c["reliability"] = (1 - self.alpha) * c["reliability"] + self.alpha * w
+            ingested += 1
+        if not hasattr(self, "warm_start_samples"):
+            self.warm_start_samples = 0
+        self.warm_start_samples += ingested
+        return ingested
 
     def label_quality(self) -> dict:
         """Settlement-label quality summary (coverage / suppression / states)."""
@@ -361,6 +401,7 @@ class OnlineLearner:
             "signal_strategies": self.signal_strategies,
             "alpha_attribution": self.alpha_attribution,
             "rollbacks": self.rollbacks,
+            "warm_start_samples": int(getattr(self, "warm_start_samples", 0)),
         }
 
     def summary(self) -> dict:

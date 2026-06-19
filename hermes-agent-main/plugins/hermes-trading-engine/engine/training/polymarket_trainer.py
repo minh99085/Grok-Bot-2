@@ -315,6 +315,7 @@ class PolymarketPaperTrainer:
         self.scanner = MarketScanner(self.cfg, metrics=self.metrics)
         learner_path = self.data_dir / "polymarket_training_learner.json"
         self.learner = OnlineLearner(path=learner_path)
+        self._maybe_warm_start_from_history()
         self.scanner.learner = self.learner
         self.ranker = CandidateRanker(self.cfg, learner=self.learner)
         # Optional Chainlink oracle layer (additive, default OFF). When enabled it
@@ -1004,6 +1005,47 @@ class PolymarketPaperTrainer:
                 vol = 0.0
             return (-depth, -liq, -vol)
         return sorted(list(records or []), key=_key)
+
+    def _maybe_warm_start_from_history(self) -> None:
+        """Tier-1 startup WARM-START: when the learner is cold (no calibration buckets) and
+        warm-start is enabled, fetch resolved Polymarket markets, build point-in-time (no-
+        look-ahead) observations, run the walk-forward OOS validation (written to
+        metrics/backtest_validation.json), and seed the learner's calibration from the
+        resolved history so the live model is calibrated from day one instead of defaulting
+        to the market mid. Best-effort: network/parse failure NEVER blocks startup, and a
+        warm learner (persisted buckets) skips it."""
+        import os as _os
+        if str(_os.getenv("BACKTEST_WARM_START_ENABLED", "")).strip().lower() \
+                not in ("1", "true", "yes", "on"):
+            return
+        if getattr(self.learner, "prob_buckets", None):
+            return                                  # already warm (loaded from persisted state)
+        try:
+            from engine.training.historical_dataset import (fetch_resolved_markets,
+                                                            build_observations)
+            from engine.training.backtest import BacktestConfig, walk_forward_validate
+            limit = int(_os.getenv("BACKTEST_RESOLVED_LIMIT", "3000"))
+            cost = float(_os.getenv("BACKTEST_COST_PER_TRADE", "0.01"))
+            resolved = fetch_resolved_markets(limit=limit)
+            obs = build_observations(resolved, leads=("1d", "1w", "1mo"))
+            if not obs:
+                return
+            report = walk_forward_validate(obs, cfg=BacktestConfig(cost_per_trade=cost))
+            try:
+                mdir = self.data_dir / "metrics"
+                mdir.mkdir(parents=True, exist_ok=True)
+                import json as _json
+                (mdir / "backtest_validation.json").write_text(
+                    _json.dumps(report, default=str), encoding="utf-8")
+            except OSError:
+                pass
+            n = self.learner.warm_start(obs)
+            self.learner.persist()
+            logger.info("tier1 warm-start: %d resolved obs -> learner calibration_error=%.4f "
+                        "(backtest promotable=%s)", n, self.learner.calibration_error(),
+                        report.get("promotable"))
+        except Exception:  # noqa: BLE001 — warm-start must never block a paper run
+            logger.debug("tier1 warm-start skipped (non-fatal)", exc_info=True)
 
     def _family_event_fetcher(self):
         """Lazily build (and cache) the READ-ONLY Polymarket ``/events`` fetcher used to

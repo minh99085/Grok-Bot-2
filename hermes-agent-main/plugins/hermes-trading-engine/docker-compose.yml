@@ -594,6 +594,15 @@ services:
       RESEARCH_MAX_REQUESTS_PER_HOUR: "120"
       RESEARCH_MAX_REQUESTS_PER_DAY: "1500"
       RESEARCH_MAX_REQUESTS_PER_MARKET_PER_DAY: "12"
+      # ---- Tier 1: backtest warm-start (PAPER / RESEARCH ONLY) ----
+      # On startup, if the learner is cold, fetch resolved Polymarket markets, run the
+      # walk-forward out-of-sample validation (-> metrics/backtest_validation.json), and seed
+      # the learner's calibration from history so the model is calibrated from day one
+      # instead of defaulting to the market mid. Point-in-time (no look-ahead); best-effort;
+      # never blocks startup; never trades.
+      BACKTEST_WARM_START_ENABLED: "1"
+      BACKTEST_RESOLVED_LIMIT: "3000"
+      BACKTEST_COST_PER_TRADE: "0.01"
       # ---- Chainlink real price feed (READ-ONLY oracle input) ----
       # Live Chainlink mainnet aggregator reads (latestRoundData over JSON-RPC),
       # used ONLY as a probability/edge input feature for crypto-linked markets.
