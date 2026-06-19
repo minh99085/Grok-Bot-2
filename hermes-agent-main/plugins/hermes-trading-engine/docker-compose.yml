@@ -580,10 +580,16 @@ services:
       # virtually every directional candidate defaulted to the market mid (zero edge). Raise
       # the advisory budget + tighten spacing so far more candidates get a real Grok
       # settlement probability. Grok stays ADVISORY-ONLY — it never gates/sizes/places.
-      GROK_ADVISORY_MAX_CALLS_PER_HOUR: "60"
-      GROK_ADVISORY_MIN_INTERVAL_SECONDS: "45"
-      GROK_ADVISORY_MAX_CALLS_PER_RUN: "2000"
-      GROK_ADVISORY_REQUIRE_NEWS: "0"
+      # NOTE: broad Grok coverage (high budget + news-less + tight spacing) STALLED the
+      # training loop — the research signal model researches candidates LIVE in the hot path
+      # and a fresh daily budget let a single tick make continuous serial ~10s Grok calls, so
+      # ticks never completed (stale training file -> unhealthy). Reverted to the conservative,
+      # KNOWN-HEALTHY bounded values until research is moved off the hot path (async). Grok
+      # stays advisory-only.
+      GROK_ADVISORY_MAX_CALLS_PER_HOUR: "4"
+      GROK_ADVISORY_MIN_INTERVAL_SECONDS: "900"
+      GROK_ADVISORY_MAX_CALLS_PER_RUN: "48"
+      GROK_ADVISORY_REQUIRE_NEWS: "1"
       # HOT-PATH GUARD: cap LIVE Grok research calls per training tick. A live call costs
       # ~seconds; researching every uncached candidate per tick stalled the tick (stale
       # training file -> unhealthy). Uncached markets beyond the cap use cache/stub fast and
@@ -594,10 +600,11 @@ services:
       # Raise the bounded daily cost + request caps so far more directional candidates get a
       # real Grok probability. max_daily_cost_usd is the hard COST governor ($25/day) — tune
       # to your xAI budget. Still advisory-only; never trades.
-      RESEARCH_MAX_DAILY_COST_USD: "25"
-      RESEARCH_MAX_REQUESTS_PER_MINUTE: "12"
-      RESEARCH_MAX_REQUESTS_PER_HOUR: "120"
-      RESEARCH_MAX_REQUESTS_PER_DAY: "1500"
+      # Reverted to conservative defaults (broad coverage stalled the loop — see note above).
+      RESEARCH_MAX_DAILY_COST_USD: "5"
+      RESEARCH_MAX_REQUESTS_PER_MINUTE: "6"
+      RESEARCH_MAX_REQUESTS_PER_HOUR: "60"
+      RESEARCH_MAX_REQUESTS_PER_DAY: "300"
       RESEARCH_MAX_REQUESTS_PER_MARKET_PER_DAY: "12"
       # ---- Tier 1: backtest warm-start (PAPER / RESEARCH ONLY) ----
       # On startup, if the learner is cold, fetch resolved Polymarket markets, run the
