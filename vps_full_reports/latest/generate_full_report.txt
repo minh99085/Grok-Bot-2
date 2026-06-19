@@ -55,103 +55,103 @@ Requirement already satisfied: h11>=0.16 in ./.report_venv/lib/python3.12/site-p
 report dependencies OK: pydantic, numpy, pytest, fastapi, httpx
 ==> docker compose ps
 NAME                    IMAGE                                         COMMAND                  SERVICE                 CREATED       STATUS                 PORTS
-hermes-trading-engine   hermes-trading-engine-hermes-trading-engine   "uvicorn engine.app:…"   hermes-trading-engine   2 hours ago   Up 2 hours (healthy)   0.0.0.0:8800->8800/tcp, [::]:8800->8800/tcp
-hermes-training         hermes-trading-engine-hermes-training         "python scripts/star…"   hermes-training         2 hours ago   Up 2 hours (healthy)   8800/tcp
+hermes-trading-engine   hermes-trading-engine-hermes-trading-engine   "uvicorn engine.app:…"   hermes-trading-engine   7 hours ago   Up 7 hours (healthy)   0.0.0.0:8800->8800/tcp, [::]:8800->8800/tcp
+hermes-training         hermes-trading-engine-hermes-training         "python scripts/star…"   hermes-training         7 hours ago   Up 7 hours (healthy)   8800/tcp
 ==> hermes-training recent logs (tail)
-2026-06-19 13:20:33,446 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=113602222349411026935798787607839969199761775109372422977353184034977819490555 "HTTP/1.1 200 OK"
-2026-06-19 13:20:33,595 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=22025702894015507266771884863349575386771476134098202603314894758531749448410 "HTTP/1.1 200 OK"
-2026-06-19 13:20:33,745 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=45221505891151687247350613476540264973035592157376982987614233050274881740609 "HTTP/1.1 200 OK"
-2026-06-19 13:20:33,906 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=40880621812123072124894110728476930722247113974127027373873191577811644377187 "HTTP/1.1 200 OK"
-2026-06-19 13:20:34,055 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=55616609553295885066431848010576106359950961330793572142830418076856118050803 "HTTP/1.1 200 OK"
-2026-06-19 13:20:34,203 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=5500958648222024490080262026563017618333773328581609432182941377205770769101 "HTTP/1.1 200 OK"
-2026-06-19 13:20:34,360 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=96591255635253447513110478554912401032108924846987730492523639752571136117102 "HTTP/1.1 200 OK"
-2026-06-19 13:20:34,508 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=7704957412500097494230768374426867805597492039246472614656996558993945821862 "HTTP/1.1 200 OK"
-2026-06-19 13:20:34,665 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=15047604491802874354275110733061942924070383035535351367669821505205281160539 "HTTP/1.1 200 OK"
-2026-06-19 13:20:34,813 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=59486515505172770194759986480248623982470384665110499187156810204073586163823 "HTTP/1.1 200 OK"
-2026-06-19 13:20:35,015 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=110497699584092981271645275659518009509426434681323672798794261900579552307405 "HTTP/1.1 200 OK"
-2026-06-19 13:20:35,172 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=97241483046339789052810254133666269609223628675643544021279031056686678542592 "HTTP/1.1 200 OK"
-2026-06-19 13:20:35,336 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=43454145255065126326875684326566486832510316460934773505829974881528336252467 "HTTP/1.1 200 OK"
-2026-06-19 13:20:35,486 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=87133701376072508851137683254701808426549198267030139869830469953923786307166 "HTTP/1.1 200 OK"
-2026-06-19 13:20:35,635 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=37612555302354898227793012187502127153929267085363231232198461507780486168000 "HTTP/1.1 200 OK"
-2026-06-19 13:20:35,786 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=87816994160890135483542775156899286468323588923789176167383686039858738520377 "HTTP/1.1 200 OK"
-2026-06-19 13:20:35,939 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=34907629339994120314806973525085548241154502889200436343916188983417349460473 "HTTP/1.1 200 OK"
-2026-06-19 13:20:36,088 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=47124183252791851413589129579092330788471640599143546784846813558935961792300 "HTTP/1.1 200 OK"
-2026-06-19 13:20:36,235 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=45248828317359769014464331963493092818626745824176748789124641467441193841943 "HTTP/1.1 200 OK"
-2026-06-19 13:20:36,384 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=82608498019722351894035747439170553929002966913453390696632661209587939415070 "HTTP/1.1 200 OK"
-2026-06-19 13:20:36,534 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=33850466257919480392548066483135735568132586431988155480088051491998285065667 "HTTP/1.1 200 OK"
-2026-06-19 13:20:36,685 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=63748235565895386109998838191246046294283644972819376904469042703458996128704 "HTTP/1.1 200 OK"
-2026-06-19 13:20:36,839 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=111025007523199711849580565193487694203406486531021428702425803993768057341517 "HTTP/1.1 200 OK"
-2026-06-19 13:20:36,995 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=93899316926271869920456375862370520960408256763360958310639371758093650988742 "HTTP/1.1 200 OK"
-2026-06-19 13:20:37,145 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=37219771566408969144411068933461010362610308197111804081679842739542033488139 "HTTP/1.1 200 OK"
-2026-06-19 13:20:37,292 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=8036389606917399804182087156306212775662000928383647579869862442923474055463 "HTTP/1.1 200 OK"
-2026-06-19 13:20:37,441 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=38979481313499487100977934406438221097575597950945921466492271748310329850773 "HTTP/1.1 200 OK"
-2026-06-19 13:20:37,589 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=83679448600680240398709254747185019475929892376883184444807052100389838391405 "HTTP/1.1 200 OK"
-2026-06-19 13:20:37,742 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=73395707878980941429767245608687128362452623513419549997471065662051974339949 "HTTP/1.1 200 OK"
-2026-06-19 13:20:37,891 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=25268908008701121452317231817490018553351979934211335403090344421422875918470 "HTTP/1.1 200 OK"
-2026-06-19 13:20:38,075 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=89985888339089124030940146697377466057400325127482903127778056937557808827247 "HTTP/1.1 200 OK"
-2026-06-19 13:20:38,225 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=97259654917430064186405977443134006835998763281346453653688862257589854553024 "HTTP/1.1 200 OK"
-2026-06-19 13:20:38,374 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=83542488956302856287937062264548567315494750606360093496637928354662237489217 "HTTP/1.1 200 OK"
-2026-06-19 13:20:38,522 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=109077483387864731316673377290773139774333092230339372661276318322214439224466 "HTTP/1.1 200 OK"
-2026-06-19 13:20:38,670 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=29083746239794162845702653568246489337488441277439635061485320729068198549999 "HTTP/1.1 200 OK"
-2026-06-19 13:20:38,818 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=52826630872592554776720944227620577541953018952578777655013024813138580841746 "HTTP/1.1 200 OK"
-2026-06-19 13:20:38,969 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=103378389039477307153646400812534839332359137044724332899168077881508066762064 "HTTP/1.1 200 OK"
-2026-06-19 13:20:39,120 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=88403228407526026334161323077559451214717087874889655715239207060993844938000 "HTTP/1.1 200 OK"
-2026-06-19 13:20:39,270 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=68587270661988270884913306677764627599854397312737626109425172139479317567618 "HTTP/1.1 200 OK"
-2026-06-19 13:20:39,425 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=96409872899026955772873382421645603745463631820617242877483993262710412342911 "HTTP/1.1 200 OK"
+2026-06-19 22:13:25,938 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=47546524450161287727341616379856947543229714309735920426745237329875844900688 "HTTP/1.1 200 OK"
+2026-06-19 22:13:26,091 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=8801172977794092146061616813978915827794844185411002079917437218898204513735 "HTTP/1.1 200 OK"
+2026-06-19 22:13:26,246 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=99034969588140846760236688115393147961139609221891987820388072635667788256056 "HTTP/1.1 200 OK"
+2026-06-19 22:13:26,400 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=101322624361424459934612537190451876863815027318718596269890092699811291103186 "HTTP/1.1 200 OK"
+2026-06-19 22:13:26,562 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=17736854597398191765820321649932263037011221961606447057489098988955658367258 "HTTP/1.1 200 OK"
+2026-06-19 22:13:26,725 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=94559586571241563470235664821564670251180951772614764383113614156422396181162 "HTTP/1.1 200 OK"
+2026-06-19 22:13:26,876 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=90772332434487149264114862115632028379978765245278600275169585501290867536237 "HTTP/1.1 200 OK"
+2026-06-19 22:13:27,040 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=32338220190071351435772801779725302244575775216413325951443816017994629993401 "HTTP/1.1 200 OK"
+2026-06-19 22:13:27,190 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=25659310674993675562345759665114759892400026242514633218387667107987341231962 "HTTP/1.1 200 OK"
+2026-06-19 22:13:27,342 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=70597957576361537939804966822849214503608216947910840113213727171362364371798 "HTTP/1.1 200 OK"
+2026-06-19 22:13:27,491 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=50511763685262099662419697917821411360981122283657802469809671102755152890468 "HTTP/1.1 200 OK"
+2026-06-19 22:13:27,643 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=18023986759333086064929817096989891692290498583383901577388832221930259586154 "HTTP/1.1 200 OK"
+2026-06-19 22:13:27,793 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=80821659225253323854859502357518251255124220151715937764179497313384971187873 "HTTP/1.1 200 OK"
+2026-06-19 22:13:27,955 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=107671717400735842545673592247189459640956547755396706532512303730485017789159 "HTTP/1.1 200 OK"
+2026-06-19 22:13:28,107 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=47948568691434181269145277147047519070991783042932324801828572823671564218932 "HTTP/1.1 200 OK"
+2026-06-19 22:13:28,260 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=11630502333603507010260051963632226548966933278788158525182753385940719742668 "HTTP/1.1 200 OK"
+2026-06-19 22:13:28,411 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=50085164654457077021180441667207714705224469706773328882519583735294659477266 "HTTP/1.1 200 OK"
+2026-06-19 22:13:28,564 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=47340907435745971774936414277275769447649316984952415792631691131085629447335 "HTTP/1.1 200 OK"
+2026-06-19 22:13:28,759 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=81707251000626237836215904332139491284997432009362172855114462043324794413577 "HTTP/1.1 200 OK"
+2026-06-19 22:13:28,980 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=102475252046696039095945564977423088815674764517537029903868768848804279751250 "HTTP/1.1 200 OK"
+2026-06-19 22:13:29,133 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=59605680170274935268073927256733322463147355036669277706044697229655541407256 "HTTP/1.1 200 OK"
+2026-06-19 22:13:29,287 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=51508280778202349361616850684455231843716212176724253736363122559269229712002 "HTTP/1.1 200 OK"
+2026-06-19 22:13:29,439 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=95212449865986159112377413335252801281670333750637442556685159781445406848396 "HTTP/1.1 200 OK"
+2026-06-19 22:13:29,596 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=99903142096841190880720287817853730878417458335302571038071713359114395724664 "HTTP/1.1 200 OK"
+2026-06-19 22:13:29,746 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=47436845654499978850319480675987968061543167249121480790055313447012533083492 "HTTP/1.1 200 OK"
+2026-06-19 22:13:29,896 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=5161623255678193352839985156330393796378434470119114669671615782853260939535 "HTTP/1.1 200 OK"
+2026-06-19 22:13:30,047 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=57216272564529548464686463691236811991956032201293786790337952253964682584376 "HTTP/1.1 200 OK"
+2026-06-19 22:13:30,222 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=85314145075003877075444337688608552524757981642691011720288227360835302454133 "HTTP/1.1 200 OK"
+2026-06-19 22:13:30,377 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=62459633179739009086082290270364798570470638930898345845338045891933693758444 "HTTP/1.1 200 OK"
+2026-06-19 22:13:30,533 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=8818929568138666591686832937196509764192631221655779827192391843518751104345 "HTTP/1.1 200 OK"
+2026-06-19 22:13:30,697 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=59233334939466666732535582890372058163014801784907368371196881460021725124274 "HTTP/1.1 200 OK"
+2026-06-19 22:13:30,852 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=19619851020796345517172409566066997550761738782112746767326655871669350897686 "HTTP/1.1 200 OK"
+2026-06-19 22:13:31,002 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=108798918614128027361814219314538484133284583608074596451665946577336361445917 "HTTP/1.1 200 OK"
+2026-06-19 22:13:31,155 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=114269082674926705251896958069351103481735332504985373575219003228577234353192 "HTTP/1.1 200 OK"
+2026-06-19 22:13:31,310 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=106164535019993847918186633983594262709412930101542371342898649998016486410238 "HTTP/1.1 200 OK"
+2026-06-19 22:13:31,462 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=11394049983529879091000261551040473768914723688553553358956031403814058857703 "HTTP/1.1 404 Not Found"
+2026-06-19 22:13:31,615 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=86605620613301551080827358251101031381885748745410009260341619963521360725541 "HTTP/1.1 404 Not Found"
+2026-06-19 22:13:31,767 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=40884428163429552981847020176478526551317487614712183106056038957813584966780 "HTTP/1.1 200 OK"
+2026-06-19 22:13:31,920 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=18690992616149778625420365027908828771993698452035857614031756446560611303622 "HTTP/1.1 200 OK"
+2026-06-19 22:13:32,073 INFO httpx HTTP Request: GET https://clob.polymarket.com/book?token_id=96797656031191119176188453471637044475353637081608890153571023284371119486681 "HTTP/1.1 200 OK"
 ==> hermes-training: state=running health=healthy
 ==> refreshing runtime_data from hermes-training:/data
 ==> deleting old inspection_reports
 ==> removing stale vps_light_report_latest.zip (rewritten only after a complete bundle)
 ==> generating light-mode inspection report (.report_venv python)
 Classification : PASS_RUN_READY
-Health score   : 81.5/100
-Bundle folder  : inspection_reports/bot_inspection_20260619_132047
-Zip bundle     : inspection_reports/bot_inspection_20260619_132047.zip
+Health score   : 79.0/100
+Bundle folder  : inspection_reports/bot_inspection_20260619_221340
+Zip bundle     : inspection_reports/bot_inspection_20260619_221340.zip
 Bundle mode    : light
 Full JSONL     : omitted intentionally
 Samples        : tail 500 rows each
 Source events  : verified from runtime_data
-Zip size       : 6.41 MB
+Zip size       : 6.47 MB
 Edge audit     : PASS
 Run-ready      : run_ready_for_hours=True (max_safe_runtime_minutes=None)
 Grok brain     : grok_brain_ready=True
-Grok advisory  : calls=7 with_news=7 near_misses_analyzed=6 news_linked=3 advisory_only=7
-Bregman near   : total=641 one_fix_away=113 depth_only=96 not_exhaustive=288 | no-bundle blocker=incomplete_event_families
+Grok advisory  : calls=27 with_news=27 near_misses_analyzed=26 news_linked=6 advisory_only=27
+Bregman near   : total=856 one_fix_away=245 depth_only=136 not_exhaustive=308 | no-bundle blocker=incomplete_event_families
 Artifact paths :
    runtime_training_data_dir=runtime_data/training exists=True
    runtime_metrics_dir=runtime_data/metrics exists=True
    runtime_reports_dir=runtime_data/reports exists=True
-   inspection_bundle_dir=inspection_reports/bot_inspection_20260619_132047
+   inspection_bundle_dir=inspection_reports/bot_inspection_20260619_221340
 Warnings       : safety audit raised warnings; No certified Bregman opportunities found yet; continue paper training.
 ==> running training-runtime validation (.report_venv python)
   [PASS] paper_training_running: mode=paper_train
-  [PASS] status_fresh: age=281.6s
+  [PASS] status_fresh: age=231.0s
   [PASS] live_trading_disabled: paper-only build
   [PASS] strict_paper_realism: reference fills off
   [PASS] core_metrics_non_null: {"after_cost_pnl": 0, "fill_realism_enabled": true, "fantasy_fill_rejections": 0}
   [PASS] closed_loop_metrics_present: status=growing
-  [PASS] closed_loop_records_positive: records=5639 considered=5640
-  [PASS] decision_count_reconciles_with_events: events=5639
-  [PASS] rejection_becomes_learning_object: no_trade+shadow=5759 diagnostic=0
-  [PASS] pending_labels_or_diagnostic_without_target: pending=5000 diag_no_label=0
-  [PASS] no_trade_or_shadow_labels_positive: no_trade+shadow=5759 diagnostic=0
-  [PASS] active_learning_selection_or_reason_present: selected=5639 zero_reason=None
+  [PASS] closed_loop_records_positive: records=19140 considered=19140
+  [PASS] decision_count_reconciles_with_events: events=19140
+  [PASS] rejection_becomes_learning_object: no_trade+shadow=19339 diagnostic=62
+  [PASS] pending_labels_or_diagnostic_without_target: pending=5000 diag_no_label=62
+  [PASS] no_trade_or_shadow_labels_positive: no_trade+shadow=19339 diagnostic=62
+  [PASS] active_learning_selection_or_reason_present: selected=19140 zero_reason=None
   [PASS] pending_label_store_present: 
   [PASS] learning_state_saved: 
-  [PASS] bregman_metrics_consistent: discovered=460 certified=0 opened=0
-  [PASS] bregman_funnel_non_silent: detected=460 scanned=460 adapter_failed=0
-  [PASS] ledger_records_decisions: ledger.decisions=682613 decision_count=5640
+  [PASS] bregman_metrics_consistent: discovered=450 certified=0 opened=0
+  [PASS] bregman_funnel_non_silent: detected=450 scanned=450 adapter_failed=0
+  [PASS] ledger_records_decisions: ledger.decisions=707753 decision_count=19140
   [PASS] audit_win_rate_known: 
   [PASS] audit_clob_v2_executable_known: 
   [PASS] audit_production_readiness_score_known: 
   [PASS] run_ready_for_hours: blocking=[]
   [PASS] active_learning_config_consistent: config_source=aggressive_paper_profile runtime_enabled=True — aggressive_paper profile ALWAYS enables active learning; mismatch => container STALE, rebuild (mission-control --mode proof2h --approved-paper-run)
-  [PASS] active_learning_selected_candidates_accounted: explore_selected_not_evaluated=0 tiny_evaluator_called=4 blocked_by_reason={'collision_blocked': 1} — a selected candidate must open a <=$1 paper trade or record an exact blocker
+  [PASS] active_learning_selected_candidates_accounted: explore_selected_not_evaluated=0 tiny_evaluator_called=0 blocked_by_reason={} — a selected candidate must open a <=$1 paper trade or record an exact blocker
   [PASS] inspection_collector_includes_artifacts: 
   [PASS] inspection_artifacts_present: all present
-  [PASS] decision_count_has_event_file_rows: decision_count=5640 events.jsonl_rows=4099819
-  [PASS] decision_records_counter_matches_file: counter=5639 decision_records.jsonl_rows=682613
-  [PASS] pending_labels_counter_matches_file: counter=5000 pending_labels.jsonl_rows=717379
+  [PASS] decision_count_has_event_file_rows: decision_count=19140 events.jsonl_rows=4211014
+  [PASS] decision_records_counter_matches_file: counter=19140 decision_records.jsonl_rows=707753
+  [PASS] pending_labels_counter_matches_file: counter=5000 pending_labels.jsonl_rows=767289
   [PASS] training_tail_streams_same_run: same run
   [PASS] training_tail_streams_fresh_window: within freshness window
   [PASS] artifact_present:training_reconciliation.json: metrics/training_reconciliation.json
@@ -160,11 +160,11 @@ Warnings       : safety audit raised warnings; No certified Bregman opportunitie
 
 SAFE TO RUN: True
 report_rc=0 validate_rc=0
-==> packaging vps_light_report_20260619_132038.zip (complete light bundle + git proof)
-report bundle OK: 9175 files, 23089267 bytes -> vps_light_report_20260619_132038.zip
+==> packaging vps_light_report_20260619_221331.zip (complete light bundle + git proof)
+report bundle OK: 9280 files, 24166305 bytes -> vps_light_report_20260619_221331.zip
 ==> DONE
     report_rc=0 validate_rc=0
-    unique zip : /opt/hermes-agent-main/hermes-agent-main/plugins/hermes-trading-engine/vps_light_report_20260619_132038.zip (23089267 bytes)
+    unique zip : /opt/hermes-agent-main/hermes-agent-main/plugins/hermes-trading-engine/vps_light_report_20260619_221331.zip (24166305 bytes)
     latest zip : /opt/hermes-agent-main/hermes-agent-main/plugins/hermes-trading-engine/vps_light_report_latest.zip
     upload vps_light_report_latest.zip to ChatGPT for inspection.
 light_report_rc=0
