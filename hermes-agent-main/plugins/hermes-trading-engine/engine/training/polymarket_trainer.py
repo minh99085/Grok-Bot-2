@@ -2961,6 +2961,15 @@ class PolymarketPaperTrainer:
             "not_exhaustive_breakdown": getattr(self, "_not_exhaustive_breakdown", {}),
             "completion_priority_targets": len(
                 getattr(self, "_completion_priority", set()) or set()),
+            # completeness wiring: authoritative declared-outcome-count stamps applied to
+            # structurally-MECE (neg-risk) families this scan — unlocks `declared == legs`
+            # completeness proof for genuinely-complete families (never fabricated).
+            "completeness_mece_families": int(
+                (getattr(self, "bregman_exec_metrics", {}) or {}).get(
+                    "family_completion_mece_families", 0) or 0),
+            "completeness_declared_count_stamped": int(
+                (getattr(self, "bregman_exec_metrics", {}) or {}).get(
+                    "family_completion_declared_count_stamped", 0) or 0),
         }
 
     def alpha_attribution_report(self) -> dict:

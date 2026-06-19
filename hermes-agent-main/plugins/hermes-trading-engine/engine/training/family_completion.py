@@ -67,6 +67,35 @@ def _sib_id(m: dict) -> str:
     return str(m.get("id") or m.get("conditionId") or m.get("slug") or "")
 
 
+def _family_is_mece(ev: dict, sibs: list, members: list) -> bool:
+    """True ONLY when the family is structurally mutually-exclusive-and-exhaustive — a
+    Polymarket neg-risk family (the neg-risk mechanism guarantees exactly one outcome
+    resolves YES) or an explicit complete/MECE marker.
+
+    We stamp an authoritative declared outcome count (below) ONLY for these families, so
+    completing or proving a family can NEVER turn an independent-binary event bundle (e.g.
+    several unrelated date-based YES/NO markets sharing one event) into a fake "buy the
+    complete set" hedge. Completeness is never fabricated; non-MECE bundles stay blocked."""
+    from .bregman_grouping import (_NEGRISK_ID_FIELDS, _NEGRISK_FLAGS,
+                                   _COMPLETE_MARKERS, _truthy, _is_neg_risk)
+
+    def _dict_mece(d) -> bool:
+        if not isinstance(d, dict):
+            return False
+        if any(d.get(k) for k in _NEGRISK_ID_FIELDS):
+            return True
+        if any(_truthy(d.get(k)) for k in _NEGRISK_FLAGS):
+            return True
+        return any(_truthy(d.get(k)) for k in _COMPLETE_MARKERS)
+
+    if _dict_mece(ev) or any(_dict_mece(m) for m in (sibs or [])):
+        return True
+    try:
+        return any(_is_neg_risk(r) for r in (members or []))
+    except Exception:  # noqa: BLE001 — detection must never break a tick
+        return False
+
+
 def _family_liquidity(recs: list) -> float:
     best = 0.0
     for r in recs:
@@ -119,6 +148,7 @@ def expand_event_families(records: list, *, now: Optional[float] = None,
     families_examined = families_with_gap = 0
     enumerated = added_n = skipped_no_tokens = skipped_low_liq = 0
     events_fetched = events_fetch_failed = 0
+    mece_families = declared_stamped = 0
     capped = False
     _event_cache: dict[str, list] = {}
 
@@ -155,6 +185,23 @@ def expand_event_families(records: list, *, now: Optional[float] = None,
                     events_fetch_failed += 1
         if len(sibs) < 2:                       # still nothing enumerable -> skip
             continue
+        # COMPLETENESS WIRING: when we have the event's authoritative full market list
+        # (embedded or fetched), stamp the declared outcome count onto the EXISTING family
+        # members so the UNCHANGED certifier rule (declared == scanned legs) can finally
+        # PROVE a genuinely-complete family — the flat /markets scan never carries this count.
+        # Gated to structurally-MECE (neg-risk/marker) families so a non-hedge bundle is
+        # never mislabelled complete. This fixes the dominant `no_declared_outcome_count`
+        # blocker for real neg-risk families WITHOUT fabricating completeness.
+        real_sibs = [m for m in sibs if _sib_id(m)]
+        family_mece = _family_is_mece(ev, real_sibs, members)
+        if family_mece and len(real_sibs) >= 2:
+            mece_families += 1
+            for r in members:
+                rr = _raw(r)
+                if isinstance(rr, dict) and rr.get("outcomeCount") is None \
+                        and rr.get("outcome_count") is None:
+                    rr["outcomeCount"] = len(real_sibs)
+                    declared_stamped += 1
         present = {str(getattr(r, "market_id", "") or "") for r in members}
         gap = [m for m in sibs if _sib_id(m) and _sib_id(m) not in existing_ids
                and _sib_id(m) not in present]
@@ -181,7 +228,10 @@ def expand_event_families(records: list, *, now: Optional[float] = None,
                 break
             sib_raw = dict(m)
             sib_raw["events"] = [shared_event]
-            sib_raw.setdefault("outcomeCount", len(sibs))
+            # Only a structurally-MECE family may carry a declared count that proves a
+            # complete-set hedge; otherwise completing it must NOT make it certifiable.
+            if family_mece:
+                sib_raw.setdefault("outcomeCount", len(real_sibs))
             for k, v in negrisk.items():
                 sib_raw.setdefault(k, v)
             try:
@@ -213,6 +263,10 @@ def expand_event_families(records: list, *, now: Optional[float] = None,
         "family_completion_records_out": len(records) + len(added),
         "family_completion_capped": capped,
         "family_completion_targeted_prioritized": targeted_prioritized,
+        # completeness wiring: MECE families seen + authoritative declared-count stamps
+        # applied to existing members (unlocks `declared == legs` completeness proof).
+        "family_completion_mece_families": mece_families,
+        "family_completion_declared_count_stamped": declared_stamped,
     }
     if added:
         logger.debug("family_completion added %d sibling records across %d families",

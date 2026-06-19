@@ -120,14 +120,77 @@ def test_already_complete_family_adds_nothing():
     assert tel["family_completion_families_with_gap"] == 0
 
 
-def _scanned_member_no_embedded(i, *, event_id, now):
+def _scanned_member_no_embedded(i, *, event_id, now, neg_risk=False):
     # mirrors the REAL /markets payload: events[0] carries the id but NOT the markets list
     raw = dict(_sibling(f"m{i}", f"tok{i}", f"Outcome {i}"))
     raw["events"] = [{"id": event_id, "slug": event_id}]   # no embedded 'markets'
     raw["bestAsk"] = 0.30
     raw["bestBid"] = 0.28
     raw["liquidityNum"] = 500.0
+    if neg_risk:
+        raw["negRiskMarketID"] = f"nr_{event_id}"
     return um.MarketRecord.from_raw(raw, now=now)
+
+
+# --------------------------------------------------------------------------- #
+# Completeness wiring: authoritative declared-outcome-count stamping (MECE-only)
+# --------------------------------------------------------------------------- #
+def test_complete_mece_family_gets_declared_count_stamped_and_is_exhaustive():
+    # A neg-risk family whose two outcomes are BOTH already in scan, but the flat payload
+    # carries no declared count. Fetching the event supplies the authoritative count (2),
+    # which is stamped so the UNCHANGED certifier proves completeness (declared == legs).
+    now = time.time()
+    scanned = [_scanned_member_no_embedded(0, event_id="NR1", now=now, neg_risk=True),
+               _scanned_member_no_embedded(1, event_id="NR1", now=now, neg_risk=True)]
+
+    def fetch(eid):
+        return {"id": eid, "negRisk": True,
+                "markets": [_sibling("m0", "tok0", "A"), _sibling("m1", "tok1", "B")]}
+
+    out, tel = expand_event_families(scanned, now=now, event_fetcher=fetch)
+    assert tel["family_completion_mece_families"] == 1
+    assert tel["family_completion_declared_count_stamped"] == 2     # stamped both members
+    groups = group_markets(out, include_binary=False)
+    fam = max(groups, key=lambda g: len(g.legs))
+    assert len(fam.legs) == 2 and fam.exhaustive is True            # now provably complete
+
+
+def test_non_mece_bundle_is_NOT_stamped_and_stays_not_exhaustive():
+    # An independent-binary event bundle (NO neg-risk, no MECE marker): even though the
+    # event lists exactly the scanned markets, we must NOT stamp a count that would forge a
+    # "complete set" hedge — buying both YES legs is not a guaranteed payout.
+    now = time.time()
+    scanned = [_scanned_member_no_embedded(0, event_id="EVB", now=now),
+               _scanned_member_no_embedded(1, event_id="EVB", now=now)]
+
+    def fetch(eid):
+        return {"id": eid,            # NO negRisk / complete marker
+                "markets": [_sibling("m0", "tok0", "A"), _sibling("m1", "tok1", "B")]}
+
+    out, tel = expand_event_families(scanned, now=now, event_fetcher=fetch)
+    assert tel["family_completion_mece_families"] == 0
+    assert tel["family_completion_declared_count_stamped"] == 0
+    groups = group_markets(out, include_binary=False)
+    fam = max(groups, key=lambda g: len(g.legs))
+    assert fam.exhaustive is False                                  # correctly NOT a hedge
+
+
+def test_incomplete_mece_family_completed_then_provable():
+    # neg-risk family of 3 outcomes, only 1 in scan: completion adds the 2 missing siblings
+    # AND stamps the declared count (3) so the assembled family is provably complete.
+    now = time.time()
+    scanned = [_scanned_member_no_embedded(0, event_id="NR3", now=now, neg_risk=True)]
+
+    def fetch(eid):
+        return {"id": eid, "negRisk": True,
+                "markets": [_sibling(f"m{i}", f"tok{i}", f"O{i}") for i in range(3)]}
+
+    out, tel = expand_event_families(scanned, now=now, event_fetcher=fetch)
+    assert tel["family_completion_mece_families"] == 1
+    assert tel["family_completion_missing_siblings_added"] == 2
+    groups = group_markets(out, include_binary=False)
+    fam = max(groups, key=lambda g: len(g.legs))
+    assert len(fam.legs) == 3 and fam.exhaustive is True
 
 
 def test_event_fetch_enumerates_siblings_when_not_embedded():
