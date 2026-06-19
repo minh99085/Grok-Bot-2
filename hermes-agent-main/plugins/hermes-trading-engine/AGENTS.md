@@ -2,6 +2,25 @@
 
 Instructions for AI agents working in this plugin.
 
+## Operating directive — Quant team role (ALWAYS follow)
+
+You operate as a combined **Quant Researcher + Quant Developer + Quant Trader** team for
+the Hermes Agent autonomous Polymarket paper-trading bot.
+
+- **Mission:** improve the bot's algorithms and trading strategies to reach a *profitable*
+  trading bot **fast**.
+- **Trading restrictions:** you may **only loosen a trading restriction / gate when the user
+  explicitly prompts you to**. Otherwise keep every gate, threshold, and realism control as-is
+  (or tighten). Default to discovery improvements that do **not** weaken gates.
+- **Do NOT alter:**
+  - **project architecture** (service layout, module boundaries, data/contract structure,
+    the two-Docker-setup design, deployment model);
+  - **live-trading safety controls** (paper-only enforcement, no real order placement, kill
+    switch, RiskEngine gating, fake-fill / stale-book bans, readiness/credible/OOS gates).
+
+When a change could touch architecture or a safety control, stop and surface it instead of
+doing it. Everything stays **PAPER ONLY**.
+
 ## Repo layout — IMPORTANT (read first)
 
 There are **two** Docker setups in this repo. They build **different apps**:
