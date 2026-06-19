@@ -1018,8 +1018,11 @@ class PolymarketPaperTrainer:
         if str(_os.getenv("BACKTEST_WARM_START_ENABLED", "")).strip().lower() \
                 not in ("1", "true", "yes", "on"):
             return
-        if getattr(self.learner, "prob_buckets", None):
-            return                                  # already warm (loaded from persisted state)
+        # Idempotent: skip only if a PRIOR warm-start already seeded this learner (the state
+        # persists on the data volume). A few live closed-trade buckets do NOT count as warm —
+        # the model is still effectively uncalibrated until warm-started from resolved history.
+        if int(getattr(self.learner, "warm_start_samples", 0)) > 0:
+            return
         try:
             from engine.training.historical_dataset import (fetch_resolved_markets,
                                                             build_observations)
