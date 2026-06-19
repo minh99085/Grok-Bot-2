@@ -1,6 +1,6 @@
 # Hermes Polymarket Paper-Training — Bot Inspection Report
 
-_Generated: 2026-06-19T02:20:38.777403+00:00 · PAPER ONLY · inspection/reporting only_
+_Generated: 2026-06-19T02:25:16.826214+00:00 · PAPER ONLY · inspection/reporting only_
 
 ## 0. Algorithmic Edge Audit (MANDATORY)
 
@@ -137,7 +137,7 @@ _Generated: 2026-06-19T02:20:38.777403+00:00 · PAPER ONLY · inspection/reporti
 
 ## 1. Executive Summary
 
-**Classification: FAIL_NOT_RUN_READY**
+**Classification: PASS_RUN_READY**
 
 - Bot health score: **79.0/100**
 - Safety: WARN · live_detected=no
@@ -401,7 +401,7 @@ Top Bregman near-misses (diagnostic only — NOT executed):
 - bregman_shadow_label_candidates: 111
 - bregman_shadow_labels_written: 151
 - bregman_shadow_label_write_rate: 1.3604
-- shadow_records_written: 26076
+- shadow_records_written: 26179
 - shadow_labels_tail_nonempty: True
 - shadow_label_write_rejection_reasons: {'already_written': 4096}
 - profit_discovery_queue_items: 569
@@ -710,10 +710,10 @@ Lane-specific zero-trade blockers (empty == lane opened >=1 paper trade):
 
 ## 19. Artifacts Included
 
-- metrics: present (not copied) (90273984 bytes)
+- metrics: present (not copied) (90310672 bytes)
 - reports: copied (14933 bytes)
-- training: present (not copied) (9521522987 bytes)
-- micro_live_artifacts: copied (6348252 bytes)
+- training: present (not copied) (9522143051 bytes)
+- micro_live_artifacts: copied (6437664 bytes)
 - Missing (recorded, not fatal): data, paper_artifacts, training_artifacts, shadow_artifacts, post_canary_artifacts, replay_artifacts, production_review_artifacts, guarded_live_artifacts
 
 ## 20. Missing Features / Missing Evidence
@@ -724,7 +724,6 @@ Lane-specific zero-trade blockers (empty == lane opened >=1 paper trade):
 
 - [WARN] safety audit raised warnings
 - [WARN] 1 benchmark(s) failing
-- [WARN] NOT RUN-READY: stale_or_mixed_training_tail_samples: decision_records.jsonl: last_run_id=pmtrain-1781828245 != events run_id=pmtrain-1781835628; no_trade_labels.jsonl: last_run_id=pmtrain-1781828245 != events run_id=pmtrain-1781835628; pending_labels.jsonl: last_run_id=pmtrain-1781828245 != events run_id=pmtrain-1781835628
 - [WARN] No certified Bregman opportunities found yet; continue paper training.
 
 ## 22. Recommended Next Fixes

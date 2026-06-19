@@ -1,5 +1,5 @@
   [PASS] paper_training_running: mode=paper_train
-  [PASS] status_fresh: age=224.6s
+  [FAIL] status_fresh: age=506.9s
   [PASS] live_trading_disabled: paper-only build
   [PASS] strict_paper_realism: reference fills off
   [PASS] core_metrics_non_null: {"after_cost_pnl": 0, "fill_realism_enabled": true, "fantasy_fill_rejections": 0}
@@ -23,15 +23,15 @@
   [PASS] active_learning_selected_candidates_accounted: explore_selected_not_evaluated=0 tiny_evaluator_called=12 blocked_by_reason={} — a selected candidate must open a <=$1 paper trade or record an exact blocker
   [PASS] inspection_collector_includes_artifacts: 
   [PASS] inspection_artifacts_present: all present
-  [PASS] decision_count_has_event_file_rows: decision_count=4255 events.jsonl_rows=3968460
-  [PASS] decision_records_counter_matches_file: counter=4255 decision_records.jsonl_rows=653786
-  [PASS] pending_labels_counter_matches_file: counter=5000 pending_labels.jsonl_rows=659497
-  [FAIL] training_tail_streams_same_run: events_run_id=pmtrain-1781835628 stale=['decision_records.jsonl=pmtrain-1781828245', 'no_trade_labels.jsonl=pmtrain-1781828245', 'pending_labels.jsonl=pmtrain-1781828245']
+  [PASS] decision_count_has_event_file_rows: decision_count=4255 events.jsonl_rows=3968581
+  [PASS] decision_records_counter_matches_file: counter=4255 decision_records.jsonl_rows=653803
+  [PASS] pending_labels_counter_matches_file: counter=5000 pending_labels.jsonl_rows=659531
+  [PASS] training_tail_streams_same_run: same run
   [PASS] training_tail_streams_fresh_window: within freshness window
   [PASS] artifact_present:training_reconciliation.json: metrics/training_reconciliation.json
   [PASS] artifact_present:inspection_summary.json: metrics/inspection_summary.json
   [PASS] artifact_present:run_ready.json: metrics/run_ready.json
 
 SAFE TO RUN: False
-BLOCKING: ['training_tail_streams_same_run']
+BLOCKING: ['status_fresh']
 validate_rc=1
