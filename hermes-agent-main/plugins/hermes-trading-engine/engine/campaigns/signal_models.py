@@ -129,6 +129,14 @@ class ResearchSignalModel:
         except (TypeError, ValueError):
             self.max_grok_calls_per_tick = 6
         self._tick_live_calls = 0
+        # HOT-PATH SAFETY (default OFF): live per-candidate Grok research in the evaluate()
+        # hot path repeatedly STALLED the training loop whenever the daily research budget had
+        # headroom (a single tick made continuous serial ~10s calls -> tick never completed ->
+        # unhealthy). Keep the hot path CACHE/STORAGE/STUB only; the bounded advisory scheduler
+        # (1/tick) remains the sole LIVE-call path and persists results the cache/store reuse.
+        # Set RESEARCH_HOT_PATH_LIVE=1 only once research runs on an async/background worker.
+        self.hot_path_live = str(
+            os.getenv("RESEARCH_HOT_PATH_LIVE", "0")).strip().lower() in ("1", "true", "yes", "on")
         if self.grok_online:
             try:
                 from engine.research.grok_client import GrokResearchClient
@@ -206,11 +214,12 @@ class ResearchSignalModel:
         hit = self._cache.get(rec.market_id)
         if hit and (now - hit[0]) < self.cache_ttl_s:
             return hit[1]
-        # only attempt a LIVE Grok call while under the per-tick cap; otherwise this tick
-        # falls back to cache/stub FAST and the market is researched on a later tick.
+        # LIVE Grok in the hot path only when explicitly enabled (default OFF — see __init__)
+        # AND under the per-tick cap. Otherwise use cache/storage/stub FAST so the tick can
+        # NEVER stall on serial live research. The advisory scheduler does the live calls.
         cap = int(getattr(self, "max_grok_calls_per_tick", 0) or 0)
         grok = None
-        if cap <= 0 or self._tick_live_calls < cap:
+        if getattr(self, "hot_path_live", False) and (cap <= 0 or self._tick_live_calls < cap):
             grok = self._from_grok(rec)
             if grok is not None and grok.source == "grok_online":
                 self._tick_live_calls += 1

@@ -35,6 +35,7 @@ class _Client:
 
 def _model(cap, monkeypatch):
     monkeypatch.setenv("GROK_MAX_LIVE_CALLS_PER_TICK", str(cap))
+    monkeypatch.setenv("RESEARCH_HOT_PATH_LIVE", "1")   # enable hot-path live to test the cap
     m = ResearchSignalModel()
     m.grok_online = True
     m._client = _Client()
@@ -77,3 +78,17 @@ def test_cap_zero_disables_limit(monkeypatch):
     for r in _recs(8):
         m.evaluate(r)
     assert m._client.calls == 8                        # 0 -> uncapped (legacy behaviour)
+
+
+def test_hot_path_cache_only_by_default(monkeypatch):
+    # default (RESEARCH_HOT_PATH_LIVE unset) -> NO live Grok calls in evaluate() at all,
+    # so the tick can never stall on serial research (advisory scheduler does live calls)
+    monkeypatch.delenv("RESEARCH_HOT_PATH_LIVE", raising=False)
+    monkeypatch.setenv("GROK_MAX_LIVE_CALLS_PER_TICK", "6")
+    m = ResearchSignalModel()
+    m.grok_online = True
+    m._client = _Client()
+    m.begin_tick()
+    srcs = [m.evaluate(r).source for r in _recs(20)]
+    assert m._client.calls == 0                        # zero live calls in the hot path
+    assert all(s != "grok_online" for s in srcs)       # all served from cache/storage/stub
