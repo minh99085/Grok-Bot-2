@@ -1,20 +1,20 @@
 {
   "run_id": "pmtrain-1781840165",
-  "updated_at": 1781840402.773,
-  "total_decisions": 143236995,
-  "total_no_trade_labels": 141753773,
-  "total_shadow_labels": 2277268,
-  "total_pending_labels": 240,
-  "total_completed_labels": 66002,
-  "feedback_per_hour": 0.0,
-  "labels_resolved_per_day": 0.0,
-  "brier_after": null,
+  "updated_at": 1781841244.941,
+  "total_decisions": 143238075,
+  "total_no_trade_labels": 141754853,
+  "total_shadow_labels": 2277595,
+  "total_pending_labels": 843,
+  "total_completed_labels": 66119,
+  "feedback_per_hour": 390.2288,
+  "labels_resolved_per_day": 9365.4901,
+  "brier_after": 0.826941,
   "ece_after": null,
-  "calibration_updates": 838,
+  "calibration_updates": 839,
   "category_reliability": {},
   "growth": {
-    "learning_growth_score": 0.7,
-    "learning_growth_status": "collecting",
-    "learning_growth_reason": "structured examples + pending labels accumulating; awaiting resolution/settlement"
+    "learning_growth_score": 1.0,
+    "learning_growth_status": "growing",
+    "learning_growth_reason": "labels resolving into feedback + calibration updates"
   }
 }
