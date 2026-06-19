@@ -388,6 +388,10 @@ class TrainingConfig:
     # Tier-4 cross-market relative-value detector (advisory/telemetry-first; never trades).
     relative_value_enabled: bool = False
     rv_min_mispricing: float = 0.03
+    # Tier-2 #5 maker/passive-fill SHADOW simulator (shadow-only; never opens a real trade).
+    maker_fill_sim_enabled: bool = False
+    maker_sim_size_usd: float = 5.0
+    maker_sim_max_resting_ticks: int = 20
     active_learning_require_realistic_fill_for_trade: bool = True
     active_learning_allow_shadow_without_fill: bool = True
     # ---- Pass-7: cluster/correlation risk is an ACTIVE hard gate + allocator ----
@@ -1574,6 +1578,10 @@ class TrainingConfig:
             # Tier-4 relative-value detector ON for the aggressive profile (advisory only).
             relative_value_enabled=_envb("RELATIVE_VALUE_ENABLED", True),
             rv_min_mispricing=_envf("RV_MIN_MISPRICING", 0.03),
+            # Tier-2 #5 maker/passive-fill SHADOW simulator ON for aggressive (shadow-only).
+            maker_fill_sim_enabled=_envb("MAKER_FILL_SIM_ENABLED", True),
+            maker_sim_size_usd=_envf("MAKER_SIM_SIZE_USD", 5.0),
+            maker_sim_max_resting_ticks=_envi("MAKER_SIM_MAX_RESTING_TICKS", 20),
             # Option 2 broaden Grok directional coverage (advisory-only research edge).
             grok_advisory_max_calls_per_hour=_envi("GROK_ADVISORY_MAX_CALLS_PER_HOUR", 60),
             grok_advisory_min_interval_seconds=_envi("GROK_ADVISORY_MIN_INTERVAL_SECONDS", 45),

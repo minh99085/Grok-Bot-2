@@ -631,6 +631,13 @@ services:
       # Shadow-first — never opens a trade; surfaces RV candidates in metrics/relative_value.
       RELATIVE_VALUE_ENABLED: "1"
       RV_MIN_MISPRICING: "0.03"
+      # ---- Tier 2 #5: maker/passive-fill SHADOW simulator (shadow-only; never trades) ----
+      # Simulates resting a passive buy at the bid using real cross-tick book evolution +
+      # queue model + adverse-selection markout, to prove maker fills before wiring them into
+      # the OMS. Bounded shadow ledger; metrics in metrics/maker_fill_sim.json.
+      MAKER_FILL_SIM_ENABLED: "1"
+      MAKER_SIM_SIZE_USD: "5"
+      MAKER_SIM_MAX_RESTING_TICKS: "20"
       # Research stays OFF the hot path (definitive loop-stall fix); advisory scheduler only.
       RESEARCH_HOT_PATH_LIVE: "0"
       # ---- Chainlink real price feed (READ-ONLY oracle input) ----

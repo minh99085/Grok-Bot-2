@@ -686,6 +686,10 @@ class PolymarketPaperTrainer:
         from .model_registry import ModelRegistry
         self.model_registry = ModelRegistry()
         self._slo_baseline_calibration = None
+        # Tier-2 #5: maker/passive-fill SHADOW simulator (shadow ledger; never trades).
+        from .maker_fill_sim import MakerFillSimulator
+        self._maker_sim = MakerFillSimulator(
+            max_resting_ticks=int(getattr(self.cfg, "maker_sim_max_resting_ticks", 20)))
         # P0 closed-loop learning: turn EVERY evaluated candidate (incl. rejects)
         # into a structured training record + pending label + feedback. PAPER ONLY.
         from .closed_loop import ClosedLoopLearning
@@ -2865,6 +2869,30 @@ class PolymarketPaperTrainer:
         self.correlation_metrics["correlation_gate_enabled"] = bool(
             getattr(self.cfg, "correlation_gate_enabled", True))
 
+    def execution_attribution_report(self) -> dict:
+        """Tier-2 #6: implementation shortfall + realized slippage + markout-by-horizon +
+        per-strategy execution cost over closed trades (read-only)."""
+        try:
+            from .execution_attribution import execution_attribution
+            mk = {}
+            try:
+                mk = self.learner.markout_summary()
+            except Exception:  # noqa: BLE001
+                mk = {}
+            return execution_attribution(self.positions, learner_markouts=mk)
+        except Exception:  # noqa: BLE001
+            return {"schema": "execution_attribution/1.0", "error": True}
+
+    def maker_fill_report(self) -> dict:
+        """Tier-2 #5: maker/passive-fill SHADOW simulator metrics (fill rate, spread captured,
+        adverse-selection markout). Shadow-only; never trades."""
+        try:
+            rep = self._maker_sim.metrics()
+            rep["enabled"] = bool(getattr(self.cfg, "maker_fill_sim_enabled", False))
+            return rep
+        except Exception:  # noqa: BLE001
+            return {"schema": "maker_fill_sim/1.0", "error": True}
+
     def relative_value_report(self) -> dict:
         """Tier-4: cross-market relative-value (RV) candidates from the already-fetched
         eligible catalog (advisory/telemetry-only; never trades). Read-only, off-tick."""
@@ -3002,6 +3030,39 @@ class PolymarketPaperTrainer:
                 floor=float(getattr(self.cfg, "regime_aggression_floor", 0.25)))
         except Exception:  # noqa: BLE001 — risk precompute must never break a tick
             self._risk_regime = None
+        self._update_maker_sim()
+
+    def _update_maker_sim(self) -> None:
+        """Tier-2 #5: advance the maker SHADOW ledger from this tick's live-watch books and
+        rest new passive buys for the top markets. Bounded + wrapped; shadow-only, never
+        trades; cheap (operates on the already-built watch sample)."""
+        if not bool(getattr(self.cfg, "maker_fill_sim_enabled", False)):
+            return
+        try:
+            sample = list(getattr(self, "_watch_sample", []) or [])
+            tick = int(getattr(self, "tick_count", 0))
+            obs: dict = {}
+            for w in sample:
+                mid_p = float(w.get("mid") or 0.0)
+                spread = float(w.get("spread") or 0.0)
+                ask = float(w.get("yes_ask") or 0.0) or (mid_p + spread / 2.0)
+                bid = max(0.0, mid_p - spread / 2.0)
+                obs[str(w.get("market_id"))] = {
+                    "best_ask": ask, "best_bid": bid, "mid": mid_p,
+                    "depth_usd": float(w.get("top_depth_usd") or 0.0)}
+            self._maker_sim.update(obs, tick=tick)
+            size = float(getattr(self.cfg, "maker_sim_size_usd", 5.0) or 5.0)
+            for w in sample[:10]:                       # rest a few passive buys (bounded)
+                mid_p = float(w.get("mid") or 0.0)
+                spread = float(w.get("spread") or 0.0)
+                bid = max(0.0, mid_p - spread / 2.0)
+                if bid <= 0.0:
+                    continue
+                self._maker_sim.place(
+                    market_id=str(w.get("market_id")), rest_price=bid, mid=mid_p,
+                    depth_usd=float(w.get("top_depth_usd") or 0.0), size_usd=size, tick=tick)
+        except Exception:  # noqa: BLE001 — shadow sim must never break a tick
+            pass
 
     def _apply_tier2_risk(self, rec, est, edge, proposal, *, exploratory: bool):
         """Tier-2 sizing + portfolio gate (TIGHTEN-ONLY). Scales the proposal notional by the
@@ -6158,6 +6219,8 @@ class PolymarketPaperTrainer:
             "model_registry": self.model_registry_report(),
             "slo_monitor": self.slo_monitor_report(),
             "relative_value": self.relative_value_report(),
+            "execution_attribution": self.execution_attribution_report(),
+            "maker_fill_sim": self.maker_fill_report(),
             "capital_allocation": self.capital_allocation_report(),
             "canary": self.canary_status(),
             "experiments": self.experiment_report(),

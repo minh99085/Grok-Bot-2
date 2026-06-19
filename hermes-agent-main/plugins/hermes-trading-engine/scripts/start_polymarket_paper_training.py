@@ -803,7 +803,9 @@ def run(argv=None) -> int:
             for _name, _fn in (("alpha_attribution.json", trainer.alpha_attribution_report),
                                ("model_registry.json", trainer.model_registry_report),
                                ("slo_monitor.json", trainer.slo_monitor_report),
-                               ("relative_value.json", trainer.relative_value_report)):
+                               ("relative_value.json", trainer.relative_value_report),
+                               ("execution_attribution.json", trainer.execution_attribution_report),
+                               ("maker_fill_sim.json", trainer.maker_fill_report)):
                 try:
                     (metrics_dir / _name).write_text(
                         json.dumps(_fn(), default=str), encoding="utf-8")
