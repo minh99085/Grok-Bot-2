@@ -1117,7 +1117,8 @@ class PolymarketPaperTrainer:
                         getattr(self.cfg, "family_completion_min_family_liquidity_usd", 0.0)),
                     event_fetcher=self._family_event_fetcher(),
                     max_events_fetched=int(
-                        getattr(self.cfg, "family_completion_max_events_per_tick", 20)))
+                        getattr(self.cfg, "family_completion_max_events_per_tick", 20)),
+                    priority_keys=getattr(self, "_completion_priority", None))
             except Exception:  # noqa: BLE001 — completion must never break a tick
                 family_tel = {"family_completion_enabled": True, "family_completion_error": True}
         try:
@@ -1233,6 +1234,18 @@ class PolymarketPaperTrainer:
                 pass
         self.bregman_log = [c.to_dict() for c in certs]
         all_near = list(self._bregman_near_miss_best.values())
+        # #1/#2: decompose not_exhaustive + set NEXT tick's targeted family-completion
+        # priority to the high-lower-bound, one-fix-away incomplete families (convert real
+        # edge faster; never loosens certification).
+        try:
+            from engine.training.not_exhaustive_analysis import analyze_not_exhaustive
+            self._not_exhaustive_breakdown = analyze_not_exhaustive(all_near)
+            self._completion_priority = {
+                str(c.get("group_key")) for c in
+                self._not_exhaustive_breakdown.get("top_fixable_candidates", [])
+                if c.get("group_key")}
+        except Exception:  # noqa: BLE001 — analysis must never break a tick
+            self._not_exhaustive_breakdown = {}
         nm_summary = summarize(all_near,
                                top_n=int(getattr(self.cfg, "bregman_top_near_misses", 10) or 10))
         certified_n = sum(1 for c in certs if c.is_opportunity)
@@ -1288,6 +1301,7 @@ class PolymarketPaperTrainer:
             **nx_tel,
             **hydration_tel,
             **family_tel,
+            "not_exhaustive_breakdown": getattr(self, "_not_exhaustive_breakdown", {}),
             **self._bregman_selection_telemetry(records),
             **self._bregman_family_completeness_telemetry(groups, certs),
             **self._accelerated_discovery_telemetry(records, groups, certs, all_near),
@@ -2936,6 +2950,17 @@ class PolymarketPaperTrainer:
             "rv_routed_to_research": len(self._rv_research_targets()),
             "bregman_certified": int(getattr(self, "bregman_sets_opened", 0) or 0),
             "readiness_credible_trades": int(pr.get("readiness_credible_trades", 0) or 0),
+            # #4 segregated relaxed-discovery lane (exploration-only; excluded from readiness)
+            "relaxed_discovery_enabled": bool(
+                getattr(self.cfg, "relaxed_discovery_enabled", False)),
+            "relaxed_discovery_loosen_pct": float(
+                getattr(self.cfg, "relaxed_discovery_loosen_pct", 0.0)),
+            "relaxed_discovery_admitted": int(
+                getattr(self, "_relaxed_discovery_admitted", 0)),
+            # #1 not_exhaustive conversion attribution (dominant Bregman blocker decomposed)
+            "not_exhaustive_breakdown": getattr(self, "_not_exhaustive_breakdown", {}),
+            "completion_priority_targets": len(
+                getattr(self, "_completion_priority", set()) or set()),
         }
 
     def alpha_attribution_report(self) -> dict:
@@ -3310,10 +3335,19 @@ class PolymarketPaperTrainer:
         fresh = bool(getattr(est, "fresh_book", True))
         book_age = getattr(rec, "book_age_s", None)
         exec_price = float(getattr(edge, "executable_price", 0.0) or 0.0)
-        max_spread = float(getattr(cfg, "exploration_max_spread", 0.08))
+        strict_max_spread = float(getattr(cfg, "exploration_max_spread", 0.08))
+        strict_max_amb = float(getattr(cfg, "exploration_max_ambiguity_score", 0.45))
+        # #4 relaxed-discovery lane: loosen ONLY the SOFT tolerances (spread + ambiguity) by
+        # loosen_pct for the exploration lane, which is already EXCLUDED from readiness. Real
+        # fills, just lower quality / higher settlement risk. stale-book, depth, missing-ask
+        # and every fake-fill ban below stay STRICT — this never manufactures a fill.
+        relaxed = bool(getattr(cfg, "relaxed_discovery_enabled", False))
+        loosen = 1.0 + (float(getattr(cfg, "relaxed_discovery_loosen_pct", 0.30))
+                        if relaxed else 0.0)
+        max_spread = strict_max_spread * loosen
+        max_amb = strict_max_amb * loosen
         # depth requirement SIZED to the <=$1 probe (not the full-size $25 gate)
         min_depth = self._exploration_micro_min_depth()
-        max_amb = float(getattr(cfg, "exploration_max_ambiguity_score", 0.45))
         max_age = float(getattr(cfg, "exploration_max_book_age_sec", 20.0))
         # depth-aware probe size in the $1..$10 band (floored at min_order_notional_usd).
         size = self._exploration_probe_size(rec, est)
@@ -3344,9 +3378,16 @@ class PolymarketPaperTrainer:
         if expected_loss > max_loss + 1e-9:
             return False, nm("expected_loss_exceeds_cap", expected_loss, max_loss,
                              f"expected loss <= ${max_loss:g}")
+        # tag probes admitted only because the relaxed-discovery tolerances were applied —
+        # purely for telemetry; they remain exploration-lane (excluded from readiness).
+        relaxed_admitted = relaxed and (spread > strict_max_spread or amb > strict_max_amb)
+        if relaxed_admitted:
+            self._relaxed_discovery_admitted = int(
+                getattr(self, "_relaxed_discovery_admitted", 0)) + 1
         return True, {"exploration_size": round(size, 4),
                       "max_allowed_exploration_loss": max_loss,
-                      "expected_loss_usd": expected_loss}
+                      "expected_loss_usd": expected_loss,
+                      "relaxed_discovery_admitted": relaxed_admitted}
 
     def _learning_probe_quality(self, rec, est, edge, al: dict, size: float) -> dict:
         """Score a strict-realism-eligible learning probe 0..1 on QUALITY (does NOT loosen

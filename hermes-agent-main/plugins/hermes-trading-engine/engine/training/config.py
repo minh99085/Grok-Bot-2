@@ -392,6 +392,12 @@ class TrainingConfig:
     # Tier-4 cross-market relative-value detector (advisory/telemetry-first; never trades).
     relative_value_enabled: bool = False
     rv_min_mispricing: float = 0.03
+    # #4 segregated relaxed-discovery lane: loosen ONLY the SOFT exploration admission
+    # tolerances (spread + ambiguity) by this fraction so the EXPLORATION lane (already
+    # excluded from readiness) discovers more broadly. NEVER loosens stale-book, depth, or
+    # the fake-fill bans, and NEVER touches the readiness/credible/OOS gates. base OFF.
+    relaxed_discovery_enabled: bool = False
+    relaxed_discovery_loosen_pct: float = 0.30
     # Tier-2 #5 maker/passive-fill SHADOW simulator (shadow-only; never opens a real trade).
     maker_fill_sim_enabled: bool = False
     maker_sim_size_usd: float = 5.0
@@ -1601,8 +1607,14 @@ class TrainingConfig:
             ensemble_base_weight_research=_envf("POLYMARKET_ENSEMBLE_W_RESEARCH", 0.6),
             member_calibration_min_samples=_envi(
                 "POLYMARKET_MEMBER_CALIBRATION_MIN_SAMPLES", 20),
+            # #3 TIGHTEN standard-exploration execution quality: stop paying for the
+            # weakest-fill probes (raised 0.18 -> 0.25). Broad discovery now lives in the
+            # explicit relaxed-discovery lane (#4), not in low-quality standard probes.
             exploration_min_execution_quality=_envf(
-                "POLYMARKET_EXPLORATION_MIN_EXECUTION_QUALITY", 0.18),
+                "POLYMARKET_EXPLORATION_MIN_EXECUTION_QUALITY", 0.25),
+            # #4 segregated relaxed-discovery lane (exploration-only; excluded from readiness).
+            relaxed_discovery_enabled=_envb("RELAXED_DISCOVERY_ENABLED", True),
+            relaxed_discovery_loosen_pct=_envf("RELAXED_DISCOVERY_LOOSEN_PCT", 0.30),
             exploration_min_information_value=_envf(
                 "POLYMARKET_EXPLORATION_MIN_INFORMATION_VALUE", 0.08),
             # PROFIT-DISCOVERY breadth: probe MORE distinct markets/families per run (still

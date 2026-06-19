@@ -642,6 +642,17 @@ services:
       POLYMARKET_LEARNING_THROTTLE_PNL_FLOOR: "-0.05"
       POLYMARKET_EXPLORATION_MAX_PROBES_PER_EVENT_RUN: "4"
       POLYMARKET_EXPLORATION_MAX_PROBES_PER_CLUSTER_RUN: "6"
+      # ---- Aggressive profit-discovery iteration (#1-#4): hard gates UNCHANGED ----
+      # #3 TIGHTEN standard-exploration execution quality (stop paying for the weakest fills;
+      # broad breadth now lives in the explicit relaxed-discovery lane below, not low-quality
+      # standard probes).
+      POLYMARKET_EXPLORATION_MIN_EXECUTION_QUALITY: "0.25"
+      # #4 segregated relaxed-discovery lane: loosen ONLY the SOFT exploration tolerances
+      # (spread + ambiguity) by 30% for the EXPLORATION lane, which is already EXCLUDED from
+      # readiness/credible/OOS. stale-book, depth, missing-ask and all fake-fill bans stay
+      # STRICT; readiness gates are untouched. Probes remain $1-$10 paper-only.
+      RELAXED_DISCOVERY_ENABLED: "1"
+      RELAXED_DISCOVERY_LOOSEN_PCT: "0.30"
       # ---- Tier 2 #5: maker/passive-fill SHADOW simulator (shadow-only; never trades) ----
       # Simulates resting a passive buy at the bid using real cross-tick book evolution +
       # queue model + adverse-selection markout, to prove maker fills before wiring them into

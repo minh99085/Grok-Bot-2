@@ -82,7 +82,8 @@ def _family_liquidity(recs: list) -> float:
 def expand_event_families(records: list, *, now: Optional[float] = None,
                           max_total_new: int = 40, max_per_family: int = 8,
                           min_family_liquidity_usd: float = 0.0,
-                          event_fetcher=None, max_events_fetched: int = 20
+                          event_fetcher=None, max_events_fetched: int = 20,
+                          priority_keys: Optional[set] = None
                           ) -> "tuple[list, dict]":
     """Append authoritative missing sibling records for event families present in
     ``records``. The flat ``/markets`` scan carries each market's event id but not the
@@ -121,10 +122,14 @@ def expand_event_families(records: list, *, now: Optional[float] = None,
     capped = False
     _event_cache: dict[str, list] = {}
 
-    # Priority-2: complete the DEEPEST/most-liquid families first so the per-tick cap is
-    # spent where legs can actually clear the depth gate (selection-only ordering).
-    ordered_families = sorted(fam_members.items(),
-                              key=lambda kv: -_family_liquidity(kv[1]))
+    # Ordering: TARGETED priority families first (high-lower-bound, one-fix-away
+    # not_exhaustive near-misses from the prior tick), then deepest/most-liquid — so the
+    # per-tick fetch cap is spent first on the families most likely to CONVERT to certified.
+    pk = {str(x) for x in (priority_keys or set())}
+    ordered_families = sorted(
+        fam_members.items(),
+        key=lambda kv: (0 if str(kv[0]) in pk else 1, -_family_liquidity(kv[1])))
+    targeted_prioritized = sum(1 for k, _ in fam_members.items() if str(k) in pk)
     for key, members in ordered_families:
         families_examined += 1
         ev = fam_event[key]
@@ -207,6 +212,7 @@ def expand_event_families(records: list, *, now: Optional[float] = None,
         "family_completion_records_in": len(records),
         "family_completion_records_out": len(records) + len(added),
         "family_completion_capped": capped,
+        "family_completion_targeted_prioritized": targeted_prioritized,
     }
     if added:
         logger.debug("family_completion added %d sibling records across %d families",
