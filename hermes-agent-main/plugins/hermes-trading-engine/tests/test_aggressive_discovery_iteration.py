@@ -385,6 +385,17 @@ def test_btc_focus_off_keeps_non_btc(tmp_path, monkeypatch):
     assert pol.market_id in {r.market_id for r in sel}   # not restricted when focus off
 
 
+def test_btc_focus_keeps_thin_scan_depth_btc_market(tmp_path, monkeypatch):
+    # the mid-range BTC up/down market with THIN scan depth must survive selection under
+    # BTC focus (no depth pre-filter) so hydration + the real depth gate decide downstream.
+    t = _trainer(tmp_path, monkeypatch, directional_selection_enabled=True,
+                 directional_btc_focus_enabled=True, directional_btc_min_depth_usd=0.0)
+    thin_btc = _q_rec(0.76, "Bitcoin Up or Down on June 20?", depth=3.0, spread=0.03)
+    sel = t._select_directional_candidates([thin_btc], budget=10)
+    assert thin_btc.market_id in {r.market_id for r in sel}    # not pre-filtered on stale depth
+    assert t._directional_selection_tel["filtered_thin_depth"] == 0
+
+
 def test_is_btc_eth_market_detection(tmp_path, monkeypatch):
     t = _trainer(tmp_path, monkeypatch)
     assert t._is_btc_eth_market(_q_rec(0.5, "Will BTC hit 100k?"))

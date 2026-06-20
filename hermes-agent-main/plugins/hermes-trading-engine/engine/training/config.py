@@ -389,6 +389,9 @@ class TrainingConfig:
     # (fast settlement -> fast calibration -> credible gate closes -> first readiness trades;
     # the one lane with a genuine independent signal). Selection-only. base OFF.
     directional_btc_focus_enabled: bool = False
+    # BTC-focus depth pre-filter floor (stale scan depth understates real books; the real
+    # depth gate applies post-hydration). 0.0 = no pre-filter for BTC candidates.
+    directional_btc_min_depth_usd: float = 0.0
     directional_min_prob: float = 0.10
     directional_max_prob: float = 0.90
     directional_select_min_depth_usd: float = 50.0
@@ -1623,6 +1626,7 @@ class TrainingConfig:
                 "POLYMARKET_DIRECTIONAL_HYDRATION_MAX_PER_TICK", 40),
             directional_selection_enabled=_envb("POLYMARKET_DIRECTIONAL_SELECTION_ENABLED", True),
             directional_btc_focus_enabled=_envb("POLYMARKET_DIRECTIONAL_BTC_FOCUS_ENABLED", False),
+            directional_btc_min_depth_usd=_envf("POLYMARKET_DIRECTIONAL_BTC_MIN_DEPTH_USD", 0.0),
             directional_min_prob=_envf("POLYMARKET_DIRECTIONAL_MIN_PROB", 0.10),
             directional_max_prob=_envf("POLYMARKET_DIRECTIONAL_MAX_PROB", 0.90),
             directional_select_min_depth_usd=_envf(

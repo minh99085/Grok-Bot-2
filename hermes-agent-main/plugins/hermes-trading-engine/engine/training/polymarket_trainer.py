@@ -1172,6 +1172,11 @@ class PolymarketPaperTrainer:
         # calibration CI quickly -> the credible gate can close -> first readiness trades.
         # Selection-only; the chainlink edge + every realism/credible gate apply downstream.
         btc_focus = bool(getattr(self.cfg, "directional_btc_focus_enabled", False))
+        if btc_focus:
+            # BTC markets are few + the scan depth is stale (understates the real book), so the
+            # depth PRE-filter wrongly drops the mid-range BTC up/down markets we want. Drop it
+            # for BTC focus and let CLOB hydration + the REAL depth gate decide downstream.
+            min_depth = float(getattr(self.cfg, "directional_btc_min_depth_usd", 0.0))
         scored: list = []
         in_band = filt_prob = filt_depth = filt_spread = filt_non_btc = btc_in_pool = 0
         # price histogram over the WHOLE pool (definitively shows whether the universe has
