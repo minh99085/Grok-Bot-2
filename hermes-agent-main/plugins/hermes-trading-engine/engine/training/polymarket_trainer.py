@@ -885,10 +885,11 @@ class PolymarketPaperTrainer:
                      int(getattr(self.cfg, "paper_decision_budget",
                                  self.cfg.trade_candidate_limit)))
         # P2-A: focus the directional budget on MODEL-EDGE-ZONE markets (mid-range prob,
-        # liquid, tight spread). Draw from the FULL ranked scan (`records`), not just the
-        # volume-ranked `watch` top-slice (which the funnel proved is 100% extreme-probability
+        # liquid, tight spread). Draw from the FULL eligible universe (post-safety-filter),
+        # not the volume-ranked top-slice (which the funnel proved is 100% extreme-probability
         # longshots/locks). Selection-only; the Bregman lane still groups over `eligible`.
-        candidates = self._select_directional_candidates(records, budget, fallback=watch)
+        _dir_pool = getattr(scan, "eligible", None) or records
+        candidates = self._select_directional_candidates(_dir_pool, budget, fallback=watch)
         # PASS-2: raw-catalog Bregman discovery — group over the FULL eligible
         # catalog (after safety filters), NOT the directional shortlist, so
         # complete-set arbitrage that never reaches the shortlist is still found.
@@ -1155,8 +1156,14 @@ class PolymarketPaperTrainer:
         max_spread = float(getattr(self.cfg, "directional_select_max_spread", 0.06))
         scored: list = []
         in_band = filt_prob = filt_depth = filt_spread = 0
+        # price histogram over the WHOLE pool (definitively shows whether the universe has
+        # any mid-range markets, vs being all longshots/locks).
+        hist = {"<0.05": 0, "0.05-0.10": 0, "0.10-0.90": 0, "0.90-0.95": 0, ">0.95": 0}
         for rec in (pool or []):
             mid = market_mid(rec)
+            mv = float(mid) if mid is not None else 0.5
+            hist["<0.05" if mv < 0.05 else "0.05-0.10" if mv < 0.10 else "0.10-0.90"
+                 if mv <= 0.90 else "0.90-0.95" if mv <= 0.95 else ">0.95"] += 1
             if mid is None or not (lo <= float(mid) <= hi):
                 filt_prob += 1
                 continue
@@ -1184,7 +1191,8 @@ class PolymarketPaperTrainer:
             "pool_in": len(pool or []), "in_band": in_band,
             "filtered_out_of_band_prob": filt_prob, "filtered_thin_depth": filt_depth,
             "filtered_wide_spread": filt_spread, "selected": len(selected),
-            "prob_band": [lo, hi], "min_depth_usd": min_depth, "max_spread": max_spread}
+            "prob_band": [lo, hi], "min_depth_usd": min_depth, "max_spread": max_spread,
+            "pool_mid_histogram": hist}
         return selected
 
     def _hydrate_directional(self, candidates: list, now: float) -> dict:
