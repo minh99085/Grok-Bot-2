@@ -23,10 +23,13 @@ doing it. Everything stays **PAPER ONLY**.
 
 ## Deployment & sync directive (ALWAYS follow)
 
-**Keep GitHub `main` and the live VPS in lockstep.** Every time work is finished, land it on
-GitHub `main` **and** deploy the same commit to the VPS so `main` == VPS HEAD (SHA-for-SHA).
-Never leave the VPS running code that is not on `main`, and never advance `main` without
-deploying it to the VPS.
+**ALWAYS push every completed change to BOTH the GitHub `main` repo AND the live VPS, and
+ALWAYS keep them in sync and identical (SHA-for-SHA: `origin/main` == VPS `git rev-parse HEAD`).**
+This is non-negotiable: never push to `main` without also deploying that exact commit to the
+VPS, and never deploy to the VPS without that exact commit being on `main`. Never leave the
+VPS running code that is not on `main`, and never advance `main` without deploying it. After
+every change, verify `origin/main` and the VPS HEAD are the same SHA before considering the
+task done.
 
 VPS deploy procedure (proven; the VPS cannot `git fetch origin` — its deploy key is
 passphrase-protected, so use a git bundle):
