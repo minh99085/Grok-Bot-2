@@ -21,12 +21,19 @@ stack's model channel + evidence score, and the credible after-cost gate still d
 
 from __future__ import annotations
 
+import logging
 import math
 import re
+import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional
+
+logger = logging.getLogger("hte.training.btc_signal")
+
+_COINBASE_SPOT = "https://api.coinbase.com/v2/prices/{sym}/spot"
+_ASSET_SYMBOLS = {"BTC": "BTC-USD", "ETH": "ETH-USD"}
 
 _BTC_ETH_RE = re.compile(r"\b(btc|bitcoin|eth|ether|ethereum)\b", re.I)
 # "$66,000" / "66000" / "$72.5k" strike extraction
@@ -111,6 +118,23 @@ def fair_value_above(spot: float, strike: float, vol_per_sec: float,
     return max(0.0, min(1.0, _norm_cdf(d2)))
 
 
+def directional_fair_value(mu_per_sec: float, vol_per_sec: float, tau_seconds: float,
+                           *, max_dev: float = 0.20) -> Optional[float]:
+    """P(price is UP over the next ``tau`` seconds) for an 'Up or Down at T' market, under a
+    drifting log-normal: ln(S_T/S_t) ~ N((mu-0.5*sig^2)*tau, sig^2*tau), so
+    P(up) = Phi((mu-0.5*sig^2)*sqrt(tau)/sig). The drift ``mu`` is the recent per-second
+    momentum estimate. Bounded to +/- ``max_dev`` from 0.5 because short-horizon crypto
+    direction is near-efficient (we never claim a large directional edge)."""
+    if vol_per_sec <= 0 or tau_seconds <= 0:
+        return None
+    sig_h = vol_per_sec * math.sqrt(tau_seconds)
+    if sig_h <= 1e-9:
+        return None
+    z = (mu_per_sec - 0.5 * vol_per_sec * vol_per_sec) * tau_seconds / sig_h
+    p = _norm_cdf(z)
+    return max(0.5 - max_dev, min(0.5 + max_dev, p))
+
+
 def parse_btc_market(question: str) -> dict:
     """Parse a BTC/ETH market question into {kind, strike, direction}. Read-only/best-effort."""
     q = str(question or "")
@@ -173,23 +197,26 @@ class BtcSignalEngine:
     def ready(self) -> bool:
         return len(self._buf) >= self.min_samples
 
-    def _prices(self) -> list:
-        return [p for _, p in self._buf]
-
     def indicators(self) -> dict:
-        prices = self._prices()
-        vps = realized_vol_per_sec(list(self._buf))
+        # snapshot the ring ONCE (the sampler thread appends concurrently; iterating a live
+        # deque while it mutates raises — a single list() copy is atomic enough under the GIL).
+        snap = list(self._buf)
+        prices = [p for _, p in snap]
+        vps = realized_vol_per_sec(snap)
         out = {"n": len(prices), "spot": prices[-1] if prices else None,
                "vol_per_sec": vps, "ema_fast": _ema(prices, self.ema_fast),
                "ema_slow": _ema(prices, self.ema_slow), "rsi": rsi(prices, self.rsi_period)}
-        # short-horizon momentum: return over the momentum window
-        mom = None
-        if prices:
-            now_ts = self._buf[-1][0]
-            past = [p for t, p in self._buf if now_ts - t <= self.momentum_window_s]
-            if len(past) >= 2 and past[0] > 0:
-                mom = math.log(prices[-1] / past[0])
+        # short-horizon momentum (total log return) + per-SECOND drift over the window
+        mom = drift = None
+        if snap:
+            now_ts = snap[-1][0]
+            past = [(t, p) for t, p in snap if now_ts - t <= self.momentum_window_s]
+            if len(past) >= 2 and past[0][1] > 0:
+                mom = math.log(prices[-1] / past[0][1])
+                span = now_ts - past[0][0]
+                drift = (mom / span) if span > 0 else None
         out["momentum"] = mom
+        out["drift_per_sec"] = drift
         return out
 
     def _directional_p_up(self, ind: dict) -> "tuple[float, float, dict]":
@@ -247,13 +274,122 @@ class BtcSignalEngine:
                              components={"spot": round(spot, 2), "strike": parsed["strike"],
                                          "tau_s": round(tau, 1),
                                          "vol_per_sec": round(vps, 8)})
-        # directional
+        # directional ("Up or Down at T"). PREFER the principled drift/vol fair value when we
+        # have a horizon + a vol estimate (P(up over tau) under a drifting log-normal); fall
+        # back to the bounded momentum/EMA/RSI ensemble otherwise. Confidence stays MODEST —
+        # short-horizon crypto direction is near-efficient, so we never claim a big edge.
+        drift = ind.get("drift_per_sec")
+        if vps and end_ts and drift is not None:
+            tau = float(end_ts) - now
+            if tau > 0:
+                p_up = directional_fair_value(drift, vps, tau,
+                                              max_dev=self.directional_max_dev)
+                if p_up is not None:
+                    data_ok = min(1.0, ind["n"] / max(1, self.min_samples * 4))
+                    sharp = abs(p_up - 0.5) / max(1e-9, self.directional_max_dev)
+                    # cap directional confidence below the strike model's (momentum is weak)
+                    conf = max(0.0, min(0.7, 0.5 * data_ok + 0.5 * sharp * data_ok))
+                    return BtcSignal(p_up=p_up, confidence=conf, kind="directional_drift",
+                                     components={"drift_per_sec": round(drift, 10),
+                                                 "vol_per_sec": round(vps, 8),
+                                                 "tau_s": round(tau, 1)})
         p_up, agreement, comps = self._directional_p_up(ind)
         data_ok = min(1.0, ind["n"] / max(1, self.min_samples * 4))
         sharp = abs(p_up - 0.5) / max(1e-9, self.directional_max_dev)   # 0..1 of max dev
-        conf = max(0.0, min(1.0, 0.5 * data_ok * agreement + 0.5 * sharp * agreement))
+        conf = max(0.0, min(0.7, 0.5 * data_ok * agreement + 0.5 * sharp * agreement))
         return BtcSignal(p_up=p_up, confidence=conf, kind="directional", components=comps)
 
     def status(self) -> dict:
         return {"observations": self.observations, "buffered": len(self._buf),
                 "ready": self.ready, "indicators": self.indicators() if self.ready else {}}
+
+
+def coinbase_spot_fetcher(symbol: str, *, timeout_s: float = 4.0):
+    """Build a READ-ONLY Coinbase spot-price fetcher for ``symbol`` (e.g. 'BTC-USD').
+    Returns a callable ``() -> float | None``; never raises, never trades."""
+    url = _COINBASE_SPOT.format(sym=symbol)
+    box: dict = {}
+
+    def _client():
+        c = box.get("c")
+        if c is None:
+            import httpx
+            c = httpx.Client(timeout=timeout_s, headers={"User-Agent": "hermes-btc-sampler/1.0"})
+            box["c"] = c
+        return c
+
+    def _fetch() -> Optional[float]:
+        try:
+            r = _client().get(url)
+            if r.status_code != 200:
+                return None
+            amt = (((r.json() or {}).get("data") or {}).get("amount"))
+            p = float(amt)
+            return p if p > 0 else None
+        except Exception:  # noqa: BLE001 — a price fetch never raises into the loop
+            return None
+    return _fetch
+
+
+class CryptoPriceSampler:
+    """Background daemon that samples BTC/ETH spot every ``interval_s`` and feeds the per-asset
+    :class:`BtcSignalEngine`s — DECOUPLED from the heavy ~3-min training tick so the signal
+    warms up in minutes and has real intraday granularity. PAPER/RESEARCH ONLY: read-only
+    public price reads; never trades, sizes, or places an order; never raises into the loop."""
+
+    def __init__(self, engines: dict, *, interval_s: float = 12.0,
+                 fetchers: Optional[dict] = None):
+        self.engines = dict(engines or {})
+        self.interval_s = max(2.0, float(interval_s))
+        self._fetchers = dict(fetchers or {})
+        for asset in self.engines:
+            if asset not in self._fetchers and asset in _ASSET_SYMBOLS:
+                self._fetchers[asset] = coinbase_spot_fetcher(_ASSET_SYMBOLS[asset])
+        self._stop = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self.samples = {a: 0 for a in self.engines}
+        self.errors = {a: 0 for a in self.engines}
+
+    def sample_once(self, now: Optional[float] = None) -> dict:
+        """One sampling pass over all assets (used by the loop + directly in tests)."""
+        now = float(now if now is not None else time.time())
+        got = {}
+        for asset, eng in self.engines.items():
+            fetch = self._fetchers.get(asset)
+            if fetch is None:
+                continue
+            try:
+                px = fetch()
+            except Exception:  # noqa: BLE001
+                px = None
+            if px is not None and px > 0:
+                eng.observe(px, now=now)
+                self.samples[asset] += 1
+                got[asset] = px
+            else:
+                self.errors[asset] += 1
+        return got
+
+    def _loop(self) -> None:
+        while not self._stop.is_set():
+            try:
+                self.sample_once()
+            except Exception:  # noqa: BLE001 — never let the sampler thread die silently
+                logger.debug("crypto price sampler pass failed", exc_info=True)
+            self._stop.wait(self.interval_s)
+
+    def start(self) -> None:
+        if self._thread is not None and self._thread.is_alive():
+            return
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._loop, name="crypto-price-sampler",
+                                        daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def status(self) -> dict:
+        return {"interval_s": self.interval_s, "running": bool(
+            self._thread is not None and self._thread.is_alive()),
+            "samples": dict(self.samples), "errors": dict(self.errors)}

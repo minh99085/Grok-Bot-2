@@ -400,6 +400,8 @@ class TrainingConfig:
     btc_signal_min_confidence: float = 0.25
     btc_signal_model_weight: float = 0.6
     btc_signal_evidence_floor: float = 0.6
+    btc_signal_sampler_enabled: bool = False
+    btc_signal_sampler_interval_s: float = 12.0
     directional_min_prob: float = 0.10
     directional_max_prob: float = 0.90
     directional_select_min_depth_usd: float = 50.0
@@ -1639,6 +1641,8 @@ class TrainingConfig:
             btc_signal_min_confidence=_envf("POLYMARKET_BTC_SIGNAL_MIN_CONFIDENCE", 0.25),
             btc_signal_model_weight=_envf("POLYMARKET_BTC_SIGNAL_MODEL_WEIGHT", 0.6),
             btc_signal_evidence_floor=_envf("POLYMARKET_BTC_SIGNAL_EVIDENCE_FLOOR", 0.6),
+            btc_signal_sampler_enabled=_envb("POLYMARKET_BTC_SIGNAL_SAMPLER_ENABLED", True),
+            btc_signal_sampler_interval_s=_envf("POLYMARKET_BTC_SIGNAL_SAMPLER_INTERVAL_S", 12.0),
             directional_min_prob=_envf("POLYMARKET_DIRECTIONAL_MIN_PROB", 0.10),
             directional_max_prob=_envf("POLYMARKET_DIRECTIONAL_MAX_PROB", 0.90),
             directional_select_min_depth_usd=_envf(

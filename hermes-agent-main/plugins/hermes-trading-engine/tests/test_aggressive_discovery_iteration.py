@@ -403,6 +403,27 @@ def test_is_btc_eth_market_detection(tmp_path, monkeypatch):
     assert not t._is_btc_eth_market(_q_rec(0.5, "Will the Fed cut rates?"))
 
 
+def test_attach_btc_signals_routes_to_per_asset_engine(tmp_path, monkeypatch):
+    # BTC markets must consume the BTC price engine (~$100k spot) and ETH markets the ETH
+    # engine (~$3k spot) — a single shared buffer would mis-price the other asset.
+    t = _trainer(tmp_path, monkeypatch, btc_signal_enabled=True, btc_signal_min_confidence=0.0)
+    assert set(t.btc_signal_engines) == {"BTC", "ETH"}
+    for i in range(60):
+        t.btc_signal_engines["BTC"].observe(100_000 + i * 5, now=_NOW + i)
+        t.btc_signal_engines["ETH"].observe(3_000 + i * 0.2, now=_NOW + i)
+    btc = _q_rec(0.5, "Will Bitcoin be above $130,000 on date?")
+    eth = _q_rec(0.5, "Will Ethereum be above $9,000 on date?")
+    for r in (btc, eth):
+        r.end_ts = _NOW + 60 + 600.0
+    tel = t._attach_btc_signals([btc, eth], now=_NOW + 60)
+    assert tel["btc_signal_attached"] == 2
+    bsig = btc.raw["_btc_signal"]["components"]
+    esig = eth.raw["_btc_signal"]["components"]
+    assert 90_000 < bsig["spot"] < 110_000          # routed to the BTC engine
+    assert 2_500 < esig["spot"] < 3_500             # routed to the ETH engine
+    assert tel["btc_engines_ready"] == {"BTC": True, "ETH": True}
+
+
 # --------------------------------------------------------------------------- #
 # local BTC signal -> probability stack (model blend + evidence credit)
 # --------------------------------------------------------------------------- #

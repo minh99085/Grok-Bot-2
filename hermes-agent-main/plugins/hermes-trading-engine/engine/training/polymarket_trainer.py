@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -374,13 +375,22 @@ class PolymarketPaperTrainer:
         # local BTC technical / fair-value signal engine (in-house indicators on the live BTC
         # price the bot already ingests). Advisory only; feeds the probability stack for BTC
         # markets. Created when enabled so offline/unit runs are unaffected.
-        self.btc_signal_engine = None
+        # per-asset BTC/ETH signal engines + a background fast price sampler (decoupled from
+        # the slow ~3-min tick so the signal warms up in minutes with intraday granularity).
+        self.btc_signal_engines: dict = {}
+        self.crypto_price_sampler = None
         if bool(getattr(self.cfg, "btc_signal_enabled", False)):
             try:
-                from engine.training.btc_signal import BtcSignalEngine
-                self.btc_signal_engine = BtcSignalEngine()
+                from engine.training.btc_signal import BtcSignalEngine, CryptoPriceSampler
+                self.btc_signal_engines = {a: BtcSignalEngine()
+                                           for a in ("BTC", "ETH")}
+                if bool(getattr(self.cfg, "btc_signal_sampler_enabled", False)):
+                    self.crypto_price_sampler = CryptoPriceSampler(
+                        self.btc_signal_engines, interval_s=float(getattr(
+                            self.cfg, "btc_signal_sampler_interval_s", 12.0)))
+                    self.crypto_price_sampler.start()
             except Exception:  # noqa: BLE001 — never block init building the signal engine
-                self.btc_signal_engine = None
+                self.btc_signal_engines = {}
         try:
             if bool(getattr(self.cfg, "btc_fast_price_enabled", False)):
                 from engine.feeds.btc_fast_price import BtcFastPriceFeed
@@ -844,9 +854,12 @@ class PolymarketPaperTrainer:
             except Exception:  # noqa: BLE001 — fast read never blocks a tick
                 pass
         # feed the live BTC price into the local technical/fair-value signal engine
-        if getattr(self, "btc_signal_engine", None) is not None and _btc_px is not None:
+        # supplement the BTC engine from the main-loop fast read (the background sampler is the
+        # primary source; this keeps a trickle of samples when the sampler is disabled).
+        _btc_eng = (getattr(self, "btc_signal_engines", {}) or {}).get("BTC")
+        if _btc_eng is not None and _btc_px is not None:
             try:
-                self.btc_signal_engine.observe(_btc_px, now=now)
+                _btc_eng.observe(_btc_px, now=now)
             except Exception:  # noqa: BLE001 — signal never blocks a tick
                 pass
         # Market-news evidence scan (PAPER ONLY, read-only, advisory). Bounded to
@@ -1307,26 +1320,41 @@ class PolymarketPaperTrainer:
         self._directional_hydration_tel = tel
         return tel
 
+    @staticmethod
+    def _market_asset(question: str) -> Optional[str]:
+        """Route a market to its underlying crypto asset (ETH vs BTC) by question text."""
+        q = str(question or "")
+        if re.search(r"\b(eth|ether|ethereum)\b", q, re.I):
+            return "ETH"
+        if re.search(r"\b(btc|bitcoin)\b", q, re.I):
+            return "BTC"
+        return None
+
     def _attach_btc_signals(self, candidates: list, now: float) -> dict:
-        """Compute the local BTC technical/fair-value signal for each BTC candidate and attach
-        it to ``rec.raw['_btc_signal']`` so the probability stack can blend it (read-only)."""
-        eng = getattr(self, "btc_signal_engine", None)
-        tel = {"btc_signal_enabled": eng is not None,
-               "btc_signal_ready": bool(eng is not None and eng.ready),
-               "btc_observations": int(getattr(eng, "observations", 0)) if eng else 0,
-               "btc_buffered": len(getattr(eng, "_buf", [])) if eng else 0}
-        if eng is None or not eng.ready:
+        """Compute the local BTC/ETH technical/fair-value signal for each crypto candidate
+        (routed to the matching per-asset engine) and attach it to ``rec.raw['_btc_signal']``
+        so the probability stack can blend it (read-only)."""
+        engines = getattr(self, "btc_signal_engines", {}) or {}
+        sampler = getattr(self, "crypto_price_sampler", None)
+        tel = {"btc_signal_enabled": bool(engines),
+               "btc_engines_ready": {a: bool(e.ready) for a, e in engines.items()},
+               "btc_observations": {a: int(getattr(e, "observations", 0))
+                                    for a, e in engines.items()},
+               "sampler": (sampler.status() if sampler is not None else None)}
+        if not engines:
             self._btc_signal_tel = tel
             return tel
         attached = confident = 0
         min_conf = float(getattr(self.cfg, "btc_signal_min_confidence", 0.25))
         for rec in (candidates or []):
             try:
-                if not self._is_btc_eth_market(rec):
-                    continue
                 raw = getattr(rec, "raw", {}) or {}
                 q = str(getattr(rec, "question", "") or raw.get("question")
                         or raw.get("title") or "")
+                asset = self._market_asset(q)
+                eng = engines.get(asset) if asset else None
+                if eng is None or not eng.ready:
+                    continue
                 sig = eng.signal_for_market(q, end_ts=getattr(rec, "end_ts", None), now=now)
                 if sig is None:
                     continue
@@ -1336,8 +1364,7 @@ class PolymarketPaperTrainer:
                     confident += 1
             except Exception:  # noqa: BLE001 — one bad market never breaks the pass
                 continue
-        tel.update({"btc_signal_attached": attached, "btc_signal_confident": confident,
-                    "btc_observations": int(getattr(eng, "observations", 0))})
+        tel.update({"btc_signal_attached": attached, "btc_signal_confident": confident})
         self._btc_signal_tel = tel
         return tel
 
