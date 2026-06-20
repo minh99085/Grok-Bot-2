@@ -186,10 +186,16 @@ class ClosedLoopLearning:
         self._tick = self._fresh_tick()
         self.calibration_updates = 0
         self.active_learning_used_feedback = False
-        self.brier_before: Optional[float] = None
-        self.brier_after: Optional[float] = None
+        self.brier_before: Optional[float] = None     # settlement-only (real resolved outcomes)
+        self.brier_after: Optional[float] = None       # None until real settlement labels exist
         self.ece_before: Optional[float] = None
         self.ece_after: Optional[float] = None
+        # short-horizon DIRECTIONAL-proxy Brier (momentum) — reported separately; NEVER
+        # settlement calibration (kept distinct so it can't masquerade as model skill).
+        self._proxy_brier_before: Optional[float] = None
+        self._proxy_brier_after: Optional[float] = None
+        self._proxy_brier_samples: int = 0
+        self.settlement_calibration_samples: int = 0
         self.state = {}
         self.state_loaded = self._load_state()
         self.state_saved = False
@@ -444,7 +450,7 @@ class ClosedLoopLearning:
         now = now or time.time()
         resolved = 0
         still_pending = []
-        briers = []
+        proxy_briers = []
         for row in self.pending:
             due = float(row.get("label_due_at") or 0.0)
             mid = marks.get(row.get("market_id"))
@@ -456,30 +462,40 @@ class ClosedLoopLearning:
                 still_pending.append(row)
                 continue
             p = row.get("model_probability") or row.get("market_probability") or 0.5
-            # proxy outcome: did price move toward the model's side? final: settle 0/1.
+            # CALIBRATION-TRUTH: a mid at/after the end date is NOT the settlement truth
+            # (the market may not have actually resolved, and a resolved market drops out of
+            # the live scan so its real outcome is never seen here). Therefore NEITHER the
+            # short-horizon proxy NOR a mid-thresholded "final" label is settlement-grade —
+            # both are short-horizon DIRECTIONAL proxies and must NOT feed the settlement
+            # calibration Brier/ECE (doing so scored the model's settlement probability
+            # against momentum and produced a meaningless >0.5 Brier). Real settlement
+            # calibration comes only from genuinely-resolved outcomes (settlement fetcher).
             if row["label_type"] == "final_settlement":
                 outcome = 1.0 if float(mid) >= 0.5 else 0.0
-                counts_for_calibration = True
             else:
                 start = row.get("market_probability") or 0.5
                 outcome = 1.0 if float(mid) >= float(start) else 0.0
-                counts_for_calibration = False     # proxy: not final-settlement-safe
+            counts_for_calibration = False     # directional proxy: never settlement calibration
             brier = round((float(p) - outcome) ** 2, 6)
-            briers.append(brier)
+            proxy_briers.append(brier)
             comp = {**row, "resolved_at": round(now, 3), "outcome": outcome,
                     "brier_contribution": brier, "label_type": row["label_type"],
                     "counts_for_calibration": counts_for_calibration,
-                    "not_final_settlement": row["label_type"] == "proxy"}
+                    "metric_basis": "directional_proxy",
+                    "not_final_settlement": True}
             self.completed.append(comp)
             self.counts["completed_labels_created"] += 1
             self.counts["feedback_records_written"] += 1
             self._append_jsonl("completed_labels.jsonl", comp)
             resolved += 1
         self.pending = still_pending
-        if briers:
-            self.brier_before = self.brier_after
-            self.brier_after = round(sum(briers) / len(briers), 6)
-            self.calibration_updates += 1
+        if proxy_briers:
+            # short-horizon DIRECTIONAL-proxy Brier (momentum), reported separately and
+            # CLEARLY NOT settlement calibration. The settlement Brier/ECE stay driven by
+            # genuinely-resolved outcomes only (see model-skill OOS calibration).
+            self._proxy_brier_before = self._proxy_brier_after
+            self._proxy_brier_after = round(sum(proxy_briers) / len(proxy_briers), 6)
+            self._proxy_brier_samples += len(proxy_briers)
             self.active_learning_used_feedback = True
         if len(self.completed) > 5000:
             self.completed = self.completed[-5000:]
@@ -522,8 +538,19 @@ class ClosedLoopLearning:
             "feedback_records_written": c["feedback_records_written"],
             "feedback_per_hour": self._per_hour(c["feedback_records_written"]),
             "calibration_updates": self.calibration_updates,
+            # settlement-grade calibration ONLY (real resolved outcomes). None/0 until the
+            # settlement feedback loop has resolved labels — see model_skill (OOS) for the
+            # authoritative model calibration on resolved markets.
             "brier_before": self.brier_before, "brier_after": self.brier_after,
             "ece_before": self.ece_before, "ece_after": self.ece_after,
+            "brier_basis": "final_settlement_only",
+            "settlement_calibration_samples": self.settlement_calibration_samples,
+            # short-horizon momentum proxy (mid vs entry) — discovery feedback, NOT calibration.
+            "proxy_directional_brier": self._proxy_brier_after,
+            "proxy_directional_samples": self._proxy_brier_samples,
+            "proxy_brier_note": ("short-horizon momentum proxy (mid vs entry); NOT settlement"
+                                 " calibration — model skill is measured on resolved markets"
+                                 " (model_skill OOS Brier/ECE)"),
             "category_reliability_updated": bool(self.state.get("category_reliability")),
             "active_learning_used_feedback": self.active_learning_used_feedback,
             "learning_state_loaded": self.state_loaded,

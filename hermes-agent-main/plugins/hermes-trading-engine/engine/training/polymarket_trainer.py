@@ -1057,6 +1057,9 @@ class PolymarketPaperTrainer:
             if not obs:
                 return
             report = walk_forward_validate(obs, cfg=BacktestConfig(cost_per_trade=cost))
+            # keep the OOS calibration in memory so model_skill_report() can surface the
+            # AUTHORITATIVE model skill (Brier/ECE on resolved markets) without re-running.
+            self._oos_calibration = dict(report.get("raw_market_oos_calibration") or {})
             try:
                 mdir = self.data_dir / "metrics"
                 mdir.mkdir(parents=True, exist_ok=True)
@@ -2926,6 +2929,44 @@ class PolymarketPaperTrainer:
         except Exception:  # noqa: BLE001
             return {"schema": "relative_value/1.0", "enabled": True, "error": True}
 
+    def model_skill_report(self) -> dict:
+        """AUTHORITATIVE probability-model calibration: Brier/ECE measured on REAL resolved
+        markets via the walk-forward OOS validation (no look-ahead). This is the only
+        settlement-grade skill metric — the closed-loop ``proxy_directional_brier`` is a
+        short-horizon momentum proxy and must NOT be read as calibration. ``predictive`` is
+        True iff the OOS Brier beats the base-rate baseline ``base_rate*(1-base_rate)``
+        (i.e. the model beats 'always predict the base rate')."""
+        cal = dict(getattr(self, "_oos_calibration", None) or {})
+        if not cal:
+            try:
+                import json as _json
+                p = self.data_dir / "metrics" / "backtest_validation.json"
+                if p.exists():
+                    cal = dict((_json.loads(p.read_text(encoding="utf-8"))
+                                .get("raw_market_oos_calibration") or {}))
+            except Exception:  # noqa: BLE001 — reporting must never raise
+                cal = {}
+        brier = cal.get("brier")
+        base = cal.get("base_rate")
+        baseline = (round(float(base) * (1.0 - float(base)), 6)
+                    if isinstance(base, (int, float)) else None)
+        predictive = bool(isinstance(brier, (int, float)) and baseline is not None
+                          and brier < baseline)
+        return {
+            "schema": "model_skill/1.0", "paper_only": True,
+            "source": "walk_forward_oos_resolved_markets",
+            "oos_samples": cal.get("n"),
+            "oos_brier": brier, "oos_log_loss": cal.get("log_loss"),
+            "oos_ece": cal.get("ece"), "base_rate": base,
+            "baseline_brier": baseline,
+            "skill_vs_baseline": (round(baseline - brier, 6)
+                                  if (predictive or (isinstance(brier, (int, float))
+                                      and baseline is not None)) else None),
+            "predictive_vs_baseline": predictive,
+            "note": ("settlement-grade calibration on resolved markets; closed-loop"
+                     " proxy_directional_brier is momentum, NOT calibration"),
+        }
+
     def profit_discovery_report(self) -> dict:
         """PROFIT-DISCOVERY summary: the rate at which the bot is discovering + evaluating
         opportunities (probes, distinct markets, regime aggression, throttle state, RV
@@ -2970,6 +3011,9 @@ class PolymarketPaperTrainer:
             "completeness_declared_count_stamped": int(
                 (getattr(self, "bregman_exec_metrics", {}) or {}).get(
                     "family_completion_declared_count_stamped", 0) or 0),
+            # AUTHORITATIVE model skill (Brier/ECE on resolved markets) — not the misleading
+            # closed-loop momentum-proxy Brier.
+            "model_skill": self.model_skill_report(),
         }
 
     def alpha_attribution_report(self) -> dict:
@@ -6345,6 +6389,7 @@ class PolymarketPaperTrainer:
             "execution_attribution": self.execution_attribution_report(),
             "maker_fill_sim": self.maker_fill_report(),
             "profit_discovery": self.profit_discovery_report(),
+            "model_skill": self.model_skill_report(),
             "capital_allocation": self.capital_allocation_report(),
             "canary": self.canary_status(),
             "experiments": self.experiment_report(),

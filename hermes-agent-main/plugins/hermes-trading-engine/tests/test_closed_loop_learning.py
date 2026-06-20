@@ -134,8 +134,18 @@ def test_proxy_label_resolves_into_completed_feedback(tmp_path):
     resolved = cl.resolve_labels({"m0": 0.62}, now=_NOW + 600.0)
     assert resolved == 1
     assert cl.counts["completed_labels_created"] == 1
-    assert cl.brier_after is not None
-    assert (tmp_path / "training" / "completed_labels.jsonl").is_file()
+    # a short-horizon momentum proxy resolves into the DIRECTIONAL-proxy Brier only — it is
+    # NOT settlement calibration, so the settlement Brier stays None (honest metric).
+    m = cl.metrics()
+    assert m["brier_after"] is None                       # settlement-only, no real outcome yet
+    assert m["proxy_directional_brier"] is not None        # momentum proxy recorded separately
+    assert m["proxy_directional_samples"] == 1
+    assert m["settlement_calibration_samples"] == 0
+    comp = (tmp_path / "training" / "completed_labels.jsonl")
+    assert comp.is_file()
+    import json as _json
+    row = _json.loads(comp.read_text().strip().splitlines()[-1])
+    assert row["counts_for_calibration"] is False and row["metric_basis"] == "directional_proxy"
 
 
 def test_learning_state_persists(tmp_path):

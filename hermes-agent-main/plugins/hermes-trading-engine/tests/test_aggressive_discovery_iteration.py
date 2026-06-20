@@ -159,3 +159,24 @@ def test_relaxed_lane_not_flagged_for_within_strict_candidate(tmp_path, monkeypa
     relaxed = _trainer(tmp_path, monkeypatch, relaxed_discovery_enabled=True)
     ok, info = relaxed._exploration_eligibility(rec, est, edge)
     assert ok is True and info.get("relaxed_discovery_admitted") is False
+
+
+# --------------------------------------------------------------------------- #
+# model-skill (OOS calibration) headline — settlement-grade, not the momentum proxy
+# --------------------------------------------------------------------------- #
+def test_model_skill_predictive_when_oos_brier_beats_base_rate(tmp_path, monkeypatch):
+    t = _trainer(tmp_path, monkeypatch)
+    # real backtest OOS calibration: Brier 0.206 vs base-rate baseline 0.4236*(1-0.4236)=0.244
+    t._oos_calibration = {"n": 373, "brier": 0.2057, "log_loss": 0.587,
+                          "ece": 0.1149, "base_rate": 0.4236}
+    r = t.model_skill_report()
+    assert r["oos_brier"] == 0.2057 and r["base_rate"] == 0.4236
+    assert r["predictive_vs_baseline"] is True            # 0.206 < 0.244 baseline
+    assert r["skill_vs_baseline"] > 0
+
+
+def test_model_skill_not_predictive_when_worse_than_base_rate(tmp_path, monkeypatch):
+    t = _trainer(tmp_path, monkeypatch)
+    t._oos_calibration = {"n": 100, "brier": 0.40, "base_rate": 0.5}   # baseline 0.25
+    r = t.model_skill_report()
+    assert r["predictive_vs_baseline"] is False
