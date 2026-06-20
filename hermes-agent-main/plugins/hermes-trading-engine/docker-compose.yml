@@ -678,6 +678,14 @@ services:
       # cover the full directional shortlist so the funnel gives a decisive "does the edge
       # survive costs?" read (the Bregman lane already hydrates ~250 groups/tick).
       POLYMARKET_DIRECTIONAL_HYDRATION_MAX_PER_TICK: "120"
+      # P2-A: focus the directional budget on model-edge-zone markets (mid-range prob, liquid,
+      # tight spread) instead of volume-ranked longshots where model==market (no edge).
+      # Selection-only; every realism/after-cost/credible/risk gate still applies downstream.
+      POLYMARKET_DIRECTIONAL_SELECTION_ENABLED: "1"
+      POLYMARKET_DIRECTIONAL_MIN_PROB: "0.10"
+      POLYMARKET_DIRECTIONAL_MAX_PROB: "0.90"
+      POLYMARKET_DIRECTIONAL_SELECT_MIN_DEPTH_USD: "50"
+      POLYMARKET_DIRECTIONAL_SELECT_MAX_SPREAD: "0.06"
       # ---- Chainlink real price feed (READ-ONLY oracle input) ----
       # Live Chainlink mainnet aggregator reads (latestRoundData over JSON-RPC),
       # used ONLY as a probability/edge input feature for crypto-linked markets.

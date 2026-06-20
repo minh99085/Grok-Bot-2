@@ -307,3 +307,43 @@ def test_directional_hydration_disabled_is_noop(tmp_path, monkeypatch):
     rec = um.MarketRecord.from_raw(raw, now=_NOW)
     tel = t._hydrate_directional([rec], _NOW)
     assert tel == {"directional_hydration_enabled": False}
+
+
+# --------------------------------------------------------------------------- #
+# P2-A directional candidate selection (model-edge-zone focus)
+# --------------------------------------------------------------------------- #
+def _mkt_rec(mid, *, depth=200.0, spread=0.02):
+    from engine.markets import universe_manager as um
+    bid = max(0.001, mid - spread / 2)
+    ask = min(0.999, mid + spread / 2)
+    raw = {"id": f"m{int(mid*1000)}", "clobTokenIds": ["t_yes", "t_no"], "question": "Q?",
+           "bestBid": round(bid, 4), "bestAsk": round(ask, 4),
+           "outcomePrices": [str(round(mid, 4)), str(round(1 - mid, 4))],
+           "liquidityNum": depth}
+    r = um.MarketRecord.from_raw(raw, now=_NOW)
+    r.top_depth_usd = depth
+    return r
+
+
+def test_directional_selection_focuses_edge_zone(tmp_path, monkeypatch):
+    t = _trainer(tmp_path, monkeypatch, directional_selection_enabled=True,
+                 directional_min_prob=0.10, directional_max_prob=0.90,
+                 directional_select_min_depth_usd=50.0, directional_select_max_spread=0.06)
+    longshot = _mkt_rec(0.003, depth=5000.0, spread=0.002)   # extreme longshot -> excluded
+    midrange = _mkt_rec(0.45, depth=800.0, spread=0.02)      # edge zone -> selected
+    thin = _mkt_rec(0.5, depth=10.0, spread=0.02)            # too thin -> excluded
+    wide = _mkt_rec(0.5, depth=800.0, spread=0.20)           # too wide -> excluded
+    sel = t._select_directional_candidates([longshot, midrange, thin, wide], budget=10)
+    ids = {r.market_id for r in sel}
+    assert midrange.market_id in ids
+    assert longshot.market_id not in ids and thin.market_id not in ids \
+        and wide.market_id not in ids
+    tel = t._directional_selection_tel
+    assert tel["in_band"] == 1 and tel["filtered_out_of_band_prob"] == 1
+    assert tel["filtered_thin_depth"] == 1 and tel["filtered_wide_spread"] == 1
+
+
+def test_directional_selection_disabled_is_passthrough(tmp_path, monkeypatch):
+    t = _trainer(tmp_path, monkeypatch, directional_selection_enabled=False)
+    recs = [_mkt_rec(0.003), _mkt_rec(0.45)]
+    assert t._select_directional_candidates(recs, budget=10) == recs[:10]

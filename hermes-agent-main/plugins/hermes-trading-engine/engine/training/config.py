@@ -381,6 +381,14 @@ class TrainingConfig:
     # before edge). Bounded/read-only; base OFF, aggressive_paper ON.
     directional_hydration_enabled: bool = False
     directional_hydration_max_per_tick: int = 40
+    # P2-A: focus the directional lane on MODEL-EDGE-ZONE markets (mid-range probability,
+    # liquid, tight spread) instead of volume-ranked longshots where model==market (no edge).
+    # Selection-only; never loosens a gate. base OFF, aggressive_paper ON.
+    directional_selection_enabled: bool = False
+    directional_min_prob: float = 0.10
+    directional_max_prob: float = 0.90
+    directional_select_min_depth_usd: float = 50.0
+    directional_select_max_spread: float = 0.06
     # Tier-2 institutional risk layer (PAPER ONLY; tighten-only). Portfolio concentration
     # limits (VaR/CVaR + event/category/total exposure caps), confidence-aware fractional
     # Kelly sizing, and a regime aggression multiplier. base OFF; aggressive_paper turns ON.
@@ -1594,6 +1602,13 @@ class TrainingConfig:
             directional_hydration_enabled=_envb("POLYMARKET_DIRECTIONAL_HYDRATION_ENABLED", True),
             directional_hydration_max_per_tick=_envi(
                 "POLYMARKET_DIRECTIONAL_HYDRATION_MAX_PER_TICK", 40),
+            directional_selection_enabled=_envb("POLYMARKET_DIRECTIONAL_SELECTION_ENABLED", True),
+            directional_min_prob=_envf("POLYMARKET_DIRECTIONAL_MIN_PROB", 0.10),
+            directional_max_prob=_envf("POLYMARKET_DIRECTIONAL_MAX_PROB", 0.90),
+            directional_select_min_depth_usd=_envf(
+                "POLYMARKET_DIRECTIONAL_SELECT_MIN_DEPTH_USD", 50.0),
+            directional_select_max_spread=_envf(
+                "POLYMARKET_DIRECTIONAL_SELECT_MAX_SPREAD", 0.06),
             # Tier-2 institutional risk layer ON for the aggressive profile (tighten-only).
             portfolio_risk_enabled=_envb("PORTFOLIO_RISK_ENABLED", True),
             max_event_exposure_frac=_envf("PORTFOLIO_MAX_EVENT_EXPOSURE_FRAC", 0.20),

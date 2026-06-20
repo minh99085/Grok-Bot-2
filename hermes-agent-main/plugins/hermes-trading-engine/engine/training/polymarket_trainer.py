@@ -884,7 +884,10 @@ class PolymarketPaperTrainer:
         budget = min(int(self.cfg.trade_candidate_limit),
                      int(getattr(self.cfg, "paper_decision_budget",
                                  self.cfg.trade_candidate_limit)))
-        candidates = watch[:budget]
+        # P2-A: focus the directional budget on MODEL-EDGE-ZONE markets (mid-range prob,
+        # liquid, tight spread) instead of volume-ranked longshots. Selection-only; the
+        # Bregman lane below still groups over the FULL eligible catalog (not this shortlist).
+        candidates = self._select_directional_candidates(watch, budget)
         # PASS-2: raw-catalog Bregman discovery — group over the FULL eligible
         # catalog (after safety filters), NOT the directional shortlist, so
         # complete-set arbitrage that never reaches the shortlist is still found.
@@ -1131,6 +1134,53 @@ class PolymarketPaperTrainer:
             except Exception:  # noqa: BLE001 — never break a tick building a fetcher
                 self._settlement_fetcher_cached = None
         return self._settlement_fetcher_cached
+
+    def _select_directional_candidates(self, watch: list, budget: int) -> list:
+        """Focus the directional lane's budget on MODEL-EDGE-ZONE markets instead of the
+        volume-ranked shortlist (which the funnel proved is longshot-dominated, where model
+        and market agree => zero after-cost edge). Selection-ONLY: prefers mid-range
+        probabilities (real edge room), liquid books, and tight spreads (cost-effective). It
+        NEVER loosens a gate — every realism/after-cost/credible/risk gate still applies to
+        whatever is selected; it just stops spending the budget on untradeable extremes."""
+        if not getattr(self.cfg, "directional_selection_enabled", False):
+            return watch[:budget]
+        lo = float(getattr(self.cfg, "directional_min_prob", 0.10))
+        hi = float(getattr(self.cfg, "directional_max_prob", 0.90))
+        min_depth = float(getattr(self.cfg, "directional_select_min_depth_usd", 50.0))
+        max_spread = float(getattr(self.cfg, "directional_select_max_spread", 0.06))
+        scored: list = []
+        in_band = filt_prob = filt_depth = filt_spread = 0
+        for rec in (watch or []):
+            mid = market_mid(rec)
+            if mid is None or not (lo <= float(mid) <= hi):
+                filt_prob += 1
+                continue
+            depth = float(getattr(rec, "top_depth_usd", 0.0) or 0.0)
+            if depth < min_depth:
+                filt_depth += 1
+                continue
+            raw = getattr(rec, "raw", {}) or {}
+            ask = um._as_float(raw.get("bestAsk"), 0.0)
+            bid = um._as_float(raw.get("bestBid"), 0.0)
+            spread = (ask - bid) if (ask > 0 and bid > 0) else None
+            if spread is not None and spread > max_spread:
+                filt_spread += 1
+                continue
+            in_band += 1
+            # rank: edge ROOM (mid-range) x liquidity x spread-tightness (all selection-only)
+            edge_room = max(0.0, 1.0 - abs(float(mid) - 0.5) * 2.0)
+            liq = min(1.0, depth / max(1e-9, min_depth * 5.0))
+            tight = 1.0 - min(1.0, (spread or 0.0) / max(1e-9, max_spread))
+            scored.append((round(edge_room * (0.5 + 0.5 * liq) * (0.5 + 0.5 * tight), 6), rec))
+        scored.sort(key=lambda x: -x[0])
+        selected = [r for _, r in scored[:budget]]
+        self._directional_selection_tel = {
+            "directional_selection_enabled": True,
+            "watch_in": len(watch or []), "in_band": in_band,
+            "filtered_out_of_band_prob": filt_prob, "filtered_thin_depth": filt_depth,
+            "filtered_wide_spread": filt_spread, "selected": len(selected),
+            "prob_band": [lo, hi], "min_depth_usd": min_depth, "max_spread": max_spread}
+        return selected
 
     def _hydrate_directional(self, candidates: list, now: float) -> dict:
         """Hydrate the directional candidate shortlist with REAL CLOB books (read-only,
@@ -2862,6 +2912,7 @@ class PolymarketPaperTrainer:
             "stage_counts": dict(f.get("stage_counts", {}) or {}),
             "best_near_miss": f.get("best_near_miss"),
             "hydration": getattr(self, "_directional_hydration_tel", {}),
+            "selection": getattr(self, "_directional_selection_tel", {}),
             "diagnosis": self._directional_funnel_diagnosis(f),
         }
 
