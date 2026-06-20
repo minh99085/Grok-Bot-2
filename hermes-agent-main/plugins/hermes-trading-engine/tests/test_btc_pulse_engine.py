@@ -1,0 +1,219 @@
+"""BTC 5-minute pulse paper engine — PAPER ONLY, loosened gates, no real orders.
+
+Covers: window parsing, digital fair value, rolling vol, open-snapshot gating, the
+loosened decision, paper fill + settlement P&L, calibration, and a full deterministic
+engine tick (warm vol -> catch open -> trade -> settle -> calibrate)."""
+
+from __future__ import annotations
+
+import math
+
+from engine.pulse.markets import PulseWindow, PulseMarketFeed, OrderBook
+from engine.pulse.fair_value import digital_p_up, RollingVol
+from engine.pulse.price import PulsePriceFeed
+from engine.pulse.strategy import decide
+from engine.pulse.executor import PulseLedger
+from engine.pulse.settlement import PulseCalibration, resolve_outcome
+from engine.pulse.engine import PulseEngine, PulseConfig
+
+
+# --- market parsing --------------------------------------------------------- #
+def test_parse_window_from_gamma_event():
+    ev = {"id": "613311", "slug": "btc-updown-5m-1781994000",
+          "title": "Bitcoin Up or Down - June 20, 6:20PM-6:25PM ET",
+          "endDate": "2026-06-20T22:25:00Z",
+          "markets": [{"id": "2611559", "outcomes": '["Up","Down"]',
+                       "clobTokenIds": '["UP_TOK","DOWN_TOK"]',
+                       "endDate": "2026-06-20T22:25:00Z", "orderPriceMinTickSize": 0.01}]}
+    w = PulseMarketFeed.parse_window(ev)
+    assert w is not None
+    assert w.up_token_id == "UP_TOK" and w.down_token_id == "DOWN_TOK"
+    assert w.open_ts == 1781994000.0                 # from slug
+    assert w.close_ts - w.open_ts == 300             # 5-min window
+    assert w.event_id == "613311" and w.market_id == "2611559"
+
+
+def test_parse_window_maps_outcomes_when_reordered():
+    ev = {"id": "e", "slug": "btc-updown-5m-1000000000", "title": "t",
+          "markets": [{"id": "m", "outcomes": '["Down","Up"]',
+                       "clobTokenIds": '["DTOK","UTOK"]', "endDate": "2026-06-20T22:25:00Z"}]}
+    w = PulseMarketFeed.parse_window(ev)
+    assert w.up_token_id == "UTOK" and w.down_token_id == "DTOK"   # mapped by name, not order
+
+
+# --- digital fair value ----------------------------------------------------- #
+def test_digital_p_up_sign_bounds_and_collapse():
+    sig = 1e-4
+    up = digital_p_up(100_100, 100_000, sig, 120)     # above open -> >0.5
+    flat = digital_p_up(100_000, 100_000, sig, 120)   # at open -> ~0.5
+    down = digital_p_up(99_900, 100_000, sig, 120)    # below open -> <0.5
+    assert down < flat < up
+    assert abs(flat - 0.5) < 1e-3                    # ~0.5 (tiny Ito -0.5*sig^2 drift)
+    # collapse near expiry: tiny remaining time -> near-certain
+    assert digital_p_up(100_050, 100_000, sig, 0.01) > 0.99
+    assert digital_p_up(100_000, 100_000, sig, 0) == 1.0      # r=0, tie -> Up
+    assert digital_p_up(99_999, 100_000, sig, 0) == 0.0       # r=0, below -> Down
+    assert digital_p_up(100_000, 100_000, 0.0, 100) is None   # no vol -> undefined
+
+
+def test_rolling_vol_per_sec():
+    rv = RollingVol(min_samples=8)
+    assert rv.per_sec() is None
+    base = 1000.0
+    for i in range(40):
+        base *= 1 + (0.0002 if i % 2 else -0.00015)
+        rv.observe(base, now=1000.0 + i)
+    v = rv.per_sec(now=1040.0)
+    assert v is not None and v > 0
+
+
+# --- open-snapshot gating --------------------------------------------------- #
+def test_open_snapshot_captured_once_and_flags_late():
+    seq = iter([100.0, 101.0, 102.0])
+    f = PulsePriceFeed(fetcher=lambda: next(seq, 102.0), max_open_lag_s=10.0)
+    f.poll(now=1000.0)                       # price 100 before open
+    assert f.snapshot_open("w", open_ts=1005.0, now=1000.0) is None    # not open yet
+    f.poll(now=1006.0)                       # price 101
+    snap = f.snapshot_open("w", open_ts=1005.0, now=1006.0)
+    assert snap is not None and snap.price == 101.0 and snap.lag_s == 1.0
+    # second call returns the SAME snapshot (captured once)
+    assert f.snapshot_open("w", open_ts=1005.0, now=2000.0).price == 101.0
+    # a window we only see 30s late is flagged late
+    f.poll(now=1040.0)
+    late = f.snapshot_open("late", open_ts=1005.0, now=1040.0)
+    assert late.lag_s > 10.0
+
+
+# --- loosened decision ------------------------------------------------------ #
+def _win(now0=1000.0):
+    w = PulseWindow(event_id="e", market_id="m", slug="s", title="BTC Up or Down",
+                    open_ts=now0, close_ts=now0 + 300, up_token_id="U", down_token_id="D")
+    w.up_book = OrderBook(best_bid=0.50, best_ask=0.55, ask_depth_usd=500, bid_depth_usd=500)
+    w.down_book = OrderBook(best_bid=0.44, best_ask=0.49, ask_depth_usd=500, bid_depth_usd=500)
+    return w
+
+
+def test_decide_picks_side_with_edge():
+    w = _win()
+    d = decide(w, fair_p_up=0.80, now=1100.0, min_edge=0.05, edge_buffer=0.01)
+    assert d.trade and d.side == "up" and d.token_id == "U" and d.price == 0.55
+    # fair 0.80 -> up edge 0.80-0.55-0.01=0.24 beats down edge 0.20-0.49-0.01
+    assert abs(d.edge - 0.24) < 1e-9
+
+
+def test_decide_rejects_low_edge_and_late_window():
+    w = _win()
+    assert decide(w, 0.57, 1100.0, min_edge=0.05).reason == "edge_below_min"
+    assert decide(w, 0.99, 1299.0, min_seconds_to_close=4.0).reason == "too_close_to_settlement"
+    w2 = _win()
+    w2.up_book = OrderBook(best_bid=0.5, best_ask=None)
+    w2.down_book = OrderBook(best_bid=0.5, best_ask=None)
+    assert decide(w2, 0.99, 1100.0).reason == "no_tradeable_ask"
+
+
+# --- paper ledger + settlement ---------------------------------------------- #
+def test_ledger_open_and_settle_win_and_loss():
+    led = PulseLedger()
+    w = _win()
+    d = decide(w, 0.80, 1100.0, min_edge=0.05)
+    pos = led.open_position(w, d, now=1100.0, size_usd=10.0, s_open=64000.0)
+    assert pos is not None and pos.shares == round(10 / 0.55, 6)
+    assert not led.open_position(w, d, now=1101.0, size_usd=10.0)   # one per window
+    led.settle("e", outcome_up=True, s_open=64000.0, s_close=64100.0)
+    assert pos.won is True and pos.pnl_usd > 0 and led.realized_pnl > 0
+    # a losing position
+    led2 = PulseLedger()
+    w2 = _win(2000.0)
+    d2 = decide(w2, 0.80, 2100.0, min_edge=0.05)
+    led2.open_position(w2, d2, now=2100.0, size_usd=10.0)
+    led2.settle("e", outcome_up=False)
+    assert led2.positions["e"].won is False and led2.positions["e"].pnl_usd == -10.0
+
+
+def test_calibration_brier():
+    cal = PulseCalibration()
+    for _ in range(10):
+        cal.observe(0.9, True)
+    cal.observe(0.9, False)
+    assert cal.n == 11 and 0 < cal.brier < 0.25
+    assert cal.base_rate_up == round(10 / 11, 4)
+
+
+def test_resolve_outcome_prefers_polymarket_then_proxy():
+    class G:
+        def __init__(self, r): self.r = r
+        def fetch_resolution(self, mid): return self.r
+    assert resolve_outcome("m", gamma_feed=G(True))[0] is True
+    assert resolve_outcome("m", gamma_feed=G(True))[1] == "polymarket"
+    # gamma not ready -> proxy when allowed
+    o, src = resolve_outcome("m", gamma_feed=G(None), s_open=100.0, s_close=101.0)
+    assert o is True and src == "proxy_coinbase"
+    # gamma not ready + proxy disallowed -> unresolved
+    assert resolve_outcome("m", gamma_feed=G(None), s_open=100.0, s_close=101.0,
+                           allow_proxy=False)[0] is None
+
+
+# --- full engine tick (deterministic) --------------------------------------- #
+class _FakeMarket:
+    def __init__(self, window, resolution):
+        self.window = window
+        self.resolution = resolution
+    def active_windows(self, now=None, **kw):
+        return [self.window]
+    def hydrate_books(self, w):
+        w.up_book = OrderBook(best_bid=0.50, best_ask=0.55, ask_depth_usd=500, bid_depth_usd=500)
+        w.down_book = OrderBook(best_bid=0.44, best_ask=0.49, ask_depth_usd=500, bid_depth_usd=500)
+        return w
+    def fetch_resolution(self, market_id):
+        return self.resolution
+
+
+def test_engine_full_cycle_trade_and_settle(tmp_path):
+    t0 = 1_000_000.0
+    win = PulseWindow(event_id="e1", market_id="m1", slug="btc-updown-5m-1000000",
+                      title="Bitcoin Up or Down", open_ts=t0, close_ts=t0 + 300,
+                      up_token_id="U", down_token_id="D")
+    # rising price -> P(up) high -> buy Up cheap (ask 0.55); resolves Up -> win
+    price = {"p": 64000.0}
+
+    def fetch():
+        price["p"] += 4.0
+        return price["p"]
+
+    feed = PulsePriceFeed(fetcher=fetch, vol=RollingVol(window_s=900, min_samples=8),
+                          max_open_lag_s=20.0)
+    eng = PulseEngine(PulseConfig(tick_seconds=1.0, size_usd=10.0, min_edge=0.02,
+                                  edge_buffer=0.01, data_dir=str(tmp_path)),
+                      market_feed=_FakeMarket(win, resolution=True), price_feed=feed)
+    for i in range(12):                      # warm vol BEFORE the window opens
+        eng.tick(now=t0 - 12 + i)
+    assert eng.ledger.trades == 0            # window not open yet
+    eng.tick(now=t0 + 2)                      # open captured (lag 2s); s_now==s_open, no trade
+    assert eng.ledger.trades == 0
+    for k in range(1, 8):                     # price keeps rising above open -> P(up) climbs
+        eng.tick(now=t0 + 2 + k * 5)
+    assert eng.ledger.trades == 1
+    pos = eng.ledger.positions["e1"]
+    assert pos.side == "up" and pos.s_open is not None
+    eng.tick(now=t0 + 301)                    # past close -> settle (gamma says Up)
+    assert eng.ledger.settled == 1 and pos.won is True and pos.pnl_usd > 0
+    assert eng.calib.n == 1
+    assert eng.status()["paper_only"] is True and eng.status()["live_trading_enabled"] is False
+    # status + ledger persisted
+    assert (tmp_path / "btc_pulse_status.json").exists()
+    assert (tmp_path / "btc_pulse_ledger.json").exists()
+
+
+def test_engine_skips_window_with_late_open(tmp_path):
+    # joining mid-window (open seen >max_open_lag late) -> never trades that window
+    t0 = 2_000_000.0
+    win = PulseWindow(event_id="e2", market_id="m2", slug="s", title="BTC Up or Down",
+                      open_ts=t0, close_ts=t0 + 300, up_token_id="U", down_token_id="D")
+    feed = PulsePriceFeed(fetcher=lambda: 64000.0, vol=RollingVol(min_samples=8),
+                          max_open_lag_s=20.0)
+    eng = PulseEngine(PulseConfig(data_dir=str(tmp_path)),
+                      market_feed=_FakeMarket(win, resolution=True), price_feed=feed)
+    for i in range(12):
+        eng.tick(now=t0 + 100 + i)            # first sight is 100s into the window
+    assert eng.ledger.trades == 0
+    assert eng._reasons.get("open_snapshot_late", 0) >= 1
