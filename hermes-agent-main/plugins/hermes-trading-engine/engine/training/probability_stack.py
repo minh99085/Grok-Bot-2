@@ -140,13 +140,29 @@ class ProbabilityStack:
 
     # -- component estimators ------------------------------------------------
     def _p_model(self, rec, mid: float) -> float:
-        """Deterministic feature model. Defaults to the market mid (no alpha);
-        a learned per-category calibration bias is the only thing that moves it,
-        so a fresh trainer never trades on the model alone."""
+        """Deterministic feature model. Defaults to the market mid (no alpha); a learned
+        per-category bias nudges it, and — when ``model_calibration_edge_enabled`` — the
+        PROVEN per-probability-bucket calibration (resolved-market actual win-rate) nudges it
+        toward the empirically-correct probability where the market is systematically biased
+        (favorite-longshot correction). The calibration nudge is bounded + only applies where
+        the bucket is statistically grounded (>= min samples), so the model expresses edge
+        ONLY where the proven OOS calibration supports it — never fabricated."""
         bias = 0.0
         if self.learner is not None:
             bias = float(self.learner.category_bias(rec.category))
-        return max(0.02, min(0.98, mid + bias))
+        p = mid + bias
+        cfg = self.cfg
+        if (self.learner is not None and cfg is not None
+                and bool(getattr(cfg, "model_calibration_edge_enabled", False))):
+            try:
+                cal = self.learner.calibrated_probability(
+                    mid, min_samples=int(getattr(cfg, "model_calibration_min_bucket_samples", 30)))
+            except Exception:  # noqa: BLE001 — calibration lookup never breaks estimation
+                cal = None
+            if cal is not None:
+                w = float(getattr(cfg, "model_calibration_edge_weight", 0.5))
+                p = (mid + bias) + (float(cal) - mid) * max(0.0, min(1.0, w))
+        return max(0.02, min(0.98, p))
 
     def _ambiguity(self, rec) -> float:
         raw_amb = um._as_float(rec.raw.get("ambiguity"), None)

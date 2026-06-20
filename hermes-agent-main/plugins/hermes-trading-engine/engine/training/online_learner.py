@@ -258,6 +258,23 @@ class OnlineLearner:
         self.warm_start_samples += ingested
         return ingested
 
+    def calibrated_probability(self, p: float, *, min_samples: int = 30) -> Optional[float]:
+        """Empirical CALIBRATED probability for a raw market probability ``p``: the actual
+        resolved-YES rate of the probability bucket ``p`` falls in (from warm-start + live
+        settlement data). Returns None when the bucket lacks ``min_samples`` (so the model
+        only expresses edge where the proven calibration is statistically grounded). This is
+        the favorite-longshot / systematic-bias correction the OOS calibration measured."""
+        try:
+            b = self.prob_buckets.get(prob_bucket(float(p)))
+        except (TypeError, ValueError):
+            return None
+        if not b:
+            return None
+        n = int(b.get("n", 0) or 0)
+        if n < int(min_samples):
+            return None
+        return max(0.01, min(0.99, float(b.get("wins", 0)) / n))
+
     def observe_settlement(self, predicted_prob: float, outcome,
                            category: str = "uncategorized") -> bool:
         """Ongoing CLEAN settlement-grounded calibration update from a genuinely-RESOLVED

@@ -586,10 +586,16 @@ services:
       # ticks never completed (stale training file -> unhealthy). Reverted to the conservative,
       # KNOWN-HEALTHY bounded values until research is moved off the hot path (async). Grok
       # stays advisory-only.
-      GROK_ADVISORY_MAX_CALLS_PER_HOUR: "4"
-      GROK_ADVISORY_MIN_INTERVAL_SECONDS: "900"
-      GROK_ADVISORY_MAX_CALLS_PER_RUN: "48"
-      GROK_ADVISORY_REQUIRE_NEWS: "1"
+      # #2 EXPANDED Grok coverage (research is OFF the hot path -> RESEARCH_HOT_PATH_LIVE=0,
+      # so the documented stall precondition no longer applies). The advisory scheduler runs
+      # BETWEEN ticks; this gives liquid mid-range directional markets a REAL fair value (the
+      # only independent edge source — the feature model is mid-anchored). Bounded by the
+      # $25/day cost governor below. require_news=0 so mid-range markets are researched even
+      # without a news hit (VOI targeting still prioritizes high-disagreement near-threshold).
+      GROK_ADVISORY_MAX_CALLS_PER_HOUR: "30"
+      GROK_ADVISORY_MIN_INTERVAL_SECONDS: "90"
+      GROK_ADVISORY_MAX_CALLS_PER_RUN: "2000"
+      GROK_ADVISORY_REQUIRE_NEWS: "0"
       # HOT-PATH GUARD: cap LIVE Grok research calls per training tick. A live call costs
       # ~seconds; researching every uncached candidate per tick stalled the tick (stale
       # training file -> unhealthy). Uncached markets beyond the cap use cache/stub fast and
@@ -600,11 +606,13 @@ services:
       # Raise the bounded daily cost + request caps so far more directional candidates get a
       # real Grok probability. max_daily_cost_usd is the hard COST governor ($25/day) — tune
       # to your xAI budget. Still advisory-only; never trades.
-      # Reverted to conservative defaults (broad coverage stalled the loop — see note above).
-      RESEARCH_MAX_DAILY_COST_USD: "5"
-      RESEARCH_MAX_REQUESTS_PER_MINUTE: "6"
-      RESEARCH_MAX_REQUESTS_PER_HOUR: "60"
-      RESEARCH_MAX_REQUESTS_PER_DAY: "300"
+      # #2 $25/day cost governor (the user-approved cap) + matching request caps — research is
+      # OFF the hot path now, so the prior broad-coverage stall no longer applies. This is the
+      # REAL coverage unlock ($5/day exhausted after ~7 calls). Hard COST cap still bounds spend.
+      RESEARCH_MAX_DAILY_COST_USD: "25"
+      RESEARCH_MAX_REQUESTS_PER_MINUTE: "12"
+      RESEARCH_MAX_REQUESTS_PER_HOUR: "120"
+      RESEARCH_MAX_REQUESTS_PER_DAY: "1500"
       RESEARCH_MAX_REQUESTS_PER_MARKET_PER_DAY: "12"
       # ---- Tier 1: backtest warm-start (PAPER / RESEARCH ONLY) ----
       # On startup, if the learner is cold, fetch resolved Polymarket markets, run the
@@ -684,8 +692,18 @@ services:
       POLYMARKET_DIRECTIONAL_SELECTION_ENABLED: "1"
       POLYMARKET_DIRECTIONAL_MIN_PROB: "0.10"
       POLYMARKET_DIRECTIONAL_MAX_PROB: "0.90"
-      POLYMARKET_DIRECTIONAL_SELECT_MIN_DEPTH_USD: "50"
-      POLYMARKET_DIRECTIONAL_SELECT_MAX_SPREAD: "0.06"
+      # depth pre-filter uses STALE scan depth (understates real book depth); lowered so it
+      # stops hard-excluding mid-range markets that hydrate to sufficient depth — the REAL
+      # depth gate (min_depth_at_price) still applies after hydration.
+      POLYMARKET_DIRECTIONAL_SELECT_MIN_DEPTH_USD: "20"
+      POLYMARKET_DIRECTIONAL_SELECT_MAX_SPREAD: "0.08"
+      # #3 express the PROVEN per-bucket calibration as model edge (favorite-longshot / market-
+      # bias correction) so the model has genuine, data-grounded edge vs the market. Bounded;
+      # only where the bucket is statistically grounded. The feature model is otherwise mid-
+      # anchored, so this + Grok research (#2) are the two independent directional edge sources.
+      POLYMARKET_MODEL_CALIBRATION_EDGE_ENABLED: "1"
+      POLYMARKET_MODEL_CALIBRATION_EDGE_WEIGHT: "0.5"
+      POLYMARKET_MODEL_CALIBRATION_MIN_BUCKET_SAMPLES: "30"
       # ---- Chainlink real price feed (READ-ONLY oracle input) ----
       # Live Chainlink mainnet aggregator reads (latestRoundData over JSON-RPC),
       # used ONLY as a probability/edge input feature for crypto-linked markets.

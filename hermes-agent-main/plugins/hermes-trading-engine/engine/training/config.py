@@ -389,6 +389,12 @@ class TrainingConfig:
     directional_max_prob: float = 0.90
     directional_select_min_depth_usd: float = 50.0
     directional_select_max_spread: float = 0.06
+    # #3: express the PROVEN per-bucket calibration (resolved-market actual win-rate) as a
+    # model probability so the model has genuine, data-grounded edge vs a systematically-
+    # biased market. Bounded + only where the bucket is statistically grounded. base OFF.
+    model_calibration_edge_enabled: bool = False
+    model_calibration_edge_weight: float = 0.5
+    model_calibration_min_bucket_samples: int = 30
     # Tier-2 institutional risk layer (PAPER ONLY; tighten-only). Portfolio concentration
     # limits (VaR/CVaR + event/category/total exposure caps), confidence-aware fractional
     # Kelly sizing, and a regime aggression multiplier. base OFF; aggressive_paper turns ON.
@@ -1609,6 +1615,11 @@ class TrainingConfig:
                 "POLYMARKET_DIRECTIONAL_SELECT_MIN_DEPTH_USD", 50.0),
             directional_select_max_spread=_envf(
                 "POLYMARKET_DIRECTIONAL_SELECT_MAX_SPREAD", 0.06),
+            model_calibration_edge_enabled=_envb(
+                "POLYMARKET_MODEL_CALIBRATION_EDGE_ENABLED", True),
+            model_calibration_edge_weight=_envf("POLYMARKET_MODEL_CALIBRATION_EDGE_WEIGHT", 0.5),
+            model_calibration_min_bucket_samples=_envi(
+                "POLYMARKET_MODEL_CALIBRATION_MIN_BUCKET_SAMPLES", 30),
             # Tier-2 institutional risk layer ON for the aggressive profile (tighten-only).
             portfolio_risk_enabled=_envb("PORTFOLIO_RISK_ENABLED", True),
             max_event_exposure_frac=_envf("PORTFOLIO_MAX_EVENT_EXPOSURE_FRAC", 0.20),

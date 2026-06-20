@@ -347,3 +347,39 @@ def test_directional_selection_disabled_is_passthrough(tmp_path, monkeypatch):
     t = _trainer(tmp_path, monkeypatch, directional_selection_enabled=False)
     recs = [_mkt_rec(0.003), _mkt_rec(0.45)]
     assert t._select_directional_candidates(recs, budget=10) == recs[:10]
+
+
+# --------------------------------------------------------------------------- #
+# #3 calibration-derived model edge (favorite-longshot / market-bias correction)
+# --------------------------------------------------------------------------- #
+def test_calibrated_probability_returns_bucket_actual_rate(tmp_path, monkeypatch):
+    t = _trainer(tmp_path, monkeypatch)
+    # seed the ~0.20 bucket: market priced 0.20 but resolves YES only ~10% (longshot bias)
+    for _ in range(9):
+        t.learner.observe_settlement(0.20, 0)
+    t.learner.observe_settlement(0.20, 1)
+    assert t.learner.calibrated_probability(0.20, min_samples=30) is None      # too few
+    cal = t.learner.calibrated_probability(0.20, min_samples=5)
+    assert cal is not None and abs(cal - 0.10) < 0.02
+
+
+def test_p_model_expresses_calibration_edge_when_enabled(tmp_path, monkeypatch):
+    t = _trainer(tmp_path, monkeypatch, model_calibration_edge_enabled=True,
+                 model_calibration_min_bucket_samples=5, model_calibration_edge_weight=0.5)
+    for _ in range(9):
+        t.learner.observe_settlement(0.20, 0)
+    t.learner.observe_settlement(0.20, 1)
+    rec = SimpleNamespace(category="crypto")
+    pm = t.prob._p_model(rec, 0.20)
+    # nudged from market 0.20 toward calibrated 0.10 by weight 0.5 -> ~0.15 (real model edge)
+    assert pm < 0.20 and abs(pm - 0.15) < 0.04
+    assert abs(pm - 0.20) >= 0.005                # model_has_edge would now be True
+
+
+def test_p_model_mid_anchored_when_calibration_edge_disabled(tmp_path, monkeypatch):
+    t = _trainer(tmp_path, monkeypatch, model_calibration_edge_enabled=False)
+    for _ in range(20):
+        t.learner.observe_settlement(0.20, 0)
+    rec = SimpleNamespace(category="crypto")
+    pm = t.prob._p_model(rec, 0.20)
+    assert abs(pm - 0.20) < 0.01                  # stays mid-anchored (no calibration nudge)
