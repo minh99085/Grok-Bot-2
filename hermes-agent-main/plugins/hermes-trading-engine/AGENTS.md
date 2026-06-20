@@ -1,122 +1,77 @@
 # Hermes Trading Engine — agent guide
 
-Instructions for AI agents working in this plugin.
+This plugin is now a **focused BTC 5-minute "Up or Down" pulse PAPER engine**. It trades ONLY
+the Polymarket `btc-up-or-down-5m` series, in paper mode.
 
-## Operating directive — Quant team role (ALWAYS follow)
+## Operating directive (ALWAYS follow)
 
-You operate as a combined **Quant Researcher + Quant Developer + Quant Trader** team for
-the Hermes Agent autonomous Polymarket paper-trading bot.
+You operate as a **Quant Researcher + Developer + Trader** team. Mission: make the BTC 5-min
+pulse paper engine profitable, fast.
 
-- **Mission:** improve the bot's algorithms and trading strategies to reach a *profitable*
-  trading bot **fast**.
-- **Trading restrictions:** you may **only loosen a trading restriction / gate when the user
-  explicitly prompts you to**. Otherwise keep every gate, threshold, and realism control as-is
-  (or tighten). Default to discovery improvements that do **not** weaken gates.
-- **Do NOT alter:**
-  - **project architecture** (service layout, module boundaries, data/contract structure,
-    the two-Docker-setup design, deployment model);
-  - **live-trading safety controls** (paper-only enforcement, no real order placement, kill
-    switch, RiskEngine gating, fake-fill / stale-book bans, readiness/credible/OOS gates).
+- **HARD SAFETY INVARIANT (never relaxed):** PAPER ONLY. No real order, no wallet, no signing.
+  There is no live-execution code path in `engine/pulse`, and `scripts/run_btc_pulse.py`
+  refuses to start if any live flag is set. Never add one unless the user explicitly asks.
+- **Quality gates** (edge size, depth, etc.) may be loosened per the operator's request — they
+  only affect which *paper* trades are taken.
+- Don't reintroduce the retired legacy engine (universe scanner, Bregman, Grok advisory,
+  micro-live/guarded-live/production-review). It was deliberately removed.
 
-When a change could touch architecture or a safety control, stop and surface it instead of
-doing it. Everything stays **PAPER ONLY**.
+## How it works
+
+The contract resolves `Up` iff `Chainlink_BTC_close >= Chainlink_BTC_open` over the 5-min
+window (ties → Up). The engine:
+1. ingests the rolling windows from Gamma (`engine/pulse/markets.py`);
+2. snapshots each window's OPEN BTC price on a low-latency Coinbase proxy (same feed for open
+   and live so the Coinbase-vs-Chainlink basis cancels in the close-vs-open compare);
+3. prices each open window as a digital option
+   `P(up)=Phi((ln(S_now/S_open)+(mu-0.5 sig^2) r)/(sig*sqrt(r)))` (`fair_value.py`);
+4. takes a loosened paper trade on the higher after-cost-edge side (`strategy.py`,
+   `executor.py` — simulated fills only);
+5. settles each window against the authoritative Polymarket resolution (Coinbase proxy
+   fallback) and scores Brier calibration (`settlement.py`).
+
+The fast loop + entrypoint are `engine/pulse/engine.py` + `scripts/run_btc_pulse.py`.
 
 ## Deployment & sync directive (ALWAYS follow)
 
 **ALWAYS push every completed change to BOTH the GitHub `main` repo AND the live VPS, and
-ALWAYS keep them in sync and identical (SHA-for-SHA: `origin/main` == VPS `git rev-parse HEAD`).**
-This is non-negotiable: never push to `main` without also deploying that exact commit to the
-VPS, and never deploy to the VPS without that exact commit being on `main`. Never leave the
-VPS running code that is not on `main`, and never advance `main` without deploying it. After
-every change, verify `origin/main` and the VPS HEAD are the same SHA before considering the
-task done.
+keep them identical (SHA-for-SHA: `origin/main` == VPS `git rev-parse HEAD`).** Never advance
+one without the other; verify the SHAs match before calling a task done.
 
-VPS deploy procedure (proven; the VPS cannot `git fetch origin` — its deploy key is
-passphrase-protected, so use a git bundle):
+VPS deploy procedure (the VPS cannot `git fetch origin` — use a git bundle):
+1. `git bundle create /tmp/u.bundle ^<vps_head_sha> HEAD`, then `scp` it over.
+2. On the VPS: `git -C /opt/hermes-agent-main fetch /tmp/u.bundle HEAD` then
+   `git -C /opt/hermes-agent-main merge --ff-only <sha>`.
+3. If code changed: in `/opt/hermes-agent-main/hermes-agent-main/plugins/hermes-trading-engine`
+   run `docker compose up -d --build --remove-orphans`.
+4. Verify: both containers `healthy`, `/data/btc_pulse_status.json` fresh (<120s), and
+   VPS HEAD == `origin/main`. Clean up `/tmp/*.bundle`.
 
-1. `git bundle create /tmp/u.bundle ^<vps_head_sha> <branch-or-commit>` then `scp` it over.
-2. On the VPS: `git -C /opt/hermes-agent-main fetch /tmp/u.bundle <ref>` then
-   `git -C /opt/hermes-agent-main merge --ff-only FETCH_HEAD`.
-3. If **code** changed (not just reports/docs): in
-   `/opt/hermes-agent-main/hermes-agent-main/plugins/hermes-trading-engine` run
-   `docker compose build && docker compose up -d`. Docs/report-only commits need no rebuild.
-4. Verify: both containers `healthy`, `/data/polymarket_training.json` fresh (< ~5 min),
-   and `git rev-parse HEAD` on the VPS equals `origin/main`. Clean up `/tmp/*.bundle`.
-
-### VPS access (so access is never lost)
-
-- Connection coordinates live in the repo-root `.laptop_agent.json` (gitignored): host
-  `45.32.227.242`, user `linuxuser`, port `22`, repo root `/opt/hermes-agent-main`, plugin
-  `/opt/hermes-agent-main/hermes-agent-main/plugins/hermes-trading-engine`, containers
-  `hermes-training` + `hermes-trading-engine`.
-- SSH key path on the agent VM: `/home/ubuntu/.ssh/cursor-temp-vps`. Connect with
+### VPS access
+- Host `45.32.227.242`, user `linuxuser`, port `22`, repo root `/opt/hermes-agent-main`, plugin
+  at `/opt/hermes-agent-main/hermes-agent-main/plugins/hermes-trading-engine`, containers
+  `hermes-training` (the loop) + `hermes-trading-engine` (the API).
+- SSH key on the agent VM: `/home/ubuntu/.ssh/cursor-temp-vps`. Connect with
   `ssh -i /home/ubuntu/.ssh/cursor-temp-vps -o BatchMode=yes linuxuser@45.32.227.242`.
-- **Cross-run persistence:** cloud-agent VMs are ephemeral and the private key must NEVER be
-  committed to git. To retain VPS access on every future run, the key (and coordinates) must
-  be stored as **Cloud Agent secrets** in the Cursor Dashboard (Cloud Agents > Secrets) so
-  they are injected into new VMs — e.g. a secret holding the private key written to
-  `~/.ssh/cursor-temp-vps` at startup.
+- The key is also a Cloud Agent secret so new agent VMs retain VPS access.
 
-## Repo layout — IMPORTANT (read first)
+## Run it
 
-There are **two** Docker setups in this repo. They build **different apps**:
-
-| Path | Builds | Port | Use it? |
-|------|--------|------|---------|
-| `hermes-agent-main/docker-compose.yml` (repo root) | the generic **Hermes AI agent** (gateway + web dashboard) | 9119 | NOT the trading bot |
-| `hermes-agent-main/plugins/hermes-trading-engine/docker-compose.yml` (**here**) | the **Polymarket paper-trading bot** (`engine.app` + training loop) | 8800 | ✅ THIS is the bot |
-
-The trading bot lives **only** here: `hermes-agent-main/plugins/hermes-trading-engine/`.
-It is a standalone container (`build: .` → this folder's `Dockerfile`, `python:3.11-slim`
-+ `uvicorn engine.app:app`). It does NOT use the root Dockerfile / s6 / the 9119 dashboard.
-
-**Common pitfall:** a stray top-level `hermes-trading-engine/` copy (a sibling of
-`hermes-agent-main/`) or a stale Docker image will show OLD behavior (e.g. the
-removed "Paper Campaign" panel, wrong Grok model). Always build from **this**
-path and use `--remove-orphans`. The paper campaign has been removed from the
-codebase — if you still see it, you are running a stale image / stray copy.
-
-## User preference (ALWAYS follow)
-
-**Push finished work to the repo `main` branch ONLY. Do NOT create new branches.**
-The user wants every completed change committed and pushed directly to `main`
-(`git add -A && git commit && git push origin main`). Never spin up feature/side
-branches and never open PRs for routine work — commit straight onto `main`. Never
-force‑push or amend; commit normally, then push.
-
-**At the end of every task, give simple copy‑paste instructions to start the
-system** — short, runnable commands, no long prose. The user runs this on
-Windows + Docker Desktop and wants the same easy "how to start it" block each
-time (just like prior sessions). Lead with the start commands; keep
-explanation minimal.
-
-## Easy start (paste this)
-
-Run from `plugins/hermes-trading-engine`:
+From `plugins/hermes-trading-engine`:
 
 ```bash
-docker compose up -d --build      # build + start (first time / after code changes)
-# then open the dashboard:
-#   http://localhost:8800
+docker compose up -d --build      # build + start the pulse loop + API
+docker compose logs -f hermes-training        # watch the pulse loop
+# status:  curl http://localhost:8800/api/polymarket/training/btc_pulse
+# ledger:  curl http://localhost:8800/api/polymarket/training/btc_pulse/ledger
 ```
 
-Day-to-day:
+`PULSE_*` env (see `docker-compose.yml`) tunes the loosened gates (tick cadence, size,
+min-edge, depth, price cap). Smoke test without Docker: `python scripts/run_btc_pulse.py
+--max-ticks 3`.
 
-```bash
-docker compose up -d              # start (no rebuild needed)
-docker compose stop               # pause (keep containers)
-docker compose start              # resume after a stop
-docker compose down               # remove containers (data kept in the hte_data volume)
-docker compose logs -f hermes-trading-engine   # watch logs
-```
+## Tests
 
-Rule of thumb: `stop`↔`start` = pause/resume; `up`↔`down` = create/remove.
-After a `down`, always come back with `up` (not `start`).
-
-## What runs
-
-- `hermes-trading-engine` — paper dashboard + API on **:8800** (the core).
-- `hermes-training` — Polymarket PAPER training loop (scan → rank → edge → learn).
-
-PAPER ONLY: no real orders. Grok is research-only. Optional: put
-`GROK_API_KEY` (or `XAI_API_KEY`) in `.env` to enable the Grok research layer.
+`python -m pytest tests/` — `tests/test_btc_pulse_engine.py` covers ingestion, the digital
+fair value, rolling vol, open-snapshot gating, the loosened decision, paper fill + settlement
+P&L, calibration, and a full deterministic trade→settle→calibrate cycle.

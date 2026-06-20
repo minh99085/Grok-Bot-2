@@ -38,7 +38,7 @@ class PulsePriceFeed:
     def __init__(self, *, fetcher=None, vol: Optional[RollingVol] = None,
                  max_open_lag_s: float = 20.0):
         if fetcher is None:
-            from engine.training.btc_signal import coinbase_spot_fetcher
+            from engine.pulse.coinbase import coinbase_spot_fetcher
             fetcher = coinbase_spot_fetcher("BTC-USD")
         self._fetch = fetcher
         self.vol = vol or RollingVol()

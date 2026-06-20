@@ -1,4 +1,4 @@
-# Hermes Trading Engine - paper-trading dashboard (standalone container)
+# Hermes Trading Engine - BTC 5-min pulse paper engine (standalone container)
 FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1 \
@@ -17,11 +17,8 @@ COPY requirements-dev.txt /app/requirements-dev.txt
 RUN pip install --no-cache-dir -r /app/requirements-dev.txt
 
 COPY engine /app/engine
-COPY web /app/web
 COPY scripts /app/scripts
-# Ship the test suite (+ conftest.py and tests/fixtures) at /app/tests so that
-# `python -m pytest` and targeted `pytest tests -k "..."` work in the container.
-# pytest.ini scopes collection to tests/ and keeps timeouts platform-safe.
+# Ship the test suite (+ conftest.py) at /app/tests so `python -m pytest` works in-container.
 COPY pytest.ini /app/pytest.ini
 COPY tests /app/tests
 
