@@ -36,11 +36,16 @@ class PulsePosition:
     s_open: Optional[float] = None
     s_close: Optional[float] = None
 
+    _FIELDS = ("window_key", "market_id", "title", "side", "token_id", "entry_price",
+               "size_usd", "shares", "fair_at_entry", "edge_at_entry", "open_ts", "close_ts",
+               "entry_ts", "status", "outcome_up", "won", "pnl_usd", "s_open", "s_close")
+
     def to_dict(self) -> dict:
-        return {k: getattr(self, k) for k in (
-            "window_key", "market_id", "title", "side", "token_id", "entry_price",
-            "size_usd", "shares", "fair_at_entry", "edge_at_entry", "open_ts", "close_ts",
-            "entry_ts", "status", "outcome_up", "won", "pnl_usd", "s_open", "s_close")}
+        return {k: getattr(self, k) for k in self._FIELDS}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "PulsePosition":
+        return cls(**{k: d.get(k) for k in cls._FIELDS})
 
 
 class PulseLedger:
@@ -113,3 +118,20 @@ class PulseLedger:
         recent = sorted(self.positions.values(), key=lambda p: p.entry_ts, reverse=True)
         return {"paper_only": True, "stats": self.stats(),
                 "positions": [p.to_dict() for p in recent[:max_positions]]}
+
+    def load_state(self, data: dict) -> None:
+        """Restore counters + positions from a persisted ``to_dict()`` so paper P&L survives
+        restarts. Counters come from the saved stats (authoritative even after old positions
+        were pruned); position records are rebuilt for the retained recent window."""
+        stats = (data or {}).get("stats") or {}
+        self.trades = int(stats.get("trades", 0) or 0)
+        self.settled = int(stats.get("settled", 0) or 0)
+        self.wins = int(stats.get("wins", 0) or 0)
+        self.realized_pnl = round(float(stats.get("realized_pnl_usd", 0.0) or 0.0), 6)
+        for pd in (data.get("positions") or []):
+            try:
+                pos = PulsePosition.from_dict(pd)
+            except Exception:  # noqa: BLE001 — a bad record never blocks startup
+                continue
+            if pos.window_key:
+                self.positions[pos.window_key] = pos

@@ -50,6 +50,17 @@ class PulseCalibration:
                 "base_rate_up": self.base_rate_up,
                 "baseline_brier_0_5": 0.25}
 
+    def to_state(self) -> dict:
+        """Raw accumulators for durable persistence (exact reload across restarts)."""
+        return {"n": self.n, "sq": self._sq, "ll": self._ll, "up_outcomes": self.up_outcomes}
+
+    def load_state(self, d: dict) -> None:
+        d = d or {}
+        self.n = int(d.get("n", 0) or 0)
+        self._sq = float(d.get("sq", 0.0) or 0.0)
+        self._ll = float(d.get("ll", 0.0) or 0.0)
+        self.up_outcomes = int(d.get("up_outcomes", 0) or 0)
+
 
 def resolve_outcome(market_id: str, *, gamma_feed=None, s_open: Optional[float] = None,
                     s_close: Optional[float] = None,

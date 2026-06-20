@@ -204,6 +204,43 @@ def test_engine_full_cycle_trade_and_settle(tmp_path):
     assert (tmp_path / "btc_pulse_ledger.json").exists()
 
 
+def test_pulse_state_persists_and_reloads_across_restart(tmp_path):
+    from engine.pulse.executor import PulsePosition
+    cfg = PulseConfig(data_dir=str(tmp_path))
+    eng = PulseEngine(cfg, market_feed=_FakeMarket(None, True),
+                      price_feed=PulsePriceFeed(fetcher=lambda: 64000.0))
+    eng.ledger.trades, eng.ledger.settled, eng.ledger.wins = 3, 2, 1
+    eng.ledger.realized_pnl = 8.18
+    eng.ledger.positions["w1"] = PulsePosition(
+        window_key="w1", market_id="m", title="t", side="up", token_id="U",
+        entry_price=0.55, size_usd=10.0, shares=18.18, fair_at_entry=0.8,
+        edge_at_entry=0.24, open_ts=1.0, close_ts=301.0, entry_ts=2.0,
+        status="settled", outcome_up=True, won=True, pnl_usd=8.18)
+    eng.calib.observe(0.8, True)
+    eng.calib.observe(0.3, False)
+    eng._persist()
+    # "restart": a new engine on the same data dir restores everything
+    eng2 = PulseEngine(PulseConfig(data_dir=str(tmp_path)),
+                       market_feed=_FakeMarket(None, True),
+                       price_feed=PulsePriceFeed(fetcher=lambda: 64000.0))
+    assert eng2.ledger.trades == 3 and eng2.ledger.settled == 2 and eng2.ledger.wins == 1
+    assert abs(eng2.ledger.realized_pnl - 8.18) < 1e-6
+    assert "w1" in eng2.ledger.positions
+    assert eng2.calib.n == 2                     # calibration accumulators restored exactly
+
+
+def test_fresh_start_archives_prior_ledger(tmp_path):
+    import glob
+    (tmp_path / "btc_pulse_ledger.json").write_text(
+        '{"stats": {"trades": 9, "settled": 9, "wins": 5, "realized_pnl_usd": 12.0}, '
+        '"positions": [], "calibration_state": {"n": 9, "sq": 1.0, "ll": 1.0, "up_outcomes": 5}}')
+    eng = PulseEngine(PulseConfig(data_dir=str(tmp_path), fresh_start=True),
+                      market_feed=_FakeMarket(None, True),
+                      price_feed=PulsePriceFeed(fetcher=lambda: 64000.0))
+    assert eng.ledger.trades == 0 and eng.calib.n == 0          # clean baseline
+    assert glob.glob(str(tmp_path / "btc_pulse_ledger.archived_*.json"))   # prior archived
+
+
 def test_engine_skips_window_with_late_open(tmp_path):
     # joining mid-window (open seen >max_open_lag late) -> never trades that window
     t0 = 2_000_000.0

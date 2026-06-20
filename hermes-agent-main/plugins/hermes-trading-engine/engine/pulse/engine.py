@@ -48,6 +48,7 @@ class PulseConfig:
     vol_window_s: float = 900.0
     settle_grace_s: float = 60.0
     max_positions_kept: int = 500
+    fresh_start: bool = False
     data_dir: str = "/data"
 
     @classmethod
@@ -63,6 +64,8 @@ class PulseConfig:
             max_open_lag_s=_envf("PULSE_MAX_OPEN_LAG_S", 20.0),
             vol_window_s=_envf("PULSE_VOL_WINDOW_S", 900.0),
             settle_grace_s=_envf("PULSE_SETTLE_GRACE_S", 60.0),
+            fresh_start=str(os.getenv("PULSE_FRESH_START", "")).strip().lower()
+            in ("1", "true", "yes", "on"),
             data_dir=os.getenv("HTE_DATA_DIR", "/data"))
 
 
@@ -81,6 +84,35 @@ class PulseEngine:
         self._reasons: dict = {}
         self._last_eval: list = []
         self._data_dir = Path(self.cfg.data_dir)
+        self._ledger_path = self._data_dir / "btc_pulse_ledger.json"
+        if not self.cfg.fresh_start:
+            self._load_state()
+        elif self._ledger_path.exists():
+            self._archive_prior_state()
+
+    def _load_state(self) -> None:
+        """Restore the paper ledger + calibration from disk so P&L survives restarts."""
+        if not self._ledger_path.exists():
+            return
+        try:
+            data = json.loads(self._ledger_path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001 — corrupt state never blocks startup
+            logger.warning("could not read prior pulse ledger; starting empty")
+            return
+        self.ledger.load_state(data)
+        self.calib.load_state(data.get("calibration_state") or {})
+        logger.info("pulse state restored: trades=%d settled=%d realized_pnl=%.3f calib_n=%d",
+                    self.ledger.trades, self.ledger.settled, self.ledger.realized_pnl,
+                    self.calib.n)
+
+    def _archive_prior_state(self) -> None:
+        """Fresh-start: move the existing ledger aside so we begin from a clean baseline."""
+        try:
+            self._ledger_path.rename(
+                self._data_dir / f"btc_pulse_ledger.archived_{int(time.time())}.json")
+            logger.info("PULSE_FRESH_START set — archived prior ledger, starting fresh")
+        except Exception:  # noqa: BLE001
+            pass
 
     # -- one evaluation/trade/settle pass ----------------------------------- #
     def tick(self, now: Optional[float] = None) -> dict:
@@ -185,8 +217,10 @@ class PulseEngine:
             self._data_dir.mkdir(parents=True, exist_ok=True)
             (self._data_dir / "btc_pulse_status.json").write_text(
                 json.dumps(self.status(), default=str, indent=1))
+            ledger_doc = {**self.ledger.to_dict(),
+                          "calibration_state": self.calib.to_state()}
             (self._data_dir / "btc_pulse_ledger.json").write_text(
-                json.dumps(self.ledger.to_dict(), default=str, indent=1))
+                json.dumps(ledger_doc, default=str, indent=1))
         except Exception as exc:  # noqa: BLE001 — persistence never breaks the loop
             logger.debug("pulse persist failed: %s", exc)
 
