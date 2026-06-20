@@ -675,7 +675,9 @@ services:
       # with REAL CLOB books (bounded/read-only) so the proven model edge can finally be
       # evaluated and credible positive-after-cost readiness trades can open. No gate loosened.
       POLYMARKET_DIRECTIONAL_HYDRATION_ENABLED: "1"
-      POLYMARKET_DIRECTIONAL_HYDRATION_MAX_PER_TICK: "40"
+      # cover the full directional shortlist so the funnel gives a decisive "does the edge
+      # survive costs?" read (the Bregman lane already hydrates ~250 groups/tick).
+      POLYMARKET_DIRECTIONAL_HYDRATION_MAX_PER_TICK: "120"
       # ---- Chainlink real price feed (READ-ONLY oracle input) ----
       # Live Chainlink mainnet aggregator reads (latestRoundData over JSON-RPC),
       # used ONLY as a probability/edge input feature for crypto-linked markets.
