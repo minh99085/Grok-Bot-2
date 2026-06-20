@@ -392,6 +392,14 @@ class TrainingConfig:
     # BTC-focus depth pre-filter floor (stale scan depth understates real books; the real
     # depth gate applies post-hydration). 0.0 = no pre-filter for BTC candidates.
     directional_btc_min_depth_usd: float = 0.0
+    # local BTC technical / fair-value signal (in-house TradingView-style indicators on the
+    # live BTC price the bot already ingests): realized-vol fair value for strike markets +
+    # momentum/EMA-trend/RSI ensemble for up/down markets. Blends into p_model + credits
+    # evidence_score for BTC markets (the one lane with a genuine independent signal). base OFF.
+    btc_signal_enabled: bool = False
+    btc_signal_min_confidence: float = 0.25
+    btc_signal_model_weight: float = 0.6
+    btc_signal_evidence_floor: float = 0.6
     directional_min_prob: float = 0.10
     directional_max_prob: float = 0.90
     directional_select_min_depth_usd: float = 50.0
@@ -1627,6 +1635,10 @@ class TrainingConfig:
             directional_selection_enabled=_envb("POLYMARKET_DIRECTIONAL_SELECTION_ENABLED", True),
             directional_btc_focus_enabled=_envb("POLYMARKET_DIRECTIONAL_BTC_FOCUS_ENABLED", False),
             directional_btc_min_depth_usd=_envf("POLYMARKET_DIRECTIONAL_BTC_MIN_DEPTH_USD", 0.0),
+            btc_signal_enabled=_envb("POLYMARKET_BTC_SIGNAL_ENABLED", True),
+            btc_signal_min_confidence=_envf("POLYMARKET_BTC_SIGNAL_MIN_CONFIDENCE", 0.25),
+            btc_signal_model_weight=_envf("POLYMARKET_BTC_SIGNAL_MODEL_WEIGHT", 0.6),
+            btc_signal_evidence_floor=_envf("POLYMARKET_BTC_SIGNAL_EVIDENCE_FLOOR", 0.6),
             directional_min_prob=_envf("POLYMARKET_DIRECTIONAL_MIN_PROB", 0.10),
             directional_max_prob=_envf("POLYMARKET_DIRECTIONAL_MAX_PROB", 0.90),
             directional_select_min_depth_usd=_envf(

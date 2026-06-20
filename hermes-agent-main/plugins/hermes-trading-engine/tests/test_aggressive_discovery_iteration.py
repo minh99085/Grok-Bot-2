@@ -404,6 +404,38 @@ def test_is_btc_eth_market_detection(tmp_path, monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
+# local BTC signal -> probability stack (model blend + evidence credit)
+# --------------------------------------------------------------------------- #
+def test_btc_signal_blends_into_p_model_and_credits_evidence(tmp_path, monkeypatch):
+    from engine.markets import universe_manager as um
+    t = _trainer(tmp_path, monkeypatch, btc_signal_enabled=True,
+                 btc_signal_min_confidence=0.2, btc_signal_model_weight=0.6,
+                 btc_signal_evidence_floor=0.6)
+    raw = {"id": "btc1", "clobTokenIds": ["a", "b"], "question": "Bitcoin Up or Down today?",
+           "bestBid": 0.44, "bestAsk": 0.46, "outcomePrices": ["0.45", "0.55"],
+           "liquidityNum": 50000.0,
+           "_btc_signal": {"p_up": 0.62, "confidence": 0.8, "kind": "directional"}}
+    rec = um.MarketRecord.from_raw(raw, now=_NOW)
+    rec.top_depth_usd = 500.0
+    pm = t.prob._p_model(rec, 0.45)
+    # blend toward p_up 0.62 from mid 0.45 by weight 0.6*0.8=0.48 -> ~0.45+0.17*0.48=0.53
+    assert pm > 0.45 + 0.05                       # model now leans up via the BTC signal
+    est = t.prob.estimate(rec, t.signal_model, now=_NOW)
+    assert est.evidence_score >= 0.6 * 0.8 - 1e-6  # evidence credited (>= floor*conf)
+
+
+def test_btc_signal_ignored_when_low_confidence(tmp_path, monkeypatch):
+    from engine.markets import universe_manager as um
+    t = _trainer(tmp_path, monkeypatch, btc_signal_enabled=True, btc_signal_min_confidence=0.5)
+    raw = {"id": "btc2", "clobTokenIds": ["a", "b"], "question": "Bitcoin Up or Down today?",
+           "bestBid": 0.49, "bestAsk": 0.51, "outcomePrices": ["0.50", "0.50"],
+           "_btc_signal": {"p_up": 0.62, "confidence": 0.3, "kind": "directional"}}
+    rec = um.MarketRecord.from_raw(raw, now=_NOW)
+    pm = t.prob._p_model(rec, 0.50)
+    assert abs(pm - 0.50) < 0.01                  # below min confidence -> no blend
+
+
+# --------------------------------------------------------------------------- #
 # #3 calibration-derived model edge (favorite-longshot / market-bias correction)
 # --------------------------------------------------------------------------- #
 def test_calibrated_probability_returns_bucket_actual_rate(tmp_path, monkeypatch):

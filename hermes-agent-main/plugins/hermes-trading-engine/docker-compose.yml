@@ -698,6 +698,14 @@ services:
       # no depth PRE-filter for BTC candidates (stale scan depth wrongly drops mid-range BTC
       # up/down markets); CLOB hydration + the REAL depth gate decide downstream.
       POLYMARKET_DIRECTIONAL_BTC_MIN_DEPTH_USD: "0"
+      # local BTC technical/fair-value signal (in-house TradingView-style indicators on the
+      # live BTC price feed): realized-vol fair value for strike markets + momentum/EMA/RSI
+      # ensemble for up/down. Credits evidence_score (fixes the dominant directional cost
+      # penalty that ignored the BTC oracle/TA signal) + blends into p_model. Advisory only.
+      POLYMARKET_BTC_SIGNAL_ENABLED: "1"
+      POLYMARKET_BTC_SIGNAL_MIN_CONFIDENCE: "0.25"
+      POLYMARKET_BTC_SIGNAL_MODEL_WEIGHT: "0.6"
+      POLYMARKET_BTC_SIGNAL_EVIDENCE_FLOOR: "0.6"
       POLYMARKET_DIRECTIONAL_MIN_PROB: "0.10"
       POLYMARKET_DIRECTIONAL_MAX_PROB: "0.90"
       # depth pre-filter uses STALE scan depth (understates real book depth); lowered so it

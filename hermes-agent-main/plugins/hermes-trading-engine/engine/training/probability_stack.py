@@ -165,6 +165,17 @@ class ProbabilityStack:
             if cal is not None:
                 w = float(getattr(cfg, "model_calibration_edge_weight", 0.5))
                 p = (mid + bias) + (float(cal) - mid) * max(0.0, min(1.0, w))
+        # local BTC technical/fair-value signal: blend the model probability toward the BTC
+        # signal's P(YES) for BTC markets (the one lane with a genuine independent signal),
+        # scaled by its confidence. Bounded + config-gated; the credible after-cost gate still
+        # decides whether anything trades.
+        if cfg is not None and bool(getattr(cfg, "btc_signal_enabled", False)):
+            btc = (getattr(rec, "raw", {}) or {}).get("_btc_signal")
+            if isinstance(btc, dict):
+                conf = float(btc.get("confidence", 0.0) or 0.0)
+                if conf >= float(getattr(cfg, "btc_signal_min_confidence", 0.25)):
+                    w = float(getattr(cfg, "btc_signal_model_weight", 0.6)) * conf
+                    p = p + (float(btc.get("p_up", mid)) - mid) * max(0.0, min(1.0, w))
         return max(0.02, min(0.98, p))
 
     def _ambiguity(self, rec) -> float:
@@ -200,6 +211,16 @@ class ProbabilityStack:
 
         ambiguity = self._ambiguity(rec)
         evidence = self._evidence(rec, source, confidence)
+        # local BTC technical/fair-value signal: for BTC markets it is a GENUINE independent
+        # signal, so credit its confidence into the evidence score (the dominant directional
+        # cost penalty was the 'weak evidence' charge that ignored the BTC oracle/TA signal).
+        _btc = (getattr(rec, "raw", {}) or {}).get("_btc_signal") \
+            if bool(getattr(self.cfg, "btc_signal_enabled", False)) else None
+        if isinstance(_btc, dict):
+            _bc = float(_btc.get("confidence", 0.0) or 0.0)
+            if _bc >= float(getattr(self.cfg, "btc_signal_min_confidence", 0.25)):
+                evidence = max(evidence, float(getattr(
+                    self.cfg, "btc_signal_evidence_floor", 0.6)) * _bc)
         stale_score = 0.0
         if rec.book_age_s is not None:
             stale_score = max(0.0, min(1.0, rec.book_age_s / 30.0))

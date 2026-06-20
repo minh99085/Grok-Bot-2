@@ -371,6 +371,16 @@ class PolymarketPaperTrainer:
         # Fast read-only BTC spot feed (short-horizon features). Read-only,
         # key-less, paper-only; degrades gracefully when unreachable.
         self.btc_fast_price = None
+        # local BTC technical / fair-value signal engine (in-house indicators on the live BTC
+        # price the bot already ingests). Advisory only; feeds the probability stack for BTC
+        # markets. Created when enabled so offline/unit runs are unaffected.
+        self.btc_signal_engine = None
+        if bool(getattr(self.cfg, "btc_signal_enabled", False)):
+            try:
+                from engine.training.btc_signal import BtcSignalEngine
+                self.btc_signal_engine = BtcSignalEngine()
+            except Exception:  # noqa: BLE001 — never block init building the signal engine
+                self.btc_signal_engine = None
         try:
             if bool(getattr(self.cfg, "btc_fast_price_enabled", False)):
                 from engine.feeds.btc_fast_price import BtcFastPriceFeed
@@ -820,13 +830,24 @@ class PolymarketPaperTrainer:
             except Exception:  # noqa: BLE001 — oracle read never blocks a tick
                 pass
         # Fast BTC spot read each tick (read-only; cross-checked vs the anchor).
+        _btc_px = None
         if getattr(self, "btc_fast_price", None) is not None:
             try:
                 anchor = None
                 if getattr(self, "chainlink_oracle", None) is not None:
                     anchor = self.chainlink_oracle.last_status().price
-                self.btc_fast_price.read(now=now, anchor_price=anchor)
+                _st = self.btc_fast_price.read(now=now, anchor_price=anchor)
+                if _st is not None and getattr(_st, "valid", False):
+                    _btc_px = getattr(_st, "price", None)
+                if _btc_px is None:
+                    _btc_px = anchor                      # fall back to the Chainlink anchor
             except Exception:  # noqa: BLE001 — fast read never blocks a tick
+                pass
+        # feed the live BTC price into the local technical/fair-value signal engine
+        if getattr(self, "btc_signal_engine", None) is not None and _btc_px is not None:
+            try:
+                self.btc_signal_engine.observe(_btc_px, now=now)
+            except Exception:  # noqa: BLE001 — signal never blocks a tick
                 pass
         # Market-news evidence scan (PAPER ONLY, read-only, advisory). Bounded to
         # a few top markets per tick + cached; NEVER blocks training on failure.
@@ -946,6 +967,10 @@ class PolymarketPaperTrainer:
         try:
             self._hydrate_directional(candidates, now)
         except Exception:  # noqa: BLE001 — hydration never breaks a tick
+            pass
+        try:
+            self._attach_btc_signals(candidates, now)
+        except Exception:  # noqa: BLE001 — BTC signal never breaks a tick
             pass
         for rec in candidates:
             ok, block_reason = self._directional_admit(rec)
@@ -1280,6 +1305,38 @@ class PolymarketPaperTrainer:
                     "directional_hydration_failed": failed,
                     "directional_already_fresh": already})
         self._directional_hydration_tel = tel
+        return tel
+
+    def _attach_btc_signals(self, candidates: list, now: float) -> dict:
+        """Compute the local BTC technical/fair-value signal for each BTC candidate and attach
+        it to ``rec.raw['_btc_signal']`` so the probability stack can blend it (read-only)."""
+        eng = getattr(self, "btc_signal_engine", None)
+        tel = {"btc_signal_enabled": eng is not None,
+               "btc_signal_ready": bool(eng is not None and eng.ready)}
+        if eng is None or not eng.ready:
+            self._btc_signal_tel = tel
+            return tel
+        attached = confident = 0
+        min_conf = float(getattr(self.cfg, "btc_signal_min_confidence", 0.25))
+        for rec in (candidates or []):
+            try:
+                if not self._is_btc_eth_market(rec):
+                    continue
+                raw = getattr(rec, "raw", {}) or {}
+                q = str(getattr(rec, "question", "") or raw.get("question")
+                        or raw.get("title") or "")
+                sig = eng.signal_for_market(q, end_ts=getattr(rec, "end_ts", None), now=now)
+                if sig is None:
+                    continue
+                raw["_btc_signal"] = sig.to_dict()
+                attached += 1
+                if sig.confidence >= min_conf:
+                    confident += 1
+            except Exception:  # noqa: BLE001 — one bad market never breaks the pass
+                continue
+        tel.update({"btc_signal_attached": attached, "btc_signal_confident": confident,
+                    "btc_observations": int(getattr(eng, "observations", 0))})
+        self._btc_signal_tel = tel
         return tel
 
     def _train_on_resolved_settlements(self) -> None:
@@ -2960,6 +3017,7 @@ class PolymarketPaperTrainer:
             "best_near_miss": f.get("best_near_miss"),
             "hydration": getattr(self, "_directional_hydration_tel", {}),
             "selection": getattr(self, "_directional_selection_tel", {}),
+            "btc_signal": getattr(self, "_btc_signal_tel", {}),
             "diagnosis": self._directional_funnel_diagnosis(f),
         }
 
