@@ -631,20 +631,39 @@ def api_execution_monitoring() -> dict:
             "generated_at": int(_time.time()), "monitoring": fields}
 
 
+def _read_json(name: str) -> dict | None:
+    path = _engine.s.data_dir / name
+    if not path.exists():
+        return None
+    try:
+        import json as _json
+        return _json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return None
+
+
 @app.get("/api/polymarket/training/btc_pulse")
 def api_training_btc_pulse() -> dict:
-    """BTC 5-min Pulse PAPER-ONLY isolated experiment status (read-only).
+    """BTC 5-min Pulse PAPER-ONLY engine status (read-only).
 
-    Surfaces the ``btc_pulse`` block written by the training engine so the
-    dashboard can show whether the pulse experiment is enabled / frozen and its
-    paper metrics. PAPER ONLY — never reflects any live order."""
-    st = _training_status() or {}
-    bp = st.get("btc_pulse") or {}
-    if not bp:
-        return {"available": False, "btc_pulse_enabled": False, "btc_pulse_frozen": True,
-                "reason": "BTC Pulse disabled — set BTC_PULSE_ENABLED=1 and restart "
-                          "hermes-training to unfreeze the paper experiment."}
-    return {"available": True, **bp}
+    Surfaces ``btc_pulse_status.json`` written by the focused pulse engine: price/vol
+    health, paper ledger stats, model calibration, and per-tick gating reasons. PAPER
+    ONLY — never reflects any live order."""
+    st = _read_json("btc_pulse_status.json")
+    if not st:
+        return {"available": False,
+                "reason": "BTC pulse engine has not written status yet — start "
+                          "scripts/run_btc_pulse.py (hermes-training)."}
+    return {"available": True, **st}
+
+
+@app.get("/api/polymarket/training/btc_pulse/ledger")
+def api_training_btc_pulse_ledger() -> dict:
+    """BTC 5-min Pulse PAPER ledger (read-only): paper positions + realized P&L."""
+    led = _read_json("btc_pulse_ledger.json")
+    if not led:
+        return {"available": False, "reason": "no pulse ledger yet."}
+    return {"available": True, **led}
 
 
 @app.get("/api/chainlink/status")
