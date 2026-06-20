@@ -1312,7 +1312,9 @@ class PolymarketPaperTrainer:
         it to ``rec.raw['_btc_signal']`` so the probability stack can blend it (read-only)."""
         eng = getattr(self, "btc_signal_engine", None)
         tel = {"btc_signal_enabled": eng is not None,
-               "btc_signal_ready": bool(eng is not None and eng.ready)}
+               "btc_signal_ready": bool(eng is not None and eng.ready),
+               "btc_observations": int(getattr(eng, "observations", 0)) if eng else 0,
+               "btc_buffered": len(getattr(eng, "_buf", [])) if eng else 0}
         if eng is None or not eng.ready:
             self._btc_signal_tel = tel
             return tel

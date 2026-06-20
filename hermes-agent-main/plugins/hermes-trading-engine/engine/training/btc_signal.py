@@ -145,7 +145,7 @@ class BtcSignalEngine:
     PAPER/RESEARCH ONLY: pure computation over the price the engine already ingests; never
     trades, sizes, places orders, or loosens a gate."""
 
-    def __init__(self, *, max_samples: int = 4000, min_samples: int = 30,
+    def __init__(self, *, max_samples: int = 4000, min_samples: int = 15,
                  directional_max_dev: float = 0.12, ema_fast: int = 9, ema_slow: int = 21,
                  rsi_period: int = 14, momentum_window_s: float = 300.0):
         self._buf: deque = deque(maxlen=int(max_samples))
