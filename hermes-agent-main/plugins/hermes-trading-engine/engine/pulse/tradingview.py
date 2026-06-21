@@ -297,3 +297,17 @@ class TradingViewIntake:
         for sid in (data.get("seen_ids") or []):
             self._seen.append(sid)
         self._seen_set = set(self._seen)
+        # restore the last signal so the report keeps showing it across restarts
+        lt = data.get("latest")
+        if isinstance(lt, dict) and lt.get("event_id"):
+            try:
+                self.latest = TradingViewSignalEvent(
+                    event_id=str(lt["event_id"]), bot_name=str(lt.get("bot_name") or ""),
+                    symbol=str(lt.get("symbol") or ""), timeframe=lt.get("timeframe"),
+                    bar_time=lt.get("bar_time"),
+                    received_at=float(lt.get("received_at") or 0.0),
+                    direction=str(lt.get("direction") or "FLAT"), strength=lt.get("strength"),
+                    indicator_name=lt.get("indicator_name"),
+                    raw_payload_hash=str(lt.get("raw_payload_hash") or ""))
+            except Exception:  # noqa: BLE001
+                self.latest = None

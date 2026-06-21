@@ -138,6 +138,7 @@ def test_dedupe_persists_across_restart(tmp_path):
     # a fresh intake on the same data dir must remember the seen id
     intake2 = _intake(tmp_path)
     assert intake.valid == 1                       # the first intake accepted it
+    assert intake2.latest is not None and intake2.latest.event_id == "persist-1"   # latest restored
     code, body = intake2.ingest(_alert(event_id="persist-1"), now=1_000_100.0)
     assert body.get("duplicate") is True and body["reason"] == DUPLICATE_EVENT_ID
     # restored counters carry the prior valid=1; the duplicate does NOT add a new valid candidate
