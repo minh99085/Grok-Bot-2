@@ -558,6 +558,24 @@ class PulseEngine:
             self.ledger.positions.pop(p.window_key, None)
 
     # -- persistence -------------------------------------------------------- #
+    def readiness(self) -> dict:
+        """Success-gate readiness report (report-only). Never claims an 80% bot unless ALL gates
+        pass. Inputs come from the reconciled ledger + lifecycle (no unmodeled fill assumptions:
+        paper fills use the live ask-ladder VWAP)."""
+        from engine.pulse.readiness import readiness_report
+        ls = self.ledger.stats()
+        lc = self.reconciler.report()
+        eg = self.ledger.exec_gate_stats()
+        cal = self.calib.to_dict()
+        recon_ok = bool(lc.get("reconciled") and eg.get("reconciled"))
+        return readiness_report(
+            accepted=int(ls.get("settled", 0) or 0), win_rate=ls.get("win_rate"),
+            net_pnl=ls.get("realized_pnl_usd"), profit_factor=ls.get("profit_factor"),
+            calibration_error=cal.get("brier"), max_drawdown=ls.get("max_drawdown_usd"),
+            avg_win=ls.get("avg_win_usd"), avg_loss=ls.get("avg_loss_usd"),
+            reconciliation_ok=recon_ok, missing_settlement=False, unmodeled_fill=False,
+            safety_bypass=False)
+
     def _meta_learning_status(self) -> dict:
         """Status of the LLM batch meta-learning layer (bundle written; integration availability).
         Never makes live trade decisions."""
@@ -581,13 +599,15 @@ class PulseEngine:
                     "avg_ev_after_costs": (round(self._ev_after_sum / self._ev_n, 6)
                                            if self._ev_n else None)}
         miss = self.research.report().get("missing_data_reasons", {}) if self.research else {}
-        return build_light_report(
+        report = build_light_report(
             lifecycle=self.reconciler.report(), execution_gate=self.ledger.exec_gate_stats(),
             ledger_stats=self.ledger.stats(), calibration=self.calib.to_dict(),
             ev_stats=ev_stats, outcome_groups=self._groups, tier_table=self._tier_report(),
             edge_model=(self.edge_model.report() if self.edge_model else {}),
             sizing={"enabled": self.cfg.sizing_enabled, "actual_size_usd": self.cfg.size_usd},
             missing_data_reasons=miss)
+        report["readiness"] = self.readiness()
+        return report
 
     def _tier_report(self) -> dict:
         """REPORT-ONLY tier table across bucket dimensions (no trade/veto authority)."""
@@ -624,6 +644,7 @@ class PulseEngine:
             "tier_table": self._tier_report(),
             "meta_learning": self._meta_learning_status(),
             "promotion_ladder": self.promotion.report(),
+            "readiness": self.readiness(),
             "sizing": {"enabled": self.cfg.sizing_enabled, "paper_only": True,
                        "hard_cap_usd": self.cfg.sizing_hard_cap_usd,
                        "daily_loss_cap_usd": self.cfg.sizing_daily_loss_cap_usd,

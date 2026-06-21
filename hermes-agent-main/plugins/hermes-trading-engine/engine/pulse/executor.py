@@ -62,6 +62,12 @@ class PulseLedger:
         self.settled: int = 0
         # running profit accumulators (survive pruning + restarts)
         self.settled_entry_sum: float = 0.0          # sum of entry prices of settled trades
+        # profit-factor + drawdown tracking (readiness gates)
+        self.gross_win: float = 0.0
+        self.gross_loss: float = 0.0
+        self.equity: float = 0.0
+        self.equity_peak: float = 0.0
+        self.max_drawdown: float = 0.0
         self.side_n: dict = {"up": 0, "down": 0}
         self.side_wins: dict = {"up": 0, "down": 0}
         # how each settled trade was resolved (official Polymarket vs RTDS Chainlink proxy).
@@ -117,6 +123,13 @@ class PulseLedger:
         if s_close is not None:
             pos.s_close = s_close
         self.realized_pnl = round(self.realized_pnl + pos.pnl_usd, 6)
+        self.equity = round(self.equity + pos.pnl_usd, 6)
+        self.equity_peak = max(self.equity_peak, self.equity)
+        self.max_drawdown = round(max(self.max_drawdown, self.equity_peak - self.equity), 6)
+        if pos.pnl_usd > 0:
+            self.gross_win += pos.pnl_usd
+        elif pos.pnl_usd < 0:
+            self.gross_loss += -pos.pnl_usd
         self.settled += 1
         self.settled_entry_sum += pos.entry_price
         if source in self.settle_sources:
@@ -181,6 +194,12 @@ class PulseLedger:
                 "realized_pnl_usd": round(self.realized_pnl, 4),
                 "avg_pnl_per_trade": (round(self.realized_pnl / self.settled, 4)
                                       if self.settled else None),
+                "profit_factor": (round(self.gross_win / self.gross_loss, 4)
+                                  if self.gross_loss > 0 else None),
+                "avg_win_usd": (round(self.gross_win / self.wins, 4) if self.wins else None),
+                "avg_loss_usd": (round(self.gross_loss / (self.settled - self.wins), 4)
+                                 if (self.settled - self.wins) > 0 else None),
+                "max_drawdown_usd": round(self.max_drawdown, 4),
                 "open_positions": len(self.open_positions())}
 
     def to_dict(self, *, max_positions: int = 200) -> dict:
@@ -193,7 +212,12 @@ class PulseLedger:
                                  "recon": dict(self.recon),
                                  "exec_candidates": self.exec_candidates,
                                  "exec_accepted": self.exec_accepted,
-                                 "exec_rejected": dict(self.exec_rejected)},
+                                 "exec_rejected": dict(self.exec_rejected),
+                                 "gross_win": round(self.gross_win, 6),
+                                 "gross_loss": round(self.gross_loss, 6),
+                                 "equity": round(self.equity, 6),
+                                 "equity_peak": round(self.equity_peak, 6),
+                                 "max_drawdown": round(self.max_drawdown, 6)},
                 "positions": [p.to_dict() for p in recent[:max_positions]]}
 
     def load_state(self, data: dict) -> None:
@@ -218,6 +242,11 @@ class PulseLedger:
         self.exec_accepted = int(acc.get("exec_accepted", 0) or 0)
         for k in list(self.exec_rejected):
             self.exec_rejected[k] = int((acc.get("exec_rejected") or {}).get(k, 0) or 0)
+        self.gross_win = float(acc.get("gross_win", 0.0) or 0.0)
+        self.gross_loss = float(acc.get("gross_loss", 0.0) or 0.0)
+        self.equity = float(acc.get("equity", 0.0) or 0.0)
+        self.equity_peak = float(acc.get("equity_peak", 0.0) or 0.0)
+        self.max_drawdown = float(acc.get("max_drawdown", 0.0) or 0.0)
         for pd in (data.get("positions") or []):
             try:
                 pos = PulsePosition.from_dict(pd)
