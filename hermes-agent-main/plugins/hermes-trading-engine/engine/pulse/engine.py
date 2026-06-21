@@ -556,6 +556,18 @@ class PulseEngine:
             self.ledger.positions.pop(p.window_key, None)
 
     # -- persistence -------------------------------------------------------- #
+    def _meta_learning_status(self) -> dict:
+        """Status of the LLM batch meta-learning layer (bundle written; integration availability).
+        Never makes live trade decisions."""
+        try:
+            from engine.pulse.overlay import xai_key_present
+            available = bool(xai_key_present())
+        except Exception:  # noqa: BLE001
+            available = False
+        return {"enabled": True, "report_only": True, "no_live_trading_decisions": True,
+                "bundle_artifact": "btc_pulse_meta_bundle.json",
+                "grok_integration_available": available}
+
     def light_report(self) -> dict:
         """The latest light report (report-only): full lifecycle reconciliation, exec stats,
         reject reasons, EV before/after costs, PnL grouped by every bucket dimension, calibration,
@@ -608,6 +620,7 @@ class PulseEngine:
             "edge_model": (self.edge_model.report() if self.edge_model is not None
                            else {"enabled": False}),
             "tier_table": self._tier_report(),
+            "meta_learning": self._meta_learning_status(),
             "sizing": {"enabled": self.cfg.sizing_enabled, "paper_only": True,
                        "hard_cap_usd": self.cfg.sizing_hard_cap_usd,
                        "daily_loss_cap_usd": self.cfg.sizing_daily_loss_cap_usd,
@@ -647,8 +660,12 @@ class PulseEngine:
                           "calibration_state": self.calib.to_state()}
             (self._data_dir / "btc_pulse_ledger.json").write_text(
                 json.dumps(ledger_doc, default=str, indent=1))
+            lr = self.light_report()
             (self._data_dir / "btc_pulse_light_report.json").write_text(
-                json.dumps(self.light_report(), default=str, indent=1))
+                json.dumps(lr, default=str, indent=1))
+            from engine.pulse.meta_learning import build_bundle
+            (self._data_dir / "btc_pulse_meta_bundle.json").write_text(
+                json.dumps(build_bundle(lr), default=str, indent=1))
         except Exception as exc:  # noqa: BLE001 — persistence never breaks the loop
             logger.debug("pulse persist failed: %s", exc)
 
