@@ -31,6 +31,13 @@ services:
       - hermes-trading-engine
     volumes:
       - hte_data:/data
+    # OBSERVE-ONLY TradingView webhook publish. DEFAULT = host loopback only (private; nothing
+    # reachable from the internet). To receive external TradingView alerts, set in .env:
+    #   TRADINGVIEW_WEBHOOK_PUBLISH=0.0.0.0:80   (and open the host firewall for that port)
+    #   TRADINGVIEW_WEBHOOK_HOST=0.0.0.0         (so the in-container listener binds all ifaces)
+    # The shared-secret + symbol/bot/dedupe checks still gate every alert; it stays observe-only.
+    ports:
+      - "${TRADINGVIEW_WEBHOOK_PUBLISH:-127.0.0.1:8787}:8787"
     command: python scripts/run_btc_pulse.py
     environment:
       HTE_DATA_DIR: "/data"
