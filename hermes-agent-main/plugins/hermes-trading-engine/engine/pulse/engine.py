@@ -83,6 +83,7 @@ class PulseConfig:
     research_features_enabled: bool = True   # OBSERVE-ONLY EP Chan features (never trade)
     signal_engine_enabled: bool = True       # OBSERVE-ONLY Simons-style raw signals (never trade)
     factor_model_enabled: bool = True        # OBSERVE-ONLY BTC-pulse factor/context model
+    markov_enabled: bool = True              # OBSERVE-ONLY Markov regime machine
     data_dir: str = "/data"
 
     @classmethod
@@ -131,6 +132,8 @@ class PulseConfig:
             signal_engine_enabled=str(os.getenv("HERMES_SIGNAL_ENGINE_ENABLED", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
             factor_model_enabled=str(os.getenv("HERMES_FACTOR_MODEL_ENABLED", "1"))
+            .strip().lower() in ("1", "true", "yes", "on"),
+            markov_enabled=str(os.getenv("HERMES_MARKOV_ENABLED", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
             data_dir=os.getenv("HTE_DATA_DIR", "/data"))
 
@@ -184,6 +187,10 @@ class PulseEngine:
         if bool(getattr(self.cfg, "factor_model_enabled", True)):
             from engine.pulse.factors import FactorEngine
             self.factors = FactorEngine()
+        self.markov = None
+        if bool(getattr(self.cfg, "markov_enabled", True)):
+            from engine.pulse.markov import MarkovRegime
+            self.markov = MarkovRegime()
         self.reconciler = LifecycleReconciler()   # GS-Quant-style candidate lifecycle audit
         self.overlay = None
         if bool(getattr(self.cfg, "grok_overlay_enabled", False)):
@@ -349,8 +356,24 @@ class PulseEngine:
                     overlay_regime=((ov or {}).get("regime") if ov else None))
                 self.factors.observe(fsnap)
                 dr.factors = fsnap.to_dict()
+            # OBSERVE-ONLY Markov regime classification (never affects decision/gate).
+            cand_state = None
+            if self.markov is not None:
+                from engine.pulse.markov import classify_state
+                from engine.pulse.decisions import RegimeSnapshot
+                cand_state = classify_state(
+                    hurst_regime=(rfeat.hurst_regime if rfeat else None),
+                    signal_direction=(dr.signals or {}).get("direction"),
+                    stale_factor=(fsnap.polymarket_stale_factor if fsnap else None),
+                    settlement_boundary_risk=(fsnap.settlement_boundary_risk if fsnap else None),
+                    spread=mc.spread, ask_depth_usd=mc.ask_depth_usd)
+                self.markov.observe(cand_state)
+                dr.regime = RegimeSnapshot(
+                    state=cand_state, probs=self.markov.state_outputs(cand_state)).to_dict()
             if not d.trade:
                 dr.action = RejectAction(stage="directional", reason=d.reason)
+                if self.markov is not None:
+                    self.markov.record_terminal(state=cand_state, accepted=False)
                 _finalize(dr, "rejected", reason=d.reason, stage="directional")
                 continue
             # STRICT execution-quality gate (AUTHORITATIVE): EV from the live ask-ladder VWAP.
@@ -369,6 +392,8 @@ class PulseEngine:
             dr.mark("execution_costed")
             if not ex.accepted:
                 dr.action = RejectAction(stage="execution_gate", reason=ex.reason)
+                if self.markov is not None:
+                    self.markov.record_terminal(state=cand_state, accepted=False)
                 _finalize(dr, "rejected", reason=ex.reason, stage="execution_gate")
                 continue
             d.price = ex.fill_price               # paper fill at realistic VWAP price
@@ -381,11 +406,14 @@ class PulseEngine:
                                     "half_life_bucket": half_life_bucket(rfeat.half_life_s),
                                     "ttc_bucket": ttc_bucket(ttc),
                                     "edge_quality_bucket": (fsnap.edge_quality_bucket
-                                                            if fsnap else "na")}
+                                                            if fsnap else "na"),
+                                    "markov_state": cand_state}
                 dr.fill = PaperFill(window_key=w.event_id, side=d.side, fill_price=ex.fill_price,
                                     shares=pos.shares, size_usd=pos.size_usd)
             dr.action = TradeAction(side=d.side, token_id=d.token_id, fill_price=ex.fill_price,
                                     size_usd=self.cfg.size_usd, shares=(pos.shares if pos else 0.0))
+            if self.markov is not None:
+                self.markov.record_terminal(state=cand_state, accepted=True)
             _finalize(dr, "accepted")
 
         self._settle_due(now)
@@ -438,6 +466,9 @@ class PulseEngine:
             if self.factors is not None:
                 self.factors.record_settled(bucket=(pos.research or {}).get("edge_quality_bucket"),
                                             pnl=float(pos.pnl_usd or 0.0), won=bool(pos.won))
+            if self.markov is not None:
+                self.markov.record_resolution(state=(pos.research or {}).get("markov_state"),
+                                              outcome_up=outcome)
             logger.info("pulse settled %s side=%s won=%s pnl=%.3f via=%s",
                         pos.title, pos.side, pos.won, pos.pnl_usd or 0.0, source)
 
@@ -464,6 +495,8 @@ class PulseEngine:
                               else {"enabled": False}),
             "factor_model": (self.factors.report() if self.factors is not None
                              else {"enabled": False}),
+            "markov_regime": (self.markov.report() if self.markov is not None
+                              else {"enabled": False}),
             "execution_gate": self.ledger.exec_gate_stats(),
             "research_features": (self.research.report() if self.research is not None
                                   else {"enabled": False}),
