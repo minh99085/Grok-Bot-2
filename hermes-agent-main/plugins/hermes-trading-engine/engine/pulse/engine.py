@@ -27,6 +27,9 @@ from engine.pulse.executor import PulseLedger
 from engine.pulse.decisions import (MarketContext, CandidateDecision, ExecutionCostEstimate,
                                      TradeAction, RejectAction, PaperFill, DecisionResult,
                                      LifecycleReconciler, ttc_bucket, half_life_bucket)
+from engine.pulse.reporting import (spread_bucket as _spread_bucket,
+                                     depth_bucket as _depth_bucket,
+                                     confidence_tier as _confidence_tier)
 from engine.pulse.settlement import (PulseCalibration, resolve_window, proxy_outcome)
 
 logger = logging.getLogger("hte.pulse.engine")
@@ -210,6 +213,11 @@ class PulseEngine:
         self.reconciler = LifecycleReconciler()   # GS-Quant-style candidate lifecycle audit
         self._daily_loss = 0.0                    # for the Kelly daily-loss-cap diagnostic
         self._daily_key = None
+        from engine.pulse.reporting import OutcomeGroups
+        self._groups = OutcomeGroups()            # settled PnL grouped by every entry-time tag
+        self._ev_before_sum = 0.0                 # EV before/after costs (accepted candidates)
+        self._ev_after_sum = 0.0
+        self._ev_n = 0
         self.overlay = None
         if bool(getattr(self.cfg, "grok_overlay_enabled", False)):
             try:
@@ -434,7 +442,18 @@ class PulseEngine:
                                     "edge_quality_bucket": (fsnap.edge_quality_bucket
                                                             if fsnap else "na"),
                                     "markov_state": cand_state,
-                                    "model_features": model_vec}
+                                    "model_features": model_vec,
+                                    "spread_bucket": _spread_bucket(mc.spread),
+                                    "depth_bucket": _depth_bucket(mc.ask_depth_usd),
+                                    "confidence_tier": _confidence_tier(
+                                        (dr.model or {}).get("model_confidence")
+                                        if (dr.model or {}).get("trained")
+                                        else (dr.signals or {}).get("confidence"))}
+            # EV before (midpoint) vs after (VWAP/slippage) costs — accepted candidates
+            if ex.ev_at_mid is not None and ex.ev_after_slippage is not None:
+                self._ev_before_sum += ex.ev_at_mid
+                self._ev_after_sum += ex.ev_after_slippage
+                self._ev_n += 1
                 dr.fill = PaperFill(window_key=w.event_id, side=d.side, fill_price=ex.fill_price,
                                     shares=pos.shares, size_usd=pos.size_usd)
             dr.action = TradeAction(side=d.side, token_id=d.token_id, fill_price=ex.fill_price,
@@ -517,6 +536,14 @@ class PulseEngine:
                 mvec = (pos.research or {}).get("model_features")
                 if isinstance(mvec, dict):           # train on entry features + realized outcome
                     self.edge_model.observe_label(mvec, bool(outcome))
+            # learning loop: group this settled outcome by every entry-time tag dimension
+            rt = pos.research or {}
+            tags = {dim: rt.get(dim) for dim in (
+                "hurst_regime", "zscore_bucket", "half_life_bucket", "ttc_bucket",
+                "edge_quality_bucket", "markov_state", "spread_bucket", "depth_bucket",
+                "confidence_tier")}
+            self._groups.record(tags, pnl=float(pos.pnl_usd or 0.0), won=bool(pos.won),
+                                 fair_at_entry=pos.fair_at_entry, outcome_up=outcome)
             logger.info("pulse settled %s side=%s won=%s pnl=%.3f via=%s",
                         pos.title, pos.side, pos.won, pos.pnl_usd or 0.0, source)
 
@@ -529,6 +556,25 @@ class PulseEngine:
             self.ledger.positions.pop(p.window_key, None)
 
     # -- persistence -------------------------------------------------------- #
+    def light_report(self) -> dict:
+        """The latest light report (report-only): full lifecycle reconciliation, exec stats,
+        reject reasons, EV before/after costs, PnL grouped by every bucket dimension, calibration,
+        sample sizes, missing-data reasons, and promotion/demotion candidates."""
+        from engine.pulse.reporting import build_light_report
+        ev_stats = {"n": self._ev_n,
+                    "avg_ev_before_costs": (round(self._ev_before_sum / self._ev_n, 6)
+                                            if self._ev_n else None),
+                    "avg_ev_after_costs": (round(self._ev_after_sum / self._ev_n, 6)
+                                           if self._ev_n else None)}
+        miss = self.research.report().get("missing_data_reasons", {}) if self.research else {}
+        return build_light_report(
+            lifecycle=self.reconciler.report(), execution_gate=self.ledger.exec_gate_stats(),
+            ledger_stats=self.ledger.stats(), calibration=self.calib.to_dict(),
+            ev_stats=ev_stats, outcome_groups=self._groups, tier_table=self._tier_report(),
+            edge_model=(self.edge_model.report() if self.edge_model else {}),
+            sizing={"enabled": self.cfg.sizing_enabled, "actual_size_usd": self.cfg.size_usd},
+            missing_data_reasons=miss)
+
     def _tier_report(self) -> dict:
         """REPORT-ONLY tier table across bucket dimensions (no trade/veto authority)."""
         from engine.pulse.tiers import tier_report
@@ -601,6 +647,8 @@ class PulseEngine:
                           "calibration_state": self.calib.to_state()}
             (self._data_dir / "btc_pulse_ledger.json").write_text(
                 json.dumps(ledger_doc, default=str, indent=1))
+            (self._data_dir / "btc_pulse_light_report.json").write_text(
+                json.dumps(self.light_report(), default=str, indent=1))
         except Exception as exc:  # noqa: BLE001 — persistence never breaks the loop
             logger.debug("pulse persist failed: %s", exc)
 
