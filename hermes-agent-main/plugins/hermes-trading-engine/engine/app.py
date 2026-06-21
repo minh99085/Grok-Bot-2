@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 app = FastAPI(title="Hermes BTC 5-min Pulse (paper)", version="2.0")
 
@@ -67,8 +67,80 @@ def btc_pulse_ledger() -> dict:
     return {"available": True, **led}
 
 
-@app.get("/")
-def root() -> JSONResponse:
+@app.get("/api")
+def api_index() -> JSONResponse:
     return JSONResponse({"engine": "btc-5min-pulse", "paper_only": True,
                          "endpoints": ["/api/health", "/api/polymarket/training/btc_pulse",
                                        "/api/polymarket/training/btc_pulse/ledger"]})
+
+
+@app.get("/", response_class=HTMLResponse)
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard() -> HTMLResponse:
+    """Read-only live dashboard for the BTC 5-min pulse paper engine."""
+    return HTMLResponse(_DASHBOARD_HTML)
+
+
+_DASHBOARD_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>BTC 5-min Pulse · Hermes (paper)</title>
+<style>
+:root{--bg:#0b0e14;--card:#141925;--mut:#8b95a7;--fg:#e6edf3;--grn:#3fb950;--red:#f85149;--acc:#58a6ff;--bd:#222b3a}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif}
+header{padding:14px 20px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+h1{font-size:17px;margin:0;font-weight:650}.pill{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--bd);color:var(--mut)}
+.ok{color:var(--grn);border-color:#1d3a26}.bad{color:var(--red);border-color:#3a1d1d}
+.wrap{padding:18px;display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:14px;max-width:1400px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px}
+.card h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:0 0 10px}
+.row{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dashed #1c2533}
+.row:last-child{border-bottom:0}.k{color:var(--mut)}.v{font-variant-numeric:tabular-nums;text-align:right}
+.big{font-size:26px;font-weight:680;font-variant-numeric:tabular-nums}.sub{color:var(--mut);font-size:12px}
+table{width:100%;border-collapse:collapse;font-size:12px}th,td{text-align:right;padding:4px 6px;border-bottom:1px solid #1c2533}
+th:first-child,td:first-child{text-align:left}.muted{color:var(--mut)}.foot{padding:10px 20px;color:var(--mut);font-size:12px;border-top:1px solid var(--bd)}
+</style></head><body>
+<header>
+  <h1>BTC 5-min Pulse</h1>
+  <span class="pill" id="paper">PAPER ONLY</span>
+  <span class="pill" id="health">connecting…</span>
+  <span class="pill" id="ticks"></span>
+  <span class="pill" id="updated"></span>
+</header>
+<div class="wrap" id="cards"></div>
+<div class="foot">Auto-refreshes every 3s · read-only · oracle = Chainlink Data Streams ref price via Polymarket RTDS</div>
+<script>
+const $=(h)=>{const t=document.createElement('template');t.innerHTML=h.trim();return t.content.firstChild};
+const f=(x,d=2)=>x==null?'—':(typeof x==='number'?x.toFixed(d):x);
+const money=(x)=>x==null?'—':(x>=0?'+$':'-$')+Math.abs(x).toFixed(2);
+function card(title,rows){const c=$(`<div class="card"><h2>${title}</h2></div>`);
+  rows.forEach(([k,v,cls])=>{const r=$(`<div class="row"><span class="k">${k}</span><span class="v ${cls||''}">${v}</span></div>`);c.appendChild(r)});return c}
+async function tick(){
+ let s,l;
+ try{s=await (await fetch('/api/polymarket/training/btc_pulse',{cache:'no-store'})).json();
+     l=await (await fetch('/api/polymarket/training/btc_pulse/ledger',{cache:'no-store'})).json();}
+ catch(e){document.getElementById('health').textContent='unreachable';document.getElementById('health').className='pill bad';return}
+ const h=document.getElementById('health');
+ if(!s.available){h.textContent='no data yet';h.className='pill bad';return}
+ h.textContent='live';h.className='pill ok';
+ document.getElementById('ticks').textContent='ticks '+s.ticks;
+ document.getElementById('updated').textContent=new Date().toLocaleTimeString();
+ const L=s.ledger||{},o=s.oracle||{},c=s.calibration||{},p=s.price||{},g=s.grok_overlay||{},eg=s.execution_gate||{};
+ const lf=(o.lead_features||{}).feeds||{},rt=o.rtds||{},rec=L.proxy_official_reconciliation||{};
+ const cards=document.getElementById('cards');cards.innerHTML='';
+ // P&L hero
+ const pnl=$(`<div class="card"><h2>Paper P&L</h2><div class="big ${(L.realized_pnl_usd||0)>=0?'':'bad'}" style="color:${(L.realized_pnl_usd||0)>=0?'var(--grn)':'var(--red)'}">${money(L.realized_pnl_usd)}</div><div class="sub">${L.settled||0} settled · win-rate ${f((L.win_rate||0)*100,1)}% · edge ${f(L.edge_realized,3)}</div></div>`);cards.appendChild(pnl);
+ cards.appendChild(card('Ledger',[['trades',L.trades],['settled',L.settled],['wins',L.wins],['win-rate',f((L.win_rate||0)*100,1)+'%'],['avg entry',f(L.avg_entry_price,3)],['edge realized',f(L.edge_realized,3)],['avg pnl/trade',money(L.avg_pnl_per_trade)],['open',L.open_positions]]));
+ cards.appendChild(card('Oracle (reference model)',[['feed type',o.oracle_feed_type||'—'],['symbol',o.oracle_symbol||'—'],['price source',p.source||'—'],['Chainlink btc/usd',f(rt.latest&&rt.latest['crypto_prices_chainlink:btc/usd'])],['RTDS connected',rt.connected?'yes':'no',rt.connected?'ok':'bad'],['open/close snap',o.open_snapshot_source||'—'],['σ/sec',f(p.sigma_per_sec,6)],['sampler',p.sampler_running?(p.sampler_interval_s+'s'):'off']]));
+ cards.appendChild(card('Lead feeds (features only)',[['binance btcusdt',f(lf.binance_btcusdt&&lf.binance_btcusdt.price)],['coinbase btcusd',f(lf.coinbase_btcusd&&lf.coinbase_btcusd.price)],['settlement eligible','no','muted']]));
+ cards.appendChild(card('Execution gate',[['candidates',eg.candidates],['accepted (fills)',eg.accepted,'ok'],['rejected',eg.rejected_total,'bad'],...Object.entries(eg.rejected||{}).filter(([,v])=>v>0).map(([k,v])=>['· '+k,v,'bad']),['reconciled',eg.reconciled?'yes':'NO',eg.reconciled?'ok':'bad']]));
+ cards.appendChild(card('Settlement & calibration',[['sources',JSON.stringify(L.settle_sources||{})],['proxy vs official','both '+(rec.both||0)+' · agree '+(rec.agree||0)+' · disagree '+(rec.disagree||0)],['Brier',f(c.brier,3)+' (base 0.25)'],['log-loss',f(c.log_loss,3)],['samples',c.samples],['base-rate up',f(c.base_rate_up,2)]]));
+ cards.appendChild(card('Grok event-risk overlay',[['enabled',g.enabled?'yes':'no'],['regime',(g.state||{}).regime||'—'],['blackout',(g.state||{}).blackout?'YES':'no',(g.state||{}).blackout?'bad':''],['calls',g.calls],['reason',(g.state||{}).reason||'—']]));
+ // positions
+ const pos=(l&&l.positions)||[];const pc=$(`<div class="card" style="grid-column:1/-1"><h2>Recent paper positions</h2></div>`);
+ const tb=$(`<table><thead><tr><th>window</th><th>side</th><th>entry</th><th>fair</th><th>s_open→s_close</th><th>won</th><th>pnl</th></tr></thead><tbody></tbody></table>`);
+ pos.slice(0,12).forEach(x=>{const won=x.won==null?'—':(x.won?'✓':'✗');const cl=x.won==null?'muted':(x.won?'':'bad');
+   tb.querySelector('tbody').appendChild($(`<tr><td>${(x.title||'').slice(-20)}</td><td>${x.side}</td><td>${f(x.entry_price,3)}</td><td>${f(x.fair_at_entry,3)}</td><td class="muted">${f(x.s_open)}→${f(x.s_close)}</td><td class="${cl}">${won}</td><td class="${(x.pnl_usd||0)>=0?'':'bad'}" style="color:${x.pnl_usd==null?'var(--mut)':((x.pnl_usd>=0)?'var(--grn)':'var(--red)')}">${x.pnl_usd==null?'—':money(x.pnl_usd)}</td></tr>`))});
+ pc.appendChild(tb);cards.appendChild(pc);
+}
+tick();setInterval(tick,3000);
+</script></body></html>"""
