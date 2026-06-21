@@ -123,6 +123,12 @@ class PulseConfig:
     # price and re-checks it this many seconds later to learn whether the signal predicted the
     # move — building a prediction from the history of ALL signals (traded or not). Observe-only.
     tradingview_signal_horizon_s: float = 300.0
+    # TradingView signal-bucket PROMOTION diagnostics (observe-only by default). A bucket is only
+    # flagged eligible if win_rate >= min_win_rate, EV-after-slippage > 0, clean reconciliation,
+    # and >= min_samples. Promotion to trading authority requires this flag AND explicit wiring.
+    tradingview_promotion_allowed: bool = False
+    tradingview_promotion_min_samples: int = 50
+    tradingview_promotion_min_win_rate: float = 0.80
     data_dir: str = "/data"
 
     @classmethod
@@ -202,6 +208,10 @@ class PulseConfig:
             tradingview_signal_gate_enabled=str(os.getenv("PULSE_TRADINGVIEW_SIGNAL_GATE", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
             tradingview_signal_horizon_s=_envf("PULSE_TV_SIGNAL_HORIZON_S", 300.0),
+            tradingview_promotion_allowed=str(os.getenv("PULSE_TV_PROMOTION_ALLOWED", "0"))
+            .strip().lower() in ("1", "true", "yes", "on"),
+            tradingview_promotion_min_samples=int(_envf("PULSE_TV_PROMOTION_MIN_SAMPLES", 50)),
+            tradingview_promotion_min_win_rate=_envf("PULSE_TV_PROMOTION_MIN_WIN_RATE", 0.80),
             data_dir=os.getenv("HTE_DATA_DIR", "/data"))
 
 
@@ -271,9 +281,11 @@ class PulseEngine:
         self._daily_key = None
         from engine.pulse.reporting import OutcomeGroups
         self._groups = OutcomeGroups()            # settled PnL grouped by every entry-time tag
-        from engine.pulse.tradingview import TradingViewEdge, RSITrendModel
+        from engine.pulse.tradingview import (TradingViewEdge, RSITrendModel,
+                                              TradingViewSignalLearner)
         self._tv_edge = TradingViewEdge()         # OBSERVE-ONLY TradingView signal-vs-outcome edge
         self._rsi_model = RSITrendModel()         # OBSERVE-ONLY RSI alert-history next-trend model
+        self._tv_learner = TradingViewSignalLearner()   # OBSERVE-ONLY bucketed perf + promotion
         self._tv_pending: list = []               # pending forward-return evals for ALL signals
         self._ev_before_sum = 0.0                 # EV before/after costs (accepted candidates)
         self._ev_after_sum = 0.0
@@ -357,6 +369,7 @@ class PulseEngine:
         self.gate_obs.load_state(acct.get("gate_observations") or {})
         self._tv_edge.load_state(acct.get("tv_edge") or {})
         self._rsi_model.load_state(acct.get("rsi_trend") or {})
+        self._tv_learner.load_state(acct.get("tv_learner") or {})
         self._tv_pending = list(acct.get("tv_pending") or [])
         if self.edge_model is not None:          # the learned edge model accumulates across runs
             self.edge_model.load_state(acct.get("edge_model") or {})
@@ -430,6 +443,10 @@ class PulseEngine:
             dr.finalize(terminal, reason=reason, stage=stage)
             self.reconciler.record(dr)
             evald.append(dr.to_dict())
+            # count accepted/rejected outcomes for candidates that carried a TradingView signal
+            if dr.external and (dr.external.get("source") == "tradingview"):
+                self._tv_learner.record_candidate(dr.external.get("direction"),
+                                                  accepted=(terminal == "accepted"))
             _bump(terminal if reason is None else f"{terminal}:{reason}")
 
         for w in windows:
@@ -637,6 +654,10 @@ class PulseEngine:
                                 "symbol": _sym,
                                 "indicator_name": tv_feature.get("indicator_name"),
                                 "strength": tv_feature.get("strength"),
+                                "strength_bucket": tv_feature.get("strength_bucket"),
+                                "signal_level": tv_feature.get("signal_level"),
+                                "price": tv_feature.get("price"),
+                                "ev_after_cost": ex.ev_after_slippage,   # EV after VWAP/slippage
                                 # RSI alert-history next-window prediction at entry (observe-only,
                                 # leakage-free: scored at settlement before counts are updated)
                                 "rsi_trend_state": _trend.get("state"),
@@ -747,6 +768,21 @@ class PulseEngine:
             # NOTE: the RSI alert-history model now learns from EVERY signal's forward return
             # (see _evaluate_tv_forward_returns), not just traded windows, so we do NOT also score
             # it here (that would double-count traded windows).
+            # OBSERVE-ONLY bucketed learning: if this traded window carried a TradingView signal,
+            # record win/PnL/EV by every signal + market-context bucket (for promotion diagnostics).
+            ext = pos.external or {}
+            if ext.get("source") == "tradingview":
+                rt = pos.research or {}
+                self._tv_learner.record_settled(
+                    {"direction": ext.get("direction"), "signal_level": ext.get("signal_level"),
+                     "strength_bucket": ext.get("strength_bucket"),
+                     "indicator_name": ext.get("indicator_name"),
+                     "hurst_regime": rt.get("hurst_regime"), "zscore_bucket": rt.get("zscore_bucket"),
+                     "ttc_bucket": rt.get("ttc_bucket"), "spread_bucket": rt.get("spread_bucket"),
+                     "depth_bucket": rt.get("depth_bucket")},
+                    won=bool(pos.won), pnl=float(pos.pnl_usd or 0.0),
+                    ev_after_cost=ext.get("ev_after_cost"),
+                    reconciled=bool(self.reconciler.report().get("reconciled")))
             logger.info("pulse settled %s side=%s won=%s pnl=%.3f via=%s",
                         pos.title, pos.side, pos.won, pos.pnl_usd or 0.0, source)
 
@@ -924,6 +960,10 @@ class PulseEngine:
         rep["rsi_trend"]["forward_horizon_s"] = self.cfg.tradingview_signal_horizon_s
         rep["rsi_trend"]["pending_forward_evals"] = len(self._tv_pending)
         rep["rsi_trend"]["learns_from"] = "all_signals_forward_return"
+        rep["signal_learning"] = self._tv_learner.report(
+            promotion_allowed=self.cfg.tradingview_promotion_allowed,
+            min_samples=self.cfg.tradingview_promotion_min_samples,
+            min_win_rate=self.cfg.tradingview_promotion_min_win_rate)
         rep["signal_gate"] = {
             "enabled": bool(self.cfg.tradingview_signal_gate_enabled),
             "active": bool(self.cfg.tradingview_signal_gate_enabled and self.tradingview is not None),
@@ -1018,6 +1058,7 @@ class PulseEngine:
                                      "after_sum": round(self._ev_after_sum, 6), "n": self._ev_n},
                               "tv_edge": self._tv_edge.to_state(),
                               "rsi_trend": self._rsi_model.to_state(),
+                              "tv_learner": self._tv_learner.to_state(),
                               "tv_pending": self._tv_pending[-1000:],
                               "edge_model": (self.edge_model.to_state()
                                              if self.edge_model is not None else {}),

@@ -86,6 +86,20 @@ def _parse_ts(val) -> Optional[float]:
         return None
 
 
+def strength_bucket(x) -> str:
+    if x is None:
+        return "na"
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return "na"
+    if v < 0.5:
+        return "<0.5"
+    if v < 0.8:
+        return "0.5-0.8"
+    return ">=0.8"
+
+
 @dataclass
 class TradingViewSignalEvent:
     """Normalized, observe-only external signal from a TradingView indicator alert."""
@@ -99,6 +113,8 @@ class TradingViewSignalEvent:
     strength: Optional[float]
     indicator_name: Optional[str]
     raw_payload_hash: str
+    signal_level: Optional[str] = None   # e.g. RSI divergence level/class ("regular"/"hidden"/"3")
+    price: Optional[float] = None        # price reported by the alert (observe-only reference)
     source: str = "tradingview"
     observe_only: bool = True
 
@@ -106,7 +122,8 @@ class TradingViewSignalEvent:
         return {"event_id": self.event_id, "source": self.source, "bot_name": self.bot_name,
                 "symbol": self.symbol, "timeframe": self.timeframe, "bar_time": self.bar_time,
                 "received_at": round(self.received_at, 3), "direction": self.direction,
-                "strength": self.strength, "indicator_name": self.indicator_name,
+                "strength": self.strength, "signal_level": self.signal_level,
+                "price": self.price, "indicator_name": self.indicator_name,
                 "raw_payload_hash": self.raw_payload_hash, "observe_only": True}
 
     def as_feature(self, *, now: Optional[float] = None) -> dict:
@@ -114,6 +131,8 @@ class TradingViewSignalEvent:
         now = float(now if now is not None else time.time())
         return {"source": "tradingview", "observe_only": True, "event_id": self.event_id,
                 "direction": self.direction, "strength": self.strength,
+                "strength_bucket": strength_bucket(self.strength),
+                "signal_level": self.signal_level, "price": self.price,
                 "indicator_name": self.indicator_name, "symbol": self.symbol,
                 "timeframe": self.timeframe, "bar_time": self.bar_time,
                 "age_s": (round(now - self.received_at, 3))}
@@ -246,6 +265,132 @@ class TradingViewEdge:
                                    "sig_correct": int(v.get("sig_correct", 0) or 0),
                                    "bot_wins": int(v.get("bot_wins", 0) or 0),
                                    "pnl": float(v.get("pnl", 0.0) or 0.0)}
+
+
+class TradingViewSignalLearner:
+    """OBSERVE-ONLY fast-learning layer: for each settled paper trade that carried a TradingView
+    signal, bucket win-rate / PnL / EV-after-cost by every signal + market-context dimension, rank
+    the best/worst RSI-divergence levels, and emit promotion DIAGNOSTICS (which buckets clear a
+    high bar: win_rate >= 80%, positive EV after slippage, clean reconciliation, enough samples).
+
+    It NEVER promotes a bucket to trading authority on its own — promotion stays config-gated and
+    the execution gate remains the sole trade authority."""
+
+    DIMS = ("direction", "signal_level", "strength_bucket", "indicator_name", "hurst_regime",
+            "zscore_bucket", "ttc_bucket", "spread_bucket", "depth_bucket")
+
+    def __init__(self):
+        self.dims: dict = {d: {} for d in self.DIMS}
+        self.settled = 0
+        self.accepted = 0
+        self.rejected = 0
+        self.accepted_by_direction: dict = {}
+        self.rejected_by_direction: dict = {}
+
+    @staticmethod
+    def _stat() -> dict:
+        return {"n": 0, "wins": 0, "pnl": 0.0, "ev": 0.0, "reconciled_n": 0}
+
+    def record_candidate(self, direction: Optional[str], *, accepted: bool) -> None:
+        """Count accepted vs rejected outcomes for candidates that carried a TradingView signal."""
+        d = str(direction or "na")
+        if accepted:
+            self.accepted += 1
+            self.accepted_by_direction[d] = self.accepted_by_direction.get(d, 0) + 1
+        else:
+            self.rejected += 1
+            self.rejected_by_direction[d] = self.rejected_by_direction.get(d, 0) + 1
+
+    def record_settled(self, tags: dict, *, won: bool, pnl: float, ev_after_cost: Optional[float],
+                       reconciled: bool) -> None:
+        self.settled += 1
+        won = bool(won)
+        pnl = float(pnl or 0.0)
+        ev = float(ev_after_cost or 0.0)
+        for dim in self.DIMS:
+            b = tags.get(dim)
+            s = self.dims[dim].setdefault(str(b if b is not None else "na"), self._stat())
+            s["n"] += 1
+            s["wins"] += int(won)
+            s["pnl"] = round(s["pnl"] + pnl, 6)
+            s["ev"] = round(s["ev"] + ev, 6)
+            s["reconciled_n"] += int(bool(reconciled))
+
+    @staticmethod
+    def _b(s: dict) -> dict:
+        n = s["n"]
+        return {"n": n, "win_rate": (round(s["wins"] / n, 4) if n else None),
+                "pnl_usd": round(s["pnl"], 4),
+                "avg_ev_after_cost": (round(s["ev"] / n, 6) if n else None),
+                "all_reconciled": (s["reconciled_n"] == n and n > 0)}
+
+    def promotion_diagnostics(self, *, allowed: bool, min_samples: int,
+                              min_win_rate: float = 0.8) -> dict:
+        eligible = []
+        for dim in self.DIMS:
+            for b, s in self.dims[dim].items():
+                if b == "na" or s["n"] < min_samples:
+                    continue
+                wr = s["wins"] / s["n"]
+                ev = s["ev"] / s["n"]
+                recon = (s["reconciled_n"] == s["n"])
+                if wr >= min_win_rate and ev > 0 and recon:
+                    eligible.append({"dimension": dim, "bucket": b, "n": s["n"],
+                                     "win_rate": round(wr, 4), "avg_ev_after_cost": round(ev, 6)})
+        eligible.sort(key=lambda x: (x["win_rate"], x["avg_ev_after_cost"]), reverse=True)
+        return {
+            "promotion_allowed_by_config": bool(allowed),
+            "min_samples": min_samples, "min_win_rate": min_win_rate,
+            "require_positive_ev_after_slippage": True, "require_clean_reconciliation": True,
+            "eligible_buckets": eligible,
+            "any_eligible": bool(eligible),
+            "note": ("observe-only diagnostic; eligible buckets are NOT auto-promoted to trading "
+                     "authority unless promotion_allowed_by_config is true AND explicitly wired. "
+                     "The execution gate remains the sole trade authority."),
+        }
+
+    def report(self, *, promotion_allowed: bool = False, min_samples: int = 50,
+               min_win_rate: float = 0.8) -> dict:
+        out = {"observe_only": True, "report_only": True, "affects_trading": False,
+               "settled_with_signal": self.settled,
+               "accepted": self.accepted, "rejected": self.rejected,
+               "accepted_by_direction": dict(self.accepted_by_direction),
+               "rejected_by_direction": dict(self.rejected_by_direction)}
+        for dim in self.DIMS:
+            out["by_" + dim] = {b: self._b(s) for b, s in self.dims[dim].items()}
+        # best/worst RSI-divergence levels (signal_level buckets ranked by win-rate, min 3 samples)
+        lvl = [{"signal_level": b, **self._b(s)}
+               for b, s in self.dims["signal_level"].items() if b != "na" and s["n"] >= 3]
+        lvl.sort(key=lambda x: ((x["win_rate"] or 0.0), x["pnl_usd"]), reverse=True)
+        out["best_signal_levels"] = lvl[:3]
+        out["worst_signal_levels"] = list(reversed(lvl[-3:])) if len(lvl) > 0 else []
+        out["promotion"] = self.promotion_diagnostics(
+            allowed=promotion_allowed, min_samples=min_samples, min_win_rate=min_win_rate)
+        return out
+
+    def to_state(self) -> dict:
+        return {"dims": {d: {b: dict(s) for b, s in self.dims[d].items()} for d in self.DIMS},
+                "settled": self.settled, "accepted": self.accepted, "rejected": self.rejected,
+                "accepted_by_direction": dict(self.accepted_by_direction),
+                "rejected_by_direction": dict(self.rejected_by_direction)}
+
+    def load_state(self, data: dict) -> None:
+        if not data:
+            return
+        self.dims = {d: {} for d in self.DIMS}
+        for d in self.DIMS:
+            for b, s in (data.get("dims") or {}).get(d, {}).items():
+                self.dims[d][b] = {"n": int(s.get("n", 0) or 0), "wins": int(s.get("wins", 0) or 0),
+                                   "pnl": float(s.get("pnl", 0.0) or 0.0),
+                                   "ev": float(s.get("ev", 0.0) or 0.0),
+                                   "reconciled_n": int(s.get("reconciled_n", 0) or 0)}
+        self.settled = int(data.get("settled", 0) or 0)
+        self.accepted = int(data.get("accepted", 0) or 0)
+        self.rejected = int(data.get("rejected", 0) or 0)
+        self.accepted_by_direction = {k: int(v or 0)
+                                      for k, v in (data.get("accepted_by_direction") or {}).items()}
+        self.rejected_by_direction = {k: int(v or 0)
+                                      for k, v in (data.get("rejected_by_direction") or {}).items()}
 
 
 class RSITrendModel:
@@ -430,6 +575,7 @@ def _event_from_dict(d) -> Optional["TradingViewSignalEvent"]:
             symbol=str(d.get("symbol") or ""), timeframe=d.get("timeframe"),
             bar_time=d.get("bar_time"), received_at=float(d.get("received_at") or 0.0),
             direction=str(d.get("direction") or "FLAT"), strength=d.get("strength"),
+            signal_level=d.get("signal_level"), price=d.get("price"),
             indicator_name=d.get("indicator_name"),
             raw_payload_hash=str(d.get("raw_payload_hash") or ""))
     except Exception:  # noqa: BLE001
@@ -518,10 +664,20 @@ class TradingViewIntake:
         except (TypeError, ValueError):
             strength = None
         event_id = str(payload.get("event_id") or payload.get("id") or "").strip() or raw_hash[:24]
+        price = None
+        try:
+            if payload.get("price") is not None or payload.get("close") is not None:
+                price = float(payload.get("price") if payload.get("price") is not None
+                              else payload.get("close"))
+        except (TypeError, ValueError):
+            price = None
+        signal_level = str(payload.get("signal_level") or payload.get("level")
+                           or payload.get("divergence_level") or "").strip() or None
         ev = TradingViewSignalEvent(
             event_id=event_id, bot_name=(bot or self.bot_name), symbol=symbol,
             timeframe=(str(payload.get("timeframe") or payload.get("interval") or "").strip() or None),
             bar_time=bar_time, received_at=now, direction=direction, strength=strength,
+            signal_level=signal_level, price=price,
             indicator_name=(str(payload.get("indicator_name") or payload.get("indicator")
                                 or "").strip() or None),
             raw_payload_hash=raw_hash)

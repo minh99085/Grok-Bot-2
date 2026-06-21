@@ -127,6 +127,11 @@ services:
       # forward-return horizon (s) for learning whether EVERY TradingView signal predicted the
       # subsequent BTC move (builds the prediction from the full signal history). Observe-only.
       PULSE_TV_SIGNAL_HORIZON_S: "${PULSE_TV_SIGNAL_HORIZON_S:-300}"
+      # TradingView signal-bucket promotion diagnostics (observe-only). Promotion to trading
+      # authority requires this flag AND explicit wiring; default OFF.
+      PULSE_TV_PROMOTION_ALLOWED: "${PULSE_TV_PROMOTION_ALLOWED:-0}"
+      PULSE_TV_PROMOTION_MIN_SAMPLES: "${PULSE_TV_PROMOTION_MIN_SAMPLES:-50}"
+      PULSE_TV_PROMOTION_MIN_WIN_RATE: "${PULSE_TV_PROMOTION_MIN_WIN_RATE:-0.80}"
       CHAINLINK_DATA_STREAMS_API_KEY: "${CHAINLINK_DATA_STREAMS_API_KEY:-}"
       CHAINLINK_DATA_STREAMS_SECRET: "${CHAINLINK_DATA_STREAMS_SECRET:-}"
       CHAINLINK_BTC_FEED_ID: "${CHAINLINK_BTC_FEED_ID:-}"
