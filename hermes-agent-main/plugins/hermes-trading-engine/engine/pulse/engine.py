@@ -84,6 +84,7 @@ class PulseConfig:
     signal_engine_enabled: bool = True       # OBSERVE-ONLY Simons-style raw signals (never trade)
     factor_model_enabled: bool = True        # OBSERVE-ONLY BTC-pulse factor/context model
     markov_enabled: bool = True              # OBSERVE-ONLY Markov regime machine
+    edge_model_enabled: bool = True          # OBSERVE-ONLY calibrated edge model (no authority)
     data_dir: str = "/data"
 
     @classmethod
@@ -134,6 +135,8 @@ class PulseConfig:
             factor_model_enabled=str(os.getenv("HERMES_FACTOR_MODEL_ENABLED", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
             markov_enabled=str(os.getenv("HERMES_MARKOV_ENABLED", "1"))
+            .strip().lower() in ("1", "true", "yes", "on"),
+            edge_model_enabled=str(os.getenv("HERMES_EDGE_MODEL_ENABLED", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
             data_dir=os.getenv("HTE_DATA_DIR", "/data"))
 
@@ -191,6 +194,10 @@ class PulseEngine:
         if bool(getattr(self.cfg, "markov_enabled", True)):
             from engine.pulse.markov import MarkovRegime
             self.markov = MarkovRegime()
+        self.edge_model = None
+        if bool(getattr(self.cfg, "edge_model_enabled", True)):
+            from engine.pulse.edge_model import EdgeModel
+            self.edge_model = EdgeModel()
         self.reconciler = LifecycleReconciler()   # GS-Quant-style candidate lifecycle audit
         self.overlay = None
         if bool(getattr(self.cfg, "grok_overlay_enabled", False)):
@@ -370,6 +377,14 @@ class PulseEngine:
                 self.markov.observe(cand_state)
                 dr.regime = RegimeSnapshot(
                     state=cand_state, probs=self.markov.state_outputs(cand_state)).to_dict()
+            # OBSERVE-ONLY calibrated edge model (NO trade authority). Predict from entry-time
+            # features; the realized label trains it later (no leakage).
+            model_vec = None
+            if self.edge_model is not None:
+                from engine.pulse.edge_model import extract_features
+                model_vec = extract_features(features=dr.features, signals=dr.signals,
+                                             factors=dr.factors)
+                dr.model = self.edge_model.predict(model_vec)
             if not d.trade:
                 dr.action = RejectAction(stage="directional", reason=d.reason)
                 if self.markov is not None:
@@ -407,7 +422,8 @@ class PulseEngine:
                                     "ttc_bucket": ttc_bucket(ttc),
                                     "edge_quality_bucket": (fsnap.edge_quality_bucket
                                                             if fsnap else "na"),
-                                    "markov_state": cand_state}
+                                    "markov_state": cand_state,
+                                    "model_features": model_vec}
                 dr.fill = PaperFill(window_key=w.event_id, side=d.side, fill_price=ex.fill_price,
                                     shares=pos.shares, size_usd=pos.size_usd)
             dr.action = TradeAction(side=d.side, token_id=d.token_id, fill_price=ex.fill_price,
@@ -469,6 +485,10 @@ class PulseEngine:
             if self.markov is not None:
                 self.markov.record_resolution(state=(pos.research or {}).get("markov_state"),
                                               outcome_up=outcome)
+            if self.edge_model is not None:
+                mvec = (pos.research or {}).get("model_features")
+                if isinstance(mvec, dict):           # train on entry features + realized outcome
+                    self.edge_model.observe_label(mvec, bool(outcome))
             logger.info("pulse settled %s side=%s won=%s pnl=%.3f via=%s",
                         pos.title, pos.side, pos.won, pos.pnl_usd or 0.0, source)
 
@@ -497,6 +517,8 @@ class PulseEngine:
                              else {"enabled": False}),
             "markov_regime": (self.markov.report() if self.markov is not None
                               else {"enabled": False}),
+            "edge_model": (self.edge_model.report() if self.edge_model is not None
+                           else {"enabled": False}),
             "execution_gate": self.ledger.exec_gate_stats(),
             "research_features": (self.research.report() if self.research is not None
                                   else {"enabled": False}),

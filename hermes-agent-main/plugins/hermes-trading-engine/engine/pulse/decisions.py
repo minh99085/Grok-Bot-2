@@ -209,6 +209,7 @@ class DecisionResult:
     signals: Optional[dict] = None              # observe-only raw signal snapshot (Phase 4)
     factors: Optional[dict] = None              # observe-only factor/context model (Phase 5)
     regime: Optional[dict] = None               # observe-only Markov regime snapshot (Phase 6)
+    model: Optional[dict] = None                # observe-only calibrated edge model (Phase 7)
     cost: Optional[ExecutionCostEstimate] = None
     action: Optional[object] = None             # TradeAction | RejectAction
     fill: Optional[PaperFill] = None
@@ -244,6 +245,7 @@ class DecisionResult:
                 "signals": self.signals,
                 "factors": self.factors,
                 "regime": self.regime,
+                "model": self.model,
                 "cost": (self.cost.to_dict() if self.cost else None),
                 "action": (self.action.to_dict() if self.action else None),
                 "fill": (self.fill.to_dict() if self.fill else None),
