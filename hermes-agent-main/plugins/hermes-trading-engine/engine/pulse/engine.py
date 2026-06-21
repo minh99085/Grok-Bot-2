@@ -93,6 +93,17 @@ class PulseConfig:
     sizing_hard_cap_usd: float = 10.0
     sizing_daily_loss_cap_usd: float = 50.0
     sizing_bankroll_usd: float = 1000.0
+    # ---- TradingView indicator webhook intake (OBSERVE-ONLY external signal) ----
+    # Enabled only when a shared secret is set. Bound to 127.0.0.1 by default (private to host);
+    # alerts are candidate signals only — they can never place/resize/bypass a paper trade.
+    tradingview_secret: str = ""
+    tradingview_allowed_symbols: tuple = ("BTCUSD", "BTCUSDT", "BTC/USD", "BTC", "XBTUSD")
+    tradingview_bot_name: str = "hermes"
+    tradingview_webhook_host: str = "127.0.0.1"
+    tradingview_webhook_port: int = 8787
+    tradingview_webhook_path: str = "/webhooks/tradingview"
+    tradingview_max_age_s: float = 90.0
+    tradingview_signal_max_feature_age_s: float = 300.0   # only attach signals fresher than this
     data_dir: str = "/data"
 
     @classmethod
@@ -151,6 +162,18 @@ class PulseConfig:
             sizing_hard_cap_usd=_envf("HERMES_SIZING_HARD_CAP_USD", 10.0),
             sizing_daily_loss_cap_usd=_envf("HERMES_SIZING_DAILY_LOSS_CAP_USD", 50.0),
             sizing_bankroll_usd=_envf("HERMES_SIZING_BANKROLL_USD", 1000.0),
+            tradingview_secret=(os.getenv("TRADINGVIEW_WEBHOOK_SECRET", "") or "").strip(),
+            tradingview_allowed_symbols=tuple(
+                s.strip().upper() for s in os.getenv(
+                    "TRADINGVIEW_ALLOWED_SYMBOLS", "BTCUSD,BTCUSDT,BTC/USD,BTC,XBTUSD").split(",")
+                if s.strip()),
+            tradingview_bot_name=(os.getenv("TRADINGVIEW_BOT_NAME", "hermes") or "").strip(),
+            tradingview_webhook_host=(os.getenv("TRADINGVIEW_WEBHOOK_HOST", "127.0.0.1")
+                                      or "127.0.0.1").strip(),
+            tradingview_webhook_port=int(_envf("TRADINGVIEW_WEBHOOK_PORT", 8787)),
+            tradingview_webhook_path=(os.getenv("TRADINGVIEW_WEBHOOK_PATH", "/webhooks/tradingview")
+                                      or "/webhooks/tradingview").strip(),
+            tradingview_max_age_s=_envf("TRADINGVIEW_MAX_AGE_S", 90.0),
             data_dir=os.getenv("HTE_DATA_DIR", "/data"))
 
 
@@ -234,6 +257,27 @@ class PulseEngine:
                     self.overlay.start()
             except Exception:  # noqa: BLE001 — overlay never blocks startup
                 self.overlay = None
+        # OBSERVE-ONLY TradingView indicator webhook intake (enabled only when a secret is set).
+        # Alerts become candidate signals only; they can never place/resize/bypass a paper trade.
+        self.tradingview = None
+        self.webhook = None
+        if str(getattr(self.cfg, "tradingview_secret", "") or "").strip():
+            try:
+                from engine.pulse.tradingview import TradingViewIntake
+                from engine.pulse.webhook import WebhookServer
+                self.tradingview = TradingViewIntake(
+                    secret=self.cfg.tradingview_secret,
+                    allowed_symbols=self.cfg.tradingview_allowed_symbols,
+                    bot_name=self.cfg.tradingview_bot_name,
+                    max_age_s=self.cfg.tradingview_max_age_s, data_dir=self.cfg.data_dir)
+                self.webhook = WebhookServer(
+                    self.tradingview, host=self.cfg.tradingview_webhook_host,
+                    port=self.cfg.tradingview_webhook_port,
+                    path=self.cfg.tradingview_webhook_path).start()
+            except Exception:  # noqa: BLE001 — intake never blocks the paper loop
+                logger.exception("tradingview webhook init failed; continuing without it")
+                self.tradingview = None
+                self.webhook = None
         self.ticks = 0
         self.last_tick_ts = 0.0
         self._reasons: dict = {}
@@ -314,6 +358,15 @@ class PulseEngine:
         self.price.prune_opens(keep_keys)
         reasons: dict = {}
         evald = []
+        # OBSERVE-ONLY external signal (TradingView): drain freshly-received alerts and compute the
+        # latest signal feature for this tick. NEVER used by decide()/evaluate_execution().
+        tv_feature = None
+        if self.tradingview is not None:
+            self.tradingview.drain_pending()
+            feat = self.tradingview.latest_feature(now=now, symbol=self.cfg.oracle_symbol)
+            if feat is not None and (feat.get("age_s") is None
+                                     or feat["age_s"] <= self.cfg.tradingview_signal_max_feature_age_s):
+                tv_feature = feat
         ov = self.overlay.current(now) if self.overlay is not None else None
         ov_blackout = bool(ov and ov.get("blackout"))
         ov_vol_mult = float(ov.get("vol_multiplier", 1.0)) if ov else 1.0
@@ -351,6 +404,7 @@ class PulseEngine:
                              for k, v in (getattr(self.leads, "_latest", {}) or {}).items()})
             dr = DecisionResult(market_context=mc,
                                 candidate=CandidateDecision(None, None, None, 0.0, False, "pending"))
+            dr.external = tv_feature          # OBSERVE-ONLY external signal (never trades/sizes)
             # early terminal classifications (each candidate ends classified)
             if ttc <= 0:
                 _finalize(dr, "expired", reason="window_closed")
@@ -674,7 +728,20 @@ class PulseEngine:
             missing_data_reasons=miss, baseline=(self._baseline or empty_baseline()),
             gate_thresholds=self._gate_thresholds(), gate_observations=self.gate_obs.ranges())
         report["readiness"] = self.readiness()
+        report["tradingview"] = self._tradingview_report()
         return report
+
+    def _tradingview_report(self) -> dict:
+        """Observe-only TradingView intake counters + latest signal (report-only)."""
+        if self.tradingview is None:
+            return {"enabled": False, "tradingview_observe_only": True,
+                    "tradingview_alerts_received": 0, "tradingview_alerts_valid": 0,
+                    "tradingview_alerts_rejected": 0, "tradingview_reject_reasons": {},
+                    "tradingview_latest_signal": None}
+        rep = self.tradingview.report()
+        if self.webhook is not None:
+            rep["webhook"] = self.webhook.status()
+        return rep
 
     def _tier_report(self) -> dict:
         """REPORT-ONLY tier table across bucket dimensions (no trade/veto authority)."""
@@ -739,6 +806,7 @@ class PulseEngine:
             },
             "grok_overlay": (self.overlay.status() if self.overlay is not None
                              else {"enabled": False}),
+            "tradingview": self._tradingview_report(),
             "tick_reasons": self._reasons,
             "recent_evaluations": self._last_eval,
         }

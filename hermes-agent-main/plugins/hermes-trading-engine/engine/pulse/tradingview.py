@@ -1,0 +1,299 @@
+"""TradingView indicator-alert intake for the BTC 5-min pulse (OBSERVE-ONLY).
+
+TradingView alerts feed Hermes **candidate signals only**. A TradingView alert can NEVER:
+directly place a trade, resize a trade, bypass the strategy/execution gate, or override the
+Polymarket orderbook checks. It is normalized into a ``TradingViewSignalEvent`` and attached to
+candidates as an observe-only external feature; whether a paper trade happens is decided solely
+by the existing Hermes strategy + the strict execution-quality gate.
+
+This module is pure (no sockets) so it is fully unit-testable; the HTTP listener lives in
+``engine/pulse/webhook.py`` and simply calls :meth:`TradingViewIntake.ingest`.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import hmac
+import json
+import threading
+import time
+from collections import deque
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Optional
+
+# explicit, stable rejection reasons (acceptance criterion #3 + #8)
+INVALID_JSON = "invalid_json"
+MISSING_SECRET = "missing_secret"
+BAD_SECRET = "bad_secret"
+WRONG_BOT = "wrong_bot_name"
+UNSUPPORTED_SYMBOL = "unsupported_symbol"
+STALE_TIMESTAMP = "stale_timestamp"
+MALFORMED_DIRECTION = "malformed_direction"
+DUPLICATE_EVENT_ID = "duplicate_event_id"
+NOT_OBJECT = "payload_not_object"
+REJECT_REASONS = (INVALID_JSON, MISSING_SECRET, BAD_SECRET, WRONG_BOT, UNSUPPORTED_SYMBOL,
+                  STALE_TIMESTAMP, MALFORMED_DIRECTION, DUPLICATE_EVENT_ID, NOT_OBJECT)
+
+_DIRECTION_MAP = {
+    "up": "UP", "long": "UP", "buy": "UP", "bull": "UP", "bullish": "UP", "1": "UP",
+    "down": "DOWN", "short": "DOWN", "sell": "DOWN", "bear": "DOWN", "bearish": "DOWN", "-1": "DOWN",
+    "flat": "FLAT", "neutral": "FLAT", "none": "FLAT", "close": "FLAT", "exit": "FLAT", "0": "FLAT",
+}
+
+
+def normalize_direction(raw) -> Optional[str]:
+    if raw is None:
+        return None
+    return _DIRECTION_MAP.get(str(raw).strip().lower())
+
+
+def _parse_ts(val) -> Optional[float]:
+    """Parse an epoch (s or ms) or ISO-8601 timestamp into epoch seconds."""
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        v = float(val)
+        return v / 1000.0 if v > 1e11 else v          # ms -> s heuristic
+    s = str(val).strip()
+    if not s:
+        return None
+    try:
+        v = float(s)
+        return v / 1000.0 if v > 1e11 else v
+    except ValueError:
+        pass
+    try:
+        from datetime import datetime, timezone
+        s2 = s.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(s2)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+@dataclass
+class TradingViewSignalEvent:
+    """Normalized, observe-only external signal from a TradingView indicator alert."""
+    event_id: str
+    bot_name: str
+    symbol: str
+    timeframe: Optional[str]
+    bar_time: Optional[float]
+    received_at: float
+    direction: str                       # "UP" | "DOWN" | "FLAT"
+    strength: Optional[float]
+    indicator_name: Optional[str]
+    raw_payload_hash: str
+    source: str = "tradingview"
+    observe_only: bool = True
+
+    def to_dict(self) -> dict:
+        return {"event_id": self.event_id, "source": self.source, "bot_name": self.bot_name,
+                "symbol": self.symbol, "timeframe": self.timeframe, "bar_time": self.bar_time,
+                "received_at": round(self.received_at, 3), "direction": self.direction,
+                "strength": self.strength, "indicator_name": self.indicator_name,
+                "raw_payload_hash": self.raw_payload_hash, "observe_only": True}
+
+    def as_feature(self, *, now: Optional[float] = None) -> dict:
+        """The observe-only feature view attached to a candidate (never trades/sizes/vetoes)."""
+        now = float(now if now is not None else time.time())
+        return {"source": "tradingview", "observe_only": True, "event_id": self.event_id,
+                "direction": self.direction, "strength": self.strength,
+                "indicator_name": self.indicator_name, "symbol": self.symbol,
+                "timeframe": self.timeframe, "bar_time": self.bar_time,
+                "age_s": (round(now - self.received_at, 3))}
+
+
+class TradingViewIntake:
+    """Validates + normalizes + de-duplicates TradingView alerts and exposes report counters.
+
+    Thread-safe: the webhook thread calls :meth:`ingest`; the engine thread calls
+    :meth:`drain_pending`, :meth:`latest_feature`, and :meth:`report`."""
+
+    def __init__(self, *, secret: str, allowed_symbols, bot_name: str = "hermes",
+                 max_age_s: float = 90.0, future_skew_s: float = 30.0,
+                 data_dir: Optional[str] = None, dedupe_capacity: int = 5000,
+                 header_name: str = "X-Tradingview-Secret"):
+        self.secret = str(secret or "")
+        self.allowed_symbols = {str(s).strip().upper() for s in (allowed_symbols or []) if str(s).strip()}
+        self.bot_name = str(bot_name or "").strip().lower()
+        self.max_age_s = float(max_age_s)
+        self.future_skew_s = float(future_skew_s)
+        self.header_name = header_name
+        self._lock = threading.Lock()
+        self._seen: "deque[str]" = deque(maxlen=int(dedupe_capacity))
+        self._seen_set: set = set()
+        self._pending: list = []
+        self.received = 0
+        self.valid = 0
+        self.rejected = 0
+        self.consumed = 0
+        self.reject_reasons: dict = {}
+        self.latest: Optional[TradingViewSignalEvent] = None
+        self._path = (Path(data_dir) / "btc_pulse_tradingview.json") if data_dir else None
+        self._load_state()
+
+    # -- validation (pure given inputs) ------------------------------------- #
+    def _check_secret(self, payload: dict, provided_header: Optional[str]) -> Optional[str]:
+        provided = provided_header if provided_header else payload.get("secret")
+        if provided is None or str(provided) == "":
+            return MISSING_SECRET
+        if not hmac.compare_digest(str(provided), self.secret):
+            return BAD_SECRET
+        return None
+
+    def normalize(self, raw_bytes: bytes, *, provided_header: Optional[str], now: float):
+        """Return (event, reject_reason). Exactly one is non-None."""
+        raw_hash = hashlib.sha256(raw_bytes if isinstance(raw_bytes, bytes)
+                                  else str(raw_bytes).encode("utf-8")).hexdigest()
+        try:
+            payload = json.loads(raw_bytes)
+        except Exception:  # noqa: BLE001
+            return None, INVALID_JSON
+        if not isinstance(payload, dict):
+            return None, NOT_OBJECT
+        # 1) authenticate FIRST (don't leak symbol/bot validity to unauthenticated callers)
+        sec = self._check_secret(payload, provided_header)
+        if sec is not None:
+            return None, sec
+        # 2) bot name filter
+        bot = str(payload.get("bot_name") or payload.get("bot") or "").strip()
+        if self.bot_name and bot.lower() != self.bot_name:
+            return None, WRONG_BOT
+        # 3) symbol allow-list
+        symbol = str(payload.get("symbol") or payload.get("ticker") or "").strip().upper()
+        if not symbol or (self.allowed_symbols and symbol not in self.allowed_symbols):
+            return None, UNSUPPORTED_SYMBOL
+        # 4) direction
+        direction = normalize_direction(payload.get("direction") or payload.get("action")
+                                        or payload.get("signal"))
+        if direction is None:
+            return None, MALFORMED_DIRECTION
+        # 5) freshness (only when a bar/alert timestamp is supplied)
+        bar_time = _parse_ts(payload.get("bar_time") or payload.get("time")
+                             or payload.get("timestamp"))
+        if bar_time is not None:
+            if (now - bar_time) > self.max_age_s or (bar_time - now) > self.future_skew_s:
+                return None, STALE_TIMESTAMP
+        # strength (optional)
+        strength = None
+        try:
+            if payload.get("strength") is not None:
+                strength = float(payload.get("strength"))
+        except (TypeError, ValueError):
+            strength = None
+        event_id = str(payload.get("event_id") or payload.get("id") or "").strip() or raw_hash[:24]
+        ev = TradingViewSignalEvent(
+            event_id=event_id, bot_name=(bot or self.bot_name), symbol=symbol,
+            timeframe=(str(payload.get("timeframe") or payload.get("interval") or "").strip() or None),
+            bar_time=bar_time, received_at=now, direction=direction, strength=strength,
+            indicator_name=(str(payload.get("indicator_name") or payload.get("indicator")
+                                or "").strip() or None),
+            raw_payload_hash=raw_hash)
+        return ev, None
+
+    # -- ingest (called by the webhook thread) ------------------------------ #
+    def ingest(self, raw_bytes: bytes, *, provided_header: Optional[str] = None,
+               now: Optional[float] = None):
+        """Validate + record one alert. Returns (status_code:int, body:dict)."""
+        now = float(now if now is not None else time.time())
+        with self._lock:
+            self.received += 1
+            ev, reason = self.normalize(raw_bytes, provided_header=provided_header, now=now)
+            if reason is not None:
+                self.rejected += 1
+                self.reject_reasons[reason] = self.reject_reasons.get(reason, 0) + 1
+                # 401 for auth failures, 400 for everything else (never reveals the secret)
+                code = 401 if reason in (MISSING_SECRET, BAD_SECRET) else 400
+                self._persist_locked()
+                return code, {"ok": False, "reason": reason, "observe_only": True}
+            if ev.event_id in self._seen_set:
+                self.rejected += 1
+                self.reject_reasons[DUPLICATE_EVENT_ID] = \
+                    self.reject_reasons.get(DUPLICATE_EVENT_ID, 0) + 1
+                self._persist_locked()
+                return 200, {"ok": True, "duplicate": True, "reason": DUPLICATE_EVENT_ID,
+                             "event_id": ev.event_id, "observe_only": True}
+            # accept (observe-only): record dedupe id, counters, latest, pending queue
+            self._seen.append(ev.event_id)
+            self._seen_set.add(ev.event_id)
+            if len(self._seen_set) > self._seen.maxlen:
+                # keep the set bounded to the deque window
+                self._seen_set = set(self._seen)
+            self.valid += 1
+            self.latest = ev
+            self._pending.append(ev)
+            self._persist_locked()
+            return 200, {"ok": True, "accepted": True, "event_id": ev.event_id,
+                         "direction": ev.direction, "observe_only": True,
+                         "note": "candidate-signal only; cannot place/resize/bypass a trade"}
+
+    # -- engine-side consumption -------------------------------------------- #
+    def drain_pending(self) -> list:
+        with self._lock:
+            out, self._pending = self._pending, []
+            self.consumed += len(out)
+            return out
+
+    def latest_feature(self, *, now: Optional[float] = None, symbol: Optional[str] = None) -> Optional[dict]:
+        with self._lock:
+            ev = self.latest
+        if ev is None:
+            return None
+        if symbol is not None and self.allowed_symbols and ev.symbol != str(symbol).strip().upper():
+            # latest signal is for a different (still-allowed) symbol — still observe-only
+            pass
+        return ev.as_feature(now=now)
+
+    def report(self) -> dict:
+        with self._lock:
+            return {
+                "enabled": True,
+                "tradingview_observe_only": True,
+                "tradingview_alerts_received": self.received,
+                "tradingview_alerts_valid": self.valid,
+                "tradingview_alerts_rejected": self.rejected,
+                "tradingview_alerts_consumed_as_features": self.consumed,
+                "tradingview_reject_reasons": dict(self.reject_reasons),
+                "tradingview_latest_signal": (self.latest.to_dict() if self.latest else None),
+                "allowed_symbols": sorted(self.allowed_symbols),
+                "bot_name": self.bot_name,
+                "dedupe_tracked": len(self._seen_set),
+                "note": ("TradingView alerts are candidate signals only — they cannot place, "
+                         "resize, or bypass trades; the strategy + execution gate remain "
+                         "the sole trade authority."),
+            }
+
+    # -- persistence (dedupe survives restarts) ----------------------------- #
+    def _persist_locked(self) -> None:
+        if self._path is None:
+            return
+        try:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            self._path.write_text(json.dumps({
+                "received": self.received, "valid": self.valid, "rejected": self.rejected,
+                "consumed": self.consumed, "reject_reasons": dict(self.reject_reasons),
+                "seen_ids": list(self._seen),
+                "latest": (self.latest.to_dict() if self.latest else None),
+            }, default=str, indent=1), encoding="utf-8")
+        except Exception:  # noqa: BLE001 — persistence never breaks intake
+            pass
+
+    def _load_state(self) -> None:
+        if self._path is None or not self._path.exists():
+            return
+        try:
+            data = json.loads(self._path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            return
+        self.received = int(data.get("received", 0) or 0)
+        self.valid = int(data.get("valid", 0) or 0)
+        self.rejected = int(data.get("rejected", 0) or 0)
+        self.consumed = int(data.get("consumed", 0) or 0)
+        self.reject_reasons = {k: int(v or 0) for k, v in (data.get("reject_reasons") or {}).items()}
+        for sid in (data.get("seen_ids") or []):
+            self._seen.append(sid)
+        self._seen_set = set(self._seen)

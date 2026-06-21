@@ -16,6 +16,13 @@ pulse paper engine profitable, fast.
   refuses to start if any live flag is set. Never add one unless the user explicitly asks.
 - **Quality gates** (edge size, depth, etc.) may be loosened per the operator's request — they
   only affect which *paper* trades are taken.
+- **External signals are OBSERVE-ONLY.** The TradingView webhook intake (`engine/pulse/tradingview.py`
+  + `webhook.py`, bound to `127.0.0.1:8787` by default, enabled only when
+  `TRADINGVIEW_WEBHOOK_SECRET` is set) feeds candidate signals ONLY. A TradingView alert may NEVER
+  place/resize a trade, bypass the strategy or execution-quality gate, or override the Polymarket
+  orderbook checks — it is attached to candidates as `dr.external` and recorded in the report;
+  the strategy + execution gate remain the sole trade authority. Never wire it into
+  `decide()`/`evaluate_execution()`.
 - Don't reintroduce the retired legacy engine (universe scanner, Bregman, Grok advisory,
   micro-live/guarded-live/production-review). It was deliberately removed.
 
