@@ -33,13 +33,22 @@ class PulseDecision:
 def decide(window, fair_p_up: Optional[float], now: float, *,
            min_edge: float = 0.03, min_seconds_to_close: float = 4.0,
            min_depth_usd: float = 1.0, edge_buffer: float = 0.01,
-           max_price: float = 0.97) -> PulseDecision:
-    """Return the (loosened) PAPER trade decision for ``window`` at time ``now``."""
+           max_price: float = 0.97, min_seconds_since_open: float = 0.0,
+           basis_buffer: float = 0.0) -> PulseDecision:
+    """Return the PAPER trade decision for ``window`` at time ``now``.
+
+    Quality gates that protect EXPECTANCY (not just realism): skip the dead early window
+    (``min_seconds_since_open`` — before a real move develops the digital is ~0.5 noise) and
+    require the after-cost edge to clear ``edge_buffer + basis_buffer`` (the basis buffer
+    covers the Coinbase-vs-Chainlink-resolution drift, our dominant correctness risk)."""
     if fair_p_up is None:
         return PulseDecision(False, reason="no_fair_value")
     ttc = window.seconds_to_close(now)
     if ttc <= min_seconds_to_close:
         return PulseDecision(False, fair_p_up=fair_p_up, reason="too_close_to_settlement")
+    if window.seconds_since_open(now) < min_seconds_since_open:
+        return PulseDecision(False, fair_p_up=fair_p_up, reason="too_early_in_window")
+    buf = float(edge_buffer) + float(basis_buffer)
     up_b, dn_b = window.up_book, window.down_book
     up_ask = up_b.best_ask if up_b else None
     dn_ask = dn_b.best_ask if dn_b else None
@@ -49,10 +58,10 @@ def decide(window, fair_p_up: Optional[float], now: float, *,
     cand = []
     if up_ask is not None and up_ask <= max_price and up_depth >= min_depth_usd:
         cand.append(("up", window.up_token_id, float(up_ask),
-                     fair_p_up - float(up_ask) - edge_buffer))
+                     fair_p_up - float(up_ask) - buf))
     if dn_ask is not None and dn_ask <= max_price and dn_depth >= min_depth_usd:
         cand.append(("down", window.down_token_id, float(dn_ask),
-                     (1.0 - fair_p_up) - float(dn_ask) - edge_buffer))
+                     (1.0 - fair_p_up) - float(dn_ask) - buf))
     if not cand:
         return PulseDecision(False, fair_p_up=fair_p_up, reason="no_tradeable_ask")
     side, token, price, edge = max(cand, key=lambda c: c[3])

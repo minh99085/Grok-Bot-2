@@ -57,6 +57,10 @@ class PulseLedger:
         self.trades: int = 0
         self.wins: int = 0
         self.settled: int = 0
+        # running profit accumulators (survive pruning + restarts)
+        self.settled_entry_sum: float = 0.0          # sum of entry prices of settled trades
+        self.side_n: dict = {"up": 0, "down": 0}
+        self.side_wins: dict = {"up": 0, "down": 0}
 
     def has_position(self, window_key: str) -> bool:
         return window_key in self.positions
@@ -100,6 +104,11 @@ class PulseLedger:
             pos.s_close = s_close
         self.realized_pnl = round(self.realized_pnl + pos.pnl_usd, 6)
         self.settled += 1
+        self.settled_entry_sum += pos.entry_price
+        if pos.side in self.side_n:
+            self.side_n[pos.side] += 1
+            if won:
+                self.side_wins[pos.side] += 1
         if won:
             self.wins += 1
         return pos
@@ -107,16 +116,35 @@ class PulseLedger:
     def open_positions(self) -> list:
         return [p for p in self.positions.values() if p.status == "open"]
 
+    def _side_win_rate(self, side: str) -> "float | None":
+        n = self.side_n.get(side, 0)
+        return round(self.side_wins.get(side, 0) / n, 4) if n else None
+
     def stats(self) -> dict:
         win_rate = (self.wins / self.settled) if self.settled else None
+        avg_entry = (self.settled_entry_sum / self.settled) if self.settled else None
+        # edge_realized = how much more often we win than the price we paid implied. >0 means
+        # the paper book of trades is profitable in expectation (the headline profit signal).
+        edge_realized = (win_rate - avg_entry) if (win_rate is not None
+                                                   and avg_entry is not None) else None
         return {"trades": self.trades, "settled": self.settled, "wins": self.wins,
                 "win_rate": (round(win_rate, 4) if win_rate is not None else None),
+                "avg_entry_price": (round(avg_entry, 4) if avg_entry is not None else None),
+                "edge_realized": (round(edge_realized, 4) if edge_realized is not None else None),
+                "win_rate_up": self._side_win_rate("up"),
+                "win_rate_down": self._side_win_rate("down"),
+                "side_counts": dict(self.side_n),
                 "realized_pnl_usd": round(self.realized_pnl, 4),
+                "avg_pnl_per_trade": (round(self.realized_pnl / self.settled, 4)
+                                      if self.settled else None),
                 "open_positions": len(self.open_positions())}
 
     def to_dict(self, *, max_positions: int = 200) -> dict:
         recent = sorted(self.positions.values(), key=lambda p: p.entry_ts, reverse=True)
         return {"paper_only": True, "stats": self.stats(),
+                "accumulators": {"settled_entry_sum": round(self.settled_entry_sum, 6),
+                                 "side_n": dict(self.side_n),
+                                 "side_wins": dict(self.side_wins)},
                 "positions": [p.to_dict() for p in recent[:max_positions]]}
 
     def load_state(self, data: dict) -> None:
@@ -128,6 +156,11 @@ class PulseLedger:
         self.settled = int(stats.get("settled", 0) or 0)
         self.wins = int(stats.get("wins", 0) or 0)
         self.realized_pnl = round(float(stats.get("realized_pnl_usd", 0.0) or 0.0), 6)
+        acc = (data or {}).get("accumulators") or {}
+        self.settled_entry_sum = float(acc.get("settled_entry_sum", 0.0) or 0.0)
+        for k in ("up", "down"):
+            self.side_n[k] = int((acc.get("side_n") or {}).get(k, 0) or 0)
+            self.side_wins[k] = int((acc.get("side_wins") or {}).get(k, 0) or 0)
         for pd in (data.get("positions") or []):
             try:
                 pos = PulsePosition.from_dict(pd)

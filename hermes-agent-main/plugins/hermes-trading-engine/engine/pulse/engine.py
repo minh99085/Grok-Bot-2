@@ -49,6 +49,11 @@ class PulseConfig:
     settle_grace_s: float = 60.0
     max_positions_kept: int = 500
     fresh_start: bool = False
+    # trade-quality / expectancy gates
+    min_seconds_since_open: float = 30.0   # skip the dead early window (digital ~0.5 noise)
+    min_vol_samples: int = 12              # need a real vol estimate before trusting P(up)
+    sigma_trust_floor: float = 2.0e-6      # below this, price is too flat -> digital untrusted
+    basis_buffer: float = 0.02             # cover Coinbase-vs-Chainlink resolution basis drift
     data_dir: str = "/data"
 
     @classmethod
@@ -66,6 +71,10 @@ class PulseConfig:
             settle_grace_s=_envf("PULSE_SETTLE_GRACE_S", 60.0),
             fresh_start=str(os.getenv("PULSE_FRESH_START", "")).strip().lower()
             in ("1", "true", "yes", "on"),
+            min_seconds_since_open=_envf("PULSE_MIN_SECONDS_SINCE_OPEN", 30.0),
+            min_vol_samples=int(_envf("PULSE_MIN_VOL_SAMPLES", 12)),
+            sigma_trust_floor=_envf("PULSE_SIGMA_TRUST_FLOOR", 2.0e-6),
+            basis_buffer=_envf("PULSE_BASIS_BUFFER", 0.02),
             data_dir=os.getenv("HTE_DATA_DIR", "/data"))
 
 
@@ -150,13 +159,21 @@ class PulseEngine:
             if s_now is None or sigma is None:
                 _bump("no_price_or_vol")
                 continue
+            # trust gate: a floored/flat sigma or too-few samples => the digital P(up) is
+            # not trustworthy; skip rather than trade noise.
+            if self.price.vol.samples < self.cfg.min_vol_samples \
+                    or sigma <= self.cfg.sigma_trust_floor:
+                _bump("untrusted_vol")
+                continue
             self.market.hydrate_books(w)
             ttc = w.seconds_to_close(now)
             fair = digital_p_up(s_now, snap.price, sigma, ttc)
             d = decide(w, fair, now, min_edge=self.cfg.min_edge,
                        min_seconds_to_close=self.cfg.min_seconds_to_close,
                        min_depth_usd=self.cfg.min_depth_usd,
-                       edge_buffer=self.cfg.edge_buffer, max_price=self.cfg.max_price)
+                       edge_buffer=self.cfg.edge_buffer, max_price=self.cfg.max_price,
+                       min_seconds_since_open=self.cfg.min_seconds_since_open,
+                       basis_buffer=self.cfg.basis_buffer)
             evald.append({"title": w.title, "fair_p_up": fair, **d.to_dict(),
                           "ttc_s": round(ttc, 1)})
             if d.trade:

@@ -48,6 +48,11 @@ services:
       PULSE_MAX_OPEN_LAG_S: "${PULSE_MAX_OPEN_LAG_S:-20}"
       PULSE_VOL_WINDOW_S: "${PULSE_VOL_WINDOW_S:-900}"
       PULSE_SETTLE_GRACE_S: "${PULSE_SETTLE_GRACE_S:-60}"
+      # ---- trade-quality / expectancy gates (trade fewer, better, calibrated entries) ----
+      PULSE_MIN_SECONDS_SINCE_OPEN: "${PULSE_MIN_SECONDS_SINCE_OPEN:-30}"
+      PULSE_MIN_VOL_SAMPLES: "${PULSE_MIN_VOL_SAMPLES:-12}"
+      PULSE_SIGMA_TRUST_FLOOR: "${PULSE_SIGMA_TRUST_FLOOR:-0.000002}"
+      PULSE_BASIS_BUFFER: "${PULSE_BASIS_BUFFER:-0.02}"
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import os,sys,time; p=os.path.join(os.environ.get('HTE_DATA_DIR','/data'),'btc_pulse_status.json'); sys.exit(0 if os.path.exists(p) and (time.time()-os.path.getmtime(p))<120 else 1)\""]
       interval: 60s

@@ -11,7 +11,7 @@ import math
 from engine.pulse.markets import PulseWindow, PulseMarketFeed, OrderBook
 from engine.pulse.fair_value import digital_p_up, RollingVol
 from engine.pulse.price import PulsePriceFeed
-from engine.pulse.strategy import decide
+from engine.pulse.strategy import decide, PulseDecision
 from engine.pulse.executor import PulseLedger
 from engine.pulse.settlement import PulseCalibration, resolve_outcome
 from engine.pulse.engine import PulseEngine, PulseConfig
@@ -111,6 +111,15 @@ def test_decide_rejects_low_edge_and_late_window():
     assert decide(w2, 0.99, 1100.0).reason == "no_tradeable_ask"
 
 
+def test_decide_quality_gates_early_window_and_basis_buffer():
+    w = _win(1000.0)
+    # too early in the window (move hasn't developed) -> skip
+    assert decide(w, 0.99, 1010.0, min_seconds_since_open=30.0).reason == "too_early_in_window"
+    # basis buffer raises the edge bar: up edge 0.80-0.55=0.25; buffer 0.01+0.20=0.21 -> 0.04 < min
+    d = decide(w, 0.80, 1100.0, min_edge=0.05, edge_buffer=0.01, basis_buffer=0.20)
+    assert d.reason == "edge_below_min" and abs(d.edge - 0.04) < 1e-9
+
+
 # --- paper ledger + settlement ---------------------------------------------- #
 def test_ledger_open_and_settle_win_and_loss():
     led = PulseLedger()
@@ -183,7 +192,9 @@ def test_engine_full_cycle_trade_and_settle(tmp_path):
     feed = PulsePriceFeed(fetcher=fetch, vol=RollingVol(window_s=900, min_samples=8),
                           max_open_lag_s=20.0)
     eng = PulseEngine(PulseConfig(tick_seconds=1.0, size_usd=10.0, min_edge=0.02,
-                                  edge_buffer=0.01, data_dir=str(tmp_path)),
+                                  edge_buffer=0.01, basis_buffer=0.0,
+                                  min_seconds_since_open=0.0, sigma_trust_floor=0.0,
+                                  min_vol_samples=2, data_dir=str(tmp_path)),
                       market_feed=_FakeMarket(win, resolution=True), price_feed=feed)
     for i in range(12):                      # warm vol BEFORE the window opens
         eng.tick(now=t0 - 12 + i)
@@ -202,6 +213,43 @@ def test_engine_full_cycle_trade_and_settle(tmp_path):
     # status + ledger persisted
     assert (tmp_path / "btc_pulse_status.json").exists()
     assert (tmp_path / "btc_pulse_ledger.json").exists()
+
+
+def test_engine_skips_untrusted_flat_vol(tmp_path):
+    # a perfectly flat price -> sigma floored -> below trust floor -> never trades (noise guard)
+    t0 = 3_000_000.0
+    win = PulseWindow(event_id="ef", market_id="mf", slug="s", title="BTC Up or Down",
+                      open_ts=t0, close_ts=t0 + 300, up_token_id="U", down_token_id="D")
+    feed = PulsePriceFeed(fetcher=lambda: 64000.0, vol=RollingVol(min_samples=5),
+                          max_open_lag_s=30.0)
+    eng = PulseEngine(PulseConfig(data_dir=str(tmp_path), min_seconds_since_open=0.0,
+                                  sigma_trust_floor=2.0e-6, min_vol_samples=5),
+                      market_feed=_FakeMarket(win, resolution=True), price_feed=feed)
+    for i in range(15):
+        eng.tick(now=t0 + i)                 # in-window, flat price
+    assert eng.ledger.trades == 0
+    assert eng._reasons.get("untrusted_vol", 0) >= 1
+
+
+def test_profit_metrics_edge_realized_and_per_side(tmp_path):
+    from engine.pulse.executor import PulseLedger
+    led = PulseLedger()
+
+    def _add(key, side, entry, won):
+        w = _win()
+        w.event_id = key
+        d = PulseDecision(True, side=side, token_id="T", price=entry, fair_p_up=0.6, edge=0.1)
+        led.open_position(w, d, now=1.0, size_usd=10.0)
+        led.settle(key, outcome_up=(won if side == "up" else not won))
+    _add("a", "up", 0.40, True)
+    _add("b", "up", 0.45, False)
+    _add("c", "down", 0.50, True)
+    s = led.stats()
+    assert s["settled"] == 3 and s["wins"] == 2
+    assert s["avg_entry_price"] == round((0.40 + 0.45 + 0.50) / 3, 4)
+    assert s["edge_realized"] == round(2 / 3 - 0.45, 4)      # win_rate - avg cost (profit signal)
+    assert s["win_rate_up"] == 0.5 and s["win_rate_down"] == 1.0
+    assert s["side_counts"] == {"up": 2, "down": 1}
 
 
 def test_pulse_state_persists_and_reloads_across_restart(tmp_path):
