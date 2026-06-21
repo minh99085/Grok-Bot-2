@@ -266,6 +266,11 @@ class RSITrendModel:
         self.pred_n = 0
         self.pred_correct = 0
         self.pred_by_symbol: dict = {}  # symbol -> {"n","correct"}
+        # raw-signal predictiveness over ALL signals (not just traded windows): did the RSI
+        # direction predict the BTC move over the horizon after the alert?
+        self.sig_n = 0
+        self.sig_correct = 0
+        self.sig_by_direction: dict = {}   # "UP"/"DOWN" -> {"n","correct"}
 
     def observe(self, *, symbol: str, direction: str, ts: float) -> None:
         if not symbol:
@@ -340,11 +345,32 @@ class RSITrendModel:
             sc["n"] += 1
             sc["up"] += int(bool(outcome_up))
 
+    def record_signal_outcome(self, *, symbol: str, state: Optional[str], model_pred: Optional[str],
+                              signal_direction: Optional[str], outcome_up: bool) -> None:
+        """Learn from EVERY TradingView signal's realized forward BTC move (traded or not): score
+        the raw RSI direction's predictiveness, score the model's leakage-free prediction, and
+        fold the outcome into the conditional P(up | trend state)."""
+        if signal_direction in ("UP", "DOWN"):
+            correct = (signal_direction == "UP") == bool(outcome_up)
+            self.sig_n += 1
+            self.sig_correct += int(correct)
+            b = self.sig_by_direction.setdefault(signal_direction, {"n": 0, "correct": 0})
+            b["n"] += 1
+            b["correct"] += int(correct)
+        self.score_and_update(symbol=symbol, state=state, predicted=model_pred,
+                              outcome_up=outcome_up)
+
     def report(self) -> dict:
         acc = round(self.pred_correct / self.pred_n, 4) if self.pred_n else None
+        sig_hit = round(self.sig_correct / self.sig_n, 4) if self.sig_n else None
         return {
             "observe_only": True, "report_only": True,
             "min_state_samples": self.MIN_STATE_N,
+            "signals_evaluated": self.sig_n,
+            "signal_direction_hit_rate": sig_hit,
+            "signal_hit_rate_by_direction": {
+                k: {"n": v["n"], "hit_rate": (round(v["correct"] / v["n"], 4) if v["n"] else None)}
+                for k, v in self.sig_by_direction.items()},
             "predictions_scored": self.pred_n,
             "prediction_accuracy": acc,
             "prediction_accuracy_by_symbol": {
@@ -365,7 +391,9 @@ class RSITrendModel:
                 "state_counts": {s: {k: dict(v) for k, v in sc.items()}
                                  for s, sc in self.state_counts.items()},
                 "pred_n": self.pred_n, "pred_correct": self.pred_correct,
-                "pred_by_symbol": {s: dict(v) for s, v in self.pred_by_symbol.items()}}
+                "pred_by_symbol": {s: dict(v) for s, v in self.pred_by_symbol.items()},
+                "sig_n": self.sig_n, "sig_correct": self.sig_correct,
+                "sig_by_direction": {k: dict(v) for k, v in self.sig_by_direction.items()}}
 
     def load_state(self, data: dict) -> None:
         if not data:
@@ -387,6 +415,10 @@ class RSITrendModel:
         self.pred_correct = int(data.get("pred_correct", 0) or 0)
         self.pred_by_symbol = {s: {"n": int(v.get("n", 0) or 0), "correct": int(v.get("correct", 0) or 0)}
                                for s, v in (data.get("pred_by_symbol") or {}).items()}
+        self.sig_n = int(data.get("sig_n", 0) or 0)
+        self.sig_correct = int(data.get("sig_correct", 0) or 0)
+        self.sig_by_direction = {k: {"n": int(v.get("n", 0) or 0), "correct": int(v.get("correct", 0) or 0)}
+                                 for k, v in (data.get("sig_by_direction") or {}).items()}
 
 
 def _event_from_dict(d) -> Optional["TradingViewSignalEvent"]:

@@ -119,6 +119,10 @@ class PulseConfig:
     # only taken if a FRESH TradingView signal exists and its direction matches the trade side. It
     # can only PREVENT trades (never force one or bypass the execution gate). Default OFF.
     tradingview_signal_gate_enabled: bool = False
+    # forward-return horizon (s): for EVERY TradingView signal, the bot snapshots the oracle BTC
+    # price and re-checks it this many seconds later to learn whether the signal predicted the
+    # move — building a prediction from the history of ALL signals (traded or not). Observe-only.
+    tradingview_signal_horizon_s: float = 300.0
     data_dir: str = "/data"
 
     @classmethod
@@ -197,6 +201,7 @@ class PulseConfig:
             tradingview_max_age_s=_envf("TRADINGVIEW_MAX_AGE_S", 90.0),
             tradingview_signal_gate_enabled=str(os.getenv("PULSE_TRADINGVIEW_SIGNAL_GATE", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
+            tradingview_signal_horizon_s=_envf("PULSE_TV_SIGNAL_HORIZON_S", 300.0),
             data_dir=os.getenv("HTE_DATA_DIR", "/data"))
 
 
@@ -269,6 +274,7 @@ class PulseEngine:
         from engine.pulse.tradingview import TradingViewEdge, RSITrendModel
         self._tv_edge = TradingViewEdge()         # OBSERVE-ONLY TradingView signal-vs-outcome edge
         self._rsi_model = RSITrendModel()         # OBSERVE-ONLY RSI alert-history next-trend model
+        self._tv_pending: list = []               # pending forward-return evals for ALL signals
         self._ev_before_sum = 0.0                 # EV before/after costs (accepted candidates)
         self._ev_after_sum = 0.0
         self._ev_n = 0
@@ -351,6 +357,7 @@ class PulseEngine:
         self.gate_obs.load_state(acct.get("gate_observations") or {})
         self._tv_edge.load_state(acct.get("tv_edge") or {})
         self._rsi_model.load_state(acct.get("rsi_trend") or {})
+        self._tv_pending = list(acct.get("tv_pending") or [])
         if self.edge_model is not None:          # the learned edge model accumulates across runs
             self.edge_model.load_state(acct.get("edge_model") or {})
         ev = acct.get("ev") or {}
@@ -392,9 +399,21 @@ class PulseEngine:
         # latest signal feature for this tick. NEVER used by decide()/evaluate_execution().
         tv_feature = None
         if self.tradingview is not None:
+            px_now = self.price.current()
             for ev in self.tradingview.drain_pending():   # build the per-symbol RSI alert history
                 self._rsi_model.observe(symbol=ev.symbol, direction=ev.direction,
                                         ts=(ev.bar_time or ev.received_at))
+                # schedule a forward-return eval for EVERY signal (traded or not) so the prediction
+                # is built from the full signal history, not only windows the bot traded.
+                if px_now is not None:
+                    self._tv_pending.append({
+                        "symbol": ev.symbol, "direction": ev.direction,
+                        "state": self._rsi_model.trend(ev.symbol).get("state"),
+                        "model_pred": self._rsi_model.predict(ev.symbol).get("prediction"),
+                        "price0": float(px_now),
+                        "due_ts": float(ev.bar_time or ev.received_at)
+                        + self.cfg.tradingview_signal_horizon_s})
+            self._evaluate_tv_forward_returns(now)
             feat = self.tradingview.latest_feature(now=now, symbol=self.cfg.oracle_symbol)
             if feat is not None and (feat.get("age_s") is None
                                      or feat["age_s"] <= self.cfg.tradingview_signal_max_feature_age_s):
@@ -725,13 +744,9 @@ class PulseEngine:
             # outcome and whether aligning helped the bot win (computed AFTER the outcome is known).
             self._tv_edge.record(tv=pos.external, traded_side=pos.side, outcome_up=bool(outcome),
                                  won=bool(pos.won), pnl=float(pos.pnl_usd or 0.0))
-            # score the RSI alert-history next-window prediction, then fold the outcome into the
-            # conditional model (leakage-free order). Observe-only.
-            _ext = pos.external or {}
-            if _ext.get("symbol"):
-                self._rsi_model.score_and_update(
-                    symbol=_ext.get("symbol"), state=_ext.get("rsi_trend_state"),
-                    predicted=_ext.get("rsi_predicted_next"), outcome_up=bool(outcome))
+            # NOTE: the RSI alert-history model now learns from EVERY signal's forward return
+            # (see _evaluate_tv_forward_returns), not just traded windows, so we do NOT also score
+            # it here (that would double-count traded windows).
             logger.info("pulse settled %s side=%s won=%s pnl=%.3f via=%s",
                         pos.title, pos.side, pos.won, pos.pnl_usd or 0.0, source)
 
@@ -776,6 +791,29 @@ class PulseEngine:
         return {"enabled": True, "report_only": True, "no_live_trading_decisions": True,
                 "bundle_artifact": "btc_pulse_meta_bundle.json",
                 "grok_integration_available": available}
+
+    def _evaluate_tv_forward_returns(self, now: float) -> None:
+        """Resolve due forward-return evals: compare the oracle BTC price now vs at signal time and
+        teach the RSI model whether each signal predicted the move. Builds the prediction from ALL
+        signals. Observe-only; leakage-free (model_pred was snapshotted at signal time)."""
+        if not self._tv_pending:
+            return
+        px_now = self.price.current()
+        still = []
+        for pend in self._tv_pending:
+            if now < pend["due_ts"]:
+                still.append(pend)
+                continue
+            if px_now is not None:
+                outcome_up = float(px_now) >= float(pend["price0"])
+                self._rsi_model.record_signal_outcome(
+                    symbol=pend["symbol"], state=pend.get("state"),
+                    model_pred=pend.get("model_pred"), signal_direction=pend.get("direction"),
+                    outcome_up=outcome_up)
+            elif now <= pend["due_ts"] + 600:    # grace: retry until an oracle price is available
+                still.append(pend)
+            # else: stale with no price -> drop
+        self._tv_pending = still[-1000:]
 
     def _tv_signal_gate(self, tv_feature: "dict | None", side: "str | None") -> "str | None":
         """Restrict-only TradingView indication gate. Returns None if the trade is permitted, else
@@ -883,6 +921,9 @@ class PulseEngine:
                 rep["webhook"] = self.webhook.status()
         rep["edge_vs_5min_outcome"] = self._tv_edge.report()
         rep["rsi_trend"] = self._rsi_model.report()
+        rep["rsi_trend"]["forward_horizon_s"] = self.cfg.tradingview_signal_horizon_s
+        rep["rsi_trend"]["pending_forward_evals"] = len(self._tv_pending)
+        rep["rsi_trend"]["learns_from"] = "all_signals_forward_return"
         rep["signal_gate"] = {
             "enabled": bool(self.cfg.tradingview_signal_gate_enabled),
             "active": bool(self.cfg.tradingview_signal_gate_enabled and self.tradingview is not None),
@@ -977,6 +1018,7 @@ class PulseEngine:
                                      "after_sum": round(self._ev_after_sum, 6), "n": self._ev_n},
                               "tv_edge": self._tv_edge.to_state(),
                               "rsi_trend": self._rsi_model.to_state(),
+                              "tv_pending": self._tv_pending[-1000:],
                               "edge_model": (self.edge_model.to_state()
                                              if self.edge_model is not None else {}),
                               "baseline": (self._baseline or empty_baseline())}}

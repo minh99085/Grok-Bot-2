@@ -333,16 +333,75 @@ def test_rsi_predictor_learns_and_scores_leakage_free():
     assert rep["learned_states"]["BTCUSD"]["up_streak1"]["n"] >= 8
 
 
+def test_rsi_learns_from_all_signals_forward_return():
+    """record_signal_outcome scores raw-signal predictiveness over ALL signals (not just trades)
+    and folds the move into the conditional model."""
+    m = RSITrendModel()
+    m.observe(symbol="BTCUSD", direction="UP", ts=1000.0)
+    # 40 UP signals; BTC went up 75% of the time over the horizon
+    for i in range(40):
+        up = (i % 4 != 0)
+        m.record_signal_outcome(symbol="BTCUSD", state="up_streak1", model_pred=None,
+                                signal_direction="UP", outcome_up=up)
+    rep = m.report()
+    assert rep["signals_evaluated"] == 40
+    assert abs(rep["signal_direction_hit_rate"] - 0.75) < 1e-6
+    assert rep["signal_hit_rate_by_direction"]["UP"]["n"] == 40
+    # the move is also folded into the conditional state model
+    assert rep["learned_states"]["BTCUSD"]["up_streak1"]["n"] == 40
+
+
+def test_engine_builds_prediction_from_all_signals_without_trading(tmp_path):
+    """Even with NO paper trades, every TradingView signal's 5-min forward BTC move is evaluated
+    and feeds the RSI prediction model (history of all signals)."""
+    import tempfile
+    t0 = 9_990_000.0
+    win = PulseWindow(event_id="eX", market_id="mX", slug="s", title="BTC Up or Down",
+                      open_ts=t0 + 10_000, close_ts=t0 + 10_300,   # window far in the future: no trades
+                      up_token_id="U", down_token_id="D")
+    price = {"p": 64000.0}
+
+    def fetch():
+        price["p"] += 5.0           # steadily rising -> UP signals should look predictive
+        return price["p"]
+    feed = PulsePriceFeed(fetcher=fetch, source_name="rtds_chainlink",
+                          vol=RollingVol(window_s=900, min_samples=8), max_open_lag_s=20.0)
+    cfg = PulseConfig(tick_seconds=1.0, size_usd=10.0, data_dir=str(tmp_path),
+                      tradingview_secret=SECRET, tradingview_webhook_port=0,
+                      tradingview_allowed_symbols=("BTC/USD", "BTCUSD"),
+                      tradingview_signal_horizon_s=20.0)        # short horizon for the test
+    eng = PulseEngine(cfg, market_feed=_Mkt(win, deep=True), price_feed=feed)
+    # warm the price buffer, then fire several UP signals over time
+    for i in range(10):
+        eng.tick(now=t0 + i)
+    for k in range(5):
+        eng.tradingview.ingest(json.dumps({"secret": SECRET, "bot_name": "hermes",
+                                           "symbol": "BTC/USD", "direction": "UP",
+                                           "event_id": f"fr-{k}"}).encode(), now=t0 + 10 + k)
+        eng.tick(now=t0 + 10 + k)
+    # advance past the horizon so the forward-return evals resolve (price has risen)
+    for k in range(8):
+        eng.tick(now=t0 + 40 + k * 5)
+    assert eng.ledger.trades == 0                  # never traded (window far in the future)
+    rep = eng.status()["tradingview"]["rsi_trend"]
+    assert rep["learns_from"] == "all_signals_forward_return"
+    assert rep["signals_evaluated"] >= 5           # all signals evaluated despite zero trades
+    assert rep["signal_direction_hit_rate"] == 1.0  # rising price -> UP signals all correct
+
+
 def test_rsi_model_persists_round_trip():
     m = RSITrendModel()
     ts = 1000.0
     for i in range(12):
         m.observe(symbol="BTCUSD", direction="UP", ts=ts); ts += 1
         m.score_and_update(symbol="BTCUSD", state="up_streak1", predicted="UP", outcome_up=True)
+    m.record_signal_outcome(symbol="BTCUSD", state="up_streak1", model_pred="UP",
+                            signal_direction="UP", outcome_up=True)
     m2 = RSITrendModel()
     m2.load_state(m.to_state())
-    assert m2.pred_n == 12 and m2.pred_correct == 12
-    assert m2.report()["learned_states"]["BTCUSD"]["up_streak1"]["n"] == 12
+    assert m2.pred_n == 13 and m2.pred_correct == 13
+    assert m2.sig_n == 1 and m2.sig_correct == 1          # raw-signal accumulator persisted
+    assert m2.report()["learned_states"]["BTCUSD"]["up_streak1"]["n"] == 13
     assert m2.trend("BTCUSD")["last_direction"] == "UP"
 
 
