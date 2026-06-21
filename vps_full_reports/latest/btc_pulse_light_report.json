@@ -1,0 +1,471 @@
+{
+ "schema": "btc_pulse_light_report/1.0",
+ "report_only": true,
+ "live_trading_enabled": false,
+ "candidate_lifecycle": {
+  "created": 772,
+  "feature_scored": 772,
+  "execution_costed": 66,
+  "ledgered": 66,
+  "reported": 772,
+  "terminals": {
+   "accepted": 66,
+   "rejected": 706,
+   "skipped": 0,
+   "expired": 0,
+   "missing_data": 0
+  },
+  "rejected_by_stage": {
+   "directional": 706,
+   "execution_gate": 0
+  },
+  "skipped_by_reason": {},
+  "missing_by_reason": {},
+  "no_candidate_disappeared": true,
+  "reconciled": true
+ },
+ "execution_stats": {
+  "candidates": 94,
+  "accepted": 94,
+  "rejected_total": 0,
+  "rejected": {
+   "wide_spread": 0,
+   "insufficient_depth": 0,
+   "negative_ev_after_slippage": 0,
+   "too_close_to_resolution": 0,
+   "min_size_or_tick_violation": 0,
+   "partial_fill_risk": 0,
+   "missing_market_data": 0,
+   "stale_orderbook": 0
+  },
+  "fills": 94,
+  "reconciled": true
+ },
+ "reject_reasons": {
+  "wide_spread": 0,
+  "insufficient_depth": 0,
+  "negative_ev_after_slippage": 0,
+  "too_close_to_resolution": 0,
+  "min_size_or_tick_violation": 0,
+  "partial_fill_risk": 0,
+  "missing_market_data": 0,
+  "stale_orderbook": 0
+ },
+ "ev_before_after_costs": {
+  "n": 66,
+  "avg_ev_before_costs": 0.102127,
+  "avg_ev_after_costs": 0.096512
+ },
+ "ledger": {
+  "trades": 139,
+  "settled": 137,
+  "wins": 73,
+  "win_rate": 0.5328,
+  "avg_entry_price": 0.5242,
+  "edge_realized": 0.0087,
+  "win_rate_up": 0.5667,
+  "win_rate_down": 0.5065,
+  "side_counts": {
+   "up": 60,
+   "down": 77
+  },
+  "settle_sources": {
+   "polymarket_resolution": 58,
+   "rtds_chainlink_proxy": 63
+  },
+  "proxy_official_reconciliation": {
+   "both": 57,
+   "agree": 54,
+   "disagree": 3
+  },
+  "execution_gate": {
+   "candidates": 94,
+   "accepted": 94,
+   "rejected_total": 0,
+   "rejected": {
+    "wide_spread": 0,
+    "insufficient_depth": 0,
+    "negative_ev_after_slippage": 0,
+    "too_close_to_resolution": 0,
+    "min_size_or_tick_violation": 0,
+    "partial_fill_risk": 0,
+    "missing_market_data": 0,
+    "stale_orderbook": 0
+   },
+   "fills": 94,
+   "reconciled": true
+  },
+  "realized_pnl_usd": 9.8044,
+  "avg_pnl_per_trade": 0.0716,
+  "profit_factor": 0.9355,
+  "avg_win_usd": 2.1146,
+  "avg_loss_usd": 2.5781,
+  "max_drawdown_usd": 44.4573,
+  "open_positions": 2
+ },
+ "calibration": {
+  "samples": 137,
+  "brier": 0.232011,
+  "log_loss": 0.647558,
+  "base_rate_up": 0.5255,
+  "baseline_brier_0_5": 0.25
+ },
+ "edge_model_calibration": {
+  "0.3-0.4": {
+   "n": 8,
+   "empirical_up": 0.5
+  },
+  "0.4-0.5": {
+   "n": 19,
+   "empirical_up": 0.3684
+  },
+  "0.5-0.6": {
+   "n": 21,
+   "empirical_up": 0.7619
+  },
+  "0.6-0.7": {
+   "n": 13,
+   "empirical_up": 0.6923
+  },
+  "0.7-0.8": {
+   "n": 4,
+   "empirical_up": 0.5
+  }
+ },
+ "sample_sizes": {
+  "accepted": 66,
+  "settled": 137,
+  "candidates": 772,
+  "edge_model_labeled": 65
+ },
+ "missing_data_reasons": {
+  "hurst:insufficient_returns": 14,
+  "half_life:insufficient_samples": 19,
+  "zscore:insufficient_divergence_samples": 19,
+  "kalman:insufficient_samples": 7
+ },
+ "confidence_tier_table": {
+  "report_only": true,
+  "affects_trading": false,
+  "tier_census": {
+   "A+": 0,
+   "A": 0,
+   "B": 6,
+   "C": 5,
+   "D": 0
+  },
+  "table": {
+   "edge_quality:high": {
+    "dimension": "edge_quality",
+    "tier": "C",
+    "reasons": [
+     "losing_or_subcoinflip"
+    ],
+    "n": 65,
+    "win_rate": 0.4923,
+    "pnl_usd": -10.6376
+   },
+   "regime:insufficient_data": {
+    "dimension": "regime",
+    "tier": "B",
+    "reasons": [
+     "below_tier_a_threshold"
+    ],
+    "n": 2,
+    "win_rate": 0.5,
+    "pnl_usd": 7.2414
+   },
+   "regime:trending": {
+    "dimension": "regime",
+    "tier": "C",
+    "reasons": [
+     "losing_or_subcoinflip"
+    ],
+    "n": 63,
+    "win_rate": 0.4921,
+    "pnl_usd": -17.8789
+   },
+   "zscore_bucket:na": {
+    "dimension": "zscore_bucket",
+    "tier": "B",
+    "reasons": [
+     "below_tier_a_threshold"
+    ],
+    "n": 2,
+    "win_rate": 0.5,
+    "pnl_usd": 7.2414
+   },
+   "zscore_bucket:-2..-1": {
+    "dimension": "zscore_bucket",
+    "tier": "B",
+    "reasons": [
+     "below_tier_a_threshold"
+    ],
+    "n": 13,
+    "win_rate": 0.5385,
+    "pnl_usd": 1.615
+   },
+   "zscore_bucket:-1..1": {
+    "dimension": "zscore_bucket",
+    "tier": "C",
+    "reasons": [
+     "losing_or_subcoinflip"
+    ],
+    "n": 38,
+    "win_rate": 0.4211,
+    "pnl_usd": -22.5146
+   },
+   "zscore_bucket:1..2": {
+    "dimension": "zscore_bucket",
+    "tier": "C",
+    "reasons": [
+     "losing_or_subcoinflip"
+    ],
+    "n": 6,
+    "win_rate": 0.3333,
+    "pnl_usd": -4.4392
+   },
+   "zscore_bucket:<=-2": {
+    "dimension": "zscore_bucket",
+    "tier": "B",
+    "reasons": [
+     "below_tier_a_threshold"
+    ],
+    "n": 4,
+    "win_rate": 1.0,
+    "pnl_usd": 5.4799
+   },
+   "zscore_bucket:>=2": {
+    "dimension": "zscore_bucket",
+    "tier": "B",
+    "reasons": [
+     "below_tier_a_threshold"
+    ],
+    "n": 2,
+    "win_rate": 1.0,
+    "pnl_usd": 1.9799
+   },
+   "ttc_bucket:>=240s": {
+    "dimension": "ttc_bucket",
+    "tier": "B",
+    "reasons": [
+     "below_tier_a_threshold"
+    ],
+    "n": 58,
+    "win_rate": 0.5,
+    "pnl_usd": 3.3251
+   },
+   "ttc_bucket:120-240s": {
+    "dimension": "ttc_bucket",
+    "tier": "C",
+    "reasons": [
+     "losing_or_subcoinflip"
+    ],
+    "n": 7,
+    "win_rate": 0.4286,
+    "pnl_usd": -13.9627
+   }
+  }
+ },
+ "sizing": {
+  "enabled": false,
+  "actual_size_usd": 5.0
+ },
+ "pnl_by_hurst_regime": {
+  "insufficient_data": {
+   "n": 2,
+   "win_rate": 0.5,
+   "pnl_usd": 7.2414,
+   "brier": 0.3057
+  },
+  "trending": {
+   "n": 63,
+   "win_rate": 0.4921,
+   "pnl_usd": -17.8789,
+   "brier": 0.2361
+  }
+ },
+ "pnl_by_zscore_bucket": {
+  "na": {
+   "n": 2,
+   "win_rate": 0.5,
+   "pnl_usd": 7.2414,
+   "brier": 0.3057
+  },
+  "-2..-1": {
+   "n": 13,
+   "win_rate": 0.5385,
+   "pnl_usd": 1.615,
+   "brier": 0.2928
+  },
+  "-1..1": {
+   "n": 38,
+   "win_rate": 0.4211,
+   "pnl_usd": -22.5146,
+   "brier": 0.2696
+  },
+  "1..2": {
+   "n": 6,
+   "win_rate": 0.3333,
+   "pnl_usd": -4.4392,
+   "brier": 0.1285
+  },
+  "<=-2": {
+   "n": 4,
+   "win_rate": 1.0,
+   "pnl_usd": 5.4799,
+   "brier": 0.008
+  },
+  ">=2": {
+   "n": 2,
+   "win_rate": 1.0,
+   "pnl_usd": 1.9799,
+   "brier": 0.0101
+  }
+ },
+ "pnl_by_half_life_bucket": {
+  "na": {
+   "n": 2,
+   "win_rate": 0.5,
+   "pnl_usd": 7.2414,
+   "brier": 0.3057
+  },
+  "<30s": {
+   "n": 63,
+   "win_rate": 0.4921,
+   "pnl_usd": -17.8789,
+   "brier": 0.2361
+  }
+ },
+ "pnl_by_ttc_bucket": {
+  ">=240s": {
+   "n": 58,
+   "win_rate": 0.5,
+   "pnl_usd": 3.3251,
+   "brier": 0.2364
+  },
+  "120-240s": {
+   "n": 7,
+   "win_rate": 0.4286,
+   "pnl_usd": -13.9627,
+   "brier": 0.2537
+  }
+ },
+ "pnl_by_edge_quality_bucket": {
+  "high": {
+   "n": 65,
+   "win_rate": 0.4923,
+   "pnl_usd": -10.6376,
+   "brier": 0.2383
+  }
+ },
+ "pnl_by_markov_state": {
+  "stale_polymarket_down": {
+   "n": 27,
+   "win_rate": 0.6296,
+   "pnl_usd": 26.9671,
+   "brier": 0.2423
+  },
+  "stale_polymarket_up": {
+   "n": 19,
+   "win_rate": 0.3684,
+   "pnl_usd": -42.0361,
+   "brier": 0.1909
+  },
+  "chop_noise": {
+   "n": 19,
+   "win_rate": 0.4211,
+   "pnl_usd": 4.4315,
+   "brier": 0.28
+  }
+ },
+ "pnl_by_spread_bucket": {
+  "<=0.01": {
+   "n": 62,
+   "win_rate": 0.4839,
+   "pnl_usd": -21.706,
+   "brier": 0.2349
+  },
+  "0.01-0.03": {
+   "n": 3,
+   "win_rate": 0.6667,
+   "pnl_usd": 11.0684,
+   "brier": 0.3083
+  }
+ },
+ "pnl_by_depth_bucket": {
+  ">=1000": {
+   "n": 65,
+   "win_rate": 0.4923,
+   "pnl_usd": -10.6376,
+   "brier": 0.2383
+  }
+ },
+ "pnl_by_confidence_tier": {
+  "high": {
+   "n": 52,
+   "win_rate": 0.5577,
+   "pnl_usd": 24.5812,
+   "brier": 0.2363
+  },
+  "medium": {
+   "n": 10,
+   "win_rate": 0.2,
+   "pnl_usd": -31.3298,
+   "brier": 0.2633
+  },
+  "low": {
+   "n": 3,
+   "win_rate": 0.3333,
+   "pnl_usd": -3.8889,
+   "brier": 0.1892
+  }
+ },
+ "promotion_candidates": [],
+ "demotion_candidates": [
+  "edge_quality:high",
+  "regime:trending",
+  "zscore_bucket:-1..1",
+  "zscore_bucket:1..2",
+  "ttc_bucket:120-240s"
+ ],
+ "reconciliation": {
+  "lifecycle_accepted": 66,
+  "gate_accepted": 94,
+  "gate_fills": 94,
+  "ledger_trades": 139,
+  "settled": 137,
+  "lifecycle_reconciled": true,
+  "no_candidate_disappeared": true
+ },
+ "readiness": {
+  "report_only": true,
+  "status": "not_ready",
+  "ready_to_claim_80pct": false,
+  "gates": {
+   "accepted_ge_100": true,
+   "accepted_ge_500": false,
+   "accepted_ge_1000": false,
+   "win_rate_ge_80": false,
+   "positive_net_paper_pnl": true,
+   "profit_factor_ok": false,
+   "calibration_error_ok": false,
+   "max_drawdown_ok": true,
+   "loss_size_le_win_size": false,
+   "no_reconciliation_failures": true,
+   "no_missing_settlement_data": true,
+   "no_unmodeled_fill_assumptions": true,
+   "no_safety_bypass": true
+  },
+  "metrics": {
+   "accepted": 137,
+   "win_rate": 0.5328,
+   "net_pnl_usd": 9.8044,
+   "profit_factor": 0.9355,
+   "calibration_error": 0.232011,
+   "max_drawdown_usd": 44.4573,
+   "avg_win_usd": 2.1146,
+   "avg_loss_usd": 2.5781
+  }
+ }
+}

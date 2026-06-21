@@ -1,4 +1,5 @@
-hermes-training Up 2 hours (healthy)
-hermes-trading-engine Up 2 hours (healthy)
----
-e08a38fb838160e945d76774f7553cc5e5fce744
+VPS report pulled: 2026-06-21T13:18Z UTC
+VPS HEAD: 437bfbbbabe8ce1899a07e074a0af0f7d0ff1e72
+Container: Up 6 hours (healthy)
+ticks: 4982 | trades: 139 settled: 137 | win_rate: 53.3% | pnl: +$9.80 | readiness: not_ready
+RTDS: connected, Chainlink data-streams oracle, 39580 msgs, 2 reconnects
