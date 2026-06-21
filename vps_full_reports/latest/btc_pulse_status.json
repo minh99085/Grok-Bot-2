@@ -1,0 +1,129 @@
+{
+ "schema": "btc_pulse/1.0",
+ "paper_only": true,
+ "live_trading_enabled": false,
+ "ts": 1782015222.5729449,
+ "ticks": 1493,
+ "config": {
+  "tick_seconds": 4.0,
+  "size_usd": 5.0,
+  "min_edge": 0.03,
+  "edge_buffer": 0.01,
+  "min_depth_usd": 1.0,
+  "max_price": 0.97
+ },
+ "price": {
+  "source": "rtds_chainlink",
+  "last_price": 64321.83528464951,
+  "last_ts": 1782015222.5729449,
+  "polls": 7459,
+  "errors": 3,
+  "sampler_interval_s": 1.0,
+  "sampler_running": true,
+  "vol_samples": 5000,
+  "sigma_per_sec": 3.177447060549738e-05,
+  "tracked_opens": 21
+ },
+ "ledger": {
+  "trades": 37,
+  "settled": 36,
+  "wins": 21,
+  "win_rate": 0.5833,
+  "avg_entry_price": 0.4928,
+  "edge_realized": 0.0906,
+  "win_rate_up": 0.5238,
+  "win_rate_down": 0.6667,
+  "side_counts": {
+   "up": 21,
+   "down": 15
+  },
+  "settle_sources": {
+   "polymarket_resolution": 8,
+   "rtds_chainlink_proxy": 12
+  },
+  "proxy_official_reconciliation": {
+   "both": 8,
+   "agree": 7,
+   "disagree": 1
+  },
+  "realized_pnl_usd": 38.2059,
+  "avg_pnl_per_trade": 1.0613,
+  "open_positions": 1
+ },
+ "calibration": {
+  "samples": 36,
+  "brier": 0.226625,
+  "log_loss": 0.635974,
+  "base_rate_up": 0.4444,
+  "baseline_brier_0_5": 0.25
+ },
+ "oracle": {
+  "oracle_feed_type": "chainlink_data_streams_refprice",
+  "oracle_symbol": "btc/usd",
+  "fast_feed_symbols": [
+   "binance_btcusdt",
+   "coinbase_btcusd"
+  ],
+  "open_snapshot_source": "rtds_chainlink",
+  "close_snapshot_source": "rtds_chainlink",
+  "settlement_source_priority": [
+   "polymarket_resolution",
+   "rtds_chainlink_proxy"
+  ],
+  "settlement_sources_used": {
+   "polymarket_resolution": 8,
+   "rtds_chainlink_proxy": 12
+  },
+  "proxy_official_reconciliation": {
+   "both": 8,
+   "agree": 7,
+   "disagree": 1
+  },
+  "proxy_max_close_lag_s": 30.0,
+  "rtds": {
+   "url": "wss://ws-live-data.polymarket.com",
+   "connected": true,
+   "messages": 11589,
+   "reconnects": 0,
+   "latest": {
+    "crypto_prices:btcusdt": 64403.93,
+    "crypto_prices_chainlink:btc/usd": 64321.84
+   },
+   "running": true
+  },
+  "lead_features": {
+   "lead_only": true,
+   "feeds": {
+    "binance_btcusdt": {
+     "price": 64403.93,
+     "vol_per_sec": 3.740080428621248e-05,
+     "settlement_eligible": false
+    },
+    "coinbase_btcusd": {
+     "price": 64322.57,
+     "vol_per_sec": 4.3352820420778013e-05,
+     "settlement_eligible": false
+    }
+   }
+  }
+ },
+ "grok_overlay": {
+  "enabled": true,
+  "interval_s": 180.0,
+  "running": true,
+  "calls": 32,
+  "errors": 0,
+  "state": {
+   "regime": "calm",
+   "vol_multiplier": 1.0,
+   "blackout": false,
+   "reason": "no imminent high-impact events",
+   "ts": 1782015051.0914438
+  }
+ },
+ "tick_reasons": {
+  "already_positioned": 1,
+  "not_open_yet": 1
+ },
+ "recent_evaluations": []
+}

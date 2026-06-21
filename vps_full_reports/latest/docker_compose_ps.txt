@@ -1,3 +1,0 @@
-NAME                    IMAGE                                         COMMAND                  SERVICE                 CREATED       STATUS                 PORTS
-hermes-trading-engine   hermes-trading-engine-hermes-trading-engine   "uvicorn engine.app:…"   hermes-trading-engine   7 hours ago   Up 7 hours (healthy)   0.0.0.0:8800->8800/tcp, [::]:8800->8800/tcp
-hermes-training         hermes-trading-engine-hermes-training         "python scripts/star…"   hermes-training         7 hours ago   Up 7 hours (healthy)   8800/tcp

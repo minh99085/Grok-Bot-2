@@ -1,28 +1,14 @@
-# VPS full reports (for ChatGPT inspection)
+# VPS Full Reports
 
-This folder holds the **latest full diagnostic report pulled from the VPS**, extracted into
-plain text / JSON so it can be read directly here in the repo (ChatGPT inspects these files;
-it cannot read a binary `.zip`).
+Live snapshots of the **BTC 5-minute pulse** PAPER engine running on the VPS.
 
-- `latest/` — the most recent full report, extracted. It is **overwritten on every pull**
-  so the repo does not grow unbounded; the previous version stays in git history.
-- `latest/MANIFEST.txt` — what was captured + the source commit + UTC timestamp.
+## `latest/`
+- `report.md` — human-readable summary (oracle, paper P&L, settlement, calibration, overlay).
+- `btc_pulse_status.json` — full engine status (oracle reference model, price feed, ledger
+  stats, calibration, Grok overlay, RTDS + lead-feature health).
+- `btc_pulse_ledger.json` — full paper ledger (per-window positions, P&L, accumulators).
+- `vps_state.txt` — container status + deployed commit.
 
-## What's inside `latest/`
-- `report.json`, `report.md` — the bot inspection report (from the embedded light bundle).
-- `validation_full.txt`, `validation_light.txt` — run-ready / SAFE-TO-RUN verdicts + blockers.
-- `git_commit.txt`, `git_status.txt` — exactly which code produced the report.
-- `hermes_training_env_proof.txt` — the running container's effective 100X paper-profile env
-  (live flags proven OFF; secrets are presence-only, never values).
-- `docker_compose_ps.txt` — container status.
-- `runtime_metrics/*.json` — durable metrics (active_learning, bregman_execution, grok_news,
-  paper_realism, run_ready, closed_loop_learning, etc.).
-
-Large raw streams (multi-MB `*.jsonl` tail files) and the embedded `*.zip` are intentionally
-excluded to keep the folder lean and readable; they remain available in the VPS zip.
-
-## How it is produced (kept consistent)
-On every full-report pull the agent runs:
-`python scripts/save_full_report_to_repo.py --zip <pulled_vps_full_report.zip>`
-then commits + pushes to `main` (and the VPS stays in sync). PAPER ONLY; read-only — these
-are reports, never control.
+PAPER ONLY — no real orders. Oracle = Chainlink Data Streams reference price via Polymarket
+RTDS `crypto_prices_chainlink` (`btc/usd`); Binance/Coinbase are lead predictors only;
+settlement = official Polymarket resolution first, then RTDS Chainlink open/close proxy.
