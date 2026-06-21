@@ -207,6 +207,7 @@ class DecisionResult:
     candidate: CandidateDecision
     features: Optional[dict] = None
     signals: Optional[dict] = None              # observe-only raw signal snapshot (Phase 4)
+    factors: Optional[dict] = None              # observe-only factor/context model (Phase 5)
     cost: Optional[ExecutionCostEstimate] = None
     action: Optional[object] = None             # TradeAction | RejectAction
     fill: Optional[PaperFill] = None
@@ -240,6 +241,7 @@ class DecisionResult:
                 "candidate": self.candidate.to_dict(),
                 "features": self.features,
                 "signals": self.signals,
+                "factors": self.factors,
                 "cost": (self.cost.to_dict() if self.cost else None),
                 "action": (self.action.to_dict() if self.action else None),
                 "fill": (self.fill.to_dict() if self.fill else None),

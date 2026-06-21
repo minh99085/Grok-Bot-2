@@ -82,6 +82,7 @@ class PulseConfig:
     exec_max_book_age_s: float = 30.0        # reject stale orderbook older than this
     research_features_enabled: bool = True   # OBSERVE-ONLY EP Chan features (never trade)
     signal_engine_enabled: bool = True       # OBSERVE-ONLY Simons-style raw signals (never trade)
+    factor_model_enabled: bool = True        # OBSERVE-ONLY BTC-pulse factor/context model
     data_dir: str = "/data"
 
     @classmethod
@@ -128,6 +129,8 @@ class PulseConfig:
             research_features_enabled=str(os.getenv("HERMES_RESEARCH_FEATURES_ENABLED", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
             signal_engine_enabled=str(os.getenv("HERMES_SIGNAL_ENGINE_ENABLED", "1"))
+            .strip().lower() in ("1", "true", "yes", "on"),
+            factor_model_enabled=str(os.getenv("HERMES_FACTOR_MODEL_ENABLED", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
             data_dir=os.getenv("HTE_DATA_DIR", "/data"))
 
@@ -177,6 +180,10 @@ class PulseEngine:
         if bool(getattr(self.cfg, "signal_engine_enabled", True)):
             from engine.pulse.signals import SignalEngine
             self.signals = SignalEngine()
+        self.factors = None
+        if bool(getattr(self.cfg, "factor_model_enabled", True)):
+            from engine.pulse.factors import FactorEngine
+            self.factors = FactorEngine()
         self.reconciler = LifecycleReconciler()   # GS-Quant-style candidate lifecycle audit
         self.overlay = None
         if bool(getattr(self.cfg, "grok_overlay_enabled", False)):
@@ -330,6 +337,18 @@ class PulseEngine:
             if self.signals is not None:
                 self.signals.observe_poly(mc.poly_yes, mc.spread, mc.ask_depth_usd, now)
                 dr.signals = self.signals.snapshot(ttc_s=ttc, now=now).to_dict()
+            # OBSERVE-ONLY BTC-pulse factor/context model + edge_quality_score.
+            fsnap = None
+            if self.factors is not None:
+                from engine.pulse.factors import compute_factors
+                _div = (dr.features or {}).get("divergence") if dr.features else None
+                fsnap = compute_factors(
+                    poly_yes=mc.poly_yes, spread=mc.spread, ask_depth_usd=mc.ask_depth_usd,
+                    bid_depth_usd=(w.up_book.bid_depth_usd if w.up_book else None),
+                    ttc_s=ttc, signal=dr.signals, divergence=_div,
+                    overlay_regime=((ov or {}).get("regime") if ov else None))
+                self.factors.observe(fsnap)
+                dr.factors = fsnap.to_dict()
             if not d.trade:
                 dr.action = RejectAction(stage="directional", reason=d.reason)
                 _finalize(dr, "rejected", reason=d.reason, stage="directional")
@@ -360,7 +379,9 @@ class PulseEngine:
                     pos.research = {"hurst_regime": rfeat.hurst_regime,
                                     "zscore_bucket": rfeat.zscore_bucket,
                                     "half_life_bucket": half_life_bucket(rfeat.half_life_s),
-                                    "ttc_bucket": ttc_bucket(ttc)}
+                                    "ttc_bucket": ttc_bucket(ttc),
+                                    "edge_quality_bucket": (fsnap.edge_quality_bucket
+                                                            if fsnap else "na")}
                 dr.fill = PaperFill(window_key=w.event_id, side=d.side, fill_price=ex.fill_price,
                                     shares=pos.shares, size_usd=pos.size_usd)
             dr.action = TradeAction(side=d.side, token_id=d.token_id, fill_price=ex.fill_price,
@@ -414,6 +435,9 @@ class PulseEngine:
                     half_life_bucket=rt.get("half_life_bucket"), ttc_bucket=rt.get("ttc_bucket"),
                     pnl=float(pos.pnl_usd or 0.0), won=bool(pos.won),
                     fair_at_entry=pos.fair_at_entry, outcome_up=outcome)
+            if self.factors is not None:
+                self.factors.record_settled(bucket=(pos.research or {}).get("edge_quality_bucket"),
+                                            pnl=float(pos.pnl_usd or 0.0), won=bool(pos.won))
             logger.info("pulse settled %s side=%s won=%s pnl=%.3f via=%s",
                         pos.title, pos.side, pos.won, pos.pnl_usd or 0.0, source)
 
@@ -438,6 +462,8 @@ class PulseEngine:
             "decision_lifecycle": self.reconciler.report(),
             "signal_engine": (self.signals.report() if self.signals is not None
                               else {"enabled": False}),
+            "factor_model": (self.factors.report() if self.factors is not None
+                             else {"enabled": False}),
             "execution_gate": self.ledger.exec_gate_stats(),
             "research_features": (self.research.report() if self.research is not None
                                   else {"enabled": False}),
