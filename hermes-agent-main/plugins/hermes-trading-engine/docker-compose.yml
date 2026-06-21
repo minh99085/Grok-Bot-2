@@ -98,6 +98,16 @@ services:
       # OBSERVE-ONLY EP Chan research features (Hurst regime, half-life/ADF, z-score, Kalman).
       # Logged per candidate + grouped PnL/calibration by regime/z-bucket. NEVER trades/vetoes.
       HERMES_RESEARCH_FEATURES_ENABLED: "${HERMES_RESEARCH_FEATURES_ENABLED:-1}"
+      # ---- closed-loop learning: blend the bot's own calibrated edge model into the DIRECTIONAL
+      # decision so it improves as it trades. PAPER ONLY. Influence is earned (ramps with sample
+      # count), gated (only when calibrated), and self-disabling (drops to 0 if calibration error
+      # exceeds the cap). The execution gate / paper-realism / reconciliation are UNCHANGED and
+      # still veto every trade — learning can never bypass them. Default OFF.
+      PULSE_LEARNING_ENABLED: "${PULSE_LEARNING_ENABLED:-0}"
+      PULSE_LEARNING_MIN_SAMPLES: "${PULSE_LEARNING_MIN_SAMPLES:-60}"
+      PULSE_LEARNING_MAX_WEIGHT: "${PULSE_LEARNING_MAX_WEIGHT:-0.5}"
+      PULSE_LEARNING_RAMP_SAMPLES: "${PULSE_LEARNING_RAMP_SAMPLES:-300}"
+      PULSE_LEARNING_MAX_CALIB_ERROR: "${PULSE_LEARNING_MAX_CALIB_ERROR:-0.15}"
       # OBSERVE-ONLY TradingView indicator webhook intake. DISABLED unless a secret is set, and
       # bound to 127.0.0.1 INSIDE this container by default (no port published here on purpose —
       # expose deliberately via SSH tunnel / authenticated reverse proxy). TradingView alerts are

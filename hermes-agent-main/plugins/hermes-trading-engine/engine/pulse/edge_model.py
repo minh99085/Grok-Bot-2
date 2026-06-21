@@ -14,6 +14,7 @@ allow-list.
 from __future__ import annotations
 
 import math
+from collections import deque
 from typing import Optional
 
 # entry-time features only (no outcome-derived fields -> no leakage)
@@ -66,7 +67,8 @@ class EdgeModel:
         self.w = {f: 0.0 for f in FEATURE_NAMES}
         self.b = 0.0
         self.n_labeled = 0
-        self.calib: dict = {}            # bucket -> {n, up}
+        self.calib: dict = {}            # bucket -> {n, up}  (cumulative, for the report table)
+        self._recent: deque = deque(maxlen=500)   # recent (pred_p, outcome) for CURRENT calibration
 
     def observe_label(self, vec: dict, outcome_up: bool) -> None:
         """Online logistic SGD update on a clean (entry_features -> realized outcome) pair."""
@@ -86,6 +88,7 @@ class EdgeModel:
         c = self.calib.setdefault(b, {"n": 0, "up": 0})
         c["n"] += 1
         c["up"] += int(bool(outcome_up))
+        self._recent.append((p, 1.0 if outcome_up else 0.0))
 
     @property
     def trained(self) -> bool:
@@ -107,14 +110,68 @@ class EdgeModel:
                 "p_no_trade": round(1.0 - conf, 4), "model_confidence": round(conf, 4),
                 "calibration_bucket": calibration_bucket(p_up)}
 
+    def decision_p_up(self, vec: dict) -> Optional[float]:
+        """The model's calibrated P(up) for the decision blend. Returns None only if it has never
+        learned. WHETHER this is trusted enough to influence a trade is gated separately by the
+        engine (sample count + calibration). (predict() is the observe-only report view.)"""
+        if self.n_labeled <= 0:
+            return None
+        z = self.b + sum(self.w[f] * float(vec.get(f, 0.0)) for f in FEATURE_NAMES)
+        return _sigmoid(z)
+
+    def calibration_error(self, *, min_n: int = 20) -> Optional[float]:
+        """Expected calibration error (ECE) over the RECENT prediction window (so it reflects the
+        model's CURRENT calibration, not its cold-start history): bin recent predictions into
+        deciles and take the sample-weighted mean |mean_confidence - empirical_accuracy|. Lower is
+        better. None until enough recent samples. GATES whether the model may influence trades."""
+        if len(self._recent) < min_n:
+            return None
+        bins: dict = {}
+        for p, y in self._recent:
+            k = min(9, max(0, int(p * 10)))
+            agg = bins.setdefault(k, [0.0, 0.0, 0])     # sum_p, sum_y, n
+            agg[0] += p
+            agg[1] += y
+            agg[2] += 1
+        total = len(self._recent)
+        ece = 0.0
+        for agg in bins.values():
+            conf = agg[0] / agg[2]
+            acc = agg[1] / agg[2]
+            ece += (agg[2] / total) * abs(conf - acc)
+        return round(ece, 4)
+
     def calibration_table(self) -> dict:
         return {b: {"n": c["n"], "empirical_up": (round(c["up"] / c["n"], 4) if c["n"] else None)}
                 for b, c in sorted(self.calib.items())}
 
-    def report(self) -> dict:
-        return {"enabled": True, "observe_only": True, "affects_trading": False,
-                "has_trade_authority": False, "trained": self.trained,
+    def report(self, *, affects_trading: bool = False) -> dict:
+        return {"enabled": True, "observe_only": (not affects_trading),
+                "affects_trading": bool(affects_trading),
+                "has_trade_authority": bool(affects_trading), "trained": self.trained,
                 "n_labeled": self.n_labeled, "min_samples": self.min_samples,
+                "calibration_error": self.calibration_error(),
                 "feature_names": list(FEATURE_NAMES),
                 "leakage_guard": "entry_features_only; outcome/label never a feature",
                 "calibration_table": self.calibration_table()}
+
+    def to_state(self) -> dict:
+        return {"w": dict(self.w), "b": self.b, "n_labeled": self.n_labeled,
+                "calib": {k: dict(v) for k, v in self.calib.items()},
+                "recent": [[round(p, 6), y] for p, y in self._recent]}
+
+    def load_state(self, data: dict) -> None:
+        if not data:
+            return
+        for f in FEATURE_NAMES:
+            self.w[f] = float((data.get("w") or {}).get(f, self.w[f]) or 0.0)
+        self.b = float(data.get("b", self.b) or 0.0)
+        self.n_labeled = int(data.get("n_labeled", 0) or 0)
+        self.calib = {k: {"n": int(v.get("n", 0) or 0), "up": int(v.get("up", 0) or 0)}
+                      for k, v in (data.get("calib") or {}).items()}
+        self._recent = deque(maxlen=500)
+        for item in (data.get("recent") or []):
+            try:
+                self._recent.append((float(item[0]), float(item[1])))
+            except Exception:  # noqa: BLE001
+                continue

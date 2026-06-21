@@ -135,6 +135,9 @@ async function tick(){
  cards.appendChild(card('Execution gate',[['candidates',eg.candidates],['accepted (fills)',eg.accepted,'ok'],['rejected',eg.rejected_total,'bad'],...Object.entries(eg.rejected||{}).filter(([,v])=>v>0).map(([k,v])=>['· '+k,v,'bad']),['reconciled',eg.reconciled?'yes':'NO',eg.reconciled?'ok':'bad']]));
  cards.appendChild(card('Settlement & calibration',[['sources',JSON.stringify(L.settle_sources||{})],['proxy vs official','both '+(rec.both||0)+' · agree '+(rec.agree||0)+' · disagree '+(rec.disagree||0)],['Brier',f(c.brier,3)+' (base 0.25)'],['log-loss',f(c.log_loss,3)],['samples',c.samples],['base-rate up',f(c.base_rate_up,2)]]));
  cards.appendChild(card('Grok event-risk overlay',[['enabled',g.enabled?'yes':'no'],['regime',(g.state||{}).regime||'—'],['blackout',(g.state||{}).blackout?'YES':'no',(g.state||{}).blackout?'bad':''],['calls',g.calls],['reason',(g.state||{}).reason||'—']]));
+ // Closed-loop learning (the bot's own experience adjusting its decisions)
+ const ln=s.learning||{};
+ cards.appendChild(card('Learning (closed loop)',[['enabled',ln.enabled?'yes':'no',ln.enabled?'ok':'muted'],['active (influencing)',ln.active?'YES':'no',ln.active?'ok':'muted'],['weight',ln.weight==null?'—':f(ln.weight,3)],['reason',ln.reason||'—'],['model labels',ln.model_n_labeled],['calibration err',ln.model_calibration_error==null?'—':f(ln.model_calibration_error,3)],['paper-only',ln.paper_only?'yes':'no','muted'],['gate authoritative',ln.execution_gate_still_authoritative?'yes':'no','muted']]));
  // TradingView TA intake (observe-only)
  const tv=s.tradingview||{};
  if(tv.enabled){

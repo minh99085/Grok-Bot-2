@@ -89,6 +89,17 @@ class PulseConfig:
     factor_model_enabled: bool = True        # OBSERVE-ONLY BTC-pulse factor/context model
     markov_enabled: bool = True              # OBSERVE-ONLY Markov regime machine
     edge_model_enabled: bool = True          # OBSERVE-ONLY calibrated edge model (no authority)
+    # ---- closed-loop learning: blend the calibrated edge model into the DIRECTIONAL decision ----
+    # The bot's own settled-trade experience (online logistic edge model) adjusts P(up) used by
+    # decide(). Influence is EARNED (ramps with sample count), GATED (only when calibrated), and
+    # SELF-DISABLING (drops to 0 if calibration error exceeds the cap). The strict execution gate,
+    # paper-realism, and ledger reconciliation are UNTOUCHED — learning can never bypass them, and
+    # this is PAPER ONLY. Default OFF (no behavior change); enabled per-deployment via env.
+    learning_enabled: bool = False
+    learning_min_samples: int = 60           # min settled labels before any influence
+    learning_max_weight: float = 0.5         # cap on the model's weight in the blend (<=0.5)
+    learning_ramp_samples: float = 300.0     # labels over which weight ramps 0 -> max
+    learning_max_calib_error: float = 0.15   # disable influence if ECE worse than this
     sizing_enabled: bool = False             # paper Kelly sizing: default OFF (size unchanged)
     sizing_hard_cap_usd: float = 10.0
     sizing_daily_loss_cap_usd: float = 50.0
@@ -157,6 +168,12 @@ class PulseConfig:
             .strip().lower() in ("1", "true", "yes", "on"),
             edge_model_enabled=str(os.getenv("HERMES_EDGE_MODEL_ENABLED", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
+            learning_enabled=str(os.getenv("PULSE_LEARNING_ENABLED", "0"))
+            .strip().lower() in ("1", "true", "yes", "on"),
+            learning_min_samples=int(_envf("PULSE_LEARNING_MIN_SAMPLES", 60)),
+            learning_max_weight=_envf("PULSE_LEARNING_MAX_WEIGHT", 0.5),
+            learning_ramp_samples=_envf("PULSE_LEARNING_RAMP_SAMPLES", 300.0),
+            learning_max_calib_error=_envf("PULSE_LEARNING_MAX_CALIB_ERROR", 0.15),
             sizing_enabled=str(os.getenv("HERMES_SIZING_ENABLED", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
             sizing_hard_cap_usd=_envf("HERMES_SIZING_HARD_CAP_USD", 10.0),
@@ -328,6 +345,8 @@ class PulseEngine:
         self.gate_obs.load_state(acct.get("gate_observations") or {})
         self._tv_edge.load_state(acct.get("tv_edge") or {})
         self._rsi_model.load_state(acct.get("rsi_trend") or {})
+        if self.edge_model is not None:          # the learned edge model accumulates across runs
+            self.edge_model.load_state(acct.get("edge_model") or {})
         ev = acct.get("ev") or {}
         self._ev_before_sum = float(ev.get("before_sum", 0.0) or 0.0)
         self._ev_after_sum = float(ev.get("after_sum", 0.0) or 0.0)
@@ -438,18 +457,8 @@ class PulseEngine:
             mc.best_ask = w.up_book.best_ask if w.up_book else None
             mc.spread = w.up_book.spread if w.up_book else None
             mc.ask_depth_usd = w.up_book.ask_depth_usd if w.up_book else None
-            # the overlay can only RAISE sigma (>=1.0) -> more conservative P(up)
-            fair = digital_p_up(s_now, snap.price, sigma * ov_vol_mult, ttc)
-            d = decide(w, fair, now, min_edge=self.cfg.min_edge,
-                       min_seconds_to_close=self.cfg.min_seconds_to_close,
-                       min_depth_usd=self.cfg.min_depth_usd,
-                       edge_buffer=self.cfg.edge_buffer, max_price=self.cfg.max_price,
-                       min_seconds_since_open=self.cfg.min_seconds_since_open,
-                       basis_buffer=self.cfg.basis_buffer)
-            outcome_prob = (fair if d.side == "up" else (1.0 - fair)) if fair is not None else None
-            dr.candidate = CandidateDecision(side=d.side, fair_p_up=fair, outcome_prob=outcome_prob,
-                                             model_edge=d.edge, tradeable=d.trade, reason=d.reason)
-            # OBSERVE-ONLY research features (every candidate; NEVER affects decision/gate).
+            # ---- entry-time features (computed BEFORE the decision so the bot's learned
+            #      experience can inform it). These never place/size/bypass a trade themselves. ----
             rfeat = None
             if self.research is not None:
                 cex_px = (getattr(self.leads, "_latest", {}) or {}).get(
@@ -462,11 +471,9 @@ class PulseEngine:
                 rfeat = self.research.evaluate(current_divergence=divergence)
                 dr.features = rfeat.to_dict()
                 dr.mark("feature_scored")
-            # OBSERVE-ONLY Simons-style raw signal snapshot (never affects decision/gate).
             if self.signals is not None:
                 self.signals.observe_poly(mc.poly_yes, mc.spread, mc.ask_depth_usd, now)
                 dr.signals = self.signals.snapshot(ttc_s=ttc, now=now).to_dict()
-            # OBSERVE-ONLY BTC-pulse factor/context model + edge_quality_score.
             fsnap = None
             if self.factors is not None:
                 from engine.pulse.factors import compute_factors
@@ -478,7 +485,6 @@ class PulseEngine:
                     overlay_regime=((ov or {}).get("regime") if ov else None))
                 self.factors.observe(fsnap)
                 dr.factors = fsnap.to_dict()
-            # OBSERVE-ONLY Markov regime classification (never affects decision/gate).
             cand_state = None
             if self.markov is not None:
                 from engine.pulse.markov import classify_state
@@ -492,14 +498,44 @@ class PulseEngine:
                 self.markov.observe(cand_state)
                 dr.regime = RegimeSnapshot(
                     state=cand_state, probs=self.markov.state_outputs(cand_state)).to_dict()
-            # OBSERVE-ONLY calibrated edge model (NO trade authority). Predict from entry-time
-            # features; the realized label trains it later (no leakage).
+            # calibrated edge model: predict from entry-time features (the realized label trains
+            # it later — no leakage). Reported via dr.model; used in the decision blend below.
             model_vec = None
             if self.edge_model is not None:
                 from engine.pulse.edge_model import extract_features
                 model_vec = extract_features(features=dr.features, signals=dr.signals,
                                              factors=dr.factors)
                 dr.model = self.edge_model.predict(model_vec)
+            # ---- digital fair value, then the CLOSED-LOOP LEARNED-EDGE BLEND ----
+            # the overlay can only RAISE sigma (>=1.0) -> more conservative P(up)
+            fair = digital_p_up(s_now, snap.price, sigma * ov_vol_mult, ttc)
+            fair_used = fair
+            if (fair is not None and self.cfg.learning_enabled and self.edge_model is not None
+                    and model_vec is not None):
+                w_learn, why = self._learning_weight()
+                mp = self.edge_model.decision_p_up(model_vec) if w_learn > 0 else None
+                if mp is not None:
+                    blended = min(0.99, max(0.01, (1.0 - w_learn) * fair + w_learn * mp))
+                    dr.learning = {"applied": True, "weight": round(w_learn, 4),
+                                   "digital_p_up": round(fair, 4), "model_p_up": round(mp, 4),
+                                   "blended_p_up": round(blended, 4), "reason": why,
+                                   "paper_only": True, "gate_still_authoritative": True}
+                    fair_used = blended
+                else:
+                    dr.learning = {"applied": False, "weight": round(w_learn, 4), "reason": why}
+            # the directional decision uses the (possibly learning-adjusted) probability; the
+            # STRICT execution gate below is UNCHANGED and remains the sole trade authority.
+            d = decide(w, fair_used, now, min_edge=self.cfg.min_edge,
+                       min_seconds_to_close=self.cfg.min_seconds_to_close,
+                       min_depth_usd=self.cfg.min_depth_usd,
+                       edge_buffer=self.cfg.edge_buffer, max_price=self.cfg.max_price,
+                       min_seconds_since_open=self.cfg.min_seconds_since_open,
+                       basis_buffer=self.cfg.basis_buffer)
+            outcome_prob = (fair_used if d.side == "up" else (1.0 - fair_used)) \
+                if fair_used is not None else None
+            dr.candidate = CandidateDecision(side=d.side, fair_p_up=fair_used,
+                                             outcome_prob=outcome_prob, model_edge=d.edge,
+                                             tradeable=d.trade, reason=d.reason)
             if not d.trade:
                 dr.action = RejectAction(stage="directional", reason=d.reason)
                 if self.markov is not None:
@@ -725,6 +761,41 @@ class PulseEngine:
                 "bundle_artifact": "btc_pulse_meta_bundle.json",
                 "grok_integration_available": available}
 
+    def _learning_weight(self) -> "tuple[float, str]":
+        """How much the learned edge model influences the directional probability. Influence is
+        EARNED (ramps with sample count past the minimum), GATED (only when calibrated), and
+        SELF-DISABLING (0 if calibration error exceeds the cap). Returns (weight, reason)."""
+        if not self.cfg.learning_enabled or self.edge_model is None:
+            return 0.0, "disabled"
+        if self.edge_model.n_labeled < self.cfg.learning_min_samples:
+            return 0.0, "insufficient_samples"
+        ece = self.edge_model.calibration_error()
+        if ece is None:
+            return 0.0, "calibration_unknown"
+        if ece > self.cfg.learning_max_calib_error:
+            return 0.0, "calibration_degraded"          # auto-disable a miscalibrated model
+        ramp = max(1.0, float(self.cfg.learning_ramp_samples))
+        progress = (self.edge_model.n_labeled - self.cfg.learning_min_samples) / ramp
+        weight = self.cfg.learning_max_weight * min(1.0, max(0.0, progress))
+        return round(weight, 4), "active"
+
+    def _learning_report(self) -> dict:
+        weight, reason = self._learning_weight()
+        return {"enabled": bool(self.cfg.learning_enabled),
+                "active": weight > 0, "weight": weight, "reason": reason,
+                "paper_only": True, "execution_gate_still_authoritative": True,
+                "max_weight": self.cfg.learning_max_weight,
+                "min_samples": self.cfg.learning_min_samples,
+                "ramp_samples": self.cfg.learning_ramp_samples,
+                "max_calibration_error": self.cfg.learning_max_calib_error,
+                "model_n_labeled": (self.edge_model.n_labeled if self.edge_model else 0),
+                "model_calibration_error": (self.edge_model.calibration_error()
+                                            if self.edge_model else None),
+                "note": ("the bot's own settled-trade experience (calibrated edge model) adjusts "
+                         "the directional probability; it grows as more trades settle. The "
+                         "execution-quality gate, paper-realism, and reconciliation are unchanged "
+                         "and still veto every trade — learning can never bypass them.")}
+
     def _global_reconciliation(self) -> dict:
         from engine.pulse.reconciliation import global_reconciliation
         return global_reconciliation(
@@ -762,6 +833,7 @@ class PulseEngine:
             gate_thresholds=self._gate_thresholds(), gate_observations=self.gate_obs.ranges())
         report["readiness"] = self.readiness()
         report["tradingview"] = self._tradingview_report()
+        report["learning"] = self._learning_report()
         return report
 
     def _tradingview_report(self) -> dict:
@@ -811,8 +883,9 @@ class PulseEngine:
                              else {"enabled": False}),
             "markov_regime": (self.markov.report() if self.markov is not None
                               else {"enabled": False}),
-            "edge_model": (self.edge_model.report() if self.edge_model is not None
-                           else {"enabled": False}),
+            "edge_model": (self.edge_model.report(affects_trading=self._learning_report()["active"])
+                           if self.edge_model is not None else {"enabled": False}),
+            "learning": self._learning_report(),
             "tier_table": self._tier_report(),
             "meta_learning": self._meta_learning_status(),
             "promotion_ladder": self.promotion.report(),
@@ -862,6 +935,8 @@ class PulseEngine:
                                      "after_sum": round(self._ev_after_sum, 6), "n": self._ev_n},
                               "tv_edge": self._tv_edge.to_state(),
                               "rsi_trend": self._rsi_model.to_state(),
+                              "edge_model": (self.edge_model.to_state()
+                                             if self.edge_model is not None else {}),
                               "baseline": (self._baseline or empty_baseline())}}
             (self._data_dir / "btc_pulse_ledger.json").write_text(
                 json.dumps(ledger_doc, default=str, indent=1))
