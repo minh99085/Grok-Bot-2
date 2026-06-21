@@ -48,6 +48,15 @@ def normalize_direction(raw) -> Optional[str]:
     return _DIRECTION_MAP.get(str(raw).strip().lower())
 
 
+def normalize_symbol(raw) -> str:
+    """Uppercase + strip a leading ``EXCHANGE:`` prefix so TradingView ``{{ticker}}`` values like
+    ``COINBASE:BTCUSD`` / ``BINANCE:BTCUSDT`` match the allow-list (``BTCUSD`` / ``BTCUSDT``)."""
+    s = str(raw or "").strip().upper()
+    if ":" in s:
+        s = s.split(":", 1)[1].strip()
+    return s
+
+
 def _parse_ts(val) -> Optional[float]:
     """Parse an epoch (s or ms) or ISO-8601 timestamp into epoch seconds."""
     if val is None:
@@ -107,6 +116,21 @@ class TradingViewSignalEvent:
                 "age_s": (round(now - self.received_at, 3))}
 
 
+def _event_from_dict(d) -> Optional["TradingViewSignalEvent"]:
+    if not isinstance(d, dict) or not d.get("event_id"):
+        return None
+    try:
+        return TradingViewSignalEvent(
+            event_id=str(d["event_id"]), bot_name=str(d.get("bot_name") or ""),
+            symbol=str(d.get("symbol") or ""), timeframe=d.get("timeframe"),
+            bar_time=d.get("bar_time"), received_at=float(d.get("received_at") or 0.0),
+            direction=str(d.get("direction") or "FLAT"), strength=d.get("strength"),
+            indicator_name=d.get("indicator_name"),
+            raw_payload_hash=str(d.get("raw_payload_hash") or ""))
+    except Exception:  # noqa: BLE001
+        return None
+
+
 class TradingViewIntake:
     """Validates + normalizes + de-duplicates TradingView alerts and exposes report counters.
 
@@ -133,6 +157,9 @@ class TradingViewIntake:
         self.consumed = 0
         self.reject_reasons: dict = {}
         self.latest: Optional[TradingViewSignalEvent] = None
+        # per-source tracking (e.g. Coinbase BTCUSD + Binance BTCUSDT used together)
+        self.latest_by_symbol: dict = {}
+        self.valid_by_symbol: dict = {}
         self._path = (Path(data_dir) / "btc_pulse_tradingview.json") if data_dir else None
         self._load_state()
 
@@ -163,8 +190,8 @@ class TradingViewIntake:
         bot = str(payload.get("bot_name") or payload.get("bot") or "").strip()
         if self.bot_name and bot.lower() != self.bot_name:
             return None, WRONG_BOT
-        # 3) symbol allow-list
-        symbol = str(payload.get("symbol") or payload.get("ticker") or "").strip().upper()
+        # 3) symbol allow-list (exchange-prefix tolerant)
+        symbol = normalize_symbol(payload.get("symbol") or payload.get("ticker"))
         if not symbol or (self.allowed_symbols and symbol not in self.allowed_symbols):
             return None, UNSUPPORTED_SYMBOL
         # 4) direction
@@ -225,6 +252,8 @@ class TradingViewIntake:
                 self._seen_set = set(self._seen)
             self.valid += 1
             self.latest = ev
+            self.latest_by_symbol[ev.symbol] = ev
+            self.valid_by_symbol[ev.symbol] = self.valid_by_symbol.get(ev.symbol, 0) + 1
             self._pending.append(ev)
             self._persist_locked()
             return 200, {"ok": True, "accepted": True, "event_id": ev.event_id,
@@ -259,6 +288,9 @@ class TradingViewIntake:
                 "tradingview_alerts_consumed_as_features": self.consumed,
                 "tradingview_reject_reasons": dict(self.reject_reasons),
                 "tradingview_latest_signal": (self.latest.to_dict() if self.latest else None),
+                "tradingview_latest_by_symbol": {s: e.to_dict()
+                                                 for s, e in self.latest_by_symbol.items()},
+                "tradingview_valid_by_symbol": dict(self.valid_by_symbol),
                 "allowed_symbols": sorted(self.allowed_symbols),
                 "bot_name": self.bot_name,
                 "dedupe_tracked": len(self._seen_set),
@@ -278,6 +310,8 @@ class TradingViewIntake:
                 "consumed": self.consumed, "reject_reasons": dict(self.reject_reasons),
                 "seen_ids": list(self._seen),
                 "latest": (self.latest.to_dict() if self.latest else None),
+                "latest_by_symbol": {s: e.to_dict() for s, e in self.latest_by_symbol.items()},
+                "valid_by_symbol": dict(self.valid_by_symbol),
             }, default=str, indent=1), encoding="utf-8")
         except Exception:  # noqa: BLE001 — persistence never breaks intake
             pass
@@ -297,17 +331,12 @@ class TradingViewIntake:
         for sid in (data.get("seen_ids") or []):
             self._seen.append(sid)
         self._seen_set = set(self._seen)
-        # restore the last signal so the report keeps showing it across restarts
-        lt = data.get("latest")
-        if isinstance(lt, dict) and lt.get("event_id"):
-            try:
-                self.latest = TradingViewSignalEvent(
-                    event_id=str(lt["event_id"]), bot_name=str(lt.get("bot_name") or ""),
-                    symbol=str(lt.get("symbol") or ""), timeframe=lt.get("timeframe"),
-                    bar_time=lt.get("bar_time"),
-                    received_at=float(lt.get("received_at") or 0.0),
-                    direction=str(lt.get("direction") or "FLAT"), strength=lt.get("strength"),
-                    indicator_name=lt.get("indicator_name"),
-                    raw_payload_hash=str(lt.get("raw_payload_hash") or ""))
-            except Exception:  # noqa: BLE001
-                self.latest = None
+        # restore the last signal(s) so the report keeps showing them across restarts
+        self.latest = _event_from_dict(data.get("latest"))
+        self.latest_by_symbol = {}
+        for sym, ed in (data.get("latest_by_symbol") or {}).items():
+            ev = _event_from_dict(ed)
+            if ev is not None:
+                self.latest_by_symbol[sym] = ev
+        self.valid_by_symbol = {k: int(v or 0)
+                                for k, v in (data.get("valid_by_symbol") or {}).items()}

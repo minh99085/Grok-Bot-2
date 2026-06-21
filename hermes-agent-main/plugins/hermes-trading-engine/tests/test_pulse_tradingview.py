@@ -13,8 +13,8 @@ import time
 import urllib.request
 import urllib.error
 
-from engine.pulse.tradingview import (TradingViewIntake, normalize_direction, BAD_SECRET,
-                                       MISSING_SECRET, WRONG_BOT, UNSUPPORTED_SYMBOL,
+from engine.pulse.tradingview import (TradingViewIntake, normalize_direction, normalize_symbol,
+                                       BAD_SECRET, MISSING_SECRET, WRONG_BOT, UNSUPPORTED_SYMBOL,
                                        STALE_TIMESTAMP, MALFORMED_DIRECTION, DUPLICATE_EVENT_ID,
                                        INVALID_JSON)
 from engine.pulse.webhook import WebhookServer
@@ -61,6 +61,48 @@ def test_valid_alert_normalized_event():
     assert ev.indicator_name == "supertrend" and len(ev.raw_payload_hash) == 64
     assert ev.bar_time == now - 5 and ev.received_at == now
     assert intake.valid == 1 and intake.rejected == 0 and intake.received == 1
+
+
+def test_symbol_normalization_strips_exchange_prefix():
+    assert normalize_symbol("COINBASE:BTCUSD") == "BTCUSD"
+    assert normalize_symbol("BINANCE:BTCUSDT") == "BTCUSDT"
+    assert normalize_symbol("btcusd") == "BTCUSD" and normalize_symbol("BTC/USD") == "BTC/USD"
+
+
+def test_two_sources_coinbase_and_binance_tracked_separately():
+    """Coinbase BTCUSD + Binance BTCUSDT used together: both accepted (exchange-prefix tolerant),
+    de-duped independently, and tracked per-symbol in the report."""
+    intake = _intake()
+    now = 1_000_000.0
+    cb = json.dumps({"secret": SECRET, "bot_name": "hermes", "symbol": "COINBASE:BTCUSD",
+                     "direction": "UP", "strength": 0.7, "indicator_name": "RSI Divergence",
+                     "event_id": "cb-1"}).encode()
+    bn = json.dumps({"secret": SECRET, "bot_name": "hermes", "symbol": "BINANCE:BTCUSDT",
+                     "direction": "DOWN", "strength": 0.6, "indicator_name": "RSI Divergence",
+                     "event_id": "bn-1"}).encode()
+    assert intake.ingest(cb, now=now)[1]["accepted"] is True
+    assert intake.ingest(bn, now=now + 1)[1]["accepted"] is True
+    rep = intake.report()
+    assert rep["tradingview_alerts_valid"] == 2
+    assert rep["tradingview_valid_by_symbol"] == {"BTCUSD": 1, "BTCUSDT": 1}
+    bysym = rep["tradingview_latest_by_symbol"]
+    assert bysym["BTCUSD"]["direction"] == "UP" and bysym["BTCUSD"]["symbol"] == "BTCUSD"
+    assert bysym["BTCUSDT"]["direction"] == "DOWN"
+    # a duplicate Coinbase event is still caught, Binance unaffected
+    assert intake.ingest(cb, now=now + 2)[1].get("duplicate") is True
+    assert intake.report()["tradingview_valid_by_symbol"] == {"BTCUSD": 1, "BTCUSDT": 1}
+
+
+def test_per_symbol_state_persists(tmp_path):
+    intake = _intake(tmp_path)
+    intake.ingest(json.dumps({"secret": SECRET, "bot_name": "hermes", "symbol": "BTCUSD",
+                              "direction": "UP", "event_id": "cb-x"}).encode(), now=1_000_000.0)
+    intake.ingest(json.dumps({"secret": SECRET, "bot_name": "hermes", "symbol": "BTCUSDT",
+                              "direction": "DOWN", "event_id": "bn-x"}).encode(), now=1_000_001.0)
+    restored = _intake(tmp_path)
+    rep = restored.report()
+    assert rep["tradingview_valid_by_symbol"] == {"BTCUSD": 1, "BTCUSDT": 1}
+    assert set(rep["tradingview_latest_by_symbol"]) == {"BTCUSD", "BTCUSDT"}
 
 
 def test_secret_via_header_only():
