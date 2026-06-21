@@ -23,7 +23,7 @@ from engine.pulse.price import PulsePriceFeed, build_price_source
 from engine.pulse.fair_value import RollingVol, digital_p_up
 from engine.pulse.strategy import decide
 from engine.pulse.executor import PulseLedger
-from engine.pulse.settlement import PulseCalibration, resolve_outcome
+from engine.pulse.settlement import (PulseCalibration, resolve_window, proxy_outcome)
 
 logger = logging.getLogger("hte.pulse.engine")
 
@@ -63,6 +63,13 @@ class PulseConfig:
     # between the slower trade ticks.
     price_source: str = "auto"
     price_sampler_interval_s: float = 1.0
+    # ---- oracle reference model (Chainlink Data Streams ref price via Polymarket RTDS) ----
+    oracle_feed_type: str = "chainlink_data_streams_refprice"
+    oracle_symbol: str = "btc/usd"
+    fast_feeds: tuple = ("binance_btcusdt", "coinbase_btcusd")
+    settlement_source_priority: tuple = ("polymarket_resolution", "rtds_chainlink_proxy")
+    proxy_max_close_lag_s: float = 30.0
+    rtds_enabled: bool = True
     data_dir: str = "/data"
 
     @classmethod
@@ -90,6 +97,17 @@ class PulseConfig:
             grok_overlay_max_calls_per_hour=int(_envf("GROK_OVERLAY_MAX_CALLS_PER_HOUR", 20)),
             price_source=(os.getenv("PULSE_PRICE_SOURCE", "auto") or "auto").strip().lower(),
             price_sampler_interval_s=_envf("PULSE_PRICE_SAMPLER_INTERVAL_S", 1.0),
+            oracle_feed_type=(os.getenv("HERMES_ORACLE_FEED_TYPE",
+                                        "chainlink_data_streams_refprice") or "").strip().lower(),
+            oracle_symbol=(os.getenv("HERMES_ORACLE_SYMBOL", "btc/usd") or "btc/usd").strip().lower(),
+            fast_feeds=tuple(s.strip().lower() for s in os.getenv(
+                "HERMES_FAST_FEEDS", "binance_btcusdt,coinbase_btcusd").split(",") if s.strip()),
+            settlement_source_priority=tuple(s.strip().lower() for s in os.getenv(
+                "HERMES_SETTLEMENT_SOURCE_PRIORITY",
+                "polymarket_resolution,rtds_chainlink_proxy").split(",") if s.strip()),
+            proxy_max_close_lag_s=_envf("HERMES_PROXY_MAX_CLOSE_LAG_S", 30.0),
+            rtds_enabled=str(os.getenv("HERMES_RTDS_ENABLED", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
             data_dir=os.getenv("HTE_DATA_DIR", "/data"))
 
 
@@ -97,9 +115,25 @@ class PulseEngine:
     def __init__(self, cfg: Optional[PulseConfig] = None, *, market_feed=None,
                  price_feed=None):
         self.cfg = cfg or PulseConfig()
+        # reject classic Chainlink Data Feed / AggregatorV3 as the primary settlement feed
+        from engine.pulse.oracle import validate_oracle_feed_type, LeadFeeds
+        self.oracle_feed_type = validate_oracle_feed_type(self.cfg.oracle_feed_type)
         self.market = market_feed or PulseMarketFeed()
+        self.rtds = None
         if price_feed is not None:
             self.price = price_feed
+        elif self.cfg.rtds_enabled:
+            # CANONICAL oracle: Chainlink ref price via Polymarket RTDS crypto_prices_chainlink.
+            from engine.pulse.rtds import RTDSClient, TOPIC_CHAINLINK, TOPIC_BINANCE
+            self.rtds = RTDSClient(subscriptions=[(TOPIC_CHAINLINK, self.cfg.oracle_symbol),
+                                                  (TOPIC_BINANCE, "btcusdt")])
+            self.rtds.start()
+            self.price = PulsePriceFeed(
+                fetcher=self.rtds.oracle_price, source_name="rtds_chainlink",
+                vol=RollingVol(window_s=self.cfg.vol_window_s),
+                max_open_lag_s=self.cfg.max_open_lag_s,
+                sampler_interval_s=self.cfg.price_sampler_interval_s)
+            self.price.start_sampler()
         else:
             fetcher, src = build_price_source(self.cfg.price_source)
             self.price = PulsePriceFeed(
@@ -108,6 +142,9 @@ class PulseEngine:
                 max_open_lag_s=self.cfg.max_open_lag_s,
                 sampler_interval_s=self.cfg.price_sampler_interval_s)
             self.price.start_sampler()
+        # fast LEAD feeds (Binance via RTDS, Coinbase via REST) — FEATURES ONLY, never truth
+        self.leads = LeadFeeds(self.cfg.fast_feeds, rtds=self.rtds,
+                               window_s=self.cfg.vol_window_s)
         self.ledger = PulseLedger()
         self.calib = PulseCalibration()
         self.overlay = None
@@ -161,7 +198,8 @@ class PulseEngine:
         now = float(now if now is not None else time.time())
         self.ticks += 1
         self.last_tick_ts = now
-        self.price.poll(now)
+        self.price.poll(now)               # oracle: RTDS Chainlink ref price
+        self.leads.poll(now)               # lead predictors (Binance/Coinbase) — features only
         windows = self.market.active_windows(now=now)
         keep_keys = {w.event_id for w in windows} | set(self.ledger.positions)
         self.price.prune_opens(keep_keys)
@@ -234,14 +272,32 @@ class PulseEngine:
         for pos in list(self.ledger.open_positions()):
             if pos.close_ts > now:
                 continue
-            s_close = self.price.current()
-            allow_proxy = (now - pos.close_ts) > self.cfg.settle_grace_s
-            outcome, source = resolve_outcome(
-                pos.market_id, gamma_feed=self.market, s_open=pos.s_open,
-                s_close=s_close, allow_proxy=allow_proxy)
+            # capture the RTDS Chainlink CLOSE snapshot once, the first post-close tick, so the
+            # proxy uses a close price near the actual window close (lag-gated).
+            if pos.s_close is None:
+                px = self.price.current()
+                if px is not None:
+                    pos.s_close = px
+                    pos.close_lag_s = max(0.0, now - pos.close_ts)
+            # settle by the configured PRIORITY: official Polymarket first, RTDS proxy only if
+            # the close snapshot lag is within threshold. Wait until grace before proxy so the
+            # official result has a chance to publish.
+            priority = self.cfg.settlement_source_priority
+            if (now - pos.close_ts) <= self.cfg.settle_grace_s:
+                priority = tuple(s for s in priority if s == "polymarket_resolution") or priority
+            outcome, source = resolve_window(
+                pos.market_id, gamma_feed=self.market, priority=priority,
+                s_open=pos.s_open, s_close=pos.s_close, close_lag_s=pos.close_lag_s,
+                proxy_max_close_lag_s=self.cfg.proxy_max_close_lag_s)
             if outcome is None:
                 continue                      # not resolvable yet — retry next tick
-            self.ledger.settle(pos.window_key, outcome, s_open=pos.s_open, s_close=s_close,
+            # reconciliation: compare the proxy verdict against the official one when both exist
+            proxy_up = proxy_outcome(pos.s_open, pos.s_close) \
+                if (pos.close_lag_s is not None
+                    and pos.close_lag_s <= self.cfg.proxy_max_close_lag_s) else None
+            if source == "polymarket_resolution":
+                self.ledger.reconcile(proxy_up, outcome)
+            self.ledger.settle(pos.window_key, outcome, s_open=pos.s_open, s_close=pos.s_close,
                                source=source)
             self.calib.observe(pos.fair_at_entry, outcome)
             logger.info("pulse settled %s side=%s won=%s pnl=%.3f via=%s",
@@ -266,6 +322,20 @@ class PulseEngine:
             "price": self.price.status(),
             "ledger": self.ledger.stats(),
             "calibration": self.calib.to_dict(),
+            "oracle": {
+                "oracle_feed_type": self.oracle_feed_type,
+                "oracle_symbol": self.cfg.oracle_symbol,
+                "fast_feed_symbols": list(self.cfg.fast_feeds),
+                "open_snapshot_source": "rtds_chainlink",
+                "close_snapshot_source": "rtds_chainlink",
+                "settlement_source_priority": list(self.cfg.settlement_source_priority),
+                "settlement_sources_used": self.ledger.stats().get("settle_sources"),
+                "proxy_official_reconciliation":
+                    self.ledger.stats().get("proxy_official_reconciliation"),
+                "proxy_max_close_lag_s": self.cfg.proxy_max_close_lag_s,
+                "rtds": (self.rtds.status() if self.rtds is not None else {"enabled": False}),
+                "lead_features": self.leads.features(),
+            },
             "grok_overlay": (self.overlay.status() if self.overlay is not None
                              else {"enabled": False}),
             "tick_reasons": self._reasons,

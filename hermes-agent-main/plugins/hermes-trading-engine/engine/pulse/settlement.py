@@ -62,6 +62,44 @@ class PulseCalibration:
         self.up_outcomes = int(d.get("up_outcomes", 0) or 0)
 
 
+DEFAULT_PRIORITY = ("polymarket_resolution", "rtds_chainlink_proxy")
+
+
+def proxy_outcome(s_open: Optional[float], s_close: Optional[float]) -> Optional[bool]:
+    """RTDS Chainlink proxy: Up iff close >= open. None if either snapshot missing."""
+    if s_open is None or s_close is None:
+        return None
+    return s_close >= s_open
+
+
+def resolve_window(market_id: str, *, gamma_feed=None, priority=DEFAULT_PRIORITY,
+                   s_open: Optional[float] = None, s_close: Optional[float] = None,
+                   close_lag_s: Optional[float] = None,
+                   proxy_max_close_lag_s: float = 30.0) -> "tuple[Optional[bool], str]":
+    """Resolve a window's Up/Down following the configured source PRIORITY.
+
+    Default priority: official Polymarket resolution FIRST, then the RTDS Chainlink open/close
+    proxy — and the proxy is only allowed when the close snapshot was captured within
+    ``proxy_max_close_lag_s`` of the window close (else the proxy close is untrustworthy and we
+    wait for the official result). Returns ``(outcome_up, source)``; outcome None if unresolved.
+    """
+    for src in priority:
+        s = str(src).strip().lower()
+        if s == "polymarket_resolution" and gamma_feed is not None and market_id:
+            try:
+                res = gamma_feed.fetch_resolution(market_id)
+            except Exception:  # noqa: BLE001
+                res = None
+            if res is not None:
+                return bool(res), "polymarket_resolution"
+        elif s == "rtds_chainlink_proxy":
+            if (close_lag_s is not None and close_lag_s <= proxy_max_close_lag_s):
+                out = proxy_outcome(s_open, s_close)
+                if out is not None:
+                    return bool(out), "rtds_chainlink_proxy"
+    return None, "unresolved"
+
+
 def resolve_outcome(market_id: str, *, gamma_feed=None, s_open: Optional[float] = None,
                     s_close: Optional[float] = None,
                     allow_proxy: bool = True) -> "tuple[Optional[bool], str]":

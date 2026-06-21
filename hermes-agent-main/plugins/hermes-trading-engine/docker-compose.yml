@@ -69,6 +69,17 @@ services:
       # (as Cloud Agent secrets) + the BTC/USD feed id; then set PULSE_PRICE_SOURCE=auto.
       PULSE_PRICE_SOURCE: "${PULSE_PRICE_SOURCE:-auto}"
       PULSE_PRICE_SAMPLER_INTERVAL_S: "${PULSE_PRICE_SAMPLER_INTERVAL_S:-1}"
+      # ---- oracle reference model (CORRECT): Chainlink Data Streams ref price via Polymarket
+      # RTDS crypto_prices_chainlink (btc/usd). Binance/Coinbase are LEAD predictors only.
+      # Settlement: official Polymarket resolution first, then RTDS Chainlink open/close proxy
+      # (only when the close snapshot lag is within threshold). Classic Chainlink Data Feed /
+      # AggregatorV3 is rejected as a primary settlement feed.
+      HERMES_ORACLE_FEED_TYPE: "${HERMES_ORACLE_FEED_TYPE:-chainlink_data_streams_refprice}"
+      HERMES_ORACLE_SYMBOL: "${HERMES_ORACLE_SYMBOL:-btc/usd}"
+      HERMES_FAST_FEEDS: "${HERMES_FAST_FEEDS:-binance_btcusdt,coinbase_btcusd}"
+      HERMES_SETTLEMENT_SOURCE_PRIORITY: "${HERMES_SETTLEMENT_SOURCE_PRIORITY:-polymarket_resolution,rtds_chainlink_proxy}"
+      HERMES_PROXY_MAX_CLOSE_LAG_S: "${HERMES_PROXY_MAX_CLOSE_LAG_S:-30}"
+      HERMES_RTDS_ENABLED: "${HERMES_RTDS_ENABLED:-1}"
       CHAINLINK_DATA_STREAMS_API_KEY: "${CHAINLINK_DATA_STREAMS_API_KEY:-}"
       CHAINLINK_DATA_STREAMS_SECRET: "${CHAINLINK_DATA_STREAMS_SECRET:-}"
       CHAINLINK_BTC_FEED_ID: "${CHAINLINK_BTC_FEED_ID:-}"

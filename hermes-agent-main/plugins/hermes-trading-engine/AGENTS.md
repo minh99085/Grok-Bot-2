@@ -19,16 +19,21 @@ pulse paper engine profitable, fast.
 ## How it works
 
 The contract resolves `Up` iff `Chainlink_BTC_close >= Chainlink_BTC_open` over the 5-min
-window (ties → Up). The engine:
+window (ties → Up). **Reference model (correct):** the oracle is the **Chainlink Data Streams
+reference price** for `btc/usd`, obtained from **Polymarket RTDS** (`crypto_prices_chainlink`,
+`engine/pulse/rtds.py`) — the exact feed Polymarket resolves on. Binance/Coinbase are FAST
+LEAD predictors only (`engine/pulse/oracle.py` `LeadFeeds`), never settlement truth. The
+engine:
 1. ingests the rolling windows from Gamma (`engine/pulse/markets.py`);
-2. snapshots each window's OPEN BTC price on a low-latency Coinbase proxy (same feed for open
-   and live so the Coinbase-vs-Chainlink basis cancels in the close-vs-open compare);
+2. snapshots each window's OPEN + CLOSE price on the RTDS Chainlink oracle (`source=rtds_chainlink`);
 3. prices each open window as a digital option
    `P(up)=Phi((ln(S_now/S_open)+(mu-0.5 sig^2) r)/(sig*sqrt(r)))` (`fair_value.py`);
 4. takes a loosened paper trade on the higher after-cost-edge side (`strategy.py`,
    `executor.py` — simulated fills only);
-5. settles each window against the authoritative Polymarket resolution (Coinbase proxy
-   fallback) and scores Brier calibration (`settlement.py`).
+5. settles by priority — official **Polymarket resolution** first, then the **RTDS Chainlink
+   open/close proxy** only when the close-snapshot lag is within threshold — scores Brier
+   calibration + proxy/official reconciliation (`settlement.py`). Classic Chainlink Data Feed /
+   AggregatorV3 is rejected as a primary settlement feed (`oracle.py`).
 
 The fast loop + entrypoint are `engine/pulse/engine.py` + `scripts/run_btc_pulse.py`.
 

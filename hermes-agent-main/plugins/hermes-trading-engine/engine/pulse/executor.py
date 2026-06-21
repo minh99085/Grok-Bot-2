@@ -35,10 +35,12 @@ class PulsePosition:
     pnl_usd: Optional[float] = None
     s_open: Optional[float] = None
     s_close: Optional[float] = None
+    close_lag_s: Optional[float] = None
 
     _FIELDS = ("window_key", "market_id", "title", "side", "token_id", "entry_price",
                "size_usd", "shares", "fair_at_entry", "edge_at_entry", "open_ts", "close_ts",
-               "entry_ts", "status", "outcome_up", "won", "pnl_usd", "s_open", "s_close")
+               "entry_ts", "status", "outcome_up", "won", "pnl_usd", "s_open", "s_close",
+               "close_lag_s")
 
     def to_dict(self) -> dict:
         return {k: getattr(self, k) for k in self._FIELDS}
@@ -61,9 +63,10 @@ class PulseLedger:
         self.settled_entry_sum: float = 0.0          # sum of entry prices of settled trades
         self.side_n: dict = {"up": 0, "down": 0}
         self.side_wins: dict = {"up": 0, "down": 0}
-        # how each settled trade was resolved (authoritative Polymarket vs Coinbase proxy) —
-        # proxy wins share the entry feed so a high proxy share means win-rate is optimistic.
-        self.settle_sources: dict = {"polymarket": 0, "proxy_coinbase": 0}
+        # how each settled trade was resolved (official Polymarket vs RTDS Chainlink proxy).
+        self.settle_sources: dict = {"polymarket_resolution": 0, "rtds_chainlink_proxy": 0}
+        # proxy-vs-official reconciliation (both computable on the same window).
+        self.recon: dict = {"both": 0, "agree": 0, "disagree": 0}
 
     def has_position(self, window_key: str) -> bool:
         return window_key in self.positions
@@ -122,6 +125,16 @@ class PulseLedger:
     def open_positions(self) -> list:
         return [p for p in self.positions.values() if p.status == "open"]
 
+    def reconcile(self, proxy_up: "bool | None", official_up: "bool | None") -> None:
+        """Record proxy-vs-official agreement when BOTH are computable for a window."""
+        if proxy_up is None or official_up is None:
+            return
+        self.recon["both"] += 1
+        if bool(proxy_up) == bool(official_up):
+            self.recon["agree"] += 1
+        else:
+            self.recon["disagree"] += 1
+
     def _side_win_rate(self, side: str) -> "float | None":
         n = self.side_n.get(side, 0)
         return round(self.side_wins.get(side, 0) / n, 4) if n else None
@@ -141,6 +154,7 @@ class PulseLedger:
                 "win_rate_down": self._side_win_rate("down"),
                 "side_counts": dict(self.side_n),
                 "settle_sources": dict(self.settle_sources),
+                "proxy_official_reconciliation": dict(self.recon),
                 "realized_pnl_usd": round(self.realized_pnl, 4),
                 "avg_pnl_per_trade": (round(self.realized_pnl / self.settled, 4)
                                       if self.settled else None),
@@ -152,7 +166,8 @@ class PulseLedger:
                 "accumulators": {"settled_entry_sum": round(self.settled_entry_sum, 6),
                                  "side_n": dict(self.side_n),
                                  "side_wins": dict(self.side_wins),
-                                 "settle_sources": dict(self.settle_sources)},
+                                 "settle_sources": dict(self.settle_sources),
+                                 "recon": dict(self.recon)},
                 "positions": [p.to_dict() for p in recent[:max_positions]]}
 
     def load_state(self, data: dict) -> None:
@@ -169,8 +184,10 @@ class PulseLedger:
         for k in ("up", "down"):
             self.side_n[k] = int((acc.get("side_n") or {}).get(k, 0) or 0)
             self.side_wins[k] = int((acc.get("side_wins") or {}).get(k, 0) or 0)
-        for k in ("polymarket", "proxy_coinbase"):
+        for k in ("polymarket_resolution", "rtds_chainlink_proxy"):
             self.settle_sources[k] = int((acc.get("settle_sources") or {}).get(k, 0) or 0)
+        for k in ("both", "agree", "disagree"):
+            self.recon[k] = int((acc.get("recon") or {}).get(k, 0) or 0)
         for pd in (data.get("positions") or []):
             try:
                 pos = PulsePosition.from_dict(pd)

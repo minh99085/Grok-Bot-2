@@ -44,10 +44,11 @@ def build_price_source(source: str = "auto"):
 
 @dataclass
 class OpenSnapshot:
-    """The recorded window-open reference price + how late we captured it."""
+    """The recorded window-open reference price + how late we captured it + which oracle."""
     open_ts: float
     price: float
     snap_ts: float
+    source: str = "rtds_chainlink"
 
     @property
     def lag_s(self) -> float:
@@ -130,14 +131,11 @@ class PulsePriceFeed:
             return None
         if self._last_price is None:
             return None
-        if (now - open_ts) > self.max_open_lag_s:
-            # too late to faithfully represent the open — record a sentinel so we never trade it
-            snap = OpenSnapshot(open_ts=open_ts, price=self._last_price, snap_ts=now)
-            self._opens[key] = snap
-            logger.debug("open snapshot for %s captured late (lag %.1fs)", key, snap.lag_s)
-            return snap
-        snap = OpenSnapshot(open_ts=open_ts, price=self._last_price, snap_ts=now)
+        snap = OpenSnapshot(open_ts=open_ts, price=self._last_price, snap_ts=now,
+                            source=self.source_name)
         self._opens[key] = snap
+        if snap.lag_s > self.max_open_lag_s:
+            logger.debug("open snapshot for %s captured late (lag %.1fs)", key, snap.lag_s)
         return snap
 
     def open_snapshot(self, key: str) -> Optional[OpenSnapshot]:
