@@ -16,30 +16,36 @@ def _mc():
     return MarketContext(event_id="e", market_id="m", title="BTC Up or Down", ttc_s=200.0)
 
 
-def test_lifecycle_reconciler_balances():
+def test_lifecycle_reconciler_balances_all_terminals():
     rc = LifecycleReconciler()
-    # an accepted+ledgered candidate
     dr1 = DecisionResult(_mc(), CandidateDecision("up", 0.6, 0.6, 0.1, True, "trade"),
                          features={}, cost=ExecutionCostEstimate(True, "accepted"),
-                         action=TradeAction(side="up"), fill=PaperFill("e", "up", 0.5, 10, 5),
-                         status="accepted")
-    dr1.lifecycle = ["created", "feature_scored", "execution_costed", "accepted", "ledgered",
-                     "reported"]
-    # a directional reject + a gate reject
+                         action=TradeAction(side="up"), fill=PaperFill("e", "up", 0.5, 10, 5))
+    dr1.finalize("accepted")
     dr2 = DecisionResult(_mc(), CandidateDecision("up", 0.5, 0.5, 0.0, False, "edge_below_min"),
-                         features={}, action=RejectAction("directional", "edge_below_min"),
-                         status="rejected", reject_stage="directional")
+                         features={})
+    dr2.finalize("rejected", reason="edge_below_min", stage="directional")
     dr3 = DecisionResult(_mc(), CandidateDecision("up", 0.6, 0.6, 0.1, True, "trade"),
-                         features={}, cost=ExecutionCostEstimate(False, "wide_spread"),
-                         action=RejectAction("execution_gate", "wide_spread"),
-                         status="rejected", reject_stage="execution_gate")
-    for dr in (dr1, dr2, dr3):
+                         features={}, cost=ExecutionCostEstimate(False, "wide_spread"))
+    dr3.finalize("rejected", reason="wide_spread", stage="execution_gate")
+    dr4 = DecisionResult(_mc(), CandidateDecision(None, None, None, 0.0, False, "pending"))
+    dr4.finalize("skipped", reason="untrusted_vol")
+    dr5 = DecisionResult(_mc(), CandidateDecision(None, None, None, 0.0, False, "pending"))
+    dr5.finalize("missing_data", reason="no_open_snapshot")
+    dr6 = DecisionResult(_mc(), CandidateDecision(None, None, None, 0.0, False, "pending"))
+    dr6.finalize("expired", reason="window_closed")
+    for dr in (dr1, dr2, dr3, dr4, dr5, dr6):
         rc.record(dr)
     r = rc.report()
-    assert r["created"] == 3 and r["accepted"] == 1 and r["rejected_total"] == 2
-    assert r["rejected_by_stage"]["directional"] == 1
-    assert r["rejected_by_stage"]["execution_gate"] == 1
-    assert r["ledgered"] == 1 and r["reported"] == 3 and r["reconciled"] is True
+    assert r["created"] == 6 and r["reported"] == 6
+    assert r["terminals"] == {"accepted": 1, "rejected": 2, "skipped": 1, "expired": 1,
+                              "missing_data": 1}
+    assert r["created"] == sum(r["terminals"].values())     # no candidate disappeared
+    assert r["rejected_by_stage"]["directional"] == 1 and r["rejected_by_stage"]["execution_gate"] == 1
+    assert r["skipped_by_reason"]["untrusted_vol"] == 1
+    assert r["missing_by_reason"]["no_open_snapshot"] == 1
+    assert r["ledgered"] == 1
+    assert r["no_candidate_disappeared"] is True and r["reconciled"] is True
 
 
 def test_decision_result_to_dict_has_full_lifecycle():
@@ -114,17 +120,20 @@ def test_engine_lifecycle_reconciles_with_ledger(tmp_path):
     st = eng.status()
     lc = st["decision_lifecycle"]
     eg = st["execution_gate"]
-    assert lc["reconciled"] is True
-    assert lc["created"] == lc["accepted"] + lc["rejected_total"]    # full lifecycle balances
-    assert lc["ledgered"] == lc["accepted"]
+    assert lc["reconciled"] is True and lc["no_candidate_disappeared"] is True
+    acc = lc["terminals"]["accepted"]
+    assert lc["created"] == sum(lc["terminals"].values())           # no candidate disappeared
+    assert lc["ledgered"] == acc
     # cross-report reconciliation: lifecycle accepted == gate accepted == ledger fills/trades
-    assert lc["accepted"] == eg["accepted"] == eg["fills"] == eng.ledger.trades >= 1
-    # candidate detail captured as structured DecisionResults
+    assert acc == eg["accepted"] == eg["fills"] == eng.ledger.trades >= 1
+    # candidate detail captured as structured DecisionResults with a terminal each
     re = st["recent_evaluations"]
-    assert re and all({"market_context", "candidate", "lifecycle", "status"} <= set(r) for r in re)
-    acc = [r for r in re if r["status"] == "accepted"][0]
-    assert "execution_costed" in acc["lifecycle"] and "ledgered" in acc["lifecycle"]
-    assert acc["features"]["observe_only"] is True                  # observe-only confirmed
+    assert re and all({"market_context", "candidate", "lifecycle", "status", "terminal"} <= set(r)
+                      for r in re)
+    assert all(r["terminal"] in LifecycleReconciler.TERMINALS for r in re)
+    acc_row = [r for r in re if r["terminal"] == "accepted"][0]
+    assert "execution_costed" in acc_row["lifecycle"] and "ledgered" in acc_row["lifecycle"]
+    assert acc_row["features"]["observe_only"] is True              # observe-only confirmed
 
 
 def test_report_has_all_required_summaries(tmp_path):

@@ -236,38 +236,61 @@ class PulseEngine:
         def _bump(r):
             reasons[r] = reasons.get(r, 0) + 1
 
+        def _finalize(dr, terminal, *, reason=None, stage=None):
+            """Close a candidate in exactly one terminal state — no candidate disappears."""
+            dr.finalize(terminal, reason=reason, stage=stage)
+            self.reconciler.record(dr)
+            evald.append(dr.to_dict())
+            _bump(terminal if reason is None else f"{terminal}:{reason}")
+
         for w in windows:
             # snapshot the open price the moment the window begins
             self.price.snapshot_open(w.event_id, w.open_ts, now=now)
-            if not w.is_open(now):
-                _bump("not_open_yet")
+            if now < w.open_ts:
+                _bump("not_open_yet")            # upcoming window — not a candidate yet
                 continue
             if self.ledger.has_position(w.event_id):
-                _bump("already_positioned")
+                _bump("already_positioned")      # existing position — not a NEW candidate
                 continue
-            snap = self.price.open_snapshot(w.event_id)
-            if snap is None:
-                _bump("no_open_snapshot")
-                continue
-            if snap.lag_s > self.cfg.max_open_lag_s:
-                _bump("open_snapshot_late")
-                continue
+            # ---- CANDIDATE CREATED (every open, non-positioned window) ----
             s_now = self.price.current()
             sigma = self.price.sigma_per_sec(now)
-            if s_now is None or sigma is None:
-                _bump("no_price_or_vol")
+            snap = self.price.open_snapshot(w.event_id)
+            ttc = w.seconds_to_close(now)
+            mc = MarketContext(
+                event_id=w.event_id, market_id=w.market_id, title=w.title,
+                open_ts=w.open_ts, close_ts=w.close_ts, ttc_s=ttc,
+                s_open=(snap.price if snap else None), s_now=s_now, sigma_per_sec=sigma,
+                lead_prices={k: (v[0] if v else None)
+                             for k, v in (getattr(self.leads, "_latest", {}) or {}).items()})
+            dr = DecisionResult(market_context=mc,
+                                candidate=CandidateDecision(None, None, None, 0.0, False, "pending"))
+            # early terminal classifications (each candidate ends classified)
+            if ttc <= 0:
+                _finalize(dr, "expired", reason="window_closed")
                 continue
-            # trust gate: a floored/flat sigma or too-few samples => the digital P(up) is
-            # not trustworthy; skip rather than trade noise.
+            if snap is None:
+                _finalize(dr, "missing_data", reason="no_open_snapshot")
+                continue
+            if snap.lag_s > self.cfg.max_open_lag_s:
+                _finalize(dr, "skipped", reason="open_snapshot_late")
+                continue
+            if s_now is None or sigma is None:
+                _finalize(dr, "missing_data", reason="no_price_or_vol")
+                continue
             if self.price.vol.samples < self.cfg.min_vol_samples \
                     or sigma <= self.cfg.sigma_trust_floor:
-                _bump("untrusted_vol")
+                _finalize(dr, "skipped", reason="untrusted_vol")
                 continue
             if ov_blackout:
-                _bump("grok_event_blackout")     # imminent high-impact event — don't open
+                _finalize(dr, "skipped", reason="grok_event_blackout")
                 continue
             self.market.hydrate_books(w)
-            ttc = w.seconds_to_close(now)
+            mc.poly_yes = w.up_book.mid if w.up_book else None
+            mc.best_bid = w.up_book.best_bid if w.up_book else None
+            mc.best_ask = w.up_book.best_ask if w.up_book else None
+            mc.spread = w.up_book.spread if w.up_book else None
+            mc.ask_depth_usd = w.up_book.ask_depth_usd if w.up_book else None
             # the overlay can only RAISE sigma (>=1.0) -> more conservative P(up)
             fair = digital_p_up(s_now, snap.price, sigma * ov_vol_mult, ttc)
             d = decide(w, fair, now, min_edge=self.cfg.min_edge,
@@ -277,21 +300,8 @@ class PulseEngine:
                        min_seconds_since_open=self.cfg.min_seconds_since_open,
                        basis_buffer=self.cfg.basis_buffer)
             outcome_prob = (fair if d.side == "up" else (1.0 - fair)) if fair is not None else None
-            # ---- candidate CREATED: build the structured GS-Quant-style lifecycle record ----
-            mc = MarketContext(
-                event_id=w.event_id, market_id=w.market_id, title=w.title,
-                open_ts=w.open_ts, close_ts=w.close_ts, ttc_s=ttc, s_open=snap.price,
-                s_now=s_now, sigma_per_sec=sigma,
-                poly_yes=(w.up_book.mid if w.up_book else None),
-                best_bid=(w.up_book.best_bid if w.up_book else None),
-                best_ask=(w.up_book.best_ask if w.up_book else None),
-                spread=(w.up_book.spread if w.up_book else None),
-                ask_depth_usd=(w.up_book.ask_depth_usd if w.up_book else None),
-                lead_prices={k: (v[0] if v else None)
-                             for k, v in (getattr(self.leads, "_latest", {}) or {}).items()})
-            cand = CandidateDecision(side=d.side, fair_p_up=fair, outcome_prob=outcome_prob,
-                                     model_edge=d.edge, tradeable=d.trade, reason=d.reason)
-            dr = DecisionResult(market_context=mc, candidate=cand)
+            dr.candidate = CandidateDecision(side=d.side, fair_p_up=fair, outcome_prob=outcome_prob,
+                                             model_edge=d.edge, tradeable=d.trade, reason=d.reason)
             # OBSERVE-ONLY research features (every candidate; NEVER affects decision/gate).
             rfeat = None
             if self.research is not None:
@@ -307,52 +317,39 @@ class PulseEngine:
                 dr.mark("feature_scored")
             if not d.trade:
                 dr.action = RejectAction(stage="directional", reason=d.reason)
-                dr.status, dr.reject_stage = "rejected", "directional"
-                dr.mark("rejected")
-            else:
-                # STRICT execution-quality gate (AUTHORITATIVE): EV from the live ask-ladder
-                # VWAP/slippage, never midpoint/top-of-book.
-                book = w.up_book if d.side == "up" else w.down_book
-                ex = evaluate_execution(
-                    side=d.side, book=book, outcome_prob=outcome_prob,
-                    size_usd=self.cfg.size_usd, tick_size=w.tick_size, ttc_s=ttc,
-                    min_seconds_to_close=self.cfg.min_seconds_to_close,
-                    max_spread=self.cfg.exec_max_spread, min_depth_usd=self.cfg.min_depth_usd,
-                    min_order_usd=self.cfg.exec_min_order_usd,
-                    max_depth_consume_frac=self.cfg.exec_max_depth_consume_frac,
-                    min_ev_after_slippage=self.cfg.exec_min_ev_after_slippage)
-                self.ledger.record_exec(ex.accepted, ex.reason)
-                dr.cost = ExecutionCostEstimate.from_exec_result(ex)
-                dr.mark("execution_costed")
-                if ex.accepted:
-                    d.price = ex.fill_price       # paper fill at realistic VWAP price
-                    pos = self.ledger.open_position(w, d, now, size_usd=self.cfg.size_usd,
-                                                    s_open=snap.price)
-                    if pos is not None:
-                        if rfeat is not None:     # observe-only entry-time tags (regime/buckets)
-                            pos.research = {"hurst_regime": rfeat.hurst_regime,
-                                            "zscore_bucket": rfeat.zscore_bucket,
-                                            "half_life_bucket": half_life_bucket(rfeat.half_life_s),
-                                            "ttc_bucket": ttc_bucket(ttc)}
-                        dr.fill = PaperFill(window_key=w.event_id, side=d.side,
-                                            fill_price=ex.fill_price, shares=pos.shares,
-                                            size_usd=pos.size_usd)
-                    dr.action = TradeAction(side=d.side, token_id=d.token_id,
-                                            fill_price=ex.fill_price, size_usd=self.cfg.size_usd,
-                                            shares=(pos.shares if pos else 0.0))
-                    dr.status = "accepted"
-                    dr.mark("accepted")
-                    if dr.fill is not None:
-                        dr.mark("ledgered")
-                    _bump("opened")
-                else:
-                    dr.action = RejectAction(stage="execution_gate", reason=ex.reason)
-                    dr.status, dr.reject_stage = "rejected", "execution_gate"
-                    dr.mark("rejected")
-                    _bump("exec_gate:" + ex.reason)
-            dr.mark("reported")
-            self.reconciler.record(dr)
-            evald.append(dr.to_dict())
+                _finalize(dr, "rejected", reason=d.reason, stage="directional")
+                continue
+            # STRICT execution-quality gate (AUTHORITATIVE): EV from the live ask-ladder VWAP.
+            book = w.up_book if d.side == "up" else w.down_book
+            ex = evaluate_execution(
+                side=d.side, book=book, outcome_prob=outcome_prob,
+                size_usd=self.cfg.size_usd, tick_size=w.tick_size, ttc_s=ttc,
+                min_seconds_to_close=self.cfg.min_seconds_to_close,
+                max_spread=self.cfg.exec_max_spread, min_depth_usd=self.cfg.min_depth_usd,
+                min_order_usd=self.cfg.exec_min_order_usd,
+                max_depth_consume_frac=self.cfg.exec_max_depth_consume_frac,
+                min_ev_after_slippage=self.cfg.exec_min_ev_after_slippage)
+            self.ledger.record_exec(ex.accepted, ex.reason)
+            dr.cost = ExecutionCostEstimate.from_exec_result(ex)
+            dr.mark("execution_costed")
+            if not ex.accepted:
+                dr.action = RejectAction(stage="execution_gate", reason=ex.reason)
+                _finalize(dr, "rejected", reason=ex.reason, stage="execution_gate")
+                continue
+            d.price = ex.fill_price               # paper fill at realistic VWAP price
+            pos = self.ledger.open_position(w, d, now, size_usd=self.cfg.size_usd,
+                                            s_open=snap.price)
+            if pos is not None:
+                if rfeat is not None:             # observe-only entry-time tags
+                    pos.research = {"hurst_regime": rfeat.hurst_regime,
+                                    "zscore_bucket": rfeat.zscore_bucket,
+                                    "half_life_bucket": half_life_bucket(rfeat.half_life_s),
+                                    "ttc_bucket": ttc_bucket(ttc)}
+                dr.fill = PaperFill(window_key=w.event_id, side=d.side, fill_price=ex.fill_price,
+                                    shares=pos.shares, size_usd=pos.size_usd)
+            dr.action = TradeAction(side=d.side, token_id=d.token_id, fill_price=ex.fill_price,
+                                    size_usd=self.cfg.size_usd, shares=(pos.shares if pos else 0.0))
+            _finalize(dr, "accepted")
 
         self._settle_due(now)
         self._reasons = reasons

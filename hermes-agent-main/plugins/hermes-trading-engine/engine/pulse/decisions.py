@@ -74,6 +74,49 @@ class MarketContext:
 
 
 @dataclass
+class FeatureSnapshot:
+    """Observe-only EP Chan feature view attached to a candidate (never trades)."""
+    observe_only: bool = True
+    hurst_regime: str = "insufficient_data"
+    zscore_bucket: str = "na"
+    half_life_s: Optional[float] = None
+    raw: dict = field(default_factory=dict)
+
+    def to_dict(self) -> dict:
+        return {"observe_only": True, "hurst_regime": self.hurst_regime,
+                "zscore_bucket": self.zscore_bucket, "half_life_s": self.half_life_s,
+                **({} if not self.raw else {"raw": self.raw})}
+
+
+@dataclass
+class RegimeSnapshot:
+    """Observe-only short-term regime view (populated by the Markov machine in a later phase)."""
+    state: str = "unknown"
+    probs: dict = field(default_factory=dict)
+    observe_only: bool = True
+
+    def to_dict(self) -> dict:
+        return {"state": self.state, "probs": dict(self.probs), "observe_only": True}
+
+
+@dataclass
+class LearningRecord:
+    """One settled-outcome learning row (feeds the Phase-10 learning loop)."""
+    window_key: str
+    terminal: str
+    accepted: bool
+    regime: Optional[str] = None
+    zscore_bucket: Optional[str] = None
+    pnl_usd: Optional[float] = None
+    won: Optional[bool] = None
+
+    def to_dict(self) -> dict:
+        return {"window_key": self.window_key, "terminal": self.terminal,
+                "accepted": self.accepted, "regime": self.regime,
+                "zscore_bucket": self.zscore_bucket, "pnl_usd": self.pnl_usd, "won": self.won}
+
+
+@dataclass
 class CandidateDecision:
     """The directional model's view (not authoritative for execution)."""
     side: Optional[str]
@@ -166,13 +209,30 @@ class DecisionResult:
     cost: Optional[ExecutionCostEstimate] = None
     action: Optional[object] = None             # TradeAction | RejectAction
     fill: Optional[PaperFill] = None
-    status: str = "rejected"                    # accepted | rejected
+    status: str = "rejected"                    # accepted | rejected (legacy two-state view)
+    terminal: str = "rejected"                  # accepted|rejected|skipped|expired|missing_data
     reject_stage: Optional[str] = None
+    terminal_reason: Optional[str] = None       # reason for skipped/missing_data/expired
     lifecycle: list = field(default_factory=lambda: ["created"])
 
     def mark(self, stage: str) -> None:
         if stage not in self.lifecycle:
             self.lifecycle.append(stage)
+
+    def finalize(self, terminal: str, *, reason: Optional[str] = None,
+                 stage: Optional[str] = None) -> "DecisionResult":
+        """Set the single terminal state (one of TERMINALS) — guarantees the candidate never
+        disappears: it always ends classified."""
+        self.terminal = terminal
+        self.terminal_reason = reason
+        self.status = "accepted" if terminal == "accepted" else "rejected"
+        if terminal == "rejected":
+            self.reject_stage = stage
+        self.mark(terminal)
+        if terminal == "accepted" and self.fill is not None:
+            self.mark("ledgered")
+        self.mark("reported")
+        return self
 
     def to_dict(self) -> dict:
         return {"market_context": self.market_context.to_dict(),
@@ -181,22 +241,28 @@ class DecisionResult:
                 "cost": (self.cost.to_dict() if self.cost else None),
                 "action": (self.action.to_dict() if self.action else None),
                 "fill": (self.fill.to_dict() if self.fill else None),
-                "status": self.status, "reject_stage": self.reject_stage,
+                "status": self.status, "terminal": self.terminal,
+                "reject_stage": self.reject_stage, "terminal_reason": self.terminal_reason,
                 "lifecycle": list(self.lifecycle)}
 
 
 class LifecycleReconciler:
-    """Tallies every candidate through the lifecycle so the report can prove that
-    created == accepted + rejected, ledgered == accepted, and reported == created."""
+    """Tallies every candidate through the lifecycle so the report can PROVE no candidate
+    disappears: each candidate ends in exactly one terminal state (accepted | rejected |
+    skipped | expired | missing_data), and created == sum(terminals) == reported."""
+
+    TERMINALS = ("accepted", "rejected", "skipped", "expired", "missing_data")
 
     def __init__(self):
         self.created = 0
         self.feature_scored = 0
         self.execution_costed = 0
-        self.accepted = 0
         self.ledgered = 0
         self.reported = 0
-        self.rejected = {"pre_candidate": 0, "directional": 0, "execution_gate": 0}
+        self.terminals = {t: 0 for t in self.TERMINALS}
+        self.rejected_by_stage = {"directional": 0, "execution_gate": 0}
+        self.skipped_by_reason: dict = {}
+        self.missing_by_reason: dict = {}
 
     def record(self, dr: DecisionResult) -> None:
         self.created += 1
@@ -205,20 +271,30 @@ class LifecycleReconciler:
             self.feature_scored += 1
         if dr.cost is not None:
             self.execution_costed += 1
-        if dr.status == "accepted":
-            self.accepted += 1
-            if dr.fill is not None:
-                self.ledgered += 1
-        else:
-            self.rejected[dr.reject_stage or "pre_candidate"] = \
-                self.rejected.get(dr.reject_stage or "pre_candidate", 0) + 1
+        t = dr.terminal if dr.terminal in self.terminals else "rejected"
+        self.terminals[t] += 1
+        if t == "accepted" and dr.fill is not None:
+            self.ledgered += 1
+        elif t == "rejected":
+            stage = dr.reject_stage or "directional"
+            self.rejected_by_stage[stage] = self.rejected_by_stage.get(stage, 0) + 1
+        elif t == "skipped":
+            r = dr.terminal_reason or "unknown"
+            self.skipped_by_reason[r] = self.skipped_by_reason.get(r, 0) + 1
+        elif t == "missing_data":
+            r = dr.terminal_reason or "unknown"
+            self.missing_by_reason[r] = self.missing_by_reason.get(r, 0) + 1
 
     def report(self) -> dict:
-        rej_total = sum(self.rejected.values())
+        term_sum = sum(self.terminals.values())
         return {"created": self.created, "feature_scored": self.feature_scored,
-                "execution_costed": self.execution_costed, "accepted": self.accepted,
-                "rejected_total": rej_total, "rejected_by_stage": dict(self.rejected),
-                "ledgered": self.ledgered, "reported": self.reported,
-                "reconciled": (self.created == self.accepted + rej_total
-                               and self.ledgered == self.accepted
-                               and self.reported == self.created)}
+                "execution_costed": self.execution_costed, "ledgered": self.ledgered,
+                "reported": self.reported, "terminals": dict(self.terminals),
+                "rejected_by_stage": dict(self.rejected_by_stage),
+                "skipped_by_reason": dict(self.skipped_by_reason),
+                "missing_by_reason": dict(self.missing_by_reason),
+                "no_candidate_disappeared": (self.created == term_sum
+                                             and self.reported == self.created),
+                "reconciled": (self.created == term_sum
+                               and self.reported == self.created
+                               and self.ledgered == self.terminals["accepted"])}

@@ -233,7 +233,7 @@ def test_engine_skips_untrusted_flat_vol(tmp_path):
     for i in range(15):
         eng.tick(now=t0 + i)                 # in-window, flat price
     assert eng.ledger.trades == 0
-    assert eng._reasons.get("untrusted_vol", 0) >= 1
+    assert eng.reconciler.report()["skipped_by_reason"].get("untrusted_vol", 0) >= 1
 
 
 def test_profit_metrics_edge_realized_and_per_side(tmp_path):
@@ -355,7 +355,7 @@ def test_engine_blackout_skips_opens(tmp_path):
     for k in range(1, 8):
         eng.tick(now=t0 + 2 + k * 5)
     assert eng.ledger.trades == 0                                   # blackout blocked all opens
-    assert eng._reasons.get("grok_event_blackout", 0) >= 1
+    assert eng.reconciler.report()["skipped_by_reason"].get("grok_event_blackout", 0) >= 1
 
 
 def test_engine_skips_window_with_late_open(tmp_path):
@@ -370,4 +370,4 @@ def test_engine_skips_window_with_late_open(tmp_path):
     for i in range(12):
         eng.tick(now=t0 + 100 + i)            # first sight is 100s into the window
     assert eng.ledger.trades == 0
-    assert eng._reasons.get("open_snapshot_late", 0) >= 1
+    assert eng.reconciler.report()["skipped_by_reason"].get("open_snapshot_late", 0) >= 1
