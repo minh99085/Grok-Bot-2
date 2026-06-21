@@ -24,6 +24,9 @@ from engine.pulse.fair_value import RollingVol, digital_p_up
 from engine.pulse.strategy import decide
 from engine.pulse.execution_gate import evaluate_execution
 from engine.pulse.executor import PulseLedger
+from engine.pulse.decisions import (MarketContext, CandidateDecision, ExecutionCostEstimate,
+                                     TradeAction, RejectAction, PaperFill, DecisionResult,
+                                     LifecycleReconciler, ttc_bucket, half_life_bucket)
 from engine.pulse.settlement import (PulseCalibration, resolve_window, proxy_outcome)
 
 logger = logging.getLogger("hte.pulse.engine")
@@ -165,6 +168,7 @@ class PulseEngine:
         if bool(getattr(self.cfg, "research_features_enabled", True)):
             from engine.pulse.research_features import ResearchObservatory
             self.research = ResearchObservatory()
+        self.reconciler = LifecycleReconciler()   # GS-Quant-style candidate lifecycle audit
         self.overlay = None
         if bool(getattr(self.cfg, "grok_overlay_enabled", False)):
             try:
@@ -272,56 +276,88 @@ class PulseEngine:
                        edge_buffer=self.cfg.edge_buffer, max_price=self.cfg.max_price,
                        min_seconds_since_open=self.cfg.min_seconds_since_open,
                        basis_buffer=self.cfg.basis_buffer)
-            eval_row = {"title": w.title, "fair_p_up": fair, **d.to_dict(),
-                        "ttc_s": round(ttc, 1)}
-            # OBSERVE-ONLY research features (computed for every candidate; NEVER affects the
-            # decision/gate). CEX-implied fair from the Binance lead vs executable Poly YES price.
+            outcome_prob = (fair if d.side == "up" else (1.0 - fair)) if fair is not None else None
+            # ---- candidate CREATED: build the structured GS-Quant-style lifecycle record ----
+            mc = MarketContext(
+                event_id=w.event_id, market_id=w.market_id, title=w.title,
+                open_ts=w.open_ts, close_ts=w.close_ts, ttc_s=ttc, s_open=snap.price,
+                s_now=s_now, sigma_per_sec=sigma,
+                poly_yes=(w.up_book.mid if w.up_book else None),
+                best_bid=(w.up_book.best_bid if w.up_book else None),
+                best_ask=(w.up_book.best_ask if w.up_book else None),
+                spread=(w.up_book.spread if w.up_book else None),
+                ask_depth_usd=(w.up_book.ask_depth_usd if w.up_book else None),
+                lead_prices={k: (v[0] if v else None)
+                             for k, v in (getattr(self.leads, "_latest", {}) or {}).items()})
+            cand = CandidateDecision(side=d.side, fair_p_up=fair, outcome_prob=outcome_prob,
+                                     model_edge=d.edge, tradeable=d.trade, reason=d.reason)
+            dr = DecisionResult(market_context=mc, candidate=cand)
+            # OBSERVE-ONLY research features (every candidate; NEVER affects decision/gate).
             rfeat = None
             if self.research is not None:
-                cex_px = self.leads._latest.get("binance_btcusdt", (None,))[0] \
-                    if hasattr(self.leads, "_latest") else None
+                cex_px = (getattr(self.leads, "_latest", {}) or {}).get(
+                    "binance_btcusdt", (None,))[0]
                 cex_implied = digital_p_up(cex_px, snap.price, sigma, ttc) if cex_px else None
                 poly_yes = w.up_book.mid if w.up_book else None
                 divergence = (poly_yes - cex_implied) if (poly_yes is not None
                                                           and cex_implied is not None) else None
                 self.research.observe_divergence(divergence, cex_implied)
                 rfeat = self.research.evaluate(current_divergence=divergence)
-                eval_row["research"] = rfeat.to_dict()
+                dr.features = rfeat.to_dict()
+                dr.mark("feature_scored")
             if not d.trade:
-                evald.append(eval_row)
-                _bump(d.reason)
-                continue
-            # STRICT execution-quality gate: re-price EV from the live ask ladder VWAP/slippage
-            # (NOT the midpoint or top-of-book) before any paper trade. Reject + log reason if
-            # spread/depth/slippage/tick/min-size/time/partial-fill destroys the edge.
-            book = w.up_book if d.side == "up" else w.down_book
-            outcome_prob = fair if d.side == "up" else (1.0 - fair)
-            ex = evaluate_execution(
-                side=d.side, book=book, outcome_prob=outcome_prob,
-                size_usd=self.cfg.size_usd, tick_size=w.tick_size, ttc_s=ttc,
-                min_seconds_to_close=self.cfg.min_seconds_to_close,
-                max_spread=self.cfg.exec_max_spread, min_depth_usd=self.cfg.min_depth_usd,
-                min_order_usd=self.cfg.exec_min_order_usd,
-                max_depth_consume_frac=self.cfg.exec_max_depth_consume_frac,
-                min_ev_after_slippage=self.cfg.exec_min_ev_after_slippage)
-            self.ledger.record_exec(ex.accepted, ex.reason)
-            eval_row["exec_gate"] = ex.to_dict()
-            evald.append(eval_row)
-            if ex.accepted:
-                # open the paper position at the realistic VWAP fill price (not best_ask/mid)
-                d.price = ex.fill_price
-                pos = self.ledger.open_position(w, d, now, size_usd=self.cfg.size_usd,
-                                                s_open=snap.price)
-                if pos is not None and rfeat is not None:   # observe-only entry-time tags
-                    pos.research = {"hurst_regime": rfeat.hurst_regime,
-                                    "zscore_bucket": rfeat.zscore_bucket}
-                _bump("opened")
+                dr.action = RejectAction(stage="directional", reason=d.reason)
+                dr.status, dr.reject_stage = "rejected", "directional"
+                dr.mark("rejected")
             else:
-                _bump("exec_gate:" + ex.reason)
+                # STRICT execution-quality gate (AUTHORITATIVE): EV from the live ask-ladder
+                # VWAP/slippage, never midpoint/top-of-book.
+                book = w.up_book if d.side == "up" else w.down_book
+                ex = evaluate_execution(
+                    side=d.side, book=book, outcome_prob=outcome_prob,
+                    size_usd=self.cfg.size_usd, tick_size=w.tick_size, ttc_s=ttc,
+                    min_seconds_to_close=self.cfg.min_seconds_to_close,
+                    max_spread=self.cfg.exec_max_spread, min_depth_usd=self.cfg.min_depth_usd,
+                    min_order_usd=self.cfg.exec_min_order_usd,
+                    max_depth_consume_frac=self.cfg.exec_max_depth_consume_frac,
+                    min_ev_after_slippage=self.cfg.exec_min_ev_after_slippage)
+                self.ledger.record_exec(ex.accepted, ex.reason)
+                dr.cost = ExecutionCostEstimate.from_exec_result(ex)
+                dr.mark("execution_costed")
+                if ex.accepted:
+                    d.price = ex.fill_price       # paper fill at realistic VWAP price
+                    pos = self.ledger.open_position(w, d, now, size_usd=self.cfg.size_usd,
+                                                    s_open=snap.price)
+                    if pos is not None:
+                        if rfeat is not None:     # observe-only entry-time tags (regime/buckets)
+                            pos.research = {"hurst_regime": rfeat.hurst_regime,
+                                            "zscore_bucket": rfeat.zscore_bucket,
+                                            "half_life_bucket": half_life_bucket(rfeat.half_life_s),
+                                            "ttc_bucket": ttc_bucket(ttc)}
+                        dr.fill = PaperFill(window_key=w.event_id, side=d.side,
+                                            fill_price=ex.fill_price, shares=pos.shares,
+                                            size_usd=pos.size_usd)
+                    dr.action = TradeAction(side=d.side, token_id=d.token_id,
+                                            fill_price=ex.fill_price, size_usd=self.cfg.size_usd,
+                                            shares=(pos.shares if pos else 0.0))
+                    dr.status = "accepted"
+                    dr.mark("accepted")
+                    if dr.fill is not None:
+                        dr.mark("ledgered")
+                    _bump("opened")
+                else:
+                    dr.action = RejectAction(stage="execution_gate", reason=ex.reason)
+                    dr.status, dr.reject_stage = "rejected", "execution_gate"
+                    dr.mark("rejected")
+                    _bump("exec_gate:" + ex.reason)
+            dr.mark("reported")
+            self.reconciler.record(dr)
+            evald.append(dr.to_dict())
 
         self._settle_due(now)
         self._reasons = reasons
-        self._last_eval = evald[-12:]
+        if evald:                          # rolling window of recent structured DecisionResults
+            self._last_eval = (self._last_eval + evald)[-12:]
         self._prune_positions()
         self._persist()
         return {"ticks": self.ticks, "reasons": reasons, "stats": self.ledger.stats()}
@@ -362,6 +398,7 @@ class PulseEngine:
                 rt = pos.research or {}
                 self.research.record_settled(
                     regime=rt.get("hurst_regime"), zbucket=rt.get("zscore_bucket"),
+                    half_life_bucket=rt.get("half_life_bucket"), ttc_bucket=rt.get("ttc_bucket"),
                     pnl=float(pos.pnl_usd or 0.0), won=bool(pos.won),
                     fair_at_entry=pos.fair_at_entry, outcome_up=outcome)
             logger.info("pulse settled %s side=%s won=%s pnl=%.3f via=%s",
@@ -385,6 +422,7 @@ class PulseEngine:
                        "min_depth_usd": self.cfg.min_depth_usd, "max_price": self.cfg.max_price},
             "price": self.price.status(),
             "ledger": self.ledger.stats(),
+            "decision_lifecycle": self.reconciler.report(),
             "execution_gate": self.ledger.exec_gate_stats(),
             "research_features": (self.research.report() if self.research is not None
                                   else {"enabled": False}),

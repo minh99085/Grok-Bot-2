@@ -223,6 +223,8 @@ class ResearchObservatory:
             "missing_reasons": {}}
         self.by_regime: dict = {}
         self.by_zbucket: dict = {}
+        self.by_half_life: dict = {}
+        self.by_ttc: dict = {}
 
     # -- ingest ------------------------------------------------------------- #
     def observe_oracle(self, price: Optional[float]) -> None:
@@ -295,7 +297,8 @@ class ResearchObservatory:
     # -- grouped outcome aggregation (post-settlement) ---------------------- #
     def record_settled(self, *, regime: Optional[str], zbucket: Optional[str],
                         pnl: float, won: bool, fair_at_entry: Optional[float],
-                        outcome_up: Optional[bool]) -> None:
+                        outcome_up: Optional[bool], half_life_bucket: Optional[str] = None,
+                        ttc_bucket: Optional[str] = None) -> None:
         def _acc(d, key):
             g = d.setdefault(key or "unknown", {"n": 0, "wins": 0, "pnl": 0.0, "brier_sum": 0.0,
                                                 "brier_n": 0})
@@ -308,6 +311,8 @@ class ResearchObservatory:
                 g["brier_n"] += 1
         _acc(self.by_regime, regime)
         _acc(self.by_zbucket, zbucket)
+        _acc(self.by_half_life, half_life_bucket)
+        _acc(self.by_ttc, ttc_bucket)
 
     @staticmethod
     def _summ(groups: dict) -> dict:
@@ -324,4 +329,6 @@ class ResearchObservatory:
                 "missing_data_reasons": dict(self.coverage["missing_reasons"]),
                 "divergence_samples": len(self._div), "return_samples": len(self._prices),
                 "pnl_by_regime": self._summ(self.by_regime),
-                "pnl_by_zscore_bucket": self._summ(self.by_zbucket)}
+                "pnl_by_zscore_bucket": self._summ(self.by_zbucket),
+                "pnl_by_half_life_bucket": self._summ(self.by_half_life),
+                "pnl_by_ttc_bucket": self._summ(self.by_ttc)}

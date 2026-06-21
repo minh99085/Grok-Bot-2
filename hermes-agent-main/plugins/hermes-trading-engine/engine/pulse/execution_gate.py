@@ -21,8 +21,9 @@ NEGATIVE_EV = "negative_ev_after_slippage"
 TOO_CLOSE = "too_close_to_resolution"
 MIN_SIZE_OR_TICK = "min_size_or_tick_violation"
 PARTIAL_FILL_RISK = "partial_fill_risk"
+MISSING_MARKET_DATA = "missing_market_data"
 REASONS = (WIDE_SPREAD, INSUFFICIENT_DEPTH, NEGATIVE_EV, TOO_CLOSE, MIN_SIZE_OR_TICK,
-           PARTIAL_FILL_RISK)
+           PARTIAL_FILL_RISK, MISSING_MARKET_DATA)
 
 
 @dataclass
@@ -95,14 +96,15 @@ def evaluate_execution(*, side: str, book, outcome_prob: float, size_usd: float,
         return ExecResult(False, reason, best_ask=best_ask, spread=spread,
                           ev_at_mid=ev_at_mid, **kw)
 
+    # 0) market data present at all
+    if book is None or best_ask is None or not asks:
+        return rej(MISSING_MARKET_DATA)
     # 1) time-to-resolution
     if ttc_s <= min_seconds_to_close:
         return rej(TOO_CLOSE)
     # 2) min order size + tick validity
     if size_usd < min_order_usd:
         return rej(MIN_SIZE_OR_TICK)
-    if best_ask is None or not asks:
-        return rej(INSUFFICIENT_DEPTH)
     if not _on_tick(best_ask, tick_size):
         return rej(MIN_SIZE_OR_TICK)
     # 3) spread
