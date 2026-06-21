@@ -10,6 +10,7 @@ the decision buffer). Never trades; only reads a public price.
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from dataclasses import dataclass
 from typing import Optional
@@ -17,6 +18,28 @@ from typing import Optional
 from engine.pulse.fair_value import RollingVol
 
 logger = logging.getLogger("hte.pulse.price")
+
+
+def build_price_source(source: str = "auto"):
+    """Pick the price fetcher + a label. ``auto`` uses Chainlink Data Streams (the exact
+    resolution feed) when credentials are configured, else the Coinbase proxy. Explicit:
+    ``chainlink`` | ``pyth`` | ``coinbase``. Falls back safely when a source is unavailable."""
+    src = (source or "auto").strip().lower()
+    if src in ("chainlink", "auto"):
+        try:
+            from engine.pulse.chainlink_streams import available, chainlink_streams_fetcher
+            if available():
+                return chainlink_streams_fetcher(), "chainlink_data_streams"
+        except Exception:  # noqa: BLE001
+            pass
+        if src == "chainlink":
+            logger.warning("PULSE_PRICE_SOURCE=chainlink but no Data Streams creds; "
+                           "falling back to coinbase")
+    if src == "pyth":
+        from engine.pulse.pyth import pyth_fetcher
+        return pyth_fetcher(), "pyth"
+    from engine.pulse.coinbase import coinbase_spot_fetcher
+    return coinbase_spot_fetcher("BTC-USD"), "coinbase"
 
 
 @dataclass
@@ -36,18 +59,45 @@ class PulsePriceFeed:
     open price as soon as the window begins."""
 
     def __init__(self, *, fetcher=None, vol: Optional[RollingVol] = None,
-                 max_open_lag_s: float = 20.0):
+                 max_open_lag_s: float = 20.0, source_name: str = "coinbase",
+                 sampler_interval_s: float = 0.0):
         if fetcher is None:
             from engine.pulse.coinbase import coinbase_spot_fetcher
             fetcher = coinbase_spot_fetcher("BTC-USD")
         self._fetch = fetcher
+        self.source_name = source_name
         self.vol = vol or RollingVol()
         self.max_open_lag_s = float(max_open_lag_s)
+        self.sampler_interval_s = float(sampler_interval_s)
         self._last_price: Optional[float] = None
         self._last_ts: float = 0.0
         self._opens: dict = {}            # window_key -> OpenSnapshot
         self.polls = 0
         self.errors = 0
+        self._stop = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+
+    def start_sampler(self) -> None:
+        """Poll the feed on a background daemon at ``sampler_interval_s`` so the price stays
+        fresh (and vol fine-grained) BETWEEN the slower trade ticks. No-op if interval<=0."""
+        if self.sampler_interval_s <= 0:
+            return
+        if self._thread is not None and self._thread.is_alive():
+            return
+        self._stop.clear()
+
+        def _loop():
+            while not self._stop.is_set():
+                try:
+                    self.poll()
+                except Exception:  # noqa: BLE001
+                    pass
+                self._stop.wait(self.sampler_interval_s)
+        self._thread = threading.Thread(target=_loop, name="pulse-price-sampler", daemon=True)
+        self._thread.start()
+
+    def stop_sampler(self) -> None:
+        self._stop.set()
 
     def poll(self, now: Optional[float] = None) -> Optional[float]:
         now = float(now if now is not None else time.time())
@@ -100,7 +150,9 @@ class PulsePriceFeed:
                 self._opens.pop(k, None)
 
     def status(self) -> dict:
-        return {"last_price": self._last_price, "last_ts": self._last_ts,
-                "polls": self.polls, "errors": self.errors,
+        return {"source": self.source_name, "last_price": self._last_price,
+                "last_ts": self._last_ts, "polls": self.polls, "errors": self.errors,
+                "sampler_interval_s": self.sampler_interval_s,
+                "sampler_running": bool(self._thread is not None and self._thread.is_alive()),
                 "vol_samples": self.vol.samples,
                 "sigma_per_sec": self.sigma_per_sec(), "tracked_opens": len(self._opens)}

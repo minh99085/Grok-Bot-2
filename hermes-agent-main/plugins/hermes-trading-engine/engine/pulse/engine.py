@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Optional
 
 from engine.pulse.markets import PulseMarketFeed
-from engine.pulse.price import PulsePriceFeed
+from engine.pulse.price import PulsePriceFeed, build_price_source
 from engine.pulse.fair_value import RollingVol, digital_p_up
 from engine.pulse.strategy import decide
 from engine.pulse.executor import PulseLedger
@@ -58,6 +58,11 @@ class PulseConfig:
     grok_overlay_enabled: bool = False
     grok_overlay_interval_s: float = 180.0
     grok_overlay_max_calls_per_hour: int = 20
+    # price feed: 'auto' uses Chainlink Data Streams (exact resolution feed) when creds are
+    # set, else the Coinbase proxy. A sub-second background sampler keeps the price fresh
+    # between the slower trade ticks.
+    price_source: str = "auto"
+    price_sampler_interval_s: float = 1.0
     data_dir: str = "/data"
 
     @classmethod
@@ -83,6 +88,8 @@ class PulseConfig:
             in ("1", "true", "yes", "on"),
             grok_overlay_interval_s=_envf("GROK_OVERLAY_INTERVAL_S", 180.0),
             grok_overlay_max_calls_per_hour=int(_envf("GROK_OVERLAY_MAX_CALLS_PER_HOUR", 20)),
+            price_source=(os.getenv("PULSE_PRICE_SOURCE", "auto") or "auto").strip().lower(),
+            price_sampler_interval_s=_envf("PULSE_PRICE_SAMPLER_INTERVAL_S", 1.0),
             data_dir=os.getenv("HTE_DATA_DIR", "/data"))
 
 
@@ -91,9 +98,16 @@ class PulseEngine:
                  price_feed=None):
         self.cfg = cfg or PulseConfig()
         self.market = market_feed or PulseMarketFeed()
-        self.price = price_feed or PulsePriceFeed(
-            vol=RollingVol(window_s=self.cfg.vol_window_s),
-            max_open_lag_s=self.cfg.max_open_lag_s)
+        if price_feed is not None:
+            self.price = price_feed
+        else:
+            fetcher, src = build_price_source(self.cfg.price_source)
+            self.price = PulsePriceFeed(
+                fetcher=fetcher, source_name=src,
+                vol=RollingVol(window_s=self.cfg.vol_window_s),
+                max_open_lag_s=self.cfg.max_open_lag_s,
+                sampler_interval_s=self.cfg.price_sampler_interval_s)
+            self.price.start_sampler()
         self.ledger = PulseLedger()
         self.calib = PulseCalibration()
         self.overlay = None
