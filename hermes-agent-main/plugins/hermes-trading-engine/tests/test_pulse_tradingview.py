@@ -427,6 +427,66 @@ def test_tradingview_feeds_observe_only_feature(tmp_path):
     assert "DOWN" in edge["by_direction"]     # the DOWN signal at entry was recorded
 
 
+def _gate_cfg(tmp_path, **over):
+    return PulseConfig(tick_seconds=1.0, size_usd=10.0, min_edge=0.02, basis_buffer=0.0,
+                       min_seconds_since_open=0.0, sigma_trust_floor=0.0, min_vol_samples=2,
+                       settle_grace_s=0.0, exec_max_depth_consume_frac=0.9,
+                       tradingview_secret=SECRET, tradingview_webhook_port=0,
+                       tradingview_allowed_symbols=("BTC/USD", "BTCUSD"),
+                       tradingview_signal_gate_enabled=True, data_dir=str(tmp_path), **over)
+
+
+def _gate_engine(tmp_path):
+    t0 = 9_850_000.0
+    win = PulseWindow(event_id="e1", market_id="m1", slug="s", title="BTC Up or Down",
+                      open_ts=t0, close_ts=t0 + 300, up_token_id="U", down_token_id="D")
+    price = {"p": 64000.0}
+
+    def fetch():
+        price["p"] += 4.0          # rising -> model wants UP
+        return price["p"]
+    feed = PulsePriceFeed(fetcher=fetch, source_name="rtds_chainlink",
+                          vol=RollingVol(window_s=900, min_samples=8), max_open_lag_s=20.0)
+    return PulseEngine(_gate_cfg(tmp_path), market_feed=_Mkt(win, deep=True), price_feed=feed), t0
+
+
+def _drive(eng, t0):
+    for i in range(12):
+        eng.tick(now=t0 - 12 + i)
+    for k in range(6):
+        eng.tick(now=t0 + 2 + k * 5)
+
+
+def test_signal_gate_blocks_trade_when_no_signal(tmp_path):
+    eng, t0 = _gate_engine(tmp_path)
+    _drive(eng, t0)                      # rising price -> bot wants UP, but NO TradingView signal
+    assert eng.ledger.trades == 0
+    reasons = eng.status()["tick_reasons"]
+    assert any("tv_gate_no_signal" in k for k in reasons)
+    assert eng.status()["tradingview"]["signal_gate"]["active"] is True
+
+
+def test_signal_gate_blocks_when_signal_opposes(tmp_path):
+    eng, t0 = _gate_engine(tmp_path)
+    eng.tradingview.ingest(json.dumps({"secret": SECRET, "bot_name": "hermes", "symbol": "BTC/USD",
+                                       "direction": "DOWN", "event_id": "g-down"}).encode(),
+                           now=t0 - 6)
+    _drive(eng, t0)                      # rising price -> bot wants UP, signal says DOWN -> blocked
+    assert eng.ledger.trades == 0
+    assert any("tv_gate_opposes_signal" in k for k in eng.status()["tick_reasons"])
+
+
+def test_signal_gate_allows_aligned_trade(tmp_path):
+    eng, t0 = _gate_engine(tmp_path)
+    eng.tradingview.ingest(json.dumps({"secret": SECRET, "bot_name": "hermes", "symbol": "BTC/USD",
+                                       "direction": "UP", "event_id": "g-up"}).encode(),
+                           now=t0 - 6)
+    _drive(eng, t0)                      # rising price + UP signal -> trade permitted (gate+exec ok)
+    pos = list(eng.ledger.positions.values())
+    assert pos and pos[0].side == "up" and eng.ledger.trades >= 1
+    assert eng.light_report()["global_reconciled"] is True
+
+
 def test_tradingview_cannot_bypass_execution_gate(tmp_path):
     # thin book -> the execution gate must reject every candidate, EVEN with a strong UP alert.
     eng, t0 = _engine(tmp_path, deep=False)

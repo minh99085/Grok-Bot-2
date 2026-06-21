@@ -115,6 +115,10 @@ class PulseConfig:
     tradingview_webhook_path: str = "/webhooks/tradingview"
     tradingview_max_age_s: float = 90.0
     tradingview_signal_max_feature_age_s: float = 300.0   # only attach signals fresher than this
+    # TradingView as the DIRECTIONAL INDICATION SIGNAL (restrict-only): when on, a paper trade is
+    # only taken if a FRESH TradingView signal exists and its direction matches the trade side. It
+    # can only PREVENT trades (never force one or bypass the execution gate). Default OFF.
+    tradingview_signal_gate_enabled: bool = False
     data_dir: str = "/data"
 
     @classmethod
@@ -191,6 +195,8 @@ class PulseConfig:
             tradingview_webhook_path=(os.getenv("TRADINGVIEW_WEBHOOK_PATH", "/webhooks/tradingview")
                                       or "/webhooks/tradingview").strip(),
             tradingview_max_age_s=_envf("TRADINGVIEW_MAX_AGE_S", 90.0),
+            tradingview_signal_gate_enabled=str(os.getenv("PULSE_TRADINGVIEW_SIGNAL_GATE", "0"))
+            .strip().lower() in ("1", "true", "yes", "on"),
             data_dir=os.getenv("HTE_DATA_DIR", "/data"))
 
 
@@ -542,6 +548,16 @@ class PulseEngine:
                     self.markov.record_terminal(state=cand_state, accepted=False)
                 _finalize(dr, "rejected", reason=d.reason, stage="directional")
                 continue
+            # TradingView DIRECTIONAL INDICATION gate (restrict-only): only trade when a fresh
+            # TradingView signal agrees with the side. Can only PREVENT a trade; the execution
+            # gate below remains the sole execution authority.
+            tv_reason = self._tv_signal_gate(tv_feature, d.side)
+            if tv_reason is not None:
+                dr.action = RejectAction(stage="directional", reason=tv_reason)
+                if self.markov is not None:
+                    self.markov.record_terminal(state=cand_state, accepted=False)
+                _finalize(dr, "rejected", reason=tv_reason, stage="directional")
+                continue
             # STRICT execution-quality gate (AUTHORITATIVE): EV from the live ask-ladder VWAP.
             book = w.up_book if d.side == "up" else w.down_book
             ex = evaluate_execution(
@@ -761,6 +777,23 @@ class PulseEngine:
                 "bundle_artifact": "btc_pulse_meta_bundle.json",
                 "grok_integration_available": available}
 
+    def _tv_signal_gate(self, tv_feature: "dict | None", side: "str | None") -> "str | None":
+        """Restrict-only TradingView indication gate. Returns None if the trade is permitted, else
+        a rejection reason. Only ACTIVE when the intake exists; it can never force a trade."""
+        if not self.cfg.tradingview_signal_gate_enabled or self.tradingview is None:
+            return None
+        if not tv_feature:
+            return "tv_gate_no_signal"            # no fresh TradingView indication -> don't trade
+        direction = str(tv_feature.get("direction") or "").upper()
+        if direction == "FLAT":
+            return "tv_gate_flat_signal"
+        want = "up" if direction == "UP" else ("down" if direction == "DOWN" else None)
+        if want is None:
+            return "tv_gate_no_direction"
+        if side != want:
+            return "tv_gate_opposes_signal"       # bot side disagrees with the TradingView signal
+        return None
+
     def _learning_weight(self) -> "tuple[float, str]":
         """How much the learned edge model influences the directional probability. Influence is
         EARNED (ramps with sample count past the minimum), GATED (only when calibrated), and
@@ -850,6 +883,15 @@ class PulseEngine:
                 rep["webhook"] = self.webhook.status()
         rep["edge_vs_5min_outcome"] = self._tv_edge.report()
         rep["rsi_trend"] = self._rsi_model.report()
+        rep["signal_gate"] = {
+            "enabled": bool(self.cfg.tradingview_signal_gate_enabled),
+            "active": bool(self.cfg.tradingview_signal_gate_enabled and self.tradingview is not None),
+            "mode": "directional_indication_restrict_only",
+            "requires_fresh_aligned_signal": True, "can_force_trade": False,
+            "execution_gate_still_authoritative": True,
+            "max_signal_age_s": self.cfg.tradingview_signal_max_feature_age_s,
+            "note": ("when active, a paper trade is taken only if a fresh TradingView signal agrees "
+                     "with the side; it can only PREVENT trades, never force or bypass them.")}
         return rep
 
     def _tier_report(self) -> dict:
