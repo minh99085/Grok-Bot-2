@@ -88,6 +88,9 @@ services:
       HERMES_SETTLEMENT_SOURCE_PRIORITY: "${HERMES_SETTLEMENT_SOURCE_PRIORITY:-polymarket_resolution,rtds_chainlink_proxy}"
       HERMES_PROXY_MAX_CLOSE_LAG_S: "${HERMES_PROXY_MAX_CLOSE_LAG_S:-30}"
       HERMES_RTDS_ENABLED: "${HERMES_RTDS_ENABLED:-1}"
+      # OBSERVE-ONLY EP Chan research features (Hurst regime, half-life/ADF, z-score, Kalman).
+      # Logged per candidate + grouped PnL/calibration by regime/z-bucket. NEVER trades/vetoes.
+      HERMES_RESEARCH_FEATURES_ENABLED: "${HERMES_RESEARCH_FEATURES_ENABLED:-1}"
       CHAINLINK_DATA_STREAMS_API_KEY: "${CHAINLINK_DATA_STREAMS_API_KEY:-}"
       CHAINLINK_DATA_STREAMS_SECRET: "${CHAINLINK_DATA_STREAMS_SECRET:-}"
       CHAINLINK_BTC_FEED_ID: "${CHAINLINK_BTC_FEED_ID:-}"

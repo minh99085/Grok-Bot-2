@@ -76,6 +76,7 @@ class PulseConfig:
     exec_min_order_usd: float = 1.0
     exec_max_depth_consume_frac: float = 0.5
     exec_min_ev_after_slippage: float = 0.0
+    research_features_enabled: bool = True   # OBSERVE-ONLY EP Chan features (never trade)
     data_dir: str = "/data"
 
     @classmethod
@@ -118,6 +119,8 @@ class PulseConfig:
             exec_min_order_usd=_envf("PULSE_EXEC_MIN_ORDER_USD", 1.0),
             exec_max_depth_consume_frac=_envf("PULSE_EXEC_MAX_DEPTH_CONSUME_FRAC", 0.5),
             exec_min_ev_after_slippage=_envf("PULSE_EXEC_MIN_EV", 0.0),
+            research_features_enabled=str(os.getenv("HERMES_RESEARCH_FEATURES_ENABLED", "1"))
+            .strip().lower() in ("1", "true", "yes", "on"),
             data_dir=os.getenv("HTE_DATA_DIR", "/data"))
 
 
@@ -157,6 +160,11 @@ class PulseEngine:
                                window_s=self.cfg.vol_window_s)
         self.ledger = PulseLedger()
         self.calib = PulseCalibration()
+        # OBSERVE-ONLY research features (EP Chan-inspired) — logged, never trade/size/veto.
+        self.research = None
+        if bool(getattr(self.cfg, "research_features_enabled", True)):
+            from engine.pulse.research_features import ResearchObservatory
+            self.research = ResearchObservatory()
         self.overlay = None
         if bool(getattr(self.cfg, "grok_overlay_enabled", False)):
             try:
@@ -210,6 +218,8 @@ class PulseEngine:
         self.last_tick_ts = now
         self.price.poll(now)               # oracle: RTDS Chainlink ref price
         self.leads.poll(now)               # lead predictors (Binance/Coinbase) — features only
+        if self.research is not None:
+            self.research.observe_oracle(self.price.current())
         windows = self.market.active_windows(now=now)
         keep_keys = {w.event_id for w in windows} | set(self.ledger.positions)
         self.price.prune_opens(keep_keys)
@@ -264,6 +274,19 @@ class PulseEngine:
                        basis_buffer=self.cfg.basis_buffer)
             eval_row = {"title": w.title, "fair_p_up": fair, **d.to_dict(),
                         "ttc_s": round(ttc, 1)}
+            # OBSERVE-ONLY research features (computed for every candidate; NEVER affects the
+            # decision/gate). CEX-implied fair from the Binance lead vs executable Poly YES price.
+            rfeat = None
+            if self.research is not None:
+                cex_px = self.leads._latest.get("binance_btcusdt", (None,))[0] \
+                    if hasattr(self.leads, "_latest") else None
+                cex_implied = digital_p_up(cex_px, snap.price, sigma, ttc) if cex_px else None
+                poly_yes = w.up_book.mid if w.up_book else None
+                divergence = (poly_yes - cex_implied) if (poly_yes is not None
+                                                          and cex_implied is not None) else None
+                self.research.observe_divergence(divergence, cex_implied)
+                rfeat = self.research.evaluate(current_divergence=divergence)
+                eval_row["research"] = rfeat.to_dict()
             if not d.trade:
                 evald.append(eval_row)
                 _bump(d.reason)
@@ -287,8 +310,11 @@ class PulseEngine:
             if ex.accepted:
                 # open the paper position at the realistic VWAP fill price (not best_ask/mid)
                 d.price = ex.fill_price
-                self.ledger.open_position(w, d, now, size_usd=self.cfg.size_usd,
-                                          s_open=snap.price)
+                pos = self.ledger.open_position(w, d, now, size_usd=self.cfg.size_usd,
+                                                s_open=snap.price)
+                if pos is not None and rfeat is not None:   # observe-only entry-time tags
+                    pos.research = {"hurst_regime": rfeat.hurst_regime,
+                                    "zscore_bucket": rfeat.zscore_bucket}
                 _bump("opened")
             else:
                 _bump("exec_gate:" + ex.reason)
@@ -332,6 +358,12 @@ class PulseEngine:
             self.ledger.settle(pos.window_key, outcome, s_open=pos.s_open, s_close=pos.s_close,
                                source=source)
             self.calib.observe(pos.fair_at_entry, outcome)
+            if self.research is not None:                # observe-only grouped PnL/calibration
+                rt = pos.research or {}
+                self.research.record_settled(
+                    regime=rt.get("hurst_regime"), zbucket=rt.get("zscore_bucket"),
+                    pnl=float(pos.pnl_usd or 0.0), won=bool(pos.won),
+                    fair_at_entry=pos.fair_at_entry, outcome_up=outcome)
             logger.info("pulse settled %s side=%s won=%s pnl=%.3f via=%s",
                         pos.title, pos.side, pos.won, pos.pnl_usd or 0.0, source)
 
@@ -354,6 +386,8 @@ class PulseEngine:
             "price": self.price.status(),
             "ledger": self.ledger.stats(),
             "execution_gate": self.ledger.exec_gate_stats(),
+            "research_features": (self.research.report() if self.research is not None
+                                  else {"enabled": False}),
             "calibration": self.calib.to_dict(),
             "oracle": {
                 "oracle_feed_type": self.oracle_feed_type,

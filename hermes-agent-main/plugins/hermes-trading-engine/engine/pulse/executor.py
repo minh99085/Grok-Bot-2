@@ -36,11 +36,12 @@ class PulsePosition:
     s_open: Optional[float] = None
     s_close: Optional[float] = None
     close_lag_s: Optional[float] = None
+    research: Optional[dict] = None       # observe-only entry-time research tags (regime/zbucket)
 
     _FIELDS = ("window_key", "market_id", "title", "side", "token_id", "entry_price",
                "size_usd", "shares", "fair_at_entry", "edge_at_entry", "open_ts", "close_ts",
                "entry_ts", "status", "outcome_up", "won", "pnl_usd", "s_open", "s_close",
-               "close_lag_s")
+               "close_lag_s", "research")
 
     def to_dict(self) -> dict:
         return {k: getattr(self, k) for k in self._FIELDS}
