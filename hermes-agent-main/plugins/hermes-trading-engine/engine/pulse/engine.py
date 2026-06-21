@@ -501,6 +501,20 @@ class PulseEngine:
             self.ledger.positions.pop(p.window_key, None)
 
     # -- persistence -------------------------------------------------------- #
+    def _tier_report(self) -> dict:
+        """REPORT-ONLY tier table across bucket dimensions (no trade/veto authority)."""
+        from engine.pulse.tiers import tier_report
+        dims = {}
+        if self.factors is not None:
+            dims["edge_quality"] = self.factors.report().get("pnl_by_edge_quality_bucket", {})
+        if self.research is not None:
+            rr = self.research.report()
+            dims["regime"] = rr.get("pnl_by_regime", {})
+            dims["zscore_bucket"] = rr.get("pnl_by_zscore_bucket", {})
+            dims["ttc_bucket"] = rr.get("pnl_by_ttc_bucket", {})
+        reconciled = bool(self.reconciler.report().get("reconciled"))
+        return tier_report(dims, reconciled=reconciled, safety_ok=reconciled)
+
     def status(self) -> dict:
         return {
             "schema": "btc_pulse/1.0", "paper_only": True, "live_trading_enabled": False,
@@ -519,6 +533,7 @@ class PulseEngine:
                               else {"enabled": False}),
             "edge_model": (self.edge_model.report() if self.edge_model is not None
                            else {"enabled": False}),
+            "tier_table": self._tier_report(),
             "execution_gate": self.ledger.exec_gate_stats(),
             "research_features": (self.research.report() if self.research is not None
                                   else {"enabled": False}),
