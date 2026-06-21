@@ -85,6 +85,10 @@ class PulseConfig:
     factor_model_enabled: bool = True        # OBSERVE-ONLY BTC-pulse factor/context model
     markov_enabled: bool = True              # OBSERVE-ONLY Markov regime machine
     edge_model_enabled: bool = True          # OBSERVE-ONLY calibrated edge model (no authority)
+    sizing_enabled: bool = False             # paper Kelly sizing: default OFF (size unchanged)
+    sizing_hard_cap_usd: float = 10.0
+    sizing_daily_loss_cap_usd: float = 50.0
+    sizing_bankroll_usd: float = 1000.0
     data_dir: str = "/data"
 
     @classmethod
@@ -138,6 +142,11 @@ class PulseConfig:
             .strip().lower() in ("1", "true", "yes", "on"),
             edge_model_enabled=str(os.getenv("HERMES_EDGE_MODEL_ENABLED", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
+            sizing_enabled=str(os.getenv("HERMES_SIZING_ENABLED", "0"))
+            .strip().lower() in ("1", "true", "yes", "on"),
+            sizing_hard_cap_usd=_envf("HERMES_SIZING_HARD_CAP_USD", 10.0),
+            sizing_daily_loss_cap_usd=_envf("HERMES_SIZING_DAILY_LOSS_CAP_USD", 50.0),
+            sizing_bankroll_usd=_envf("HERMES_SIZING_BANKROLL_USD", 1000.0),
             data_dir=os.getenv("HTE_DATA_DIR", "/data"))
 
 
@@ -199,6 +208,8 @@ class PulseEngine:
             from engine.pulse.edge_model import EdgeModel
             self.edge_model = EdgeModel()
         self.reconciler = LifecycleReconciler()   # GS-Quant-style candidate lifecycle audit
+        self._daily_loss = 0.0                    # for the Kelly daily-loss-cap diagnostic
+        self._daily_key = None
         self.overlay = None
         if bool(getattr(self.cfg, "grok_overlay_enabled", False)):
             try:
@@ -430,6 +441,17 @@ class PulseEngine:
                                     size_usd=self.cfg.size_usd, shares=(pos.shares if pos else 0.0))
             if self.markov is not None:
                 self.markov.record_terminal(state=cand_state, accepted=True)
+            # PAPER-ONLY Kelly sizing DIAGNOSTIC (default OFF -> actual size unchanged).
+            from engine.pulse.sizing import sizing_diagnostics
+            _pwin = (dr.model or {}).get("p_up")
+            if _pwin is None:
+                _pwin = outcome_prob          # fall back to the model fair value
+            dr.sizing = sizing_diagnostics(
+                p_win=_pwin, price=ex.fill_price, ev_after_costs=ex.ev_after_slippage,
+                bankroll_usd=self.cfg.sizing_bankroll_usd, hard_cap_usd=self.cfg.sizing_hard_cap_usd,
+                daily_loss_cap_usd=self.cfg.sizing_daily_loss_cap_usd,
+                daily_loss_so_far=self._daily_loss, base_size_usd=self.cfg.size_usd,
+                sizing_enabled=self.cfg.sizing_enabled)
             _finalize(dr, "accepted")
 
         self._settle_due(now)
@@ -471,6 +493,12 @@ class PulseEngine:
                 self.ledger.reconcile(proxy_up, outcome)
             self.ledger.settle(pos.window_key, outcome, s_open=pos.s_open, s_close=pos.s_close,
                                source=source)
+            # daily-loss tracker for the Kelly diagnostic (reset per UTC day)
+            day = int(now // 86400)
+            if day != self._daily_key:
+                self._daily_key, self._daily_loss = day, 0.0
+            if (pos.pnl_usd or 0.0) < 0:
+                self._daily_loss += -float(pos.pnl_usd)
             self.calib.observe(pos.fair_at_entry, outcome)
             if self.research is not None:                # observe-only grouped PnL/calibration
                 rt = pos.research or {}
@@ -534,6 +562,12 @@ class PulseEngine:
             "edge_model": (self.edge_model.report() if self.edge_model is not None
                            else {"enabled": False}),
             "tier_table": self._tier_report(),
+            "sizing": {"enabled": self.cfg.sizing_enabled, "paper_only": True,
+                       "hard_cap_usd": self.cfg.sizing_hard_cap_usd,
+                       "daily_loss_cap_usd": self.cfg.sizing_daily_loss_cap_usd,
+                       "daily_loss_so_far": round(self._daily_loss, 4),
+                       "bankroll_usd": self.cfg.sizing_bankroll_usd,
+                       "no_martingale": True, "actual_size_usd": self.cfg.size_usd},
             "execution_gate": self.ledger.exec_gate_stats(),
             "research_features": (self.research.report() if self.research is not None
                                   else {"enabled": False}),
