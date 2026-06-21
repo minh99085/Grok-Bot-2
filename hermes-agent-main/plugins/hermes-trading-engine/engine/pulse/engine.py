@@ -22,6 +22,7 @@ from engine.pulse.markets import PulseMarketFeed
 from engine.pulse.price import PulsePriceFeed, build_price_source
 from engine.pulse.fair_value import RollingVol, digital_p_up
 from engine.pulse.strategy import decide
+from engine.pulse.execution_gate import evaluate_execution
 from engine.pulse.executor import PulseLedger
 from engine.pulse.settlement import (PulseCalibration, resolve_window, proxy_outcome)
 
@@ -70,6 +71,11 @@ class PulseConfig:
     settlement_source_priority: tuple = ("polymarket_resolution", "rtds_chainlink_proxy")
     proxy_max_close_lag_s: float = 30.0
     rtds_enabled: bool = True
+    # strict execution-quality gate (orderbook-reality EV after VWAP/slippage)
+    exec_max_spread: float = 0.06
+    exec_min_order_usd: float = 1.0
+    exec_max_depth_consume_frac: float = 0.5
+    exec_min_ev_after_slippage: float = 0.0
     data_dir: str = "/data"
 
     @classmethod
@@ -108,6 +114,10 @@ class PulseConfig:
             proxy_max_close_lag_s=_envf("HERMES_PROXY_MAX_CLOSE_LAG_S", 30.0),
             rtds_enabled=str(os.getenv("HERMES_RTDS_ENABLED", "1")).strip().lower()
             in ("1", "true", "yes", "on"),
+            exec_max_spread=_envf("PULSE_EXEC_MAX_SPREAD", 0.06),
+            exec_min_order_usd=_envf("PULSE_EXEC_MIN_ORDER_USD", 1.0),
+            exec_max_depth_consume_frac=_envf("PULSE_EXEC_MAX_DEPTH_CONSUME_FRAC", 0.5),
+            exec_min_ev_after_slippage=_envf("PULSE_EXEC_MIN_EV", 0.0),
             data_dir=os.getenv("HTE_DATA_DIR", "/data"))
 
 
@@ -252,14 +262,36 @@ class PulseEngine:
                        edge_buffer=self.cfg.edge_buffer, max_price=self.cfg.max_price,
                        min_seconds_since_open=self.cfg.min_seconds_since_open,
                        basis_buffer=self.cfg.basis_buffer)
-            evald.append({"title": w.title, "fair_p_up": fair, **d.to_dict(),
-                          "ttc_s": round(ttc, 1)})
-            if d.trade:
+            eval_row = {"title": w.title, "fair_p_up": fair, **d.to_dict(),
+                        "ttc_s": round(ttc, 1)}
+            if not d.trade:
+                evald.append(eval_row)
+                _bump(d.reason)
+                continue
+            # STRICT execution-quality gate: re-price EV from the live ask ladder VWAP/slippage
+            # (NOT the midpoint or top-of-book) before any paper trade. Reject + log reason if
+            # spread/depth/slippage/tick/min-size/time/partial-fill destroys the edge.
+            book = w.up_book if d.side == "up" else w.down_book
+            outcome_prob = fair if d.side == "up" else (1.0 - fair)
+            ex = evaluate_execution(
+                side=d.side, book=book, outcome_prob=outcome_prob,
+                size_usd=self.cfg.size_usd, tick_size=w.tick_size, ttc_s=ttc,
+                min_seconds_to_close=self.cfg.min_seconds_to_close,
+                max_spread=self.cfg.exec_max_spread, min_depth_usd=self.cfg.min_depth_usd,
+                min_order_usd=self.cfg.exec_min_order_usd,
+                max_depth_consume_frac=self.cfg.exec_max_depth_consume_frac,
+                min_ev_after_slippage=self.cfg.exec_min_ev_after_slippage)
+            self.ledger.record_exec(ex.accepted, ex.reason)
+            eval_row["exec_gate"] = ex.to_dict()
+            evald.append(eval_row)
+            if ex.accepted:
+                # open the paper position at the realistic VWAP fill price (not best_ask/mid)
+                d.price = ex.fill_price
                 self.ledger.open_position(w, d, now, size_usd=self.cfg.size_usd,
                                           s_open=snap.price)
                 _bump("opened")
             else:
-                _bump(d.reason)
+                _bump("exec_gate:" + ex.reason)
 
         self._settle_due(now)
         self._reasons = reasons
@@ -321,6 +353,7 @@ class PulseEngine:
                        "min_depth_usd": self.cfg.min_depth_usd, "max_price": self.cfg.max_price},
             "price": self.price.status(),
             "ledger": self.ledger.stats(),
+            "execution_gate": self.ledger.exec_gate_stats(),
             "calibration": self.calib.to_dict(),
             "oracle": {
                 "oracle_feed_type": self.oracle_feed_type,

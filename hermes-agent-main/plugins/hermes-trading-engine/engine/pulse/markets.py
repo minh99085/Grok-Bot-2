@@ -41,12 +41,18 @@ def _iso_to_unix(iso: Optional[str]) -> Optional[float]:
 
 @dataclass
 class OrderBook:
-    """Top-of-book snapshot for one CLOB token (read-only)."""
+    """Order book snapshot for one CLOB token (read-only).
+
+    ``asks`` / ``bids`` are full ladders [(price, size_shares), ...] sorted from best to
+    worst (asks ascending by price, bids descending) so the execution gate can walk depth and
+    compute a realistic VWAP/slippage fill — never just the midpoint or top of book."""
     best_bid: Optional[float] = None
     best_ask: Optional[float] = None
     bid_depth_usd: float = 0.0
     ask_depth_usd: float = 0.0
     ts: float = 0.0
+    asks: list = field(default_factory=list)     # [(price, size_shares)] ascending
+    bids: list = field(default_factory=list)     # [(price, size_shares)] descending
 
     @property
     def mid(self) -> Optional[float]:
@@ -213,14 +219,17 @@ class PulseMarketFeed:
             return out
         bids = _lvls(bids)
         asks = _lvls(asks)
-        # CLOB returns bids ascending and asks ascending; best bid = highest, best ask = lowest
-        best_bid = max((p for p, _ in bids), default=None)
-        best_ask = min((p for p, _ in asks), default=None)
+        # CLOB returns bids ascending and asks ascending; best bid = highest, best ask = lowest.
+        # Store full ladders best->worst (asks ascending, bids descending) for VWAP/depth walks.
+        asks_sorted = sorted(asks, key=lambda x: x[0])
+        bids_sorted = sorted(bids, key=lambda x: x[0], reverse=True)
+        best_bid = bids_sorted[0][0] if bids_sorted else None
+        best_ask = asks_sorted[0][0] if asks_sorted else None
         return OrderBook(
             best_bid=best_bid, best_ask=best_ask,
             bid_depth_usd=round(sum(p * s for p, s in bids), 2),
             ask_depth_usd=round(sum(p * s for p, s in asks), 2),
-            ts=time.time())
+            ts=time.time(), asks=asks_sorted, bids=bids_sorted)
 
     def hydrate_books(self, window: PulseWindow) -> PulseWindow:
         """Attach live Up/Down books to a window (read-only)."""

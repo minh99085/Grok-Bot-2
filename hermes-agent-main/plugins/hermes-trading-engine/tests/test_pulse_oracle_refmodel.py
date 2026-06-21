@@ -132,8 +132,10 @@ def test_full_cycle_settles_via_polymarket_and_reconciles(tmp_path):
         def active_windows(self, now=None, **kw):
             return [win]
         def hydrate_books(self, w):
-            w.up_book = OrderBook(best_bid=0.50, best_ask=0.55, ask_depth_usd=500, bid_depth_usd=500)
-            w.down_book = OrderBook(best_bid=0.44, best_ask=0.49, ask_depth_usd=500, bid_depth_usd=500)
+            w.up_book = OrderBook(best_bid=0.50, best_ask=0.55, ask_depth_usd=550,
+                                  bid_depth_usd=500, asks=[(0.55, 1000.0)], bids=[(0.50, 1000.0)])
+            w.down_book = OrderBook(best_bid=0.44, best_ask=0.49, ask_depth_usd=490,
+                                    bid_depth_usd=440, asks=[(0.49, 1000.0)], bids=[(0.44, 1000.0)])
             return w
         def fetch_resolution(self, market_id):
             return True

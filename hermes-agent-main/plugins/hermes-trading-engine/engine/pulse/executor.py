@@ -67,6 +67,12 @@ class PulseLedger:
         self.settle_sources: dict = {"polymarket_resolution": 0, "rtds_chainlink_proxy": 0}
         # proxy-vs-official reconciliation (both computable on the same window).
         self.recon: dict = {"both": 0, "agree": 0, "disagree": 0}
+        # execution-quality gate reconciliation: candidates that reached the gate, how many it
+        # accepted (= paper fills), and rejections by explicit reason.
+        from engine.pulse.execution_gate import REASONS as _GATE_REASONS
+        self.exec_candidates: int = 0
+        self.exec_accepted: int = 0
+        self.exec_rejected: dict = {r: 0 for r in _GATE_REASONS}
 
     def has_position(self, window_key: str) -> bool:
         return window_key in self.positions
@@ -125,6 +131,21 @@ class PulseLedger:
     def open_positions(self) -> list:
         return [p for p in self.positions.values() if p.status == "open"]
 
+    def record_exec(self, accepted: bool, reason: str) -> None:
+        """Tally one execution-gate decision (a directional candidate that reached the gate)."""
+        self.exec_candidates += 1
+        if accepted:
+            self.exec_accepted += 1
+        elif reason in self.exec_rejected:
+            self.exec_rejected[reason] += 1
+
+    def exec_gate_stats(self) -> dict:
+        rej_total = sum(self.exec_rejected.values())
+        return {"candidates": self.exec_candidates, "accepted": self.exec_accepted,
+                "rejected_total": rej_total, "rejected": dict(self.exec_rejected),
+                "fills": self.exec_accepted,
+                "reconciled": (self.exec_candidates == self.exec_accepted + rej_total)}
+
     def reconcile(self, proxy_up: "bool | None", official_up: "bool | None") -> None:
         """Record proxy-vs-official agreement when BOTH are computable for a window."""
         if proxy_up is None or official_up is None:
@@ -155,6 +176,7 @@ class PulseLedger:
                 "side_counts": dict(self.side_n),
                 "settle_sources": dict(self.settle_sources),
                 "proxy_official_reconciliation": dict(self.recon),
+                "execution_gate": self.exec_gate_stats(),
                 "realized_pnl_usd": round(self.realized_pnl, 4),
                 "avg_pnl_per_trade": (round(self.realized_pnl / self.settled, 4)
                                       if self.settled else None),
@@ -167,7 +189,10 @@ class PulseLedger:
                                  "side_n": dict(self.side_n),
                                  "side_wins": dict(self.side_wins),
                                  "settle_sources": dict(self.settle_sources),
-                                 "recon": dict(self.recon)},
+                                 "recon": dict(self.recon),
+                                 "exec_candidates": self.exec_candidates,
+                                 "exec_accepted": self.exec_accepted,
+                                 "exec_rejected": dict(self.exec_rejected)},
                 "positions": [p.to_dict() for p in recent[:max_positions]]}
 
     def load_state(self, data: dict) -> None:
@@ -188,6 +213,10 @@ class PulseLedger:
             self.settle_sources[k] = int((acc.get("settle_sources") or {}).get(k, 0) or 0)
         for k in ("both", "agree", "disagree"):
             self.recon[k] = int((acc.get("recon") or {}).get(k, 0) or 0)
+        self.exec_candidates = int(acc.get("exec_candidates", 0) or 0)
+        self.exec_accepted = int(acc.get("exec_accepted", 0) or 0)
+        for k in list(self.exec_rejected):
+            self.exec_rejected[k] = int((acc.get("exec_rejected") or {}).get(k, 0) or 0)
         for pd in (data.get("positions") or []):
             try:
                 pos = PulsePosition.from_dict(pd)

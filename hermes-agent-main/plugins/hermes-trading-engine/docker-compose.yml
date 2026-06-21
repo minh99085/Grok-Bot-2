@@ -61,6 +61,14 @@ services:
       PULSE_MIN_VOL_SAMPLES: "${PULSE_MIN_VOL_SAMPLES:-12}"
       PULSE_SIGMA_TRUST_FLOOR: "${PULSE_SIGMA_TRUST_FLOOR:-0.000002}"
       PULSE_BASIS_BUFFER: "${PULSE_BASIS_BUFFER:-0.02}"
+      # ---- strict execution-quality gate (orderbook-reality EV after VWAP/slippage) ----
+      # Every paper trade is re-priced from the live ask LADDER (VWAP), never the midpoint;
+      # rejected on wide_spread / insufficient_depth / negative_ev_after_slippage /
+      # too_close_to_resolution / min_size_or_tick_violation / partial_fill_risk.
+      PULSE_EXEC_MAX_SPREAD: "${PULSE_EXEC_MAX_SPREAD:-0.06}"
+      PULSE_EXEC_MIN_ORDER_USD: "${PULSE_EXEC_MIN_ORDER_USD:-1}"
+      PULSE_EXEC_MAX_DEPTH_CONSUME_FRAC: "${PULSE_EXEC_MAX_DEPTH_CONSUME_FRAC:-0.5}"
+      PULSE_EXEC_MIN_EV: "${PULSE_EXEC_MIN_EV:-0}"
       # ---- price feed (fastest available) ----
       # 'auto' uses Chainlink Data Streams (the EXACT feed this market resolves on, sub-second,
       # zero basis) when credentials are set, else the Coinbase proxy. A ~1s background sampler
