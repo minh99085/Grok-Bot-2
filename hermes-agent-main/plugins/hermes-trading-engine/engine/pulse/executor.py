@@ -38,11 +38,12 @@ class PulsePosition:
     close_lag_s: Optional[float] = None
     research: Optional[dict] = None       # observe-only entry-time research tags (regime/zbucket)
     decision_id: Optional[str] = None     # canonical id (== window_key) linking the full lifecycle
+    external: Optional[dict] = None       # observe-only EXTERNAL signal at entry (e.g. TradingView)
 
     _FIELDS = ("window_key", "market_id", "title", "side", "token_id", "entry_price",
                "size_usd", "shares", "fair_at_entry", "edge_at_entry", "open_ts", "close_ts",
                "entry_ts", "status", "outcome_up", "won", "pnl_usd", "s_open", "s_close",
-               "close_lag_s", "research", "decision_id")
+               "close_lag_s", "research", "decision_id", "external")
 
     def to_dict(self) -> dict:
         return {k: getattr(self, k) for k in self._FIELDS}

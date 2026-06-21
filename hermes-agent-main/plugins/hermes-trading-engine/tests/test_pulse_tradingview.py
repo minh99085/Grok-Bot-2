@@ -17,6 +17,7 @@ from engine.pulse.tradingview import (TradingViewIntake, normalize_direction, no
                                        BAD_SECRET, MISSING_SECRET, WRONG_BOT, UNSUPPORTED_SYMBOL,
                                        STALE_TIMESTAMP, MALFORMED_DIRECTION, DUPLICATE_EVENT_ID,
                                        INVALID_JSON)
+from engine.pulse.tradingview import TradingViewEdge
 from engine.pulse.webhook import WebhookServer
 from engine.pulse.markets import OrderBook, PulseWindow
 from engine.pulse.price import PulsePriceFeed
@@ -240,6 +241,59 @@ def test_http_listener_end_to_end():
     assert intake.valid == 1 and intake.reject_reasons.get(BAD_SECRET) == 1
 
 
+# ============================= edge measurement ============================================ #
+def test_edge_measurement_detects_predictive_signal():
+    """A signal that is right 80% of the time should report a high signal_hit_rate + predictive
+    verdict; alignment win-rate is tracked separately."""
+    edge = TradingViewEdge()
+    # 40 UP signals: outcome up 80% of the time; bot always traded 'up' (so aligned)
+    for i in range(40):
+        up = (i % 5 != 0)        # 32/40 correct
+        edge.record(tv={"direction": "UP", "timeframe": "5", "symbol": "BTCUSD"},
+                    traded_side="up", outcome_up=up, won=up, pnl=(2.0 if up else -5.0))
+    # 20 trades with NO signal: coin-flip outcomes
+    for i in range(20):
+        up = (i % 2 == 0)
+        edge.record(tv=None, traded_side="up", outcome_up=up, won=up, pnl=(2.0 if up else -5.0))
+    rep = edge.report()
+    assert rep["observe_only"] is True and rep["report_only"] is True
+    assert rep["n_settled_with_signal"] == 40 and rep["n_settled_no_signal"] == 20
+    assert rep["signal_evaluated_up_down"] == 40
+    assert abs(rep["signal_hit_rate"] - 0.8) < 1e-6
+    assert rep["verdict"] == "signal_predictive_edge"
+    assert rep["by_direction"]["UP"]["signal_hit_rate"] == 0.8
+    assert rep["by_symbol"]["BTCUSD"]["n"] == 40
+    assert rep["by_alignment"]["aligned"]["n"] == 40
+    assert rep["by_direction"]["none"]["n"] == 20      # no-signal trades bucketed separately
+
+
+def test_edge_measurement_insufficient_evidence_and_inverse():
+    edge = TradingViewEdge()
+    for i in range(10):           # below MIN_EVIDENCE
+        edge.record(tv={"direction": "UP", "timeframe": "5", "symbol": "BTCUSD"},
+                    traded_side="up", outcome_up=True, won=True, pnl=2.0)
+    assert edge.report()["verdict"] == "insufficient_evidence"
+    # a consistently-wrong signal -> inverse-edge verdict (a fade)
+    edge2 = TradingViewEdge()
+    for i in range(40):
+        down_signal_but_up = True
+        edge2.record(tv={"direction": "DOWN", "timeframe": "5", "symbol": "BTCUSDT"},
+                     traded_side="down", outcome_up=down_signal_but_up, won=False, pnl=-5.0)
+    r2 = edge2.report()
+    assert r2["signal_hit_rate"] == 0.0 and r2["verdict"] == "signal_inverse_edge"
+
+
+def test_edge_measurement_persists_round_trip():
+    edge = TradingViewEdge()
+    for i in range(5):
+        edge.record(tv={"direction": "UP", "timeframe": "3", "symbol": "BTCUSD"},
+                    traded_side="up", outcome_up=True, won=True, pnl=2.0)
+    edge2 = TradingViewEdge()
+    edge2.load_state(edge.to_state())
+    assert edge2.report()["by_timeframe"]["3"]["n"] == 5
+    assert edge2.signal_correct == 5 and edge2.n_total == 5
+
+
 # ============================= engine integration (#6,#7) ================================== #
 class _Mkt:
     """Single-window market with a configurable up/down book."""
@@ -303,6 +357,10 @@ def test_tradingview_feeds_observe_only_feature(tmp_path):
         eng.tick(now=t0 - 12 + i)
     for k in range(6):
         eng.tick(now=t0 + 2 + k * 5)
+    pos = list(eng.ledger.positions.values())
+    assert pos and pos[0].side == "up"        # DOWN alert did not force a DOWN trade
+    assert pos[0].external["direction"] == "DOWN"   # signal recorded on the position at entry
+    eng.tick(now=t0 + 305)                    # settle the window
     st = eng.status()
     tv = st["tradingview"]
     assert tv["enabled"] is True and tv["tradingview_observe_only"] is True
@@ -311,9 +369,10 @@ def test_tradingview_feeds_observe_only_feature(tmp_path):
     # the signal is attached to candidates as an OBSERVE-ONLY feature
     ext = [r.get("external") for r in st["recent_evaluations"] if r.get("external")]
     assert ext and ext[0]["source"] == "tradingview" and ext[0]["observe_only"] is True
-    # ...but it did NOT override the model: with a rising price the engine still went UP
-    pos = list(eng.ledger.positions.values())
-    assert pos and pos[0].side == "up"        # DOWN alert did not force a DOWN trade
+    # the settled outcome is attributed to the signal in the edge measurement (observe-only)
+    edge = tv["edge_vs_5min_outcome"]
+    assert edge["observe_only"] is True and edge["n_settled_with_signal"] == 1
+    assert "DOWN" in edge["by_direction"]     # the DOWN signal at entry was recorded
 
 
 def test_tradingview_cannot_bypass_execution_gate(tmp_path):

@@ -116,6 +116,135 @@ class TradingViewSignalEvent:
                 "age_s": (round(now - self.received_at, 3))}
 
 
+class TradingViewEdge:
+    """OBSERVE-ONLY measurement: did the TradingView signal present at entry predict the 5-min
+    Chainlink outcome, and did the bot win more when its side aligned with the signal?
+
+    Grouped by direction / timeframe / symbol / alignment. REPORT-ONLY — it never affects which
+    paper trades are taken (it is computed at SETTLEMENT, after the outcome is known)."""
+
+    MIN_EVIDENCE = 30          # min UP/DOWN signals before claiming a directional edge
+
+    def __init__(self):
+        self.n_total = 0
+        self.outcomes_up = 0
+        self.n_with_signal = 0
+        self.n_no_signal = 0
+        self.signal_evaluated = 0      # UP/DOWN signals only (FLAT/none excluded)
+        self.signal_correct = 0
+        self.dims: dict = {"direction": {}, "timeframe": {}, "symbol": {}, "alignment": {}}
+
+    def _b(self, dim: str, key: str) -> dict:
+        return self.dims[dim].setdefault(str(key), {"n": 0, "sig_eval": 0, "sig_correct": 0,
+                                                     "bot_wins": 0, "pnl": 0.0})
+
+    def record(self, *, tv, traded_side, outcome_up: bool, won: bool, pnl: float) -> None:
+        self.n_total += 1
+        if outcome_up:
+            self.outcomes_up += 1
+        won = bool(won)
+        pnl = float(pnl or 0.0)
+        tv = tv or {}
+        direction = tv.get("direction")
+        tf = tv.get("timeframe")
+        sym = tv.get("symbol")
+        has_dir = direction in ("UP", "DOWN")
+        if direction in ("UP", "DOWN", "FLAT"):
+            self.n_with_signal += 1
+        else:
+            self.n_no_signal += 1
+        correct = None
+        if has_dir:
+            correct = (direction == "UP" and outcome_up) or (direction == "DOWN" and not outcome_up)
+            self.signal_evaluated += 1
+            self.signal_correct += int(bool(correct))
+        if has_dir and traded_side in ("up", "down"):
+            aligned = ((direction == "UP" and traded_side == "up")
+                       or (direction == "DOWN" and traded_side == "down"))
+            align_key = "aligned" if aligned else "opposed"
+        elif direction == "FLAT":
+            align_key = "flat_signal"
+        else:
+            align_key = "no_signal"
+
+        def bump(dim, key):
+            b = self._b(dim, key)
+            b["n"] += 1
+            b["bot_wins"] += int(won)
+            b["pnl"] = round(b["pnl"] + pnl, 6)
+            if correct is not None:
+                b["sig_eval"] += 1
+                b["sig_correct"] += int(bool(correct))
+        bump("direction", direction or "none")
+        bump("timeframe", tf or "none")
+        bump("symbol", sym or "none")
+        bump("alignment", align_key)
+
+    @staticmethod
+    def _bucket(b: dict) -> dict:
+        return {"n": b["n"],
+                "signal_hit_rate": (round(b["sig_correct"] / b["sig_eval"], 4) if b["sig_eval"]
+                                    else None),
+                "bot_win_rate": (round(b["bot_wins"] / b["n"], 4) if b["n"] else None),
+                "pnl_usd": round(b["pnl"], 4),
+                "avg_pnl_usd": (round(b["pnl"] / b["n"], 4) if b["n"] else None)}
+
+    def report(self) -> dict:
+        base_up = round(self.outcomes_up / self.n_total, 4) if self.n_total else None
+        hit = (round(self.signal_correct / self.signal_evaluated, 4)
+               if self.signal_evaluated else None)
+        dims = {f"by_{d}": {k: self._bucket(v) for k, v in self.dims[d].items()} for d in self.dims}
+        al = self.dims["alignment"]
+        aligned_wr = (self._bucket(al["aligned"])["bot_win_rate"] if "aligned" in al else None)
+        opposed_wr = (self._bucket(al["opposed"])["bot_win_rate"] if "opposed" in al else None)
+        verdict = "insufficient_evidence"
+        if self.signal_evaluated >= self.MIN_EVIDENCE and hit is not None:
+            if hit >= 0.55:
+                verdict = "signal_predictive_edge"
+            elif hit <= 0.45:
+                verdict = "signal_inverse_edge"      # consistently wrong -> a fade signal
+            else:
+                verdict = "no_directional_edge"
+        return {
+            "report_only": True, "observe_only": True,
+            "min_evidence": self.MIN_EVIDENCE,
+            "n_settled_with_signal": self.n_with_signal,
+            "n_settled_no_signal": self.n_no_signal,
+            "signal_evaluated_up_down": self.signal_evaluated,
+            "signal_hit_rate": hit, "baseline_up_rate": base_up,
+            "aligned_bot_win_rate": aligned_wr, "opposed_bot_win_rate": opposed_wr,
+            "verdict": verdict,
+            **dims,
+            "note": ("observe-only: did the TradingView signal at entry predict the 5-min "
+                     "Chainlink outcome (signal_hit_rate vs baseline_up_rate), and did aligning "
+                     "help the bot win (aligned vs opposed bot_win_rate)? Never affects trading."),
+        }
+
+    def to_state(self) -> dict:
+        return {"n_total": self.n_total, "outcomes_up": self.outcomes_up,
+                "n_with_signal": self.n_with_signal, "n_no_signal": self.n_no_signal,
+                "signal_evaluated": self.signal_evaluated, "signal_correct": self.signal_correct,
+                "dims": {d: {k: dict(v) for k, v in self.dims[d].items()} for d in self.dims}}
+
+    def load_state(self, data: dict) -> None:
+        if not data:
+            return
+        self.n_total = int(data.get("n_total", 0) or 0)
+        self.outcomes_up = int(data.get("outcomes_up", 0) or 0)
+        self.n_with_signal = int(data.get("n_with_signal", 0) or 0)
+        self.n_no_signal = int(data.get("n_no_signal", 0) or 0)
+        self.signal_evaluated = int(data.get("signal_evaluated", 0) or 0)
+        self.signal_correct = int(data.get("signal_correct", 0) or 0)
+        for d in self.dims:
+            self.dims[d] = {}
+            for k, v in (data.get("dims") or {}).get(d, {}).items():
+                self.dims[d][k] = {"n": int(v.get("n", 0) or 0),
+                                   "sig_eval": int(v.get("sig_eval", 0) or 0),
+                                   "sig_correct": int(v.get("sig_correct", 0) or 0),
+                                   "bot_wins": int(v.get("bot_wins", 0) or 0),
+                                   "pnl": float(v.get("pnl", 0.0) or 0.0)}
+
+
 def _event_from_dict(d) -> Optional["TradingViewSignalEvent"]:
     if not isinstance(d, dict) or not d.get("event_id"):
         return None

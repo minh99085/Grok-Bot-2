@@ -243,6 +243,8 @@ class PulseEngine:
         self._daily_key = None
         from engine.pulse.reporting import OutcomeGroups
         self._groups = OutcomeGroups()            # settled PnL grouped by every entry-time tag
+        from engine.pulse.tradingview import TradingViewEdge
+        self._tv_edge = TradingViewEdge()         # OBSERVE-ONLY TradingView signal-vs-outcome edge
         self._ev_before_sum = 0.0                 # EV before/after costs (accepted candidates)
         self._ev_after_sum = 0.0
         self._ev_n = 0
@@ -323,6 +325,7 @@ class PulseEngine:
         acct = data.get("accounting_state") or {}
         self.reconciler.load_state(acct.get("lifecycle") or {})
         self.gate_obs.load_state(acct.get("gate_observations") or {})
+        self._tv_edge.load_state(acct.get("tv_edge") or {})
         ev = acct.get("ev") or {}
         self._ev_before_sum = float(ev.get("before_sum", 0.0) or 0.0)
         self._ev_after_sum = float(ev.get("after_sum", 0.0) or 0.0)
@@ -545,10 +548,17 @@ class PulseEngine:
                                 "model_features": model_vec,
                                 "spread_bucket": _spread_bucket(mc.spread),
                                 "depth_bucket": _depth_bucket(mc.ask_depth_usd),
-                                "confidence_tier": _confidence_tier(
-                                    (dr.model or {}).get("model_confidence")
-                                    if (dr.model or {}).get("trained")
-                                    else (dr.signals or {}).get("confidence"))}
+                                    "confidence_tier": _confidence_tier(
+                                        (dr.model or {}).get("model_confidence")
+                                        if (dr.model or {}).get("trained")
+                                        else (dr.signals or {}).get("confidence"))}
+            if tv_feature is not None:            # observe-only external signal present at entry
+                pos.external = {"source": "tradingview",
+                                "direction": tv_feature.get("direction"),
+                                "timeframe": tv_feature.get("timeframe"),
+                                "symbol": tv_feature.get("symbol"),
+                                "indicator_name": tv_feature.get("indicator_name"),
+                                "strength": tv_feature.get("strength")}
             # the canonical paper fill — set for EVERY accepted trade (independent of EV stats)
             # so reconciler.ledgered == accepted == ledger.trades by construction.
             dr.fill = PaperFill(window_key=w.event_id, side=d.side, fill_price=ex.fill_price,
@@ -647,6 +657,10 @@ class PulseEngine:
                 "confidence_tier")}
             self._groups.record(tags, pnl=float(pos.pnl_usd or 0.0), won=bool(pos.won),
                                  fair_at_entry=pos.fair_at_entry, outcome_up=outcome)
+            # OBSERVE-ONLY: measure whether the TradingView signal at entry predicted this 5-min
+            # outcome and whether aligning helped the bot win (computed AFTER the outcome is known).
+            self._tv_edge.record(tv=pos.external, traded_side=pos.side, outcome_up=bool(outcome),
+                                 won=bool(pos.won), pnl=float(pos.pnl_usd or 0.0))
             logger.info("pulse settled %s side=%s won=%s pnl=%.3f via=%s",
                         pos.title, pos.side, pos.won, pos.pnl_usd or 0.0, source)
 
@@ -732,15 +746,18 @@ class PulseEngine:
         return report
 
     def _tradingview_report(self) -> dict:
-        """Observe-only TradingView intake counters + latest signal (report-only)."""
+        """Observe-only TradingView intake counters + latest signal + signal-vs-5min-outcome edge
+        measurement (report-only)."""
         if self.tradingview is None:
-            return {"enabled": False, "tradingview_observe_only": True,
-                    "tradingview_alerts_received": 0, "tradingview_alerts_valid": 0,
-                    "tradingview_alerts_rejected": 0, "tradingview_reject_reasons": {},
-                    "tradingview_latest_signal": None}
-        rep = self.tradingview.report()
-        if self.webhook is not None:
-            rep["webhook"] = self.webhook.status()
+            rep = {"enabled": False, "tradingview_observe_only": True,
+                   "tradingview_alerts_received": 0, "tradingview_alerts_valid": 0,
+                   "tradingview_alerts_rejected": 0, "tradingview_reject_reasons": {},
+                   "tradingview_latest_signal": None}
+        else:
+            rep = self.tradingview.report()
+            if self.webhook is not None:
+                rep["webhook"] = self.webhook.status()
+        rep["edge_vs_5min_outcome"] = self._tv_edge.report()
         return rep
 
     def _tier_report(self) -> dict:
@@ -823,6 +840,7 @@ class PulseEngine:
                               "gate_observations": self.gate_obs.to_state(),
                               "ev": {"before_sum": round(self._ev_before_sum, 6),
                                      "after_sum": round(self._ev_after_sum, 6), "n": self._ev_n},
+                              "tv_edge": self._tv_edge.to_state(),
                               "baseline": (self._baseline or empty_baseline())}}
             (self._data_dir / "btc_pulse_ledger.json").write_text(
                 json.dumps(ledger_doc, default=str, indent=1))
