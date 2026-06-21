@@ -226,8 +226,13 @@ class ResearchObservatory:
 
     # -- ingest ------------------------------------------------------------- #
     def observe_oracle(self, price: Optional[float]) -> None:
+        # dedupe: the Chainlink oracle updates less often than the 1s price sampler, so only
+        # record genuine price CHANGES — otherwise the returns series is mostly zeros and Hurst
+        # is undefined. Observe-only; this never affects the trading sigma/decision.
         if price is not None and _finite(price) and price > 0:
-            self._prices.append(float(price))
+            p = float(price)
+            if not self._prices or self._prices[-1] != p:
+                self._prices.append(p)
 
     def observe_divergence(self, divergence: Optional[float],
                            cex_implied: Optional[float]) -> None:
