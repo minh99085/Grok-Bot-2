@@ -45,6 +45,10 @@ class MarketContext:
     market_id: str
     title: str
     asset: str = "BTC"
+    # canonical decision/trade ID — the SINGLE id that connects this candidate to its feature
+    # snapshot, execution estimate, terminal state, paper fill, ledger position, settlement, and
+    # the report. One accepted trade == one window == one decision_id (the ledger key).
+    decision_id: Optional[str] = None
     open_ts: Optional[float] = None
     close_ts: Optional[float] = None
     ttc_s: Optional[float] = None
@@ -64,7 +68,8 @@ class MarketContext:
         return ttc_bucket(self.ttc_s)
 
     def to_dict(self) -> dict:
-        return {"event_id": self.event_id, "market_id": self.market_id, "title": self.title,
+        return {"decision_id": self.decision_id or self.event_id,
+                "event_id": self.event_id, "market_id": self.market_id, "title": self.title,
                 "asset": self.asset, "ttc_s": (round(self.ttc_s, 1) if self.ttc_s is not None else None),
                 "ttc_bucket": self.ttc_bucket, "oracle_source": self.oracle_source,
                 "s_open": self.s_open, "s_now": self.s_now,
@@ -194,9 +199,11 @@ class PaperFill:
     fill_price: float
     shares: float
     size_usd: float
+    decision_id: Optional[str] = None      # canonical id (== ledger position key)
 
     def to_dict(self) -> dict:
-        return {"window_key": self.window_key, "side": self.side, "fill_price": self.fill_price,
+        return {"decision_id": self.decision_id or self.window_key,
+                "window_key": self.window_key, "side": self.side, "fill_price": self.fill_price,
                 "shares": round(self.shares, 6), "size_usd": self.size_usd}
 
 
@@ -239,8 +246,13 @@ class DecisionResult:
         self.mark("reported")
         return self
 
+    @property
+    def decision_id(self) -> Optional[str]:
+        return self.market_context.decision_id or self.market_context.event_id
+
     def to_dict(self) -> dict:
-        return {"market_context": self.market_context.to_dict(),
+        return {"decision_id": self.decision_id,
+                "market_context": self.market_context.to_dict(),
                 "candidate": self.candidate.to_dict(),
                 "features": self.features,
                 "signals": self.signals,
@@ -308,3 +320,35 @@ class LifecycleReconciler:
                 "reconciled": (self.created == term_sum
                                and self.reported == self.created
                                and self.ledgered == self.terminals["accepted"])}
+
+    # -- persistence: make lifecycle counts CUMULATIVE (same scope as the ledger) so the
+    #    report no longer mixes a per-session funnel with a cross-restart ledger. ----------- #
+    def to_state(self) -> dict:
+        return {"created": self.created, "feature_scored": self.feature_scored,
+                "execution_costed": self.execution_costed, "ledgered": self.ledgered,
+                "reported": self.reported, "terminals": dict(self.terminals),
+                "rejected_by_stage": dict(self.rejected_by_stage),
+                "skipped_by_reason": dict(self.skipped_by_reason),
+                "missing_by_reason": dict(self.missing_by_reason)}
+
+    def load_state(self, data: dict) -> None:
+        if not data:
+            return
+        self.created = int(data.get("created", 0) or 0)
+        self.feature_scored = int(data.get("feature_scored", 0) or 0)
+        self.execution_costed = int(data.get("execution_costed", 0) or 0)
+        self.ledgered = int(data.get("ledgered", 0) or 0)
+        self.reported = int(data.get("reported", 0) or 0)
+        for t in self.TERMINALS:
+            self.terminals[t] = int((data.get("terminals") or {}).get(t, 0) or 0)
+        self.rejected_by_stage = {k: int(v or 0)
+                                  for k, v in (data.get("rejected_by_stage") or {}).items()} \
+            or {"directional": 0, "execution_gate": 0}
+        self.skipped_by_reason = {k: int(v or 0)
+                                  for k, v in (data.get("skipped_by_reason") or {}).items()}
+        self.missing_by_reason = {k: int(v or 0)
+                                  for k, v in (data.get("missing_by_reason") or {}).items()}
+
+    @property
+    def has_history(self) -> bool:
+        return self.created > 0 or self.reported > 0

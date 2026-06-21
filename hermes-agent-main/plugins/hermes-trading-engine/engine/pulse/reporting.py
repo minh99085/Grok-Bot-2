@@ -87,14 +87,24 @@ def promotion_demotion(tier_table: dict) -> dict:
 def build_light_report(*, lifecycle: dict, execution_gate: dict, ledger_stats: dict,
                        calibration: dict, ev_stats: dict, outcome_groups: OutcomeGroups,
                        tier_table: dict, edge_model: dict, sizing: dict,
-                       missing_data_reasons: dict) -> dict:
+                       missing_data_reasons: dict, baseline: dict,
+                       gate_thresholds: dict, gate_observations: dict) -> dict:
+    from engine.pulse.reconciliation import global_reconciliation, zero_reject_diagnostic
     grouped = outcome_groups.summary()
-    # reconciliation: lifecycle accepted == gate accepted == ledger fills; settled grouped n sums
     accepted = lifecycle.get("terminals", {}).get("accepted", 0)
     settled = ledger_stats.get("settled", 0)
     pnl_by = {f"pnl_by_{dim}": g for dim, g in grouped.items()}
+    recon = global_reconciliation(lifecycle=lifecycle, exec_gate=execution_gate,
+                                  ledger_stats=ledger_stats, baseline=baseline)
+    zero_diag = zero_reject_diagnostic(
+        exec_gate=execution_gate, thresholds=gate_thresholds, observations=gate_observations,
+        rejected_before_execution=recon.get("rejected_before_execution", 0))
     return {
-        "schema": "btc_pulse_light_report/1.0", "report_only": True, "live_trading_enabled": False,
+        "schema": "btc_pulse_light_report/1.1", "report_only": True, "live_trading_enabled": False,
+        # headline integrity flag — true ONLY when every lifecycle/exec/ledger identity holds
+        "global_reconciled": recon["global_reconciled"],
+        "reconciliation": recon,
+        "execution_gate_zero_reject_diagnostic": zero_diag,
         "candidate_lifecycle": lifecycle,
         "execution_stats": execution_gate,
         "reject_reasons": execution_gate.get("rejected", {}),
@@ -110,13 +120,4 @@ def build_light_report(*, lifecycle: dict, execution_gate: dict, ledger_stats: d
         "sizing": sizing,
         **pnl_by,
         **promotion_demotion(tier_table),
-        "reconciliation": {
-            "lifecycle_accepted": accepted,
-            "gate_accepted": execution_gate.get("accepted"),
-            "gate_fills": execution_gate.get("fills"),
-            "ledger_trades": ledger_stats.get("trades"),
-            "settled": settled,
-            "lifecycle_reconciled": lifecycle.get("reconciled"),
-            "no_candidate_disappeared": lifecycle.get("no_candidate_disappeared"),
-        },
     }

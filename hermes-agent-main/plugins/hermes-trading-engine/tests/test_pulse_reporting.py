@@ -81,11 +81,16 @@ def test_light_report_reconciles_with_ledger(tmp_path):
                 "pnl_by_hurst_regime", "pnl_by_markov_state", "pnl_by_ttc_bucket",
                 "pnl_by_spread_bucket", "pnl_by_depth_bucket", "pnl_by_confidence_tier"):
         assert fld in rep, fld
-    # report counts reconcile with the ledger
+    # report counts reconcile with the ledger (new global reconciliation shape)
     rc = rep["reconciliation"]
-    assert rc["lifecycle_accepted"] == rc["gate_accepted"] == rc["gate_fills"] == eng.ledger.trades
-    assert rc["settled"] == eng.ledger.settled >= 1
-    assert rc["lifecycle_reconciled"] is True and rc["no_candidate_disappeared"] is True
+    cnt = rc["counts"]
+    assert rep["global_reconciled"] is True and rc["global_reconciled"] is True
+    assert not rc["failed_checks"]
+    assert (cnt["execution_gate_accepted"] == cnt["paper_fills_created"]
+            == rep["execution_stats"]["fills"] == eng.ledger.trades)
+    assert cnt["settled_trades"] == eng.ledger.settled >= 1
+    assert cnt["settled_trades"] + cnt["open_positions"] == cnt["ledger_trades"]
+    assert rc["checks"]["lifecycle_internal"]["pass"] is True
     # the settled trade is grouped under its entry-time tags (sum of n == settled)
     total_n = sum(b["n"] for b in rep["pnl_by_markov_state"].values())
     assert total_n == eng.ledger.settled

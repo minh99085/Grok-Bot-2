@@ -31,6 +31,7 @@ from engine.pulse.reporting import (spread_bucket as _spread_bucket,
                                      depth_bucket as _depth_bucket,
                                      confidence_tier as _confidence_tier)
 from engine.pulse.settlement import (PulseCalibration, resolve_window, proxy_outcome)
+from engine.pulse.reconciliation import (GateObservations, capture_baseline, empty_baseline)
 
 logger = logging.getLogger("hte.pulse.engine")
 
@@ -211,6 +212,8 @@ class PulseEngine:
             from engine.pulse.edge_model import EdgeModel
             self.edge_model = EdgeModel()
         self.reconciler = LifecycleReconciler()   # GS-Quant-style candidate lifecycle audit
+        self.gate_obs = GateObservations()        # orderbook-reality observations seen at the gate
+        self._baseline: Optional[dict] = None     # legacy ledger totals that predate accounting
         from engine.pulse.promotion import PromotionLadder
         self.promotion = PromotionLadder()        # all features default to observe-only (level 0)
         self._daily_loss = 0.0                    # for the Kelly daily-loss-cap diagnostic
@@ -241,6 +244,24 @@ class PulseEngine:
             self._load_state()
         elif self._ledger_path.exists():
             self._archive_prior_state()
+        self._resolve_baseline()
+
+    def _resolve_baseline(self) -> None:
+        """Establish the one-time accounting baseline. If a baseline was persisted, keep it. Else,
+        if the ledger already holds trades from BEFORE this canonical accounting existed, capture
+        them as an explicit legacy bucket so every count still reconciles. Otherwise start clean."""
+        if self._baseline is not None and self._baseline.get("captured") is not None:
+            return
+        ls = self.ledger.stats()
+        eg = self.ledger.exec_gate_stats()
+        if not self.reconciler.has_history and int(ls.get("trades", 0) or 0) > 0:
+            self._baseline = capture_baseline(ls, eg)
+            logger.info("reconciliation baseline captured (legacy ledger): trades=%d settled=%d "
+                        "exec_candidates=%d exec_accepted=%d", self._baseline["trades"],
+                        self._baseline["settled"], self._baseline["exec_candidates"],
+                        self._baseline["exec_accepted"])
+        else:
+            self._baseline = empty_baseline()
 
     def _load_state(self) -> None:
         """Restore the paper ledger + calibration from disk so P&L survives restarts."""
@@ -253,9 +274,20 @@ class PulseEngine:
             return
         self.ledger.load_state(data)
         self.calib.load_state(data.get("calibration_state") or {})
-        logger.info("pulse state restored: trades=%d settled=%d realized_pnl=%.3f calib_n=%d",
-                    self.ledger.trades, self.ledger.settled, self.ledger.realized_pnl,
-                    self.calib.n)
+        # restore the CUMULATIVE lifecycle funnel + gate observations + EV + baseline so the
+        # report no longer mixes a per-session funnel with a cross-restart ledger.
+        acct = data.get("accounting_state") or {}
+        self.reconciler.load_state(acct.get("lifecycle") or {})
+        self.gate_obs.load_state(acct.get("gate_observations") or {})
+        ev = acct.get("ev") or {}
+        self._ev_before_sum = float(ev.get("before_sum", 0.0) or 0.0)
+        self._ev_after_sum = float(ev.get("after_sum", 0.0) or 0.0)
+        self._ev_n = int(ev.get("n", 0) or 0)
+        if acct.get("baseline"):
+            self._baseline = acct.get("baseline")
+        logger.info("pulse state restored: trades=%d settled=%d realized_pnl=%.3f calib_n=%d "
+                    "lifecycle_created=%d", self.ledger.trades, self.ledger.settled,
+                    self.ledger.realized_pnl, self.calib.n, self.reconciler.created)
 
     def _archive_prior_state(self) -> None:
         """Fresh-start: move the existing ledger aside so we begin from a clean baseline."""
@@ -312,6 +344,7 @@ class PulseEngine:
             ttc = w.seconds_to_close(now)
             mc = MarketContext(
                 event_id=w.event_id, market_id=w.market_id, title=w.title,
+                decision_id=w.event_id,          # canonical id == window key == ledger position key
                 open_ts=w.open_ts, close_ts=w.close_ts, ttc_s=ttc,
                 s_open=(snap.price if snap else None), s_now=s_now, sigma_per_sec=sigma,
                 lead_prices={k: (v[0] if v else None)
@@ -424,6 +457,10 @@ class PulseEngine:
                 min_ev_after_slippage=self.cfg.exec_min_ev_after_slippage,
                 now=now, max_book_age_s=self.cfg.exec_max_book_age_s)
             self.ledger.record_exec(ex.accepted, ex.reason)
+            # observe what the gate actually SEES (drives the zero-reject diagnostic)
+            self.gate_obs.observe(spread=ex.spread, ask_depth_usd=mc.ask_depth_usd,
+                                  slippage=ex.slippage, ev_after_slippage=ex.ev_after_slippage,
+                                  ttc_s=ttc)
             dr.cost = ExecutionCostEstimate.from_exec_result(ex)
             dr.mark("execution_costed")
             if not ex.accepted:
@@ -434,32 +471,42 @@ class PulseEngine:
                 continue
             d.price = ex.fill_price               # paper fill at realistic VWAP price
             pos = self.ledger.open_position(w, d, now, size_usd=self.cfg.size_usd,
-                                            s_open=snap.price)
-            if pos is not None:
-                if rfeat is not None:             # observe-only entry-time tags
-                    pos.research = {"hurst_regime": rfeat.hurst_regime,
-                                    "zscore_bucket": rfeat.zscore_bucket,
-                                    "half_life_bucket": half_life_bucket(rfeat.half_life_s),
-                                    "ttc_bucket": ttc_bucket(ttc),
-                                    "edge_quality_bucket": (fsnap.edge_quality_bucket
-                                                            if fsnap else "na"),
-                                    "markov_state": cand_state,
-                                    "model_features": model_vec,
-                                    "spread_bucket": _spread_bucket(mc.spread),
-                                    "depth_bucket": _depth_bucket(mc.ask_depth_usd),
-                                    "confidence_tier": _confidence_tier(
-                                        (dr.model or {}).get("model_confidence")
-                                        if (dr.model or {}).get("trained")
-                                        else (dr.signals or {}).get("confidence"))}
+                                            s_open=snap.price, decision_id=mc.decision_id)
+            if pos is None:
+                # gate accepted but the paper fill could not be recorded — do NOT claim a trade;
+                # classify as skipped so accepted-terminals == paper-fills == ledger-trades.
+                dr.action = RejectAction(stage="execution_gate", reason="paper_fill_not_recorded")
+                if self.markov is not None:
+                    self.markov.record_terminal(state=cand_state, accepted=False)
+                _finalize(dr, "skipped", reason="paper_fill_not_recorded")
+                continue
+            if rfeat is not None:                 # observe-only entry-time tags
+                pos.research = {"hurst_regime": rfeat.hurst_regime,
+                                "zscore_bucket": rfeat.zscore_bucket,
+                                "half_life_bucket": half_life_bucket(rfeat.half_life_s),
+                                "ttc_bucket": ttc_bucket(ttc),
+                                "edge_quality_bucket": (fsnap.edge_quality_bucket
+                                                        if fsnap else "na"),
+                                "markov_state": cand_state,
+                                "model_features": model_vec,
+                                "spread_bucket": _spread_bucket(mc.spread),
+                                "depth_bucket": _depth_bucket(mc.ask_depth_usd),
+                                "confidence_tier": _confidence_tier(
+                                    (dr.model or {}).get("model_confidence")
+                                    if (dr.model or {}).get("trained")
+                                    else (dr.signals or {}).get("confidence"))}
+            # the canonical paper fill — set for EVERY accepted trade (independent of EV stats)
+            # so reconciler.ledgered == accepted == ledger.trades by construction.
+            dr.fill = PaperFill(window_key=w.event_id, side=d.side, fill_price=ex.fill_price,
+                                shares=pos.shares, size_usd=pos.size_usd,
+                                decision_id=mc.decision_id)
             # EV before (midpoint) vs after (VWAP/slippage) costs — accepted candidates
             if ex.ev_at_mid is not None and ex.ev_after_slippage is not None:
                 self._ev_before_sum += ex.ev_at_mid
                 self._ev_after_sum += ex.ev_after_slippage
                 self._ev_n += 1
-                dr.fill = PaperFill(window_key=w.event_id, side=d.side, fill_price=ex.fill_price,
-                                    shares=pos.shares, size_usd=pos.size_usd)
             dr.action = TradeAction(side=d.side, token_id=d.token_id, fill_price=ex.fill_price,
-                                    size_usd=self.cfg.size_usd, shares=(pos.shares if pos else 0.0))
+                                    size_usd=self.cfg.size_usd, shares=pos.shares)
             if self.markov is not None:
                 self.markov.record_terminal(state=cand_state, accepted=True)
             # PAPER-ONLY Kelly sizing DIAGNOSTIC (default OFF -> actual size unchanged).
@@ -563,11 +610,14 @@ class PulseEngine:
         pass. Inputs come from the reconciled ledger + lifecycle (no unmodeled fill assumptions:
         paper fills use the live ask-ladder VWAP)."""
         from engine.pulse.readiness import readiness_report
+        from engine.pulse.reconciliation import global_reconciliation
         ls = self.ledger.stats()
         lc = self.reconciler.report()
         eg = self.ledger.exec_gate_stats()
         cal = self.calib.to_dict()
-        recon_ok = bool(lc.get("reconciled") and eg.get("reconciled"))
+        gr = global_reconciliation(lifecycle=lc, exec_gate=eg, ledger_stats=ls,
+                                   baseline=(self._baseline or empty_baseline()))
+        recon_ok = bool(gr.get("global_reconciled"))
         return readiness_report(
             accepted=int(ls.get("settled", 0) or 0), win_rate=ls.get("win_rate"),
             net_pnl=ls.get("realized_pnl_usd"), profit_factor=ls.get("profit_factor"),
@@ -588,6 +638,22 @@ class PulseEngine:
                 "bundle_artifact": "btc_pulse_meta_bundle.json",
                 "grok_integration_available": available}
 
+    def _global_reconciliation(self) -> dict:
+        from engine.pulse.reconciliation import global_reconciliation
+        return global_reconciliation(
+            lifecycle=self.reconciler.report(), exec_gate=self.ledger.exec_gate_stats(),
+            ledger_stats=self.ledger.stats(), baseline=(self._baseline or empty_baseline()))
+
+    def _gate_thresholds(self) -> dict:
+        """The configured execution-gate thresholds (for the zero-reject diagnostic)."""
+        return {"size_usd": self.cfg.size_usd, "max_spread": self.cfg.exec_max_spread,
+                "min_depth_usd": self.cfg.min_depth_usd,
+                "min_order_usd": self.cfg.exec_min_order_usd,
+                "max_depth_consume_frac": self.cfg.exec_max_depth_consume_frac,
+                "min_ev_after_slippage": self.cfg.exec_min_ev_after_slippage,
+                "min_seconds_to_close": self.cfg.min_seconds_to_close,
+                "max_book_age_s": self.cfg.exec_max_book_age_s}
+
     def light_report(self) -> dict:
         """The latest light report (report-only): full lifecycle reconciliation, exec stats,
         reject reasons, EV before/after costs, PnL grouped by every bucket dimension, calibration,
@@ -605,7 +671,8 @@ class PulseEngine:
             ev_stats=ev_stats, outcome_groups=self._groups, tier_table=self._tier_report(),
             edge_model=(self.edge_model.report() if self.edge_model else {}),
             sizing={"enabled": self.cfg.sizing_enabled, "actual_size_usd": self.cfg.size_usd},
-            missing_data_reasons=miss)
+            missing_data_reasons=miss, baseline=(self._baseline or empty_baseline()),
+            gate_thresholds=self._gate_thresholds(), gate_observations=self.gate_obs.ranges())
         report["readiness"] = self.readiness()
         return report
 
@@ -633,6 +700,7 @@ class PulseEngine:
             "price": self.price.status(),
             "ledger": self.ledger.stats(),
             "decision_lifecycle": self.reconciler.report(),
+            "reconciliation": self._global_reconciliation(),
             "signal_engine": (self.signals.report() if self.signals is not None
                               else {"enabled": False}),
             "factor_model": (self.factors.report() if self.factors is not None
@@ -681,7 +749,13 @@ class PulseEngine:
             (self._data_dir / "btc_pulse_status.json").write_text(
                 json.dumps(self.status(), default=str, indent=1))
             ledger_doc = {**self.ledger.to_dict(),
-                          "calibration_state": self.calib.to_state()}
+                          "calibration_state": self.calib.to_state(),
+                          "accounting_state": {
+                              "lifecycle": self.reconciler.to_state(),
+                              "gate_observations": self.gate_obs.to_state(),
+                              "ev": {"before_sum": round(self._ev_before_sum, 6),
+                                     "after_sum": round(self._ev_after_sum, 6), "n": self._ev_n},
+                              "baseline": (self._baseline or empty_baseline())}}
             (self._data_dir / "btc_pulse_ledger.json").write_text(
                 json.dumps(ledger_doc, default=str, indent=1))
             lr = self.light_report()

@@ -37,11 +37,12 @@ class PulsePosition:
     s_close: Optional[float] = None
     close_lag_s: Optional[float] = None
     research: Optional[dict] = None       # observe-only entry-time research tags (regime/zbucket)
+    decision_id: Optional[str] = None     # canonical id (== window_key) linking the full lifecycle
 
     _FIELDS = ("window_key", "market_id", "title", "side", "token_id", "entry_price",
                "size_usd", "shares", "fair_at_entry", "edge_at_entry", "open_ts", "close_ts",
                "entry_ts", "status", "outcome_up", "won", "pnl_usd", "s_open", "s_close",
-               "close_lag_s", "research")
+               "close_lag_s", "research", "decision_id")
 
     def to_dict(self) -> dict:
         return {k: getattr(self, k) for k in self._FIELDS}
@@ -85,7 +86,8 @@ class PulseLedger:
         return window_key in self.positions
 
     def open_position(self, window, decision, now: float, *, size_usd: float,
-                      s_open: Optional[float] = None) -> Optional[PulsePosition]:
+                      s_open: Optional[float] = None,
+                      decision_id: Optional[str] = None) -> Optional[PulsePosition]:
         """Record a SIMULATED paper fill at the decision's marketable ask. Never real."""
         if not decision.trade or decision.token_id is None or not decision.price:
             return None
@@ -101,7 +103,8 @@ class PulseLedger:
             size_usd=float(size_usd), shares=shares,
             fair_at_entry=float(decision.fair_p_up or 0.0),
             edge_at_entry=float(decision.edge), open_ts=window.open_ts,
-            close_ts=window.close_ts, entry_ts=float(now), s_open=s_open)
+            close_ts=window.close_ts, entry_ts=float(now), s_open=s_open,
+            decision_id=decision_id or window.event_id)
         self.positions[window.event_id] = pos
         self.trades += 1
         return pos
