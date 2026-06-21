@@ -143,6 +143,28 @@ def zscore(value: Optional[float], buffer, *, min_n: int = 20) -> Optional[float
     return (value - m) / sd
 
 
+def autocorrelation(series, *, lag: int = 1, min_n: int = 10) -> Optional[float]:
+    """Lag-``lag`` autocorrelation of a series. None on insufficient/degenerate data."""
+    s = _clean(series)
+    n = len(s)
+    if n < max(min_n, lag + 2):
+        return None
+    m = sum(s) / n
+    denom = sum((x - m) ** 2 for x in s)
+    if denom <= 1e-12:
+        return None
+    num = sum((s[i] - m) * (s[i - lag] - m) for i in range(lag, n))
+    return max(-1.0, min(1.0, num / denom))
+
+
+def realized_volatility(returns, *, min_n: int = 10) -> Optional[float]:
+    """Realized volatility = sample std of the returns series. None if too few samples."""
+    r = _clean(returns)
+    if len(r) < min_n:
+        return None
+    return _std(r)
+
+
 def zscore_bucket(z: Optional[float]) -> str:
     if z is None or not _finite(z):
         return "na"
@@ -187,12 +209,18 @@ class ResearchFeatures:
     zscore_bucket: str = "na"
     kalman_fair_prob: Optional[float] = None
     kalman_reason: str = "insufficient_samples"
+    autocorr_lag1: Optional[float] = None
+    realized_vol: Optional[float] = None
     diagnostics: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {"observe_only": True,
                 "hurst": (round(self.hurst, 4) if self.hurst is not None else None),
                 "hurst_regime": self.hurst_regime,
+                "autocorr_lag1": (round(self.autocorr_lag1, 4)
+                                  if self.autocorr_lag1 is not None else None),
+                "realized_vol": (round(self.realized_vol, 8)
+                                 if self.realized_vol is not None else None),
                 "half_life_s": (round(self.half_life_s, 2) if self.half_life_s is not None else None),
                 "adf_tstat": (round(self.adf_tstat, 4) if self.adf_tstat is not None else None),
                 "half_life_reason": self.half_life_reason,
@@ -262,6 +290,8 @@ class ResearchObservatory:
         rets = self._returns()
         f.hurst = hurst_exponent(rets, min_n=self.returns_min)
         f.hurst_regime = classify_hurst(f.hurst)
+        f.autocorr_lag1 = autocorrelation(rets, lag=1)
+        f.realized_vol = realized_volatility(rets)
         if f.hurst is not None:
             self.coverage["hurst_present"] += 1
         else:

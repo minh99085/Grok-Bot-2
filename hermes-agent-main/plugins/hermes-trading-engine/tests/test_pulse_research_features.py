@@ -6,6 +6,7 @@ import random
 
 from engine.pulse.research_features import (hurst_exponent, classify_hurst, half_life_adf,
                                              zscore, zscore_bucket, kalman_fair_prob,
+                                             autocorrelation, realized_volatility,
                                              ResearchObservatory)
 from engine.pulse.markets import OrderBook, PulseWindow
 from engine.pulse.price import PulsePriceFeed
@@ -78,6 +79,19 @@ def test_kalman_fair_prob_safety():
     assert reason == "ok" and 0.0 <= kf <= 1.0
 
 
+# 4b) autocorrelation + realized volatility (Phase 3) ----------------------------------- #
+def test_autocorrelation_and_realized_vol_safety():
+    assert autocorrelation([1.0, 2.0]) is None          # too few samples
+    assert autocorrelation([0.5] * 20) is None           # zero variance -> None
+    pos = autocorrelation(_ar1(0.8, 200, 11), lag=1)     # persistent -> positive lag-1 autocorr
+    neg = autocorrelation(_ar1(-0.8, 200, 12), lag=1)    # anti-persistent -> negative
+    assert pos is not None and pos > 0.3 and neg is not None and neg < -0.3
+    assert -1.0 <= pos <= 1.0 and -1.0 <= neg <= 1.0
+    assert realized_volatility([0.1] * 5) is None        # too few
+    rv = realized_volatility(_ar1(0.0, 100, 13))
+    assert rv is not None and rv > 0
+
+
 # 5) missing-data handling in the observatory -------------------------------------------- #
 def test_observatory_safe_with_small_samples_and_nans():
     obs = ResearchObservatory()
@@ -99,6 +113,9 @@ def test_observatory_evaluate_and_grouped_report():
         obs.observe_divergence(0.02 * random.Random(i + 1).gauss(0, 1), 0.5)
     f = obs.evaluate(current_divergence=0.05)
     assert f.observe_only is True and f.hurst is not None and f.zscore is not None
+    assert f.autocorr_lag1 is not None and f.realized_vol is not None     # Phase 3 features
+    fd = f.to_dict()
+    assert "autocorr_lag1" in fd and "realized_vol" in fd
     # grouped PnL/calibration by regime + z bucket
     obs.record_settled(regime="trending", zbucket=">=2", pnl=7.5, won=True,
                        fair_at_entry=0.7, outcome_up=True)
