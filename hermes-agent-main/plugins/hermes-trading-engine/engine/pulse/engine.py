@@ -90,6 +90,12 @@ class PulseConfig:
     grok_decider_min_confidence: float = 0.55
     grok_decider_ttl_s: float = 240.0
     grok_decider_max_calls_per_hour: int = 60
+    grok_decider_follow_fraction: float = 1.0        # A/B canary: fraction of windows to follow
+    grok_decider_max_consecutive_losses: int = 4     # breaker: trip after N follow-losses in a row
+    grok_decider_daily_loss_cap_usd: float = 30.0    # breaker: trip after this much follow-loss/day
+    grok_decider_max_latency_s: float = 20.0         # breaker: trip on sustained high decision latency
+    grok_decider_cooldown_s: float = 1800.0          # breaker: stay tripped (use baseline) this long
+    grok_news_refresh_s: float = 300.0               # periodic web/X news digest cadence
     # price feed: 'auto' uses Chainlink Data Streams (exact resolution feed) when creds are
     # set, else the Coinbase proxy. A sub-second background sampler keeps the price fresh
     # between the slower trade ticks.
@@ -230,6 +236,13 @@ class PulseConfig:
             grok_decider_min_confidence=_envf("PULSE_GROK_DECIDER_MIN_CONFIDENCE", 0.55),
             grok_decider_ttl_s=_envf("PULSE_GROK_DECIDER_TTL_S", 240.0),
             grok_decider_max_calls_per_hour=int(_envf("PULSE_GROK_DECIDER_MAX_CALLS_PER_HOUR", 60)),
+            grok_decider_follow_fraction=_envf("PULSE_GROK_DECIDER_FOLLOW_FRACTION", 1.0),
+            grok_decider_max_consecutive_losses=int(
+                _envf("PULSE_GROK_DECIDER_MAX_CONSECUTIVE_LOSSES", 4)),
+            grok_decider_daily_loss_cap_usd=_envf("PULSE_GROK_DECIDER_DAILY_LOSS_CAP_USD", 30.0),
+            grok_decider_max_latency_s=_envf("PULSE_GROK_DECIDER_MAX_LATENCY_S", 20.0),
+            grok_decider_cooldown_s=_envf("PULSE_GROK_DECIDER_COOLDOWN_S", 1800.0),
+            grok_news_refresh_s=_envf("PULSE_GROK_NEWS_REFRESH_S", 300.0),
             price_source=(os.getenv("PULSE_PRICE_SOURCE", "auto") or "auto").strip().lower(),
             price_sampler_interval_s=_envf("PULSE_PRICE_SAMPLER_INTERVAL_S", 1.0),
             oracle_feed_type=(os.getenv("HERMES_ORACLE_FEED_TYPE",
@@ -446,6 +459,7 @@ class PulseEngine:
         self.grok_analyst = None
         self.grok_predictor = None
         self.grok_decider = None
+        self.grok_news = None
         self._grok_pending: list = []             # pending decision grades (decision_id/price0/close)
         try:
             from engine.pulse.grok_intel import (GrokBudget, GrokSignalAnalyst,
@@ -462,7 +476,8 @@ class PulseEngine:
                     per_feature_hourly={"predictor": self.cfg.grok_predictor_max_calls_per_hour,
                                         "analyst": self.cfg.grok_analyst_max_calls_per_hour,
                                         "overlay": self.cfg.grok_overlay_max_calls_per_hour,
-                                        "decider": self.cfg.grok_decider_max_calls_per_hour})
+                                        "decider": self.cfg.grok_decider_max_calls_per_hour,
+                                        "news": 30})
             if bool(self.cfg.grok_overlay_enabled) and xai_key():
                 from engine.pulse.overlay import GrokEventOverlay
                 self.overlay = GrokEventOverlay(
@@ -477,20 +492,32 @@ class PulseEngine:
                     budget=self.grok_budget, interval_s=self.cfg.grok_analyst_interval_s,
                     report_provider=self._grok_analyst_report).start()
             if decider_on and xai_key():
-                from engine.pulse.grok_decider import GrokDecider, make_decider_fn
+                from engine.pulse.grok_decider import (GrokDecider, make_decider_fn,
+                                                       GrokNewsDigest, make_news_fn)
+                # news digest is a SEPARATE periodic search worker; the per-window decision reuses it
+                # (cheaper/faster than searching every window). Enabled via use_search.
+                if bool(self.cfg.grok_decider_use_search):
+                    self.grok_news = GrokNewsDigest(
+                        budget=self.grok_budget,
+                        news_fn=make_news_fn(model=self.cfg.grok_decider_model,
+                                             timeout_s=self.cfg.grok_decider_timeout_s),
+                        interval_s=self.cfg.grok_news_refresh_s).start()
                 self.grok_decider = GrokDecider(
                     decider_fn=make_decider_fn(
                         model=self.cfg.grok_decider_model,
                         timeout_s=self.cfg.grok_decider_timeout_s,
-                        use_search=self.cfg.grok_decider_use_search,
-                        default_ttl_s=self.cfg.grok_decider_ttl_s),
+                        use_search=False, default_ttl_s=self.cfg.grok_decider_ttl_s),
                     budget=self.grok_budget, mode=self.cfg.grok_decider_mode,
                     min_confidence=self.cfg.grok_decider_min_confidence,
-                    ttl_s=self.cfg.grok_decider_ttl_s).start()
+                    ttl_s=self.cfg.grok_decider_ttl_s,
+                    max_consecutive_losses=self.cfg.grok_decider_max_consecutive_losses,
+                    daily_loss_cap_usd=self.cfg.grok_decider_daily_loss_cap_usd,
+                    max_latency_s=self.cfg.grok_decider_max_latency_s,
+                    cooldown_s=self.cfg.grok_decider_cooldown_s).start()
         except Exception:  # noqa: BLE001 — Grok never blocks startup
             logger.exception("grok init failed; continuing as pure quant")
             self.grok_budget = self.overlay = self.grok_analyst = self.grok_predictor = None
-            self.grok_decider = None
+            self.grok_decider = self.grok_news = None
         # OBSERVE-ONLY TradingView indicator webhook intake (enabled only when a secret is set).
         # Alerts become candidate signals only; they can never place/resize/bypass a paper trade.
         self.tradingview = None
@@ -604,6 +631,8 @@ class PulseEngine:
             self.grok_analyst.load_state(acct.get("grok_analyst") or {})
         if self.grok_decider is not None:
             self.grok_decider.load_state(acct.get("grok_decider") or {})
+        if self.grok_news is not None:
+            self.grok_news.load_state(acct.get("grok_news") or {})
         self._grok_pending = list(acct.get("grok_pending") or [])
         if self.edge_model is not None:          # the learned edge model accumulates across runs
             self.edge_model.load_state(acct.get("edge_model") or {})
@@ -856,7 +885,12 @@ class PulseEngine:
                 dr.grok_decision = grok_dec
                 if grok_dec is not None:
                     self._schedule_grok_grade(mc.decision_id, snap.price, w.close_ts)
-            grok_follow = (self.cfg.grok_decider_mode == "follow" and self.grok_decider is not None)
+            # FOLLOW only when: mode=follow, breaker not tripped, and this window is in the A/B canary
+            # follow-fraction. Otherwise fall through to the baseline path (the A/B control arm).
+            grok_follow = False
+            if self.cfg.grok_decider_mode == "follow" and self.grok_decider is not None:
+                ok, _br = self.grok_decider.should_follow(now)
+                grok_follow = ok and self._follow_canary(mc.decision_id)
             # the directional decision uses the (possibly learning-adjusted) probability; the
             # STRICT execution gate below is UNCHANGED and remains the sole trade authority.
             if grok_follow:
@@ -1226,6 +1260,11 @@ class PulseEngine:
                 ev_after_cost=(pos.research or {}).get("ev_after_cost"), outcome_up=outcome)
             self.selectivity_gate.record_settled((pos.research or {}).get("gate_decision"),
                                                  won=bool(pos.won), pnl=float(pos.pnl_usd or 0.0))
+            # feed FOLLOW-mode trades back to the Grok decider's circuit breaker
+            if (self.grok_decider is not None
+                    and (pos.research or {}).get("entry_mode") == "grok_follow"):
+                self.grok_decider.record_follow_result(
+                    won=bool(pos.won), pnl=float(pos.pnl_usd or 0.0), now=now)
             ext = pos.external or {}
             if ext.get("source") == "tradingview":
                 rt = pos.research or {}
@@ -1340,6 +1379,7 @@ class PulseEngine:
                            "down_best_ask": (w.down_book.best_ask if w.down_book else None),
                            "ask_depth_usd": mc.ask_depth_usd},
             "tradingview_signal": tv_feature,
+            "news": (self.grok_news.latest() if self.grok_news is not None else None),
             "research": {"hurst_regime": rf.get("hurst_regime"), "zscore_bucket": rf.get("zscore_bucket"),
                          "regime": (dr.regime or {}).get("state")},
             "edge_signal": {k: (dr.edge or {}).get(k) for k in
@@ -1354,6 +1394,18 @@ class PulseEngine:
             "decider_track_record": (self.grok_decider.report() if self.grok_decider else {}),
             "note": "advisory paper decision; bot enforces realism/risk floor; PAPER ONLY",
         }
+
+    def _follow_canary(self, decision_id: str) -> bool:
+        """A/B canary: deterministically follow Grok on ``follow_fraction`` of windows (stable per
+        decision_id), leaving the rest on the baseline arm for live comparison."""
+        frac = float(self.cfg.grok_decider_follow_fraction)
+        if frac >= 1.0:
+            return True
+        if frac <= 0.0:
+            return False
+        import hashlib
+        h = int(hashlib.sha256(str(decision_id).encode("utf-8")).hexdigest()[:8], 16) / 0xFFFFFFFF
+        return h < frac
 
     def _schedule_grok_grade(self, decision_id: str, price0, close_ts: float) -> None:
         if price0 is None:
@@ -1540,6 +1592,9 @@ class PulseEngine:
         rep = self.grok_decider.report()
         rep["pending_grades"] = len(self._grok_pending)
         rep["use_search"] = bool(self.cfg.grok_decider_use_search)
+        rep["follow_fraction"] = self.cfg.grok_decider_follow_fraction
+        rep["news_digest"] = (self.grok_news.report() if self.grok_news is not None
+                              else {"enabled": False})
         return rep
 
     def _grok_intel_report(self) -> dict:
@@ -1691,6 +1746,8 @@ class PulseEngine:
                                                if self.grok_analyst is not None else {}),
                               "grok_decider": (self.grok_decider.to_state()
                                                if self.grok_decider is not None else {}),
+                              "grok_news": (self.grok_news.to_state()
+                                            if self.grok_news is not None else {}),
                               "grok_pending": self._grok_pending[-2000:],
                               "edge_model": (self.edge_model.to_state()
                                              if self.edge_model is not None else {}),

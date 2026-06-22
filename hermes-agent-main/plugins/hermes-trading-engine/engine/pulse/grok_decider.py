@@ -108,18 +108,142 @@ def make_decider_fn(*, model: str = "grok-4.3", timeout_s: float = 12.0,
     return _decide
 
 
+def make_news_fn(*, model: str = "grok-4.3", timeout_s: float = 15.0, chat=_grok_chat):
+    """Build ``news_fn() -> digest|None`` that pulls a short BTC news/sentiment digest via xAI live
+    web/X search. Separated from the per-window decision so news is gathered periodically (cheap,
+    bounded) and injected into every decision bundle."""
+    box: dict = {}
+    extra = {"search_parameters": {"mode": "on", "sources": [{"type": "web"}, {"type": "x"}],
+                                   "max_search_results": 10}}
+
+    def _news() -> Optional[dict]:
+        prompt = (
+            "Search the latest web + X for BREAKING Bitcoin news and sentiment in the last ~30 "
+            "minutes that could move BTC over the NEXT 5 MINUTES (macro prints, ETF flows, "
+            "exchange/regulatory headlines, large liquidations, prominent X posts). Summarize for a "
+            "short-horizon trader. STRICT JSON only: {\"sentiment\":\"bullish|bearish|neutral\","
+            "\"confidence\":<0-1>,\"headlines\":[\"...\"],\"event_risk\":\"low|medium|high\"}.")
+        d = _parse_json(chat(prompt, model=model, timeout_s=timeout_s, box=box, extra_body=extra))
+        if not d:
+            return None
+        return {"sentiment": str(d.get("sentiment", "neutral"))[:20],
+                "confidence": _clamp01(d.get("confidence"), 0.0),
+                "headlines": [str(x)[:200] for x in (d.get("headlines") or [])][:6],
+                "event_risk": str(d.get("event_risk", "low"))[:12]}
+    return _news
+
+
+class GrokNewsDigest:
+    """Periodic BTC news/sentiment digest (xAI live search), cached + injected into every decision
+    bundle. Budget-gated + fail-open. Observe-only context; the decision still belongs to Grok."""
+
+    def __init__(self, *, news_fn=None, budget: Optional[GrokBudget] = None,
+                 interval_s: float = 300.0, max_age_s: float = 600.0):
+        self._fn = news_fn if news_fn is not None else make_news_fn()
+        self._budget = budget
+        self.interval_s = max(60.0, float(interval_s))
+        self.max_age_s = float(max_age_s)
+        self._lock = threading.Lock()
+        self._digest: Optional[dict] = None
+        self._ts = 0.0
+        self.calls = 0
+        self.errors = 0
+        self.skipped_budget = 0
+        self._stop = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+
+    def refresh(self) -> Optional[dict]:
+        if self._budget is not None and not self._budget.try_spend("news"):
+            self.skipped_budget += 1
+            return None
+        d = None
+        try:
+            d = self._fn()
+        except Exception:  # noqa: BLE001
+            d = None
+        if d is None:
+            self.errors += 1
+        else:
+            self.calls += 1
+            with self._lock:
+                self._digest, self._ts = d, time.time()
+        return d
+
+    def latest(self) -> Optional[dict]:
+        with self._lock:
+            if not self._digest or (time.time() - self._ts) > self.max_age_s:
+                return None
+            return {**self._digest, "age_s": round(time.time() - self._ts, 1)}
+
+    def _worker(self) -> None:
+        self._stop.wait(min(self.interval_s, 15.0))
+        while not self._stop.is_set():
+            try:
+                self.refresh()
+            except Exception:  # noqa: BLE001
+                pass
+            self._stop.wait(self.interval_s)
+
+    def start(self) -> "GrokNewsDigest":
+        if self._thread is None or not self._thread.is_alive():
+            self._stop.clear()
+            self._thread = threading.Thread(target=self._worker, name="grok-news-digest",
+                                            daemon=True)
+            self._thread.start()
+        return self
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def report(self) -> dict:
+        with self._lock:
+            return {"enabled": True, "interval_s": self.interval_s, "calls": self.calls,
+                    "errors": self.errors, "skipped_budget": self.skipped_budget,
+                    "latest": (dict(self._digest) if self._digest else None),
+                    "age_s": (round(time.time() - self._ts, 1) if self._digest else None)}
+
+    def to_state(self) -> dict:
+        with self._lock:
+            return {"calls": self.calls, "errors": self.errors,
+                    "skipped_budget": self.skipped_budget, "digest": self._digest, "ts": self._ts}
+
+    def load_state(self, data: dict) -> None:
+        if not data:
+            return
+        with self._lock:
+            self.calls = int(data.get("calls", 0) or 0)
+            self.errors = int(data.get("errors", 0) or 0)
+            self.skipped_budget = int(data.get("skipped_budget", 0) or 0)
+            self._digest = data.get("digest")
+            self._ts = float(data.get("ts", 0.0) or 0.0)
+
+
 class GrokDecider:
     """Background decision worker + grader. The engine ``request``s a decision per window, reads the
     cached ``get`` result fail-open, and ``grade``s it against the realized outcome. PAPER ONLY."""
 
     def __init__(self, *, decider_fn=None, budget: Optional[GrokBudget] = None,
                  mode: str = "shadow", min_confidence: float = 0.55, ttl_s: float = 240.0,
+                 max_consecutive_losses: int = 4, daily_loss_cap_usd: float = 30.0,
+                 max_latency_s: float = 20.0, cooldown_s: float = 1800.0,
                  max_pending: int = 200, max_results: int = 5000):
         self._fn = decider_fn if decider_fn is not None else make_decider_fn()
         self._budget = budget
         self.mode = mode if mode in ("off", "shadow", "follow") else "off"
         self.min_confidence = float(min_confidence)
         self.ttl_s = float(ttl_s)
+        # ---- circuit breaker (FOLLOW only): trip -> stop following (fall back to baseline) ----
+        self.max_consecutive_losses = int(max_consecutive_losses)
+        self.daily_loss_cap_usd = float(daily_loss_cap_usd)
+        self.max_latency_s = float(max_latency_s)
+        self.cooldown_s = float(cooldown_s)
+        self._consec_losses = 0
+        self._daily_loss = 0.0
+        self._daily_key = None
+        self._tripped_until = 0.0
+        self._trip_reason: Optional[str] = None
+        self.trips = 0
+        self._recent_lat: deque = deque(maxlen=10)
         self._lock = threading.Lock()
         self._queue: deque = deque(maxlen=int(max_pending))
         self._results: dict = {}              # decision_id -> decision (+ "ts","latency_s")
@@ -166,6 +290,58 @@ class GrokDecider:
         age = now - float(decision.get("ts") or 0.0)
         return age <= float(decision.get("ttl_s") or self.ttl_s)
 
+    # -- circuit breaker (FOLLOW safety) ------------------------------------ #
+    def _trip(self, now: float, reason: str) -> None:
+        self._tripped_until = now + self.cooldown_s
+        self._trip_reason = reason
+        self.trips += 1
+        self._consec_losses = 0
+
+    def should_follow(self, now: Optional[float] = None) -> "tuple[bool, str]":
+        """Whether FOLLOW may act now, else (False, reason) — the bot falls back to baseline. Trips
+        on consecutive follow-losses, a daily follow-loss cap, or sustained high decision latency."""
+        now = float(now if now is not None else time.time())
+        with self._lock:
+            if now < self._tripped_until:
+                return False, ("breaker_" + (self._trip_reason or "tripped"))
+            if self._daily_loss >= self.daily_loss_cap_usd > 0:
+                self._trip(now, "daily_loss_cap")
+                return False, "breaker_daily_loss_cap"
+            if (len(self._recent_lat) >= self._recent_lat.maxlen
+                    and (sum(self._recent_lat) / len(self._recent_lat)) > self.max_latency_s > 0):
+                self._trip(now, "latency")
+                return False, "breaker_latency"
+            return True, "ok"
+
+    def record_follow_result(self, *, won: bool, pnl: float, now: Optional[float] = None) -> None:
+        """Feed a settled FOLLOW trade back to the breaker (consecutive losses + daily loss)."""
+        now = float(now if now is not None else time.time())
+        with self._lock:
+            day = int(now // 86400)
+            if day != self._daily_key:
+                self._daily_key, self._daily_loss = day, 0.0
+            pnl = float(pnl or 0.0)
+            if pnl < 0:
+                self._daily_loss += -pnl
+            self._consec_losses = 0 if won else (self._consec_losses + 1)
+            if self.max_consecutive_losses > 0 and self._consec_losses >= self.max_consecutive_losses:
+                self._trip(now, "consecutive_losses")
+
+    def _breaker_status_locked(self, now: float) -> dict:
+        tripped = now < self._tripped_until
+        return {"tripped": tripped, "reason": (self._trip_reason if tripped else None),
+                "consecutive_losses": self._consec_losses,
+                "daily_follow_loss_usd": round(self._daily_loss, 4),
+                "daily_loss_cap_usd": self.daily_loss_cap_usd, "trips": self.trips,
+                "cooldown_remaining_s": (round(self._tripped_until - now, 1) if tripped else 0),
+                "max_consecutive_losses": self.max_consecutive_losses,
+                "max_latency_s": self.max_latency_s}
+
+    def breaker_status(self, now: Optional[float] = None) -> dict:
+        now = float(now if now is not None else time.time())
+        with self._lock:
+            return self._breaker_status_locked(now)
+
     # -- worker ------------------------------------------------------------- #
     def _process_one(self) -> bool:
         with self._lock:
@@ -191,6 +367,7 @@ class GrokDecider:
                 decision["latency_s"] = round(latency, 3)
                 self.decided += 1
                 self.latency_sum += latency
+                self._recent_lat.append(latency)
                 self._results[decision_id] = decision
                 self._order.append(decision_id)
                 if len(self._results) > self._order.maxlen:
@@ -259,6 +436,7 @@ class GrokDecider:
                 "avg_latency_s": avg_lat,
                 "graded_directional": self.graded, "direction_accuracy": acc, "brier": brier,
                 "abstains": self.abstains, "by_action": by_action,
+                "circuit_breaker": self._breaker_status_locked(time.time()),
                 "note": ("Grok decides; bot executes (paper). shadow=decide+grade only (no trade), "
                          "follow=engine follows direction/size subject to the deterministic floor "
                          "(execution realism, risk caps, freshness). Fail-closed -> no_trade."),
@@ -270,7 +448,10 @@ class GrokDecider:
                     "skipped_budget": self.skipped_budget, "latency_sum": round(self.latency_sum, 3),
                     "graded": self.graded, "correct": self.correct,
                     "brier_sum": round(self.brier_sum, 6), "abstains": self.abstains,
-                    "by_action": {a: dict(s) for a, s in self.by_action.items()}}
+                    "by_action": {a: dict(s) for a, s in self.by_action.items()},
+                    "trips": self.trips, "consec_losses": self._consec_losses,
+                    "daily_loss": round(self._daily_loss, 4), "daily_key": self._daily_key,
+                    "tripped_until": self._tripped_until, "trip_reason": self._trip_reason}
 
     def load_state(self, data: dict) -> None:
         if not data:
@@ -288,3 +469,9 @@ class GrokDecider:
             self.by_action = {a: {"n": int(s.get("n", 0) or 0), "wins": int(s.get("wins", 0) or 0),
                                   "pnl": float(s.get("pnl", 0.0) or 0.0)}
                               for a, s in (data.get("by_action") or {}).items()}
+            self.trips = int(data.get("trips", 0) or 0)
+            self._consec_losses = int(data.get("consec_losses", 0) or 0)
+            self._daily_loss = float(data.get("daily_loss", 0.0) or 0.0)
+            self._daily_key = data.get("daily_key")
+            self._tripped_until = float(data.get("tripped_until", 0.0) or 0.0)
+            self._trip_reason = data.get("trip_reason")

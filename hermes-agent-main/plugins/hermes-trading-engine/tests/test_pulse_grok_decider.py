@@ -80,11 +80,13 @@ def test_is_actionable_freshness_and_confidence():
 # ============================ engine end-to-end =========================================== #
 class _FakeDecider:
     """Deterministic stand-in (no network): returns a fixed decision and records grades."""
-    def __init__(self, mode, decision):
+    def __init__(self, mode, decision, *, follow_ok=True):
         self.mode = mode
         self._decision = decision
+        self._follow_ok = follow_ok
         self.graded = []
         self.requested = 0
+        self.follow_results = []
 
     def request(self, decision_id, bundle):
         self.requested += 1
@@ -95,6 +97,12 @@ class _FakeDecider:
     def is_actionable(self, dec, now=None):
         return bool(dec and dec.get("action") in ("up", "down")
                     and float(dec.get("confidence") or 0) >= 0.55)
+
+    def should_follow(self, now=None):
+        return (True, "ok") if self._follow_ok else (False, "breaker_test")
+
+    def record_follow_result(self, *, won, pnl, now=None):
+        self.follow_results.append((bool(won), float(pnl)))
 
     def grade(self, decision_id, outcome_up, pnl=None):
         self.graded.append((decision_id, bool(outcome_up)))
@@ -124,7 +132,53 @@ class _Mkt:
         return True
 
 
-def _engine(tmp_path, *, mode, decision):
+# ------------------------------- circuit breaker (Phase 8) -------------------------------- #
+def test_breaker_consecutive_losses_then_recovers():
+    g = GrokDecider(mode="follow", max_consecutive_losses=3, cooldown_s=100, daily_loss_cap_usd=999)
+    now = 1000.0
+    for _ in range(2):
+        g.record_follow_result(won=False, pnl=-5.0, now=now)
+    assert g.should_follow(now)[0] is True            # 2 losses < 3 -> still following
+    g.record_follow_result(won=False, pnl=-5.0, now=now)   # 3rd -> trip
+    ok, reason = g.should_follow(now)
+    assert ok is False and reason == "breaker_consecutive_losses"
+    assert g.should_follow(now + 50)[0] is False      # still in cooldown
+    assert g.should_follow(now + 101)[0] is True       # cooldown elapsed -> follows again
+
+
+def test_breaker_daily_loss_cap():
+    g = GrokDecider(mode="follow", max_consecutive_losses=99, daily_loss_cap_usd=8.0, cooldown_s=100)
+    now = 2000.0
+    g.record_follow_result(won=False, pnl=-5.0, now=now)
+    assert g.should_follow(now)[0] is True             # $5 < $8 cap
+    g.record_follow_result(won=False, pnl=-5.0, now=now)   # $10 >= $8
+    assert g.should_follow(now) == (False, "breaker_daily_loss_cap")
+
+
+def test_breaker_latency():
+    g = GrokDecider(mode="follow", max_latency_s=5.0, cooldown_s=100, daily_loss_cap_usd=999)
+    for _ in range(g._recent_lat.maxlen):
+        g._recent_lat.append(9.0)                      # sustained high latency
+    assert g.should_follow(3000.0) == (False, "breaker_latency")
+
+
+# ------------------------------- news digest (Phase 3) ----------------------------------- #
+def test_news_digest_refresh_failopen_and_expiry():
+    from engine.pulse.grok_decider import GrokNewsDigest
+    nd = GrokNewsDigest(news_fn=lambda: {"sentiment": "bullish", "confidence": 0.7,
+                                         "headlines": ["x"], "event_risk": "low"},
+                        interval_s=60, max_age_s=600)
+    nd.refresh()
+    latest = nd.latest()
+    assert latest["sentiment"] == "bullish" and "age_s" in latest and nd.report()["calls"] == 1
+    nd2 = GrokNewsDigest(news_fn=lambda: None)         # fail-open
+    nd2.refresh()
+    assert nd2.latest() is None and nd2.report()["errors"] == 1
+    nd._ts = time.time() - 10_000                       # force staleness
+    assert nd.latest() is None
+
+
+def _engine(tmp_path, *, mode, decision, follow_ok=True, **over):
     t0 = 9_980_000.0
     win = PulseWindow(event_id="e1", market_id="m1", slug="s", title="BTC Up or Down",
                       open_ts=t0, close_ts=t0 + 300, up_token_id="U", down_token_id="D")
@@ -138,9 +192,9 @@ def _engine(tmp_path, *, mode, decision):
     cfg = PulseConfig(tick_seconds=1.0, size_usd=10.0, min_edge=0.02, basis_buffer=0.0,
                       min_seconds_since_open=0.0, sigma_trust_floor=0.0, min_vol_samples=2,
                       settle_grace_s=0.0, exec_max_depth_consume_frac=0.9,
-                      grok_decider_mode=mode, data_dir=str(tmp_path))
+                      grok_decider_mode=mode, data_dir=str(tmp_path), **over)
     eng = PulseEngine(cfg, market_feed=_Mkt(win), price_feed=feed)
-    eng.grok_decider = _FakeDecider(mode, decision)        # inject (no network)
+    eng.grok_decider = _FakeDecider(mode, decision, follow_ok=follow_ok)   # inject (no network)
     return eng, t0
 
 
@@ -193,4 +247,28 @@ def test_engine_follow_abstains_on_no_decision(tmp_path):
     eng, t0 = _engine(tmp_path, mode="follow", decision=None)   # decider returned nothing
     _drive(eng, t0)
     assert eng.ledger.trades == 0
+    assert eng.light_report()["global_reconciled"] is True
+
+
+def test_engine_follow_fraction_zero_uses_baseline(tmp_path):
+    # A/B canary control arm: follow_fraction=0 -> never follows; trades by baseline logic instead
+    eng, t0 = _engine(tmp_path, mode="follow",
+                      decision={"action": "up", "confidence": 0.9, "size_fraction": 1.0,
+                                "ttl_s": 240},
+                      grok_decider_follow_fraction=0.0)
+    _drive(eng, t0)
+    assert eng.ledger.trades >= 1                       # still trades (baseline arm)
+    assert all((p.research or {}).get("entry_mode") != "grok_follow"
+               for p in eng.ledger.positions.values())
+
+
+def test_engine_follow_breaker_tripped_falls_back_to_baseline(tmp_path):
+    # breaker tripped -> should_follow False -> bot trades baseline (no grok_follow entries)
+    eng, t0 = _engine(tmp_path, mode="follow",
+                      decision={"action": "up", "confidence": 0.9, "size_fraction": 1.0,
+                                "ttl_s": 240}, follow_ok=False)
+    _drive(eng, t0)
+    assert eng.ledger.trades >= 1
+    assert all((p.research or {}).get("entry_mode") != "grok_follow"
+               for p in eng.ledger.positions.values())
     assert eng.light_report()["global_reconciled"] is True
