@@ -94,9 +94,41 @@ VOLUME_STATES = ("active", "dead", "spike", "unknown")
 HTF_BIASES = ("bullish", "bearish", "neutral", "unknown")
 
 
+# Composite v3 optional enum fields (invalid/missing -> "unknown"; never reject the alert).
+ADX_STATES = ("weak_trend", "normal_trend", "strong_trend", "unknown")
+SUPERTREND_DIRECTIONS = ("bullish", "bearish", "neutral", "unknown")
+CANDLE_PRESSURES = ("bull_close_near_high", "bear_close_near_low", "upper_wick_rejection",
+                    "lower_wick_rejection", "neutral_candle", "unknown")
+RANGE_STATES = ("breakout_up", "breakout_down", "range_top", "range_bottom", "range_middle",
+                "unknown")
+MTF_ALIGNMENTS = ("bullish_aligned", "bearish_aligned", "mixed", "neutral", "unknown")
+
+
 def _enum(value, allowed: tuple, default: str = "unknown") -> str:
     v = str(value or "").strip().lower()
     return v if v in allowed else default
+
+
+def _as_float(value) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_bool(value) -> Optional[bool]:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    s = str(value).strip().lower()
+    if s in ("true", "1", "yes", "on"):
+        return True
+    if s in ("false", "0", "no", "off"):
+        return False
+    return None
 
 
 def strength_bucket(x) -> str:
@@ -135,6 +167,25 @@ class TradingViewSignalEvent:
     volume_state: str = "unknown"
     htf_bias: str = "unknown"
     composite_version: Optional[str] = None
+    # ---- Composite v3 optional features (observe-only) ----
+    adx: Optional[float] = None
+    adx_state: str = "unknown"
+    supertrend_value: Optional[float] = None
+    supertrend_direction: str = "unknown"
+    supertrend_aligned: Optional[bool] = None
+    candle_pressure: str = "unknown"
+    body_ratio: Optional[float] = None
+    close_position: Optional[float] = None
+    upper_wick_ratio: Optional[float] = None
+    lower_wick_ratio: Optional[float] = None
+    range_state: str = "unknown"
+    range_lookback: Optional[float] = None
+    prior_range_high: Optional[float] = None
+    prior_range_low: Optional[float] = None
+    mtf_alignment: str = "unknown"
+    bar_confirmed: Optional[bool] = None
+    signal_age_ms: Optional[float] = None
+    non_repainting: Optional[bool] = None
     source: str = "tradingview"
     observe_only: bool = True
 
@@ -143,13 +194,27 @@ class TradingViewSignalEvent:
                 "relative_volume": self.relative_volume, "volume_state": self.volume_state,
                 "htf_bias": self.htf_bias, "composite_version": self.composite_version}
 
+    def _v3(self) -> dict:
+        return {"adx": self.adx, "adx_state": self.adx_state,
+                "supertrend_value": self.supertrend_value,
+                "supertrend_direction": self.supertrend_direction,
+                "supertrend_aligned": self.supertrend_aligned,
+                "candle_pressure": self.candle_pressure, "body_ratio": self.body_ratio,
+                "close_position": self.close_position, "upper_wick_ratio": self.upper_wick_ratio,
+                "lower_wick_ratio": self.lower_wick_ratio, "range_state": self.range_state,
+                "range_lookback": self.range_lookback, "prior_range_high": self.prior_range_high,
+                "prior_range_low": self.prior_range_low, "mtf_alignment": self.mtf_alignment,
+                "bar_confirmed": self.bar_confirmed, "signal_age_ms": self.signal_age_ms,
+                "non_repainting": self.non_repainting}
+
     def to_dict(self) -> dict:
         return {"event_id": self.event_id, "source": self.source, "bot_name": self.bot_name,
                 "symbol": self.symbol, "timeframe": self.timeframe, "bar_time": self.bar_time,
                 "received_at": round(self.received_at, 3), "direction": self.direction,
                 "strength": self.strength, "signal_level": self.signal_level,
                 "price": self.price, "indicator_name": self.indicator_name,
-                "raw_payload_hash": self.raw_payload_hash, "observe_only": True, **self._v2()}
+                "raw_payload_hash": self.raw_payload_hash, "observe_only": True,
+                **self._v2(), **self._v3()}
 
     def as_feature(self, *, now: Optional[float] = None) -> dict:
         """The observe-only feature view attached to a candidate (never trades/sizes/vetoes)."""
@@ -160,7 +225,7 @@ class TradingViewSignalEvent:
                 "signal_level": self.signal_level, "price": self.price,
                 "indicator_name": self.indicator_name, "symbol": self.symbol,
                 "timeframe": self.timeframe, "bar_time": self.bar_time,
-                "age_s": (round(now - self.received_at, 3)), **self._v2()}
+                "age_s": (round(now - self.received_at, 3)), **self._v2(), **self._v3()}
 
 
 class TradingViewEdge:
@@ -304,7 +369,9 @@ class TradingViewSignalLearner:
     DIMS = ("direction", "signal_level", "strength_bucket", "indicator_name", "hurst_regime",
             "zscore_bucket", "ttc_bucket", "spread_bucket", "depth_bucket",
             # Composite v2 dimensions
-            "vwap_state", "bb_state", "volume_state", "htf_bias", "composite_version")
+            "vwap_state", "bb_state", "volume_state", "htf_bias", "composite_version",
+            # Composite v3 dimensions
+            "adx_state", "supertrend_direction", "candle_pressure", "range_state", "mtf_alignment")
 
     def __init__(self):
         self.dims: dict = {d: {} for d in self.DIMS}
@@ -620,6 +687,22 @@ def _event_from_dict(d) -> Optional["TradingViewSignalEvent"]:
             volume_state=_enum(d.get("volume_state"), VOLUME_STATES),
             htf_bias=_enum(d.get("htf_bias"), HTF_BIASES),
             composite_version=d.get("composite_version"),
+            adx=_as_float(d.get("adx")), adx_state=_enum(d.get("adx_state"), ADX_STATES),
+            supertrend_value=_as_float(d.get("supertrend_value")),
+            supertrend_direction=_enum(d.get("supertrend_direction"), SUPERTREND_DIRECTIONS),
+            supertrend_aligned=_as_bool(d.get("supertrend_aligned")),
+            candle_pressure=_enum(d.get("candle_pressure"), CANDLE_PRESSURES),
+            body_ratio=_as_float(d.get("body_ratio")), close_position=_as_float(d.get("close_position")),
+            upper_wick_ratio=_as_float(d.get("upper_wick_ratio")),
+            lower_wick_ratio=_as_float(d.get("lower_wick_ratio")),
+            range_state=_enum(d.get("range_state"), RANGE_STATES),
+            range_lookback=_as_float(d.get("range_lookback")),
+            prior_range_high=_as_float(d.get("prior_range_high")),
+            prior_range_low=_as_float(d.get("prior_range_low")),
+            mtf_alignment=_enum(d.get("mtf_alignment"), MTF_ALIGNMENTS),
+            bar_confirmed=_as_bool(d.get("bar_confirmed")),
+            signal_age_ms=_as_float(d.get("signal_age_ms")),
+            non_repainting=_as_bool(d.get("non_repainting")),
             indicator_name=d.get("indicator_name"),
             raw_payload_hash=str(d.get("raw_payload_hash") or ""))
     except Exception:  # noqa: BLE001
@@ -739,6 +822,25 @@ class TradingViewIntake:
             volume_state=_enum(payload.get("volume_state"), VOLUME_STATES),
             htf_bias=_enum(payload.get("htf_bias"), HTF_BIASES),
             composite_version=(str(payload.get("composite_version") or "").strip() or None),
+            # Composite v3 (invalid enums coerce to "unknown"; numerics/bools -> None if absent/bad)
+            adx=_as_float(payload.get("adx")),
+            adx_state=_enum(payload.get("adx_state"), ADX_STATES),
+            supertrend_value=_as_float(payload.get("supertrend_value")),
+            supertrend_direction=_enum(payload.get("supertrend_direction"), SUPERTREND_DIRECTIONS),
+            supertrend_aligned=_as_bool(payload.get("supertrend_aligned")),
+            candle_pressure=_enum(payload.get("candle_pressure"), CANDLE_PRESSURES),
+            body_ratio=_as_float(payload.get("body_ratio")),
+            close_position=_as_float(payload.get("close_position")),
+            upper_wick_ratio=_as_float(payload.get("upper_wick_ratio")),
+            lower_wick_ratio=_as_float(payload.get("lower_wick_ratio")),
+            range_state=_enum(payload.get("range_state"), RANGE_STATES),
+            range_lookback=_as_float(payload.get("range_lookback")),
+            prior_range_high=_as_float(payload.get("prior_range_high")),
+            prior_range_low=_as_float(payload.get("prior_range_low")),
+            mtf_alignment=_enum(payload.get("mtf_alignment"), MTF_ALIGNMENTS),
+            bar_confirmed=_as_bool(payload.get("bar_confirmed")),
+            signal_age_ms=_as_float(payload.get("signal_age_ms")),
+            non_repainting=_as_bool(payload.get("non_repainting")),
             raw_payload_hash=raw_hash)
         return ev, None
 
