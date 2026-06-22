@@ -230,9 +230,12 @@ class PulseConfig:
             tradingview_secret=(os.getenv("TRADINGVIEW_WEBHOOK_SECRET", "") or "").strip(),
             tradingview_allowed_symbols=tuple(
                 s.strip().upper() for s in os.getenv(
-                    "TRADINGVIEW_ALLOWED_SYMBOLS", "BTCUSD,BTCUSDT,BTC/USD,BTC,XBTUSD").split(",")
+                    "TRADINGVIEW_ALLOWED_SYMBOLS",
+                    "BTCUSD,INDEX:BTCUSD,BTCUSDT,BINANCE:BTCUSDT,BTC/USD,BTC,XBTUSD").split(",")
                 if s.strip()),
-            tradingview_bot_name=(os.getenv("TRADINGVIEW_BOT_NAME", "hermes") or "").strip(),
+            # bot name: TRADINGVIEW_BOT_NAME takes precedence, else BOT_NAME, else "hermes"
+            tradingview_bot_name=((os.getenv("TRADINGVIEW_BOT_NAME") or os.getenv("BOT_NAME")
+                                   or "hermes").strip()),
             tradingview_webhook_host=(os.getenv("TRADINGVIEW_WEBHOOK_HOST", "127.0.0.1")
                                       or "127.0.0.1").strip(),
             tradingview_webhook_port=int(_envf("TRADINGVIEW_WEBHOOK_PORT", 8787)),
@@ -1149,8 +1152,11 @@ class PulseEngine:
                    "tradingview_latest_signal": None}
         else:
             rep = self.tradingview.report()
-            if self.webhook is not None:
-                rep["webhook"] = self.webhook.status()
+        # always surface the webhook listener status (req: listener status in the light report)
+        rep["webhook"] = (self.webhook.status() if self.webhook is not None
+                          else {"listening": False, "observe_only": True,
+                                "reason": ("no_secret_configured" if self.tradingview is None
+                                           else "listener_not_started")})
         rep["edge_vs_5min_outcome"] = self._tv_edge.report()
         rep["rsi_trend"] = self._rsi_model.report()
         rep["rsi_trend"]["forward_horizon_s"] = self.cfg.tradingview_signal_horizon_s

@@ -37,7 +37,13 @@ services:
     #   TRADINGVIEW_WEBHOOK_HOST=0.0.0.0         (so the in-container listener binds all ifaces)
     # The shared-secret + symbol/bot/dedupe checks still gate every alert; it stays observe-only.
     ports:
-      - "${TRADINGVIEW_WEBHOOK_PUBLISH:-127.0.0.1:8787}:8787"
+      # ALWAYS publish the listener to host loopback :8787 so `curl 127.0.0.1:8787/...` works for
+      # local admin/testing on the VPS (the documented default port).
+      - "127.0.0.1:8787:8787"
+      # OPTIONAL public publish for external TradingView delivery. On the VPS set
+      # TRADINGVIEW_WEBHOOK_PUBLISH=0.0.0.0:80 (Vultr only exposes 22/80). Default = harmless 2nd
+      # loopback so the repo default never exposes anything.
+      - "${TRADINGVIEW_WEBHOOK_PUBLISH:-127.0.0.1:18787}:8787"
     command: python scripts/run_btc_pulse.py
     environment:
       HTE_DATA_DIR: "/data"
@@ -133,7 +139,8 @@ services:
       # execution gate. To receive alerts on the host, run the listener on the host loopback (or
       # add your own proxy) — topology is intentionally left unchanged.
       TRADINGVIEW_WEBHOOK_SECRET: "${TRADINGVIEW_WEBHOOK_SECRET:-}"
-      TRADINGVIEW_ALLOWED_SYMBOLS: "${TRADINGVIEW_ALLOWED_SYMBOLS:-BTCUSD,BTCUSDT,BTC/USD,BTC,XBTUSD}"
+      TRADINGVIEW_ALLOWED_SYMBOLS: "${TRADINGVIEW_ALLOWED_SYMBOLS:-BTCUSD,INDEX:BTCUSD,BTCUSDT,BINANCE:BTCUSDT,BTC/USD,BTC,XBTUSD,BTCUSDT.P}"
+      BOT_NAME: "${BOT_NAME:-hermes}"
       TRADINGVIEW_BOT_NAME: "${TRADINGVIEW_BOT_NAME:-hermes}"
       TRADINGVIEW_WEBHOOK_HOST: "${TRADINGVIEW_WEBHOOK_HOST:-127.0.0.1}"
       TRADINGVIEW_WEBHOOK_PORT: "${TRADINGVIEW_WEBHOOK_PORT:-8787}"

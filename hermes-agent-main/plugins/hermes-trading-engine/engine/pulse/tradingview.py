@@ -637,7 +637,9 @@ class TradingViewIntake:
                  data_dir: Optional[str] = None, dedupe_capacity: int = 5000,
                  header_name: str = "X-Tradingview-Secret"):
         self.secret = str(secret or "")
-        self.allowed_symbols = {str(s).strip().upper() for s in (allowed_symbols or []) if str(s).strip()}
+        # normalize allow-list entries the same way incoming symbols are normalized, so
+        # exchange-prefixed aliases (INDEX:BTCUSD, BINANCE:BTCUSDT) match their base symbol.
+        self.allowed_symbols = {normalize_symbol(s) for s in (allowed_symbols or []) if str(s).strip()}
         self.bot_name = str(bot_name or "").strip().lower()
         self.max_age_s = float(max_age_s)
         self.future_skew_s = float(future_skew_s)

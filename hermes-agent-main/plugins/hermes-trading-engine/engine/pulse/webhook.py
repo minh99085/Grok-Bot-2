@@ -149,7 +149,7 @@ class WebhookServer:
                                         name="tv-webhook", daemon=True)
         self._thread.start()
         self._started = True
-        logger.info("TradingView webhook listening on http://%s:%d%s (observe-only, paper)",
+        logger.info("TradingView webhook listening host=%s port=%d path=%s observe_only=true",
                     self.host, self.port, self.path)
         return self
 
@@ -163,5 +163,6 @@ class WebhookServer:
         self._started = False
 
     def status(self) -> dict:
-        return {"running": self._started, "host": self.host, "port": self.port,
-                "path": self.path, "bound_internal": self.host in ("127.0.0.1", "localhost")}
+        return {"listening": self._started, "running": self._started, "observe_only": True,
+                "host": self.host, "port": self.port, "path": self.path,
+                "bound_internal": self.host in ("127.0.0.1", "localhost")}
