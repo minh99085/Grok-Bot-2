@@ -54,6 +54,24 @@ def test_decider_decides_and_grades_leakage_free():
     assert rep["by_action"]["up"]["direction_accuracy"] == 1.0
 
 
+def test_decider_learns_per_context_and_recent():
+    g = GrokDecider(decider_fn=lambda b: {"action": "up", "confidence": 0.7}, mode="shadow")
+    g.request("a", {"b": 1}, context={"hurst_regime": "trending", "ttc_bucket": "60-120s"})
+    g._process_one()
+    g.grade("a", outcome_up=True)              # up + up -> correct in trending
+    g.request("b", {"b": 1}, context={"hurst_regime": "trending", "ttc_bucket": "60-120s"})
+    g._process_one()
+    g.grade("b", outcome_up=False)             # up + down -> wrong in trending
+    rep = g.report()
+    acc = rep["accuracy_by_context"]["hurst_regime"]["trending"]
+    assert acc["n"] == 2 and acc["accuracy"] == 0.5
+    assert len(rep["recent_decisions"]) == 2 and rep["recent_decisions"][0]["correct"] is True
+    # learning state survives a persist/restore round-trip
+    g2 = GrokDecider(mode="shadow")
+    g2.load_state(g.to_state())
+    assert g2.report()["accuracy_by_context"]["hurst_regime"]["trending"]["n"] == 2
+
+
 def test_decider_failclosed_and_budget_skip():
     g = GrokDecider(decider_fn=lambda b: None, budget=None, mode="shadow")
     g.request("e", {})
@@ -88,8 +106,9 @@ class _FakeDecider:
         self.requested = 0
         self.follow_results = []
 
-    def request(self, decision_id, bundle):
+    def request(self, decision_id, bundle, context=None):
         self.requested += 1
+        self.last_bundle = bundle
 
     def get(self, decision_id):
         return ({**self._decision, "ts": time.time()} if self._decision else None)
@@ -248,6 +267,22 @@ def test_engine_follow_abstains_on_no_decision(tmp_path):
     _drive(eng, t0)
     assert eng.ledger.trades == 0
     assert eng.light_report()["global_reconciled"] is True
+
+
+def test_engine_bundle_is_fully_structured(tmp_path):
+    # the payload sent to Grok must be complete + correctly typed (payoff, divergence, account, etc.)
+    eng, t0 = _engine(tmp_path, mode="shadow",
+                      decision={"action": "no_trade", "confidence": 0.5, "ttl_s": 240})
+    _drive(eng, t0)
+    b = getattr(eng.grok_decider, "last_bundle", None)
+    assert b is not None
+    for k in ("schema_version", "objective", "decision_id", "timing", "price", "digital_fair_p_up",
+              "polymarket", "payoff", "account_state", "bot_learned_evidence",
+              "decider_track_record"):
+        assert k in b, k
+    assert "breakeven_win_rate" in (b["payoff"]["up"] or {})        # binary payoff bar present
+    assert "fair_minus_poly" in b["polymarket"]                     # fair-vs-market divergence present
+    assert "win_rate" in b["account_state"]
 
 
 def test_engine_follow_fraction_zero_uses_baseline(tmp_path):

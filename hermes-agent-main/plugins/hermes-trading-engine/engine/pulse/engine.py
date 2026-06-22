@@ -880,7 +880,8 @@ class PulseEngine:
             if self.grok_decider is not None:
                 self.grok_decider.request(
                     mc.decision_id,
-                    self._grok_decision_bundle(mc, dr, w, fair_used, ttc, tv_feature))
+                    self._grok_decision_bundle(mc, dr, w, fair_used, ttc, tv_feature),
+                    context=self._grok_decision_context(dr.features, cand_state, ttc, fair_used))
                 grok_dec = self.grok_decider.get(mc.decision_id)
                 dr.grok_decision = grok_dec
                 if grok_dec is not None:
@@ -1360,39 +1361,100 @@ class PulseEngine:
             # else: stale with no price -> drop
         self._tv_pending = still[-1000:]
 
+    @staticmethod
+    def _r(v, nd=4):
+        """Round floats for a compact, well-typed payload; pass through non-numerics."""
+        try:
+            return round(float(v), nd) if v is not None else None
+        except (TypeError, ValueError):
+            return v
+
+    @staticmethod
+    def _reward_risk(ask):
+        """Binary payoff at ask price p: a win nets (1-p)/p per $; breakeven win-rate ~= p."""
+        try:
+            p = float(ask)
+            if p <= 0 or p >= 1:
+                return None
+            return {"ask": round(p, 4), "win_payoff_per_$": round((1.0 - p) / p, 4),
+                    "breakeven_win_rate": round(p, 4)}
+        except (TypeError, ValueError):
+            return None
+
+    def _grok_decision_context(self, rf, cand_state, ttc, fair_used) -> dict:
+        """Compact entry-time context tags used to bucket the decider's OWN accuracy as it learns."""
+        conv = abs(float(fair_used) - 0.5) * 2 if fair_used is not None else None
+        conv_bucket = ("na" if conv is None else
+                       ("strong" if conv >= 0.4 else ("lean" if conv >= 0.2 else "coinflip")))
+        return {"hurst_regime": (rf.get("hurst_regime") if rf else None),
+                "markov_state": cand_state, "ttc_bucket": ttc_bucket(ttc),
+                "conviction_bucket": conv_bucket}
+
     def _grok_decision_bundle(self, mc, dr, w, fair_used, ttc, tv_feature) -> dict:
-        """Compact 'analyze everything' payload for the Grok decider: market microstructure, the
-        digital fair, the TradingView signal, regime/research, edge signal, and the bot's OWN learned
-        evidence (selectivity bucket verdicts, late-window edge, recent decider accuracy)."""
+        """Fully-structured 'analyze everything' payload for the Grok decider. Numerics rounded,
+        nulls allowed, ordered so the decision-critical fields lead. Includes: market microstructure
+        + binary payoff (the breakeven bar), the digital fair vs Polymarket divergence, the
+        TradingView signal, live news, regime/research, edge signal, account/risk state, the bot's
+        OWN learned evidence, and the decider's track record (so Grok LEARNS as it trades)."""
         rf = dr.features or {}
         try:
             sel_be = self.selectivity_gate.bucket_evidence(self.selectivity_evidence, top=6)
         except Exception:  # noqa: BLE001
             sel_be = {}
+        ls = self.ledger.stats()
+        up_ask = (w.up_book.best_ask if w.up_book else None)
+        dn_ask = (w.down_book.best_ask if w.down_book else None)
+        poly_yes = mc.poly_yes
+        divergence = (round(float(fair_used) - float(poly_yes), 4)
+                      if (fair_used is not None and poly_yes is not None) else None)
+        # compact TradingView signal: drop nulls/unknowns to keep the payload tight + readable
+        tv = None
+        if tv_feature:
+            tv = {k: v for k, v in tv_feature.items()
+                  if v is not None and v != "unknown" and k not in ("observe_only", "source")}
         return {
+            "schema_version": "grok_decision_bundle/1.1",
             "market": "polymarket_btc_5m_up_or_down",
-            "decision_id": mc.decision_id, "seconds_to_close": round(ttc, 1),
-            "btc_price_now": mc.s_now, "btc_price_open": mc.s_open,
-            "sigma_per_sec": mc.sigma_per_sec, "digital_fair_p_up": fair_used,
-            "polymarket": {"yes_mid": mc.poly_yes, "spread": mc.spread,
-                           "up_best_ask": (w.up_book.best_ask if w.up_book else None),
-                           "down_best_ask": (w.down_book.best_ask if w.down_book else None),
-                           "ask_depth_usd": mc.ask_depth_usd},
-            "tradingview_signal": tv_feature,
+            "objective": "settles UP if BTC Chainlink close >= window open; pick up/down/no_trade",
+            "decision_id": mc.decision_id,
+            "timing": {"seconds_to_close": self._r(ttc, 1),
+                       "utc_minute_of_hour": int((self.last_tick_ts or time.time()) // 60 % 60)},
+            "price": {"btc_now": self._r(mc.s_now, 2), "btc_open": self._r(mc.s_open, 2),
+                      "move_from_open": (self._r(mc.s_now - mc.s_open, 2)
+                                         if (mc.s_now is not None and mc.s_open is not None) else None),
+                      "sigma_per_sec": self._r(mc.sigma_per_sec, 6)},
+            "digital_fair_p_up": self._r(fair_used),
+            "polymarket": {"yes_mid": self._r(poly_yes), "spread": self._r(mc.spread),
+                           "up_best_ask": self._r(up_ask), "down_best_ask": self._r(dn_ask),
+                           "ask_depth_usd": self._r(mc.ask_depth_usd, 1),
+                           "fair_minus_poly": divergence},
+            "payoff": {"up": self._reward_risk(up_ask), "down": self._reward_risk(dn_ask),
+                       "min_reward_risk_floor": self.cfg.min_reward_risk,
+                       "note": "only trade a side if your P(win) clears its breakeven_win_rate after costs"},
+            "tradingview_signal": tv,
             "news": (self.grok_news.latest() if self.grok_news is not None else None),
-            "research": {"hurst_regime": rf.get("hurst_regime"), "zscore_bucket": rf.get("zscore_bucket"),
+            "research": {"hurst_regime": rf.get("hurst_regime"),
+                         "zscore_bucket": rf.get("zscore_bucket"),
+                         "half_life_s": self._r(rf.get("half_life_s"), 1),
                          "regime": (dr.regime or {}).get("state")},
             "edge_signal": {k: (dr.edge or {}).get(k) for k in
-                            ("pulse_edge_score", "stale_divergence_class", "cex_agreement_bucket")},
-            "edge_model_p_up": (dr.model or {}).get("p_up"),
+                            ("pulse_edge_score", "stale_divergence_class", "cex_agreement_bucket",
+                             "orderbook_pressure")},
+            "edge_model_p_up": self._r((dr.model or {}).get("p_up")),
+            "grok_per_signal_p_up": (tv_feature or {}).get("grok_p_up"),
+            "account_state": {"open_positions": ls.get("open_positions"),
+                              "settled": ls.get("settled"), "win_rate": self._r(ls.get("win_rate")),
+                              "realized_pnl_usd": self._r(ls.get("realized_pnl_usd"), 2),
+                              "daily_loss_so_far_usd": self._r(self._daily_loss, 2),
+                              "size_usd": self.cfg.size_usd},
             "bot_learned_evidence": {
                 "selectivity_blocked_or_notable": sel_be.get("buckets", [])[:6],
                 "late_window_edge_verdict": self.late_window_edge.report().get("verdict"),
-                "ledger": {"trades": self.ledger.stats().get("trades"),
-                           "win_rate": self.ledger.stats().get("win_rate"),
-                           "realized_pnl_usd": self.ledger.stats().get("realized_pnl_usd")}},
+                "pnl_by_ttc_bucket": self._groups.summary().get("ttc_bucket", {}),
+                "pnl_by_hurst_regime": self._groups.summary().get("hurst_regime", {})},
             "decider_track_record": (self.grok_decider.report() if self.grok_decider else {}),
-            "note": "advisory paper decision; bot enforces realism/risk floor; PAPER ONLY",
+            "note": ("advisory PAPER decision; the bot enforces a realism/risk floor (execution gate, "
+                     "caps, freshness) and follows your direction; learn from decider_track_record."),
         }
 
     def _follow_canary(self, decision_id: str) -> bool:

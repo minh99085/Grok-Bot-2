@@ -98,6 +98,9 @@ def make_decider_fn(*, model: str = "grok-4.3", timeout_s: float = 12.0,
             "best action for THIS window. Account for the binary payoff: at ask price p a win nets "
             "(1-p)/p per $ while a loss costs the full stake, so breakeven win-rate is ~p; only "
             "choose up/down if your probability clears that bar after costs, else choose no_trade. "
+            "LEARN from your own track record in 'decider_track_record' (direction accuracy overall, "
+            "by context, and 'recent_decisions' hits/misses): lean into contexts where your calls "
+            "have been right and avoid/abstain in contexts where they've been wrong as evidence grows. "
             "Be calibrated and selective; prefer no_trade when uncertain. Respond with STRICT JSON "
             "ONLY: {\"action\":\"up|down|no_trade\",\"confidence\":<0-1>,\"size_fraction\":<0-1>,"
             "\"max_price\":<0-1 optional>,\"key_risks\":[\"...\"],\"rationale\":\"<short>\","
@@ -263,16 +266,19 @@ class GrokDecider:
         self.brier_sum = 0.0
         self.abstains = 0
         self.by_action: dict = {}             # action -> {"n","wins","pnl"}
+        # ---- learning-as-it-trades: per-context accuracy + recent graded outcomes ----
+        self.by_context: dict = {}            # dim -> bucket -> {"n","correct"}
+        self._recent: deque = deque(maxlen=12)
 
     # -- request / read ----------------------------------------------------- #
-    def request(self, decision_id: str, bundle: dict) -> None:
+    def request(self, decision_id: str, bundle: dict, context: Optional[dict] = None) -> None:
         if not decision_id or self.mode == "off":
             return
         with self._lock:
             if decision_id in self._seen:
                 return
             self._seen.add(decision_id)
-            self._queue.append((decision_id, bundle))
+            self._queue.append((decision_id, bundle, context or {}))
             self.requested += 1
 
     def get(self, decision_id: str) -> Optional[dict]:
@@ -347,7 +353,7 @@ class GrokDecider:
         with self._lock:
             if not self._queue:
                 return False
-            decision_id, bundle = self._queue.popleft()
+            decision_id, bundle, context = self._queue.popleft()
         if self._budget is not None and not self._budget.try_spend("decider"):
             with self._lock:
                 self.skipped_budget += 1
@@ -365,6 +371,7 @@ class GrokDecider:
             else:
                 decision["ts"] = time.time()
                 decision["latency_s"] = round(latency, 3)
+                decision["context"] = context or {}
                 self.decided += 1
                 self.latency_sum += latency
                 self._recent_lat.append(latency)
@@ -416,6 +423,17 @@ class GrokDecider:
             self.correct += int(correct)
             self.brier_sum += (p_up - (1.0 if outcome_up else 0.0)) ** 2
             b["wins"] += int(correct)
+            # learning-as-it-trades: per-context accuracy + a rolling window of recent outcomes that
+            # are fed back to Grok so it can refine which contexts its calls actually work in.
+            for dim, bucket in (dec.get("context") or {}).items():
+                if bucket is None:
+                    continue
+                cb = self.by_context.setdefault(dim, {}).setdefault(str(bucket), {"n": 0, "correct": 0})
+                cb["n"] += 1
+                cb["correct"] += int(correct)
+            self._recent.append({"action": action, "confidence": round(float(dec.get("confidence")
+                                 or 0.0), 3), "outcome_up": bool(outcome_up), "correct": bool(correct),
+                                 "context": dec.get("context") or {}})
 
     def report(self) -> dict:
         with self._lock:
@@ -436,6 +454,12 @@ class GrokDecider:
                 "avg_latency_s": avg_lat,
                 "graded_directional": self.graded, "direction_accuracy": acc, "brier": brier,
                 "abstains": self.abstains, "by_action": by_action,
+                "accuracy_by_context": {
+                    dim: {b: {"n": s["n"],
+                              "accuracy": (round(s["correct"] / s["n"], 4) if s["n"] else None)}
+                          for b, s in buckets.items()}
+                    for dim, buckets in self.by_context.items()},
+                "recent_decisions": list(self._recent),
                 "circuit_breaker": self._breaker_status_locked(time.time()),
                 "note": ("Grok decides; bot executes (paper). shadow=decide+grade only (no trade), "
                          "follow=engine follows direction/size subject to the deterministic floor "
@@ -451,7 +475,10 @@ class GrokDecider:
                     "by_action": {a: dict(s) for a, s in self.by_action.items()},
                     "trips": self.trips, "consec_losses": self._consec_losses,
                     "daily_loss": round(self._daily_loss, 4), "daily_key": self._daily_key,
-                    "tripped_until": self._tripped_until, "trip_reason": self._trip_reason}
+                    "tripped_until": self._tripped_until, "trip_reason": self._trip_reason,
+                    "by_context": {d: {b: dict(s) for b, s in bk.items()}
+                                   for d, bk in self.by_context.items()},
+                    "recent": list(self._recent)}
 
     def load_state(self, data: dict) -> None:
         if not data:
@@ -475,3 +502,8 @@ class GrokDecider:
             self._daily_key = data.get("daily_key")
             self._tripped_until = float(data.get("tripped_until", 0.0) or 0.0)
             self._trip_reason = data.get("trip_reason")
+            self.by_context = {d: {b: {"n": int(s.get("n", 0) or 0),
+                                       "correct": int(s.get("correct", 0) or 0)}
+                                   for b, s in bk.items()}
+                               for d, bk in (data.get("by_context") or {}).items()}
+            self._recent = deque((data.get("recent") or []), maxlen=12)
