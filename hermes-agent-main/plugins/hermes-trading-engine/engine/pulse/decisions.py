@@ -219,6 +219,8 @@ class DecisionResult:
     model: Optional[dict] = None                # observe-only calibrated edge model (Phase 7)
     learning: Optional[dict] = None             # learned-edge decision blend (digital<->model)
     edge: Optional[dict] = None                 # observe-only Pulse Edge Signal (CEX/stale/OB)
+    selectivity: Optional[dict] = None          # learned selectivity gate decision (accept/reject)
+    calibration: Optional[dict] = None          # raw vs calibrated fair P(up)
     external: Optional[dict] = None             # observe-only EXTERNAL signal (e.g. TradingView)
     sizing: Optional[dict] = None               # paper-only Kelly sizing diagnostics (Phase 9)
     cost: Optional[ExecutionCostEstimate] = None
@@ -264,6 +266,8 @@ class DecisionResult:
                 "model": self.model,
                 "learning": self.learning,
                 "edge": self.edge,
+                "selectivity": self.selectivity,
+                "calibration": self.calibration,
                 "external": self.external,
                 "sizing": self.sizing,
                 "cost": (self.cost.to_dict() if self.cost else None),

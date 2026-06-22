@@ -102,6 +102,15 @@ class PulseConfig:
     edge_promotion_allowed: bool = False
     edge_promotion_min_samples: int = 50
     edge_promotion_min_win_rate: float = 0.80
+    # ---- Learned Selectivity Gate v1 (between decision and execution; PAPER ONLY) ----
+    # Uses live settled-trade bucket evidence to REJECT proven-losing buckets. Can only make the
+    # bot MORE selective; never trades/resizes/bypasses the execution gate.
+    selectivity_gate_enabled: bool = True
+    selectivity_min_samples: int = 30
+    selectivity_min_win_rate: float = 0.52
+    selectivity_exploration_rate: float = 0.05
+    calibration_min_samples: int = 30
+    calibration_max_shrink: float = 0.5
     signal_engine_enabled: bool = True       # OBSERVE-ONLY Simons-style raw signals (never trade)
     factor_model_enabled: bool = True        # OBSERVE-ONLY BTC-pulse factor/context model
     markov_enabled: bool = True              # OBSERVE-ONLY Markov regime machine
@@ -208,6 +217,13 @@ class PulseConfig:
             .strip().lower() in ("1", "true", "yes", "on"),
             edge_promotion_min_samples=int(_envf("HERMES_EDGE_PROMOTION_MIN_SAMPLES", 50)),
             edge_promotion_min_win_rate=_envf("HERMES_EDGE_PROMOTION_MIN_WIN_RATE", 0.80),
+            selectivity_gate_enabled=str(os.getenv("PULSE_SELECTIVITY_GATE_ENABLED", "1"))
+            .strip().lower() in ("1", "true", "yes", "on"),
+            selectivity_min_samples=int(_envf("PULSE_SELECTIVITY_MIN_SAMPLES", 30)),
+            selectivity_min_win_rate=_envf("PULSE_SELECTIVITY_MIN_WIN_RATE", 0.52),
+            selectivity_exploration_rate=_envf("PULSE_SELECTIVITY_EXPLORATION_RATE", 0.05),
+            calibration_min_samples=int(_envf("PULSE_CALIB_MIN_SAMPLES", 30)),
+            calibration_max_shrink=_envf("PULSE_CALIB_MAX_SHRINK", 0.5),
             signal_engine_enabled=str(os.getenv("HERMES_SIGNAL_ENGINE_ENABLED", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
             factor_model_enabled=str(os.getenv("HERMES_FACTOR_MODEL_ENABLED", "1"))
@@ -309,6 +325,14 @@ class PulseEngine:
         if bool(getattr(self.cfg, "edge_model_enabled", True)):
             from engine.pulse.edge_model import EdgeModel
             self.edge_model = EdgeModel()
+        # Learned Selectivity Gate v1 — live-evidence bucket gate between decision and execution.
+        from engine.pulse.selectivity import SelectivityEvidence, LearnedSelectivityGate
+        self.selectivity_evidence = SelectivityEvidence()
+        self.selectivity_gate = LearnedSelectivityGate(
+            enabled=bool(self.cfg.selectivity_gate_enabled),
+            min_samples=self.cfg.selectivity_min_samples,
+            min_win_rate=self.cfg.selectivity_min_win_rate,
+            exploration_rate=self.cfg.selectivity_exploration_rate)
         self.reconciler = LifecycleReconciler()   # GS-Quant-style candidate lifecycle audit
         self.gate_obs = GateObservations()        # orderbook-reality observations seen at the gate
         self._baseline: Optional[dict] = None     # legacy ledger totals that predate accounting
@@ -410,6 +434,26 @@ class PulseEngine:
             self._archive_prior_state()
         self._resolve_baseline()
 
+    @staticmethod
+    def _selectivity_tags_from_pos(pos) -> dict:
+        """Entry-time bucket tags for a settled position (settlement + counterfactual)."""
+        rt = pos.research or {}
+        return {"hurst_regime": rt.get("hurst_regime"), "zscore_bucket": rt.get("zscore_bucket"),
+                "ttc_bucket": rt.get("ttc_bucket"), "confidence_tier": rt.get("confidence_tier"),
+                "spread_bucket": rt.get("spread_bucket"), "depth_bucket": rt.get("depth_bucket"),
+                "markov_state": rt.get("markov_state"),
+                "edge_quality_bucket": rt.get("edge_quality_bucket"),
+                "stale_divergence": rt.get("edge_stale_divergence"), "direction": pos.side}
+
+    def _selectivity_positions(self) -> list:
+        """Settled positions as (tags, won, pnl) rows for the counterfactual replay."""
+        rows = []
+        for pos in self.ledger.positions.values():
+            if pos.status == "settled":
+                rows.append({"tags": self._selectivity_tags_from_pos(pos),
+                             "won": bool(pos.won), "pnl": float(pos.pnl_usd or 0.0)})
+        return rows
+
     def _resolve_baseline(self) -> None:
         """Establish the one-time accounting baseline. If a baseline was persisted, keep it. Else,
         if the ledger already holds trades from BEFORE this canonical accounting existed, capture
@@ -449,6 +493,18 @@ class PulseEngine:
         self._tv_pending = list(acct.get("tv_pending") or [])
         if self.edge_signal is not None:
             self.edge_signal.load_state(acct.get("edge_signal") or {})
+        self.selectivity_evidence.load_state(acct.get("selectivity_evidence") or {})
+        self.selectivity_gate.load_state(acct.get("selectivity_gate") or {})
+        # one-time bootstrap: if no evidence persisted yet, seed it from the existing settled
+        # ledger positions so the gate uses LIVE history immediately (not hard-coded numbers).
+        if not self.selectivity_evidence.has_data:
+            for pos in self.ledger.positions.values():
+                if pos.status == "settled":
+                    self.selectivity_evidence.record(
+                        self._selectivity_tags_from_pos(pos), won=bool(pos.won),
+                        pnl=float(pos.pnl_usd or 0.0),
+                        ev_after_cost=(pos.research or {}).get("ev_after_cost"),
+                        outcome_up=pos.outcome_up)
         if self.grok_predictor is not None:
             self.grok_predictor.load_state(acct.get("grok_predictor") or {})
         if self.grok_analyst is not None:
@@ -718,6 +774,39 @@ class PulseEngine:
                     self.markov.record_terminal(state=cand_state, accepted=False)
                 _finalize(dr, "rejected", reason=tv_reason, stage="directional")
                 continue
+            # LEARNED SELECTIVITY GATE (between decision and execution): reject proven-losing
+            # buckets using LIVE settled-trade evidence. Can only make the bot MORE selective —
+            # it never trades/resizes/bypasses the execution gate below. Also calibrate the fair.
+            sel_tags = {
+                "hurst_regime": (rfeat.hurst_regime if rfeat else None),
+                "zscore_bucket": (rfeat.zscore_bucket if rfeat else None),
+                "ttc_bucket": ttc_bucket(ttc),
+                "confidence_tier": _confidence_tier((dr.model or {}).get("model_confidence")
+                                                    if (dr.model or {}).get("trained")
+                                                    else (dr.signals or {}).get("confidence")),
+                "spread_bucket": _spread_bucket(mc.spread),
+                "depth_bucket": _depth_bucket(mc.ask_depth_usd),
+                "markov_state": cand_state,
+                "edge_quality_bucket": (fsnap.edge_quality_bucket if fsnap else None),
+                "stale_divergence": (esnap.stale_divergence_class if esnap else None),
+                "direction": d.side}
+            from engine.pulse.selectivity import calibrate_fair
+            raw_fp, cal_fp, cal_diag = calibrate_fair(
+                fair, sel_tags, self.selectivity_evidence,
+                min_samples=self.cfg.calibration_min_samples,
+                max_shrink=self.cfg.calibration_max_shrink)
+            dr.calibration = {"raw_fair_p_up": raw_fp, "calibrated_fair_p_up": cal_fp,
+                              "diag": cal_diag}
+            gate_res = self.selectivity_gate.evaluate(sel_tags, self.selectivity_evidence)
+            dr.selectivity = {"decision": gate_res["decision"], "reasons": gate_res["reasons"],
+                              "bad_buckets": gate_res["bad_buckets"]}
+            if gate_res["decision"] == "reject":
+                dr.action = RejectAction(stage="selectivity_gate", reason=gate_res["reasons"][0])
+                if self.markov is not None:
+                    self.markov.record_terminal(state=cand_state, accepted=False)
+                _finalize(dr, "rejected", reason=gate_res["reasons"][0], stage="selectivity_gate")
+                continue
+            gate_decision = "explored" if gate_res["decision"] == "explore" else "passed"
             # STRICT execution-quality gate (AUTHORITATIVE): EV from the live ask-ladder VWAP.
             book = w.up_book if d.side == "up" else w.down_book
             ex = evaluate_execution(
@@ -772,6 +861,7 @@ class PulseEngine:
             if pos.research is None:
                 pos.research = {}
             pos.research["ev_after_cost"] = ex.ev_after_slippage
+            pos.research["gate_decision"] = gate_decision     # passed | explored (selectivity gate)
             if esnap is not None:
                 pos.research.update({"edge_stale_divergence": esnap.stale_divergence_class,
                                      "edge_ttc_bucket": esnap.ttc_bucket,
@@ -928,6 +1018,13 @@ class PulseEngine:
                     won=bool(pos.won), pnl=float(pos.pnl_usd or 0.0),
                     ev_after_cost=rt.get("ev_after_cost"),
                     reconciled=bool(self.reconciler.report().get("reconciled")))
+            # Learned Selectivity Gate: feed bucket evidence + per-gate-decision settled stats.
+            _sel_tags = self._selectivity_tags_from_pos(pos)
+            self.selectivity_evidence.record(
+                _sel_tags, won=bool(pos.won), pnl=float(pos.pnl_usd or 0.0),
+                ev_after_cost=(pos.research or {}).get("ev_after_cost"), outcome_up=outcome)
+            self.selectivity_gate.record_settled((pos.research or {}).get("gate_decision"),
+                                                 won=bool(pos.won), pnl=float(pos.pnl_usd or 0.0))
             ext = pos.external or {}
             if ext.get("source") == "tradingview":
                 rt = pos.research or {}
@@ -1112,7 +1209,14 @@ class PulseEngine:
         report["learning"] = self._learning_report()
         report["grok_signal_intel"] = self._grok_intel_report()
         report["edge_signal"] = self._edge_signal_report()
+        report["learned_selectivity_gate"] = self._selectivity_report()
         return report
+
+    def _selectivity_report(self) -> dict:
+        """Learned Selectivity Gate report: counts, reject reasons, per-decision PnL/win-rate, and
+        the counterfactual replay over the existing ledger."""
+        return self.selectivity_gate.report(evidence=self.selectivity_evidence,
+                                             positions=self._selectivity_positions())
 
     def _edge_signal_report(self) -> dict:
         """Observe-only BTC Pulse Edge Signal report (CEX coverage, bucketed PnL/win/EV,
@@ -1254,6 +1358,7 @@ class PulseEngine:
                              else {"enabled": False}),
             "grok_signal_intel": self._grok_intel_report(),
             "edge_signal": self._edge_signal_report(),
+            "learned_selectivity_gate": self._selectivity_report(),
             "tradingview": self._tradingview_report(),
             "tick_reasons": self._reasons,
             "recent_evaluations": self._last_eval,
@@ -1283,6 +1388,8 @@ class PulseEngine:
                                                if self.grok_analyst is not None else {}),
                               "edge_model": (self.edge_model.to_state()
                                              if self.edge_model is not None else {}),
+                              "selectivity_evidence": self.selectivity_evidence.to_state(),
+                              "selectivity_gate": self.selectivity_gate.to_state(),
                               "baseline": (self._baseline or empty_baseline())}}
             (self._data_dir / "btc_pulse_ledger.json").write_text(
                 json.dumps(ledger_doc, default=str, indent=1))

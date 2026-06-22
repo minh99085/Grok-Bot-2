@@ -122,6 +122,14 @@ services:
       HERMES_EDGE_PROMOTION_ALLOWED: "${HERMES_EDGE_PROMOTION_ALLOWED:-0}"
       HERMES_EDGE_PROMOTION_MIN_SAMPLES: "${HERMES_EDGE_PROMOTION_MIN_SAMPLES:-50}"
       HERMES_EDGE_PROMOTION_MIN_WIN_RATE: "${HERMES_EDGE_PROMOTION_MIN_WIN_RATE:-0.80}"
+      # Learned Selectivity Gate v1: reject proven-losing buckets (live evidence) between decision
+      # and execution. Only makes the bot MORE selective; never trades/resizes/bypasses the gate.
+      PULSE_SELECTIVITY_GATE_ENABLED: "${PULSE_SELECTIVITY_GATE_ENABLED:-1}"
+      PULSE_SELECTIVITY_MIN_SAMPLES: "${PULSE_SELECTIVITY_MIN_SAMPLES:-30}"
+      PULSE_SELECTIVITY_MIN_WIN_RATE: "${PULSE_SELECTIVITY_MIN_WIN_RATE:-0.52}"
+      PULSE_SELECTIVITY_EXPLORATION_RATE: "${PULSE_SELECTIVITY_EXPLORATION_RATE:-0.05}"
+      PULSE_CALIB_MIN_SAMPLES: "${PULSE_CALIB_MIN_SAMPLES:-30}"
+      PULSE_CALIB_MAX_SHRINK: "${PULSE_CALIB_MAX_SHRINK:-0.5}"
       # ---- closed-loop learning: blend the bot's own calibrated edge model into the DIRECTIONAL
       # decision so it improves as it trades. PAPER ONLY. Influence is earned (ramps with sample
       # count), gated (only when calibrated), and self-disabling (drops to 0 if calibration error
