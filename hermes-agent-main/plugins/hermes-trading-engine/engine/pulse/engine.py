@@ -52,6 +52,10 @@ class PulseConfig:
     min_depth_usd: float = 1.0
     edge_buffer: float = 0.01
     max_price: float = 0.97
+    # minimum reward-to-risk for a paper entry: at ask ``p`` a win nets (1-p)/p per $ staked while a
+    # loss costs the full stake. 0.0 = off (default). e.g. 0.25 => skip entries priced above ~0.80
+    # (which would win < ~$1.25 per $5 risked) so one loss can't wipe ~10 tiny wins. PAPER ONLY.
+    min_reward_risk: float = 0.0
     max_open_lag_s: float = 20.0
     vol_window_s: float = 900.0
     settle_grace_s: float = 180.0          # prefer authoritative Polymarket(Chainlink) before proxy
@@ -183,6 +187,7 @@ class PulseConfig:
             min_depth_usd=_envf("PULSE_MIN_DEPTH_USD", 1.0),
             edge_buffer=_envf("PULSE_EDGE_BUFFER", 0.01),
             max_price=_envf("PULSE_MAX_PRICE", 0.97),
+            min_reward_risk=_envf("PULSE_MIN_REWARD_RISK", 0.0),
             max_open_lag_s=_envf("PULSE_MAX_OPEN_LAG_S", 20.0),
             vol_window_s=_envf("PULSE_VOL_WINDOW_S", 900.0),
             settle_grace_s=_envf("PULSE_SETTLE_GRACE_S", 180.0),
@@ -800,7 +805,8 @@ class PulseEngine:
                        min_depth_usd=self.cfg.min_depth_usd,
                        edge_buffer=self.cfg.edge_buffer, max_price=self.cfg.max_price,
                        min_seconds_since_open=self.cfg.min_seconds_since_open,
-                       basis_buffer=self.cfg.basis_buffer)
+                       basis_buffer=self.cfg.basis_buffer,
+                       min_reward_risk=self.cfg.min_reward_risk)
             outcome_prob = (fair_used if d.side == "up" else (1.0 - fair_used)) \
                 if fair_used is not None else None
             dr.candidate = CandidateDecision(side=d.side, fair_p_up=fair_used,
