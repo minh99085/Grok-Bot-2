@@ -60,3 +60,38 @@ When active it reports under `tradingview.context_gate` (`blocked`, `passed`, `e
 `block_reasons`) and every block is also counted in `decision_lifecycle.rejected_by_stage.context_gate`
 so reconciliation still holds. The small exploration carve-out keeps a tagged trickle of "bad"
 contexts flowing so the bot keeps confirming they remain bad instead of going blind.
+
+## Late-window high-conviction entry mode (the time-decay edge)
+
+A restrict-only entry mode (default OFF): when enabled, a paper trade is only taken if the window is
+**late** (seconds-to-close ≤ `MAX_TTC_S`) **and** the digital model is **highly convicted**
+(`|P(up)-0.5|*2 ≥ MIN_CONVICTION`). Late in a 5-min window, a given displacement implies a
+probability far from 0.5 (less time for a reversal), so high-conviction late calls should win more.
+
+```
+PULSE_LATE_WINDOW_ENTRY=0          # 1 = restrict trading to late-window high-conviction setups
+PULSE_LATE_WINDOW_MAX_TTC_S=120    # "late" = seconds-to-close <= this
+PULSE_LATE_WINDOW_MIN_CONVICTION=0.40   # |P(up)-0.5|*2 threshold
+```
+
+The edge is **always measured observe-only** under `late_window_entry.edge_measurement` (cohort
+`late_high_conviction` vs `other`, plus `by_conviction_bucket` / `by_ttc_bucket` and a `verdict`),
+and `pnl_by_conviction_bucket` appears in the light report — so you can grade whether the edge is
+real from live trades *before* turning the gate on. Restrict-only; the execution gate stays sole
+authority.
+
+## Observe-only order-flow / event fields (v4)
+
+The webhook now accepts four optional **observe-only** fields so you can feed real order-flow / event
+data and the bot will grade whether each has an edge (bucketed in `signal_learning.by_*`). They never
+place, size, or veto a trade — `event_blackout` is **measured only** and does NOT trigger a blackout.
+
+| Field | Type | Example values |
+|---|---|---|
+| `cvd_state` | enum | `bullish`, `bearish`, `neutral`, `divergence_bull`, `divergence_bear` |
+| `funding_state` | enum | `positive`, `negative`, `neutral`, `extreme_positive`, `extreme_negative` |
+| `liquidation_spike` | bool | `true` / `false` |
+| `event_blackout` | bool | `true` / `false` |
+
+Add them to your alert JSON alongside the existing fields, e.g.
+`"cvd_state":"bullish","funding_state":"negative","liquidation_spike":false,"event_blackout":false`.

@@ -121,6 +121,12 @@ class PulseConfig:
     tv_context_blocked_hurst_regimes: tuple = ("noise",)
     tv_context_max_ttc_s: float = 240.0
     tv_context_exploration_rate: float = 0.05
+    # ---- Late-window high-conviction entry mode (time-decay edge; PAPER ONLY) ----
+    # When enabled, only late-window AND high-conviction setups may trade (restrict-only). The edge
+    # is ALWAYS measured observe-only (cohort vs other) so it can be graded before being enabled.
+    late_window_entry_enabled: bool = False
+    late_window_max_ttc_s: float = 120.0
+    late_window_min_conviction: float = 0.40
     signal_engine_enabled: bool = True       # OBSERVE-ONLY Simons-style raw signals (never trade)
     factor_model_enabled: bool = True        # OBSERVE-ONLY BTC-pulse factor/context model
     markov_enabled: bool = True              # OBSERVE-ONLY Markov regime machine
@@ -244,6 +250,10 @@ class PulseConfig:
                 .split(",") if s.strip()),
             tv_context_max_ttc_s=_envf("PULSE_TV_CONTEXT_MAX_TTC_S", 240.0),
             tv_context_exploration_rate=_envf("PULSE_TV_CONTEXT_EXPLORATION_RATE", 0.05),
+            late_window_entry_enabled=str(os.getenv("PULSE_LATE_WINDOW_ENTRY", "0"))
+            .strip().lower() in ("1", "true", "yes", "on"),
+            late_window_max_ttc_s=_envf("PULSE_LATE_WINDOW_MAX_TTC_S", 120.0),
+            late_window_min_conviction=_envf("PULSE_LATE_WINDOW_MIN_CONVICTION", 0.40),
             signal_engine_enabled=str(os.getenv("HERMES_SIGNAL_ENGINE_ENABLED", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
             factor_model_enabled=str(os.getenv("HERMES_FACTOR_MODEL_ENABLED", "1"))
@@ -346,6 +356,14 @@ class PulseEngine:
             from engine.pulse.edge_model import EdgeModel
             self.edge_model = EdgeModel()
         # Learned Selectivity Gate v1 — live-evidence bucket gate between decision and execution.
+        from engine.pulse.late_window import LateWindowEntry, LateWindowEdge
+        self.late_window_gate = LateWindowEntry(
+            enabled=bool(self.cfg.late_window_entry_enabled),
+            max_ttc_s=self.cfg.late_window_max_ttc_s,
+            min_conviction=self.cfg.late_window_min_conviction)
+        self.late_window_edge = LateWindowEdge(   # OBSERVE-ONLY time-decay edge measurement
+            max_ttc_s=self.cfg.late_window_max_ttc_s,
+            min_conviction=self.cfg.late_window_min_conviction)
         from engine.pulse.context_gate import TradingViewContextGate
         self.tv_context_gate = TradingViewContextGate(
             enabled=bool(self.cfg.tv_context_gate_enabled),
@@ -523,6 +541,8 @@ class PulseEngine:
         self.selectivity_evidence.load_state(acct.get("selectivity_evidence") or {})
         self.selectivity_gate.load_state(acct.get("selectivity_gate") or {})
         self.tv_context_gate.load_state(acct.get("tv_context_gate") or {})
+        self.late_window_gate.load_state(acct.get("late_window_gate") or {})
+        self.late_window_edge.load_state(acct.get("late_window_edge") or {})
         # one-time bootstrap: if no evidence persisted yet, seed it from the existing settled
         # ledger positions so the gate uses LIVE history immediately (not hard-coded numbers).
         if not self.selectivity_evidence.has_data:
@@ -817,6 +837,21 @@ class PulseEngine:
                 _finalize(dr, "rejected", reason=ctx_res["reasons"][0], stage="context_gate")
                 continue
             context_explored = (ctx_res["decision"] == "explore")
+            # LATE-WINDOW HIGH-CONVICTION ENTRY MODE (restrict-only, time-decay edge): when enabled,
+            # only late-window AND high-conviction setups may trade. Can only PREVENT a trade; the
+            # edge is ALSO measured observe-only at settlement (cohort vs other) either way.
+            lw_res = self.late_window_gate.evaluate(ttc_s=ttc, p_up=fair_used)
+            dr.late_window = {"decision": lw_res["decision"], "reason": lw_res["reason"],
+                              "conviction": lw_res["conviction"], "late": lw_res["late"],
+                              "high_conviction": lw_res["high_conviction"]}
+            if lw_res["decision"] == "reject":
+                dr.action = RejectAction(stage="late_window_gate", reason=lw_res["reason"])
+                if self.markov is not None:
+                    self.markov.record_terminal(state=cand_state, accepted=False)
+                _finalize(dr, "rejected", reason=lw_res["reason"], stage="late_window_gate")
+                continue
+            entry_mode = ("late_window" if (lw_res["late"] and lw_res["high_conviction"])
+                          else "standard")
             # LEARNED SELECTIVITY GATE (between decision and execution): reject proven-losing
             # buckets using LIVE settled-trade evidence. Can only make the bot MORE selective —
             # it never trades/resizes/bypasses the execution gate below. Also calibrate the fair.
@@ -906,6 +941,11 @@ class PulseEngine:
             pos.research["ev_after_cost"] = ex.ev_after_slippage
             pos.research["gate_decision"] = gate_decision     # passed | explored (selectivity gate)
             pos.research["context_gate"] = ("explore" if context_explored else "pass")
+            # late-window high-conviction tags (for the observe-only time-decay edge measurement)
+            from engine.pulse.late_window import conviction_bucket as _conv_bucket
+            pos.research["entry_mode"] = entry_mode
+            pos.research["entry_ttc_s"] = float(ttc)
+            pos.research["conviction_bucket"] = _conv_bucket(fair_used)
             if esnap is not None:
                 pos.research.update({"edge_stale_divergence": esnap.stale_divergence_class,
                                      "edge_ttc_bucket": esnap.ttc_bucket,
@@ -938,6 +978,11 @@ class PulseEngine:
                                 "candle_pressure": tv_feature.get("candle_pressure"),
                                 "range_state": tv_feature.get("range_state"),
                                 "mtf_alignment": tv_feature.get("mtf_alignment"),
+                                # Composite v4 order-flow / event (observe-only)
+                                "cvd_state": tv_feature.get("cvd_state"),
+                                "funding_state": tv_feature.get("funding_state"),
+                                "liquidation_spike": tv_feature.get("liquidation_spike"),
+                                "event_blackout": tv_feature.get("event_blackout"),
                                 # RSI alert-history next-window prediction at entry (observe-only,
                                 # leakage-free: scored at settlement before counts are updated)
                                 "rsi_trend_state": _trend.get("state"),
@@ -1038,9 +1083,15 @@ class PulseEngine:
             tags = {dim: rt.get(dim) for dim in (
                 "hurst_regime", "zscore_bucket", "half_life_bucket", "ttc_bucket",
                 "edge_quality_bucket", "markov_state", "spread_bucket", "depth_bucket",
-                "confidence_tier")}
+                "confidence_tier", "conviction_bucket", "entry_mode")}
             self._groups.record(tags, pnl=float(pos.pnl_usd or 0.0), won=bool(pos.won),
                                  fair_at_entry=pos.fair_at_entry, outcome_up=outcome)
+            # OBSERVE-ONLY time-decay edge measurement: grade late-window high-conviction trades
+            # (cohort vs other) from this live settled trade. Never affects trading.
+            self.late_window_edge.record_settled(
+                ttc_s=rt.get("entry_ttc_s"), p_up=pos.fair_at_entry, won=bool(pos.won),
+                pnl=float(pos.pnl_usd or 0.0), ev_after_cost=rt.get("ev_after_cost"),
+                entry_mode=rt.get("entry_mode"))
             # OBSERVE-ONLY: measure whether the TradingView signal at entry predicted this 5-min
             # outcome and whether aligning helped the bot win (computed AFTER the outcome is known).
             self._tv_edge.record(tv=pos.external, traded_side=pos.side, outcome_up=bool(outcome),
@@ -1086,7 +1137,10 @@ class PulseEngine:
                      "supertrend_direction": ext.get("supertrend_direction"),
                      "candle_pressure": ext.get("candle_pressure"),
                      "range_state": ext.get("range_state"),
-                     "mtf_alignment": ext.get("mtf_alignment")},
+                     "mtf_alignment": ext.get("mtf_alignment"),
+                     "cvd_state": ext.get("cvd_state"), "funding_state": ext.get("funding_state"),
+                     "liquidation_spike": ext.get("liquidation_spike"),
+                     "event_blackout": ext.get("event_blackout")},
                     won=bool(pos.won), pnl=float(pos.pnl_usd or 0.0),
                     ev_after_cost=ext.get("ev_after_cost"),
                     reconciled=bool(self.reconciler.report().get("reconciled")))
@@ -1254,7 +1308,13 @@ class PulseEngine:
         report["grok_signal_intel"] = self._grok_intel_report()
         report["edge_signal"] = self._edge_signal_report()
         report["learned_selectivity_gate"] = self._selectivity_report()
+        report["late_window_entry"] = self._late_window_report()
         return report
+
+    def _late_window_report(self) -> dict:
+        """Late-window high-conviction entry mode (gate) + observe-only time-decay edge grade."""
+        return {"gate": self.late_window_gate.report(),
+                "edge_measurement": self.late_window_edge.report()}
 
     def _selectivity_report(self) -> dict:
         """Learned Selectivity Gate report: counts, reject reasons, per-decision PnL/win-rate, and
@@ -1404,6 +1464,7 @@ class PulseEngine:
             "grok_signal_intel": self._grok_intel_report(),
             "edge_signal": self._edge_signal_report(),
             "learned_selectivity_gate": self._selectivity_report(),
+            "late_window_entry": self._late_window_report(),
             "tradingview": self._tradingview_report(),
             "tick_reasons": self._reasons,
             "recent_evaluations": self._last_eval,
@@ -1436,6 +1497,8 @@ class PulseEngine:
                               "selectivity_evidence": self.selectivity_evidence.to_state(),
                               "selectivity_gate": self.selectivity_gate.to_state(),
                               "tv_context_gate": self.tv_context_gate.to_state(),
+                              "late_window_gate": self.late_window_gate.to_state(),
+                              "late_window_edge": self.late_window_edge.to_state(),
                               "baseline": (self._baseline or empty_baseline())}}
             (self._data_dir / "btc_pulse_ledger.json").write_text(
                 json.dumps(ledger_doc, default=str, indent=1))
