@@ -86,6 +86,19 @@ def _parse_ts(val) -> Optional[float]:
         return None
 
 
+# Composite v2 optional enum fields (invalid/missing values normalize to "unknown" — safe,
+# observe-only; a bad enum NEVER rejects the whole alert, it just becomes "unknown").
+VWAP_STATES = ("above", "below", "reclaim", "reject", "unknown")
+BB_STATES = ("squeeze", "expansion_up", "expansion_down", "normal", "unknown")
+VOLUME_STATES = ("active", "dead", "spike", "unknown")
+HTF_BIASES = ("bullish", "bearish", "neutral", "unknown")
+
+
+def _enum(value, allowed: tuple, default: str = "unknown") -> str:
+    v = str(value or "").strip().lower()
+    return v if v in allowed else default
+
+
 def strength_bucket(x) -> str:
     if x is None:
         return "na"
@@ -115,8 +128,20 @@ class TradingViewSignalEvent:
     raw_payload_hash: str
     signal_level: Optional[str] = None   # e.g. RSI divergence level/class ("regular"/"hidden"/"3")
     price: Optional[float] = None        # price reported by the alert (observe-only reference)
+    # ---- Composite v2 optional features (observe-only) ----
+    vwap_state: str = "unknown"
+    bb_state: str = "unknown"
+    relative_volume: Optional[float] = None
+    volume_state: str = "unknown"
+    htf_bias: str = "unknown"
+    composite_version: Optional[str] = None
     source: str = "tradingview"
     observe_only: bool = True
+
+    def _v2(self) -> dict:
+        return {"vwap_state": self.vwap_state, "bb_state": self.bb_state,
+                "relative_volume": self.relative_volume, "volume_state": self.volume_state,
+                "htf_bias": self.htf_bias, "composite_version": self.composite_version}
 
     def to_dict(self) -> dict:
         return {"event_id": self.event_id, "source": self.source, "bot_name": self.bot_name,
@@ -124,7 +149,7 @@ class TradingViewSignalEvent:
                 "received_at": round(self.received_at, 3), "direction": self.direction,
                 "strength": self.strength, "signal_level": self.signal_level,
                 "price": self.price, "indicator_name": self.indicator_name,
-                "raw_payload_hash": self.raw_payload_hash, "observe_only": True}
+                "raw_payload_hash": self.raw_payload_hash, "observe_only": True, **self._v2()}
 
     def as_feature(self, *, now: Optional[float] = None) -> dict:
         """The observe-only feature view attached to a candidate (never trades/sizes/vetoes)."""
@@ -135,7 +160,7 @@ class TradingViewSignalEvent:
                 "signal_level": self.signal_level, "price": self.price,
                 "indicator_name": self.indicator_name, "symbol": self.symbol,
                 "timeframe": self.timeframe, "bar_time": self.bar_time,
-                "age_s": (round(now - self.received_at, 3))}
+                "age_s": (round(now - self.received_at, 3)), **self._v2()}
 
 
 class TradingViewEdge:
@@ -277,7 +302,9 @@ class TradingViewSignalLearner:
     the execution gate remains the sole trade authority."""
 
     DIMS = ("direction", "signal_level", "strength_bucket", "indicator_name", "hurst_regime",
-            "zscore_bucket", "ttc_bucket", "spread_bucket", "depth_bucket")
+            "zscore_bucket", "ttc_bucket", "spread_bucket", "depth_bucket",
+            # Composite v2 dimensions
+            "vwap_state", "bb_state", "volume_state", "htf_bias", "composite_version")
 
     def __init__(self):
         self.dims: dict = {d: {} for d in self.DIMS}
@@ -364,6 +391,17 @@ class TradingViewSignalLearner:
         lvl.sort(key=lambda x: ((x["win_rate"] or 0.0), x["pnl_usd"]), reverse=True)
         out["best_signal_levels"] = lvl[:3]
         out["worst_signal_levels"] = list(reversed(lvl[-3:])) if len(lvl) > 0 else []
+        # best/worst TradingView buckets across ALL dimensions (ranked by EV-after-cost, then PnL)
+        ranked = []
+        for dim in self.DIMS:
+            for b, s in self.dims[dim].items():
+                if b == "na" or s["n"] < 3:
+                    continue
+                ranked.append({"dimension": dim, "bucket": b, **self._b(s)})
+        ranked.sort(key=lambda r: ((r["avg_ev_after_cost"] if r["avg_ev_after_cost"] is not None
+                                    else -9), r["pnl_usd"]), reverse=True)
+        out["best_buckets"] = ranked[:5]
+        out["worst_buckets"] = list(reversed(ranked[-5:])) if ranked else []
         out["promotion"] = self.promotion_diagnostics(
             allowed=promotion_allowed, min_samples=min_samples, min_win_rate=min_win_rate)
         return out
@@ -576,6 +614,12 @@ def _event_from_dict(d) -> Optional["TradingViewSignalEvent"]:
             bar_time=d.get("bar_time"), received_at=float(d.get("received_at") or 0.0),
             direction=str(d.get("direction") or "FLAT"), strength=d.get("strength"),
             signal_level=d.get("signal_level"), price=d.get("price"),
+            vwap_state=_enum(d.get("vwap_state"), VWAP_STATES),
+            bb_state=_enum(d.get("bb_state"), BB_STATES),
+            relative_volume=d.get("relative_volume"),
+            volume_state=_enum(d.get("volume_state"), VOLUME_STATES),
+            htf_bias=_enum(d.get("htf_bias"), HTF_BIASES),
+            composite_version=d.get("composite_version"),
             indicator_name=d.get("indicator_name"),
             raw_payload_hash=str(d.get("raw_payload_hash") or ""))
     except Exception:  # noqa: BLE001
@@ -673,6 +717,12 @@ class TradingViewIntake:
             price = None
         signal_level = str(payload.get("signal_level") or payload.get("level")
                            or payload.get("divergence_level") or "").strip() or None
+        rel_vol = None
+        try:
+            if payload.get("relative_volume") is not None:
+                rel_vol = float(payload.get("relative_volume"))
+        except (TypeError, ValueError):
+            rel_vol = None
         ev = TradingViewSignalEvent(
             event_id=event_id, bot_name=(bot or self.bot_name), symbol=symbol,
             timeframe=(str(payload.get("timeframe") or payload.get("interval") or "").strip() or None),
@@ -680,6 +730,13 @@ class TradingViewIntake:
             signal_level=signal_level, price=price,
             indicator_name=(str(payload.get("indicator_name") or payload.get("indicator")
                                 or "").strip() or None),
+            # Composite v2: invalid enums coerce to "unknown" (never reject the whole alert)
+            vwap_state=_enum(payload.get("vwap_state"), VWAP_STATES),
+            bb_state=_enum(payload.get("bb_state"), BB_STATES),
+            relative_volume=rel_vol,
+            volume_state=_enum(payload.get("volume_state"), VOLUME_STATES),
+            htf_bias=_enum(payload.get("htf_bias"), HTF_BIASES),
+            composite_version=(str(payload.get("composite_version") or "").strip() or None),
             raw_payload_hash=raw_hash)
         return ev, None
 

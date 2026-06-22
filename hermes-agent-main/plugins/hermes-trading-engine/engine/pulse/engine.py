@@ -789,6 +789,12 @@ class PulseEngine:
                                 "signal_level": tv_feature.get("signal_level"),
                                 "price": tv_feature.get("price"),
                                 "ev_after_cost": ex.ev_after_slippage,   # EV after VWAP/slippage
+                                # Composite v2 (observe-only)
+                                "vwap_state": tv_feature.get("vwap_state"),
+                                "bb_state": tv_feature.get("bb_state"),
+                                "volume_state": tv_feature.get("volume_state"),
+                                "htf_bias": tv_feature.get("htf_bias"),
+                                "composite_version": tv_feature.get("composite_version"),
                                 # RSI alert-history next-window prediction at entry (observe-only,
                                 # leakage-free: scored at settlement before counts are updated)
                                 "rsi_trend_state": _trend.get("state"),
@@ -922,7 +928,10 @@ class PulseEngine:
                      "indicator_name": ext.get("indicator_name"),
                      "hurst_regime": rt.get("hurst_regime"), "zscore_bucket": rt.get("zscore_bucket"),
                      "ttc_bucket": rt.get("ttc_bucket"), "spread_bucket": rt.get("spread_bucket"),
-                     "depth_bucket": rt.get("depth_bucket")},
+                     "depth_bucket": rt.get("depth_bucket"),
+                     "vwap_state": ext.get("vwap_state"), "bb_state": ext.get("bb_state"),
+                     "volume_state": ext.get("volume_state"), "htf_bias": ext.get("htf_bias"),
+                     "composite_version": ext.get("composite_version")},
                     won=bool(pos.won), pnl=float(pos.pnl_usd or 0.0),
                     ev_after_cost=ext.get("ev_after_cost"),
                     reconciled=bool(self.reconciler.report().get("reconciled")))
