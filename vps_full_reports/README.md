@@ -2,6 +2,9 @@
 
 Live snapshots of the **BTC 5-minute pulse** PAPER engine running on the VPS.
 
+> **Agent convention:** every full-report pull MUST be committed here on `main` (refresh
+> `latest/` from the live VPS container, then commit + push).
+
 ## `latest/`
 - `report.md` — human-readable summary (oracle, paper P&L, settlement, calibration, overlay).
 - `btc_pulse_status.json` — full engine status (oracle reference model, price feed, ledger

@@ -6,14 +6,14 @@
  "reconciliation": {
   "global_reconciled": true,
   "counts": {
-   "raw_candidates_created": 10297,
-   "rejected_before_execution": 9815,
-   "sent_to_execution_gate": 121,
-   "execution_gate_accepted": 121,
+   "raw_candidates_created": 13452,
+   "rejected_before_execution": 12725,
+   "sent_to_execution_gate": 132,
+   "execution_gate_accepted": 132,
    "execution_gate_rejected": 0,
-   "paper_fills_created": 121,
-   "ledger_trades": 272,
-   "settled_trades": 272,
+   "paper_fills_created": 132,
+   "ledger_trades": 283,
+   "settled_trades": 283,
    "open_positions": 0,
    "legacy_trades_before_accounting": 151,
    "legacy_exec_candidates_before_accounting": 106
@@ -21,27 +21,27 @@
   "checks": {
    "lifecycle_internal": {
     "pass": true,
-    "detail": "created(10297) == sum(terminals)(10297) and reported(10297) == created(10297)"
+    "detail": "created(13452) == sum(terminals)(13452) and reported(13452) == created(13452)"
    },
    "accepted_equals_fills": {
     "pass": true,
-    "detail": "paper_fills(121) == execution_gate_accepted(121)"
+    "detail": "paper_fills(132) == execution_gate_accepted(132)"
    },
    "gate_internal": {
     "pass": true,
-    "detail": "gate_candidates(227) == accepted(227)+rejected(0) and fills(227)==accepted(227)"
+    "detail": "gate_candidates(238) == accepted(238)+rejected(0) and fills(238)==accepted(238)"
    },
    "gate_flow_matches_ledger": {
     "pass": true,
-    "detail": "ledger gate_candidates(227) == baseline(106)+sent_to_gate(121); gate_accepted(227) == baseline(106)+accepted(121)"
+    "detail": "ledger gate_candidates(238) == baseline(106)+sent_to_gate(132); gate_accepted(238) == baseline(106)+accepted(132)"
    },
    "ledger_trades_explained": {
     "pass": true,
-    "detail": "ledger_trades(272) == legacy(151) + paper_fills(121)"
+    "detail": "ledger_trades(283) == legacy(151) + paper_fills(132)"
    },
    "positions_balance": {
     "pass": true,
-    "detail": "settled(272) + open(0) == ledger_trades(272)"
+    "detail": "settled(283) + open(0) == ledger_trades(283)"
    }
   },
   "failed_checks": [],
@@ -56,11 +56,11 @@
    "exec_rejected_total": 0
   },
   "scope_note": "lifecycle counts are cumulative since canonical accounting began; baseline counts are legacy ledger totals that predate it; ledger/gate totals == baseline + accounted.",
-  "rejected_before_execution": 9815
+  "rejected_before_execution": 12725
  },
  "execution_gate_zero_reject_diagnostic": {
   "active": true,
-  "message": "execution gate rejected 0 of 227 candidates that reached it \u2014 verify this is liquidity reality, not a disabled gate",
+  "message": "execution gate rejected 0 of 238 candidates that reached it \u2014 verify this is liquidity reality, not a disabled gate",
   "thresholds": {
    "size_usd": 5.0,
    "max_spread": 0.06,
@@ -75,71 +75,74 @@
    "spread": {
     "min": 0.01,
     "max": 0.02,
-    "mean": 0.010165,
-    "n": 121
+    "mean": 0.010227,
+    "n": 132
    },
    "ask_depth_usd": {
-    "min": 16422.12,
+    "min": 11002.2,
     "max": 43035.9,
-    "mean": 33134.113388,
-    "n": 121
+    "mean": 33074.833409,
+    "n": 132
    },
    "slippage": {
     "min": -0.0,
     "max": 0.008177,
-    "mean": 0.000182,
-    "n": 121
+    "mean": 0.00021,
+    "n": 132
    },
    "ev_after_slippage": {
     "min": 0.060034,
-    "max": 0.27831,
-    "mean": 0.106077,
-    "n": 121
+    "max": 0.442431,
+    "mean": 0.107694,
+    "n": 132
    },
    "ttc_s": {
-    "min": 65.222409,
+    "min": 41.546066,
     "max": 269.768345,
-    "mean": 239.194698,
-    "n": 121
+    "mean": 232.32355,
+    "n": 132
    }
   },
   "likely_explanations": [
    "Polymarket BTC 5m books are tight + deep, so spread/depth/partial-fill checks pass",
    "VWAP slippage over the top of book is tiny at $5.0 size, so EV-after-cost stays positive",
-   "the directional stage already rejected 9815 candidates before the gate, so only execution-feasible candidates reached it"
+   "the directional stage already rejected 12725 candidates before the gate, so only execution-feasible candidates reached it"
   ],
   "gate_is_live": true
  },
  "candidate_lifecycle": {
-  "created": 10297,
-  "feature_scored": 9883,
-  "execution_costed": 121,
-  "ledgered": 121,
-  "reported": 10297,
+  "created": 13452,
+  "feature_scored": 12994,
+  "execution_costed": 132,
+  "ledgered": 132,
+  "reported": 13452,
   "terminals": {
-   "accepted": 121,
-   "rejected": 9762,
-   "skipped": 403,
+   "accepted": 132,
+   "rejected": 12862,
+   "skipped": 443,
    "expired": 0,
-   "missing_data": 11
+   "missing_data": 15
   },
   "rejected_by_stage": {
-   "directional": 9401,
+   "directional": 12267,
    "execution_gate": 0,
-   "selectivity_gate": 361
+   "selectivity_gate": 554,
+   "context_gate": 41
   },
   "skipped_by_reason": {
-   "open_snapshot_late": 403
+   "open_snapshot_late": 436,
+   "untrusted_vol": 7
   },
   "missing_by_reason": {
-   "no_open_snapshot": 11
+   "no_open_snapshot": 14,
+   "no_price_or_vol": 1
   },
   "no_candidate_disappeared": true,
   "reconciled": true
  },
  "execution_stats": {
-  "candidates": 227,
-  "accepted": 227,
+  "candidates": 238,
+  "accepted": 238,
   "rejected_total": 0,
   "rejected": {
    "wide_spread": 0,
@@ -151,7 +154,7 @@
    "missing_market_data": 0,
    "stale_orderbook": 0
   },
-  "fills": 227,
+  "fills": 238,
   "reconciled": true
  },
  "reject_reasons": {
@@ -165,35 +168,35 @@
   "stale_orderbook": 0
  },
  "ev_before_after_costs": {
-  "n": 121,
-  "avg_ev_before_costs": 0.111342,
-  "avg_ev_after_costs": 0.106077
+  "n": 132,
+  "avg_ev_before_costs": 0.113017,
+  "avg_ev_after_costs": 0.107694
  },
  "ledger": {
-  "trades": 272,
-  "settled": 272,
-  "wins": 145,
-  "win_rate": 0.5331,
-  "avg_entry_price": 0.5493,
-  "edge_realized": -0.0162,
-  "win_rate_up": 0.5469,
-  "win_rate_down": 0.5208,
+  "trades": 283,
+  "settled": 283,
+  "wins": 149,
+  "win_rate": 0.5265,
+  "avg_entry_price": 0.5447,
+  "edge_realized": -0.0182,
+  "win_rate_up": 0.5407,
+  "win_rate_down": 0.5135,
   "side_counts": {
-   "up": 128,
-   "down": 144
+   "up": 135,
+   "down": 148
   },
   "settle_sources": {
-   "polymarket_resolution": 119,
-   "rtds_chainlink_proxy": 137
+   "polymarket_resolution": 125,
+   "rtds_chainlink_proxy": 142
   },
   "proxy_official_reconciliation": {
-   "both": 118,
-   "agree": 113,
-   "disagree": 5
+   "both": 124,
+   "agree": 118,
+   "disagree": 6
   },
   "execution_gate": {
-   "candidates": 227,
-   "accepted": 227,
+   "candidates": 238,
+   "accepted": 238,
    "rejected_total": 0,
    "rejected": {
     "wide_spread": 0,
@@ -205,22 +208,22 @@
     "missing_market_data": 0,
     "stale_orderbook": 0
    },
-   "fills": 227,
+   "fills": 238,
    "reconciled": true
   },
-  "realized_pnl_usd": -55.6793,
-  "avg_pnl_per_trade": -0.2047,
-  "profit_factor": 0.8414,
-  "avg_win_usd": 2.7854,
-  "avg_loss_usd": 3.7795,
-  "max_drawdown_usd": 117.6319,
+  "realized_pnl_usd": -72.7667,
+  "avg_pnl_per_trade": -0.2571,
+  "profit_factor": 0.819,
+  "avg_win_usd": 2.8308,
+  "avg_loss_usd": 3.8433,
+  "max_drawdown_usd": 127.5229,
   "open_positions": 0
  },
  "calibration": {
-  "samples": 272,
-  "brier": 0.237219,
-  "log_loss": 0.67104,
-  "base_rate_up": 0.511,
+  "samples": 283,
+  "brier": 0.236816,
+  "log_loss": 0.672683,
+  "base_rate_up": 0.5124,
   "baseline_brier_0_5": 0.25
  },
  "edge_model_calibration": {
@@ -229,12 +232,12 @@
    "empirical_up": 1.0
   },
   "0.4-0.5": {
-   "n": 32,
-   "empirical_up": 0.5
+   "n": 41,
+   "empirical_up": 0.4878
   },
   "0.5-0.6": {
-   "n": 24,
-   "empirical_up": 0.4167
+   "n": 26,
+   "empirical_up": 0.4615
   },
   "0.6-0.7": {
    "n": 1,
@@ -242,17 +245,17 @@
   }
  },
  "sample_sizes": {
-  "accepted": 121,
-  "settled": 272,
-  "candidates": 10297,
-  "edge_model_labeled": 58
+  "accepted": 132,
+  "settled": 283,
+  "candidates": 13452,
+  "edge_model_labeled": 69
  },
  "missing_data_reasons": {
   "hurst:insufficient_returns": 35,
   "half_life:insufficient_samples": 19,
   "zscore:insufficient_divergence_samples": 19,
   "kalman:insufficient_samples": 7,
-  "half_life:no_mean_reversion": 7
+  "half_life:no_mean_reversion": 1
  },
  "confidence_tier_table": {
   "report_only": true,
@@ -260,8 +263,8 @@
   "tier_census": {
    "A+": 0,
    "A": 0,
-   "B": 5,
-   "C": 4,
+   "B": 3,
+   "C": 5,
    "D": 0
   },
   "table": {
@@ -271,12 +274,12 @@
     "reasons": [
      "below_tier_a_threshold"
     ],
-    "n": 22,
-    "win_rate": 0.6818,
-    "pnl_usd": 0.1536
+    "n": 4,
+    "win_rate": 0.5,
+    "pnl_usd": 0.646
    },
-   "regime:noise": {
-    "dimension": "regime",
+   "edge_quality:medium": {
+    "dimension": "edge_quality",
     "tier": "C",
     "reasons": [
      "losing_or_subcoinflip"
@@ -287,15 +290,15 @@
    },
    "regime:trending": {
     "dimension": "regime",
-    "tier": "B",
+    "tier": "C",
     "reasons": [
-     "below_tier_a_threshold"
+     "losing_or_subcoinflip"
     ],
-    "n": 21,
-    "win_rate": 0.7143,
-    "pnl_usd": 5.1536
+    "n": 5,
+    "win_rate": 0.4,
+    "pnl_usd": -4.354
    },
-   "zscore_bucket:-2..-1": {
+   "zscore_bucket:-1..1": {
     "dimension": "zscore_bucket",
     "tier": "C",
     "reasons": [
@@ -303,19 +306,9 @@
     ],
     "n": 3,
     "win_rate": 0.3333,
-    "pnl_usd": -9.4444
+    "pnl_usd": 0.1515
    },
-   "zscore_bucket:-1..1": {
-    "dimension": "zscore_bucket",
-    "tier": "B",
-    "reasons": [
-     "below_tier_a_threshold"
-    ],
-    "n": 18,
-    "win_rate": 0.7778,
-    "pnl_usd": 14.598
-   },
-   "zscore_bucket:1..2": {
+   "zscore_bucket:-2..-1": {
     "dimension": "zscore_bucket",
     "tier": "C",
     "reasons": [
@@ -325,35 +318,35 @@
     "win_rate": 0.0,
     "pnl_usd": -5.0
    },
+   "zscore_bucket:1..2": {
+    "dimension": "zscore_bucket",
+    "tier": "B",
+    "reasons": [
+     "below_tier_a_threshold"
+    ],
+    "n": 1,
+    "win_rate": 1.0,
+    "pnl_usd": 0.4945
+   },
    "ttc_bucket:120-240s": {
     "dimension": "ttc_bucket",
     "tier": "B",
     "reasons": [
      "below_tier_a_threshold"
     ],
-    "n": 15,
-    "win_rate": 0.7333,
-    "pnl_usd": 4.7336
+    "n": 3,
+    "win_rate": 0.6667,
+    "pnl_usd": 5.646
    },
-   "ttc_bucket:>=240s": {
+   "ttc_bucket:<60s": {
     "dimension": "ttc_bucket",
     "tier": "C",
     "reasons": [
      "losing_or_subcoinflip"
     ],
-    "n": 4,
-    "win_rate": 0.25,
-    "pnl_usd": -10.9091
-   },
-   "ttc_bucket:60-120s": {
-    "dimension": "ttc_bucket",
-    "tier": "B",
-    "reasons": [
-     "below_tier_a_threshold"
-    ],
-    "n": 3,
-    "win_rate": 1.0,
-    "pnl_usd": 6.3291
+    "n": 2,
+    "win_rate": 0.0,
+    "pnl_usd": -10.0
    }
   }
  },
@@ -362,143 +355,166 @@
   "actual_size_usd": 5.0
  },
  "pnl_by_hurst_regime": {
-  "noise": {
-   "n": 1,
-   "win_rate": 0.0,
-   "pnl_usd": -5.0,
-   "brier": 0.0487
-  },
   "trending": {
-   "n": 21,
-   "win_rate": 0.7143,
-   "pnl_usd": 5.1536,
-   "brier": 0.2108
+   "n": 5,
+   "win_rate": 0.4,
+   "pnl_usd": -4.354,
+   "brier": 0.1683
   }
  },
  "pnl_by_zscore_bucket": {
-  "-2..-1": {
+  "-1..1": {
    "n": 3,
    "win_rate": 0.3333,
-   "pnl_usd": -9.4444,
-   "brier": 0.3401
+   "pnl_usd": 0.1515,
+   "brier": 0.2658
   },
-  "-1..1": {
-   "n": 18,
-   "win_rate": 0.7778,
-   "pnl_usd": 14.598,
-   "brier": 0.144
-  },
-  "1..2": {
+  "-2..-1": {
    "n": 1,
    "win_rate": 0.0,
    "pnl_usd": -5.0,
-   "brier": 0.8625
+   "brier": 0.0436
+  },
+  "1..2": {
+   "n": 1,
+   "win_rate": 1.0,
+   "pnl_usd": 0.4945,
+   "brier": 0.0004
   }
  },
  "pnl_by_half_life_bucket": {
   "<30s": {
-   "n": 22,
-   "win_rate": 0.6818,
-   "pnl_usd": 0.1536,
-   "brier": 0.2034
+   "n": 5,
+   "win_rate": 0.4,
+   "pnl_usd": -4.354,
+   "brier": 0.1683
   }
  },
  "pnl_by_ttc_bucket": {
   "120-240s": {
-   "n": 15,
-   "win_rate": 0.7333,
-   "pnl_usd": 4.7336,
-   "brier": 0.1844
-  },
-  ">=240s": {
-   "n": 4,
-   "win_rate": 0.25,
-   "pnl_usd": -10.9091,
-   "brier": 0.4034
-  },
-  "60-120s": {
    "n": 3,
-   "win_rate": 1.0,
-   "pnl_usd": 6.3291,
-   "brier": 0.032
+   "win_rate": 0.6667,
+   "pnl_usd": 5.646,
+   "brier": 0.1346
+  },
+  "<60s": {
+   "n": 2,
+   "win_rate": 0.0,
+   "pnl_usd": -10.0,
+   "brier": 0.2188
   }
  },
  "pnl_by_edge_quality_bucket": {
   "high": {
-   "n": 22,
-   "win_rate": 0.6818,
-   "pnl_usd": 0.1536,
-   "brier": 0.2034
+   "n": 4,
+   "win_rate": 0.5,
+   "pnl_usd": 0.646,
+   "brier": 0.1119
+  },
+  "medium": {
+   "n": 1,
+   "win_rate": 0.0,
+   "pnl_usd": -5.0,
+   "brier": 0.394
   }
  },
  "pnl_by_markov_state": {
   "chop_noise": {
-   "n": 7,
-   "win_rate": 0.5714,
-   "pnl_usd": 0.1769,
-   "brier": 0.1562
-  },
-  "stale_polymarket_up": {
-   "n": 6,
-   "win_rate": 0.6667,
-   "pnl_usd": 1.9904,
-   "brier": 0.2821
+   "n": 1,
+   "win_rate": 1.0,
+   "pnl_usd": 10.1515,
+   "brier": 0.3078
   },
   "stale_polymarket_down": {
-   "n": 9,
-   "win_rate": 0.7778,
-   "pnl_usd": -2.0137,
-   "brier": 0.1877
+   "n": 3,
+   "win_rate": 0.3333,
+   "pnl_usd": -9.5055,
+   "brier": 0.0466
+  },
+  "stale_polymarket_up": {
+   "n": 1,
+   "win_rate": 0.0,
+   "pnl_usd": -5.0,
+   "brier": 0.394
   }
  },
  "pnl_by_spread_bucket": {
   "<=0.01": {
-   "n": 21,
-   "win_rate": 0.6667,
-   "pnl_usd": -1.5131,
-   "brier": 0.2128
+   "n": 4,
+   "win_rate": 0.5,
+   "pnl_usd": 0.646,
+   "brier": 0.1119
   },
   "0.01-0.03": {
    "n": 1,
-   "win_rate": 1.0,
-   "pnl_usd": 1.6667,
-   "brier": 0.0068
+   "win_rate": 0.0,
+   "pnl_usd": -5.0,
+   "brier": 0.394
   }
  },
  "pnl_by_depth_bucket": {
   ">=1000": {
-   "n": 22,
-   "win_rate": 0.6818,
-   "pnl_usd": 0.1536,
-   "brier": 0.2034
+   "n": 5,
+   "win_rate": 0.4,
+   "pnl_usd": -4.354,
+   "brier": 0.1683
   }
  },
  "pnl_by_confidence_tier": {
-  "low": {
-   "n": 2,
-   "win_rate": 0.5,
-   "pnl_usd": -0.3846,
-   "brier": 0.0447
-  },
   "high": {
-   "n": 17,
-   "win_rate": 0.6471,
-   "pnl_usd": -6.7463,
-   "brier": 0.2467
-  },
-  "medium": {
-   "n": 3,
+   "n": 5,
+   "win_rate": 0.4,
+   "pnl_usd": -4.354,
+   "brier": 0.1683
+  }
+ },
+ "pnl_by_conviction_bucket": {
+  "<0.2": {
+   "n": 1,
    "win_rate": 1.0,
-   "pnl_usd": 7.2845,
-   "brier": 0.0638
+   "pnl_usd": 10.1515,
+   "brier": 0.3078
+  },
+  "0.2-0.4": {
+   "n": 2,
+   "win_rate": 0.0,
+   "pnl_usd": -10.0,
+   "brier": 0.2449
+  },
+  "0.4-0.6": {
+   "n": 1,
+   "win_rate": 0.0,
+   "pnl_usd": -5.0,
+   "brier": 0.0436
+  },
+  ">=0.8": {
+   "n": 1,
+   "win_rate": 1.0,
+   "pnl_usd": 0.4945,
+   "brier": 0.0004
+  }
+ },
+ "pnl_by_entry_mode": {
+  "standard": {
+   "n": 4,
+   "win_rate": 0.5,
+   "pnl_usd": 0.646,
+   "brier": 0.1995
+  },
+  "late_window": {
+   "n": 1,
+   "win_rate": 0.0,
+   "pnl_usd": -5.0,
+   "brier": 0.0436
   }
  },
  "promotion_candidates": [],
  "demotion_candidates": [
-  "regime:noise",
+  "edge_quality:medium",
+  "regime:trending",
+  "zscore_bucket:-1..1",
   "zscore_bucket:-2..-1",
-  "zscore_bucket:1..2",
-  "ttc_bucket:>=240s"
+  "ttc_bucket:<60s"
  ],
  "readiness": {
   "report_only": true,
@@ -520,108 +536,116 @@
    "no_safety_bypass": true
   },
   "metrics": {
-   "accepted": 272,
-   "win_rate": 0.5331,
-   "net_pnl_usd": -55.6793,
-   "profit_factor": 0.8414,
-   "calibration_error": 0.237219,
-   "max_drawdown_usd": 117.6319,
-   "avg_win_usd": 2.7854,
-   "avg_loss_usd": 3.7795
+   "accepted": 283,
+   "win_rate": 0.5265,
+   "net_pnl_usd": -72.7667,
+   "profit_factor": 0.819,
+   "calibration_error": 0.236816,
+   "max_drawdown_usd": 127.5229,
+   "avg_win_usd": 2.8308,
+   "avg_loss_usd": 3.8433
   }
  },
  "tradingview": {
   "enabled": true,
   "tradingview_observe_only": true,
-  "tradingview_alerts_received": 52,
-  "tradingview_alerts_valid": 52,
+  "tradingview_alerts_received": 89,
+  "tradingview_alerts_valid": 89,
   "tradingview_alerts_rejected": 0,
-  "tradingview_alerts_consumed_as_features": 50,
+  "tradingview_alerts_consumed_as_features": 85,
   "tradingview_reject_reasons": {},
   "tradingview_latest_signal": {
-   "event_id": "BTCUSD-5-1782120900000-DOWN_STRONG-v3-loose",
+   "event_id": "BTCUSD-5-1782135300000-UP_STRONG-v4-orderflow",
    "source": "tradingview",
    "bot_name": "hermes",
    "symbol": "BTCUSD",
    "timeframe": "5",
-   "bar_time": 1782121200.0,
-   "received_at": 1782121204.414,
-   "direction": "DOWN",
+   "bar_time": 1782135600.0,
+   "received_at": 1782135609.266,
+   "direction": "UP",
    "strength": 0.82,
-   "signal_level": "DOWN_STRONG",
-   "price": 64002.1,
-   "indicator_name": "Hermes BTC Pulse Composite v3 Loose",
-   "raw_payload_hash": "50639af2c53395ac6ebb2bc393004df7122cee5089ca001ac9aa650c2a67dede",
+   "signal_level": "UP_STRONG",
+   "price": 65235.75,
+   "indicator_name": "Hermes BTC Pulse Composite v4 Orderflow Loose",
+   "raw_payload_hash": "effcde1c9a771377d5476b8d7e5b539af88be8fa0fdb344395f66df5c19e14ad",
    "observe_only": true,
-   "vwap_state": "below",
-   "bb_state": "squeeze",
-   "relative_volume": 1.485470403,
-   "volume_state": "spike",
-   "htf_bias": "bearish",
-   "composite_version": "v3",
-   "adx": 10.1683008376,
-   "adx_state": "weak_trend",
-   "supertrend_value": 64287.703030803,
-   "supertrend_direction": "bearish",
+   "vwap_state": "above",
+   "bb_state": "normal",
+   "relative_volume": 1.0523592889,
+   "volume_state": "active",
+   "htf_bias": "bullish",
+   "composite_version": "v4",
+   "adx": 48.9099830489,
+   "adx_state": "strong_trend",
+   "supertrend_value": 64734.6651770116,
+   "supertrend_direction": "bullish",
    "supertrend_aligned": true,
-   "candle_pressure": "bear_close_near_low",
-   "body_ratio": 0.8821071047,
-   "close_position": 0.0691029255,
-   "upper_wick_ratio": 0.0487899699,
-   "lower_wick_ratio": 0.0691029255,
-   "range_state": "breakout_down",
+   "candle_pressure": "bull_close_near_high",
+   "body_ratio": 0.7597005614,
+   "close_position": 0.7670201705,
+   "upper_wick_ratio": 0.2329798295,
+   "lower_wick_ratio": 0.0073196091,
+   "range_state": "breakout_up",
    "range_lookback": 10.0,
-   "prior_range_high": 64228.74,
-   "prior_range_low": 64038.89,
-   "mtf_alignment": "bearish_aligned",
+   "prior_range_high": 65201.72,
+   "prior_range_low": 64892.21,
+   "mtf_alignment": "bullish_aligned",
    "bar_confirmed": true,
-   "signal_age_ms": 1681.0,
-   "non_repainting": true
+   "signal_age_ms": 2114.0,
+   "non_repainting": true,
+   "cvd_state": "neutral",
+   "funding_state": "neutral",
+   "liquidation_spike": false,
+   "event_blackout": true
   },
   "tradingview_latest_by_symbol": {
    "BTCUSD": {
-    "event_id": "BTCUSD-5-1782120900000-DOWN_STRONG-v3-loose",
+    "event_id": "BTCUSD-5-1782135300000-UP_STRONG-v4-orderflow",
     "source": "tradingview",
     "bot_name": "hermes",
     "symbol": "BTCUSD",
     "timeframe": "5",
-    "bar_time": 1782121200.0,
-    "received_at": 1782121204.414,
-    "direction": "DOWN",
+    "bar_time": 1782135600.0,
+    "received_at": 1782135609.266,
+    "direction": "UP",
     "strength": 0.82,
-    "signal_level": "DOWN_STRONG",
-    "price": 64002.1,
-    "indicator_name": "Hermes BTC Pulse Composite v3 Loose",
-    "raw_payload_hash": "50639af2c53395ac6ebb2bc393004df7122cee5089ca001ac9aa650c2a67dede",
+    "signal_level": "UP_STRONG",
+    "price": 65235.75,
+    "indicator_name": "Hermes BTC Pulse Composite v4 Orderflow Loose",
+    "raw_payload_hash": "effcde1c9a771377d5476b8d7e5b539af88be8fa0fdb344395f66df5c19e14ad",
     "observe_only": true,
-    "vwap_state": "below",
-    "bb_state": "squeeze",
-    "relative_volume": 1.485470403,
-    "volume_state": "spike",
-    "htf_bias": "bearish",
-    "composite_version": "v3",
-    "adx": 10.1683008376,
-    "adx_state": "weak_trend",
-    "supertrend_value": 64287.703030803,
-    "supertrend_direction": "bearish",
+    "vwap_state": "above",
+    "bb_state": "normal",
+    "relative_volume": 1.0523592889,
+    "volume_state": "active",
+    "htf_bias": "bullish",
+    "composite_version": "v4",
+    "adx": 48.9099830489,
+    "adx_state": "strong_trend",
+    "supertrend_value": 64734.6651770116,
+    "supertrend_direction": "bullish",
     "supertrend_aligned": true,
-    "candle_pressure": "bear_close_near_low",
-    "body_ratio": 0.8821071047,
-    "close_position": 0.0691029255,
-    "upper_wick_ratio": 0.0487899699,
-    "lower_wick_ratio": 0.0691029255,
-    "range_state": "breakout_down",
+    "candle_pressure": "bull_close_near_high",
+    "body_ratio": 0.7597005614,
+    "close_position": 0.7670201705,
+    "upper_wick_ratio": 0.2329798295,
+    "lower_wick_ratio": 0.0073196091,
+    "range_state": "breakout_up",
     "range_lookback": 10.0,
-    "prior_range_high": 64228.74,
-    "prior_range_low": 64038.89,
-    "mtf_alignment": "bearish_aligned",
+    "prior_range_high": 65201.72,
+    "prior_range_low": 64892.21,
+    "mtf_alignment": "bullish_aligned",
     "bar_confirmed": true,
-    "signal_age_ms": 1681.0,
-    "non_repainting": true
+    "signal_age_ms": 2114.0,
+    "non_repainting": true,
+    "cvd_state": "neutral",
+    "funding_state": "neutral",
+    "liquidation_spike": false,
+    "event_blackout": true
    }
   },
   "tradingview_valid_by_symbol": {
-   "BTCUSD": 52
+   "BTCUSD": 89
   },
   "allowed_symbols": [
    "BTC",
@@ -632,7 +656,7 @@
    "XBTUSD"
   ],
   "bot_name": "hermes",
-  "dedupe_tracked": 52,
+  "dedupe_tracked": 89,
   "note": "TradingView alerts are candidate signals only \u2014 they cannot place, resize, or bypass trades; the strategy + execution gate remain the sole trade authority.",
   "webhook": {
    "listening": true,
@@ -647,55 +671,55 @@
    "report_only": true,
    "observe_only": true,
    "min_evidence": 30,
-   "n_settled_with_signal": 25,
+   "n_settled_with_signal": 36,
    "n_settled_no_signal": 0,
-   "signal_evaluated_up_down": 25,
-   "signal_hit_rate": 0.64,
-   "baseline_up_rate": 0.4,
-   "aligned_bot_win_rate": 0.64,
+   "signal_evaluated_up_down": 36,
+   "signal_hit_rate": 0.5556,
+   "baseline_up_rate": 0.4444,
+   "aligned_bot_win_rate": 0.5556,
    "opposed_bot_win_rate": null,
-   "verdict": "insufficient_evidence",
+   "verdict": "signal_predictive_edge",
    "by_direction": {
     "UP": {
-     "n": 13,
-     "signal_hit_rate": 0.5385,
-     "bot_win_rate": 0.5385,
-     "pnl_usd": -13.7816,
-     "avg_pnl_usd": -1.0601
+     "n": 20,
+     "signal_hit_rate": 0.5,
+     "bot_win_rate": 0.5,
+     "pnl_usd": -18.3316,
+     "avg_pnl_usd": -0.9166
     },
     "DOWN": {
-     "n": 12,
-     "signal_hit_rate": 0.75,
-     "bot_win_rate": 0.75,
-     "pnl_usd": 5.6919,
-     "avg_pnl_usd": 0.4743
+     "n": 16,
+     "signal_hit_rate": 0.625,
+     "bot_win_rate": 0.625,
+     "pnl_usd": -6.8454,
+     "avg_pnl_usd": -0.4278
     }
    },
    "by_timeframe": {
     "5": {
-     "n": 25,
-     "signal_hit_rate": 0.64,
-     "bot_win_rate": 0.64,
-     "pnl_usd": -8.0897,
-     "avg_pnl_usd": -0.3236
+     "n": 36,
+     "signal_hit_rate": 0.5556,
+     "bot_win_rate": 0.5556,
+     "pnl_usd": -25.177,
+     "avg_pnl_usd": -0.6994
     }
    },
    "by_symbol": {
     "BTCUSD": {
-     "n": 25,
-     "signal_hit_rate": 0.64,
-     "bot_win_rate": 0.64,
-     "pnl_usd": -8.0897,
-     "avg_pnl_usd": -0.3236
+     "n": 36,
+     "signal_hit_rate": 0.5556,
+     "bot_win_rate": 0.5556,
+     "pnl_usd": -25.177,
+     "avg_pnl_usd": -0.6994
     }
    },
    "by_alignment": {
     "aligned": {
-     "n": 25,
-     "signal_hit_rate": 0.64,
-     "bot_win_rate": 0.64,
-     "pnl_usd": -8.0897,
-     "avg_pnl_usd": -0.3236
+     "n": 36,
+     "signal_hit_rate": 0.5556,
+     "bot_win_rate": 0.5556,
+     "pnl_usd": -25.177,
+     "avg_pnl_usd": -0.6994
     }
    },
    "note": "observe-only: did the TradingView signal at entry predict the 5-min Chainlink outcome (signal_hit_rate vs baseline_up_rate), and did aligning help the bot win (aligned vs opposed bot_win_rate)? Never affects trading."
@@ -704,60 +728,60 @@
    "observe_only": true,
    "report_only": true,
    "min_state_samples": 8,
-   "signals_evaluated": 52,
-   "signal_direction_hit_rate": 0.4808,
+   "signals_evaluated": 88,
+   "signal_direction_hit_rate": 0.5,
    "signal_hit_rate_by_direction": {
     "UP": {
-     "n": 31,
-     "hit_rate": 0.4839
+     "n": 63,
+     "hit_rate": 0.5238
     },
     "DOWN": {
-     "n": 21,
-     "hit_rate": 0.4762
+     "n": 25,
+     "hit_rate": 0.44
     }
    },
-   "predictions_scored": 15,
-   "prediction_accuracy": 0.1333,
+   "predictions_scored": 49,
+   "prediction_accuracy": 0.4286,
    "prediction_accuracy_by_symbol": {
     "BTCUSD": {
-     "n": 15,
-     "accuracy": 0.1333
+     "n": 49,
+     "accuracy": 0.4286
     }
    },
    "current_trend": {
     "BTCUSD": {
      "symbol": "BTCUSD",
-     "n": 52,
-     "last_direction": "DOWN",
-     "streak": -5,
-     "state": "down_streak3",
-     "recent_up_fraction": 0.25
+     "n": 64,
+     "last_direction": "UP",
+     "streak": 33,
+     "state": "up_streak3",
+     "recent_up_fraction": 1.0
     }
    },
    "next_window_prediction": {
     "BTCUSD": {
      "symbol": "BTCUSD",
-     "state": "down_streak3",
+     "state": "up_streak3",
      "prediction": "UP",
-     "prob_up": 0.5833,
-     "confidence": 0.167,
-     "state_n": 12,
+     "prob_up": 0.551,
+     "confidence": 0.102,
+     "state_n": 49,
      "basis": "conditional_outcome_given_rsi_trend"
     }
    },
    "learned_states": {
     "BTCUSD": {
      "up_streak1": {
-      "n": 6,
-      "p_up": 0.6667
+      "n": 7,
+      "p_up": 0.7143
      },
      "up_streak2": {
-      "n": 6,
-      "p_up": 0.1667
+      "n": 7,
+      "p_up": 0.1429
      },
      "up_streak3": {
-      "n": 19,
-      "p_up": 0.5263
+      "n": 49,
+      "p_up": 0.551
      },
      "down_streak1": {
       "n": 6,
@@ -768,108 +792,115 @@
       "p_up": 0.3333
      },
      "down_streak3": {
-      "n": 12,
-      "p_up": 0.5833
+      "n": 16,
+      "p_up": 0.625
      }
     }
    },
    "note": "observe-only: learns P(next 5-min outcome | RSI alert trend state) from the alert history and scores its own next-window predictions. Never trades.",
    "forward_horizon_s": 300.0,
-   "pending_forward_evals": 0,
+   "pending_forward_evals": 1,
    "learns_from": "all_signals_forward_return"
   },
   "signal_learning": {
    "observe_only": true,
    "report_only": true,
    "affects_trading": false,
-   "settled_with_signal": 25,
-   "accepted": 24,
-   "rejected": 2765,
+   "settled_with_signal": 36,
+   "accepted": 35,
+   "rejected": 5067,
    "accepted_by_direction": {
-    "UP": 12,
-    "DOWN": 12
+    "UP": 19,
+    "DOWN": 16
    },
    "rejected_by_direction": {
-    "UP": 1795,
-    "DOWN": 970
+    "UP": 3990,
+    "DOWN": 1077
    },
    "by_direction": {
     "UP": {
-     "n": 13,
-     "win_rate": 0.5385,
-     "pnl_usd": -13.7816,
-     "avg_ev_after_cost": 0.097774,
+     "n": 20,
+     "win_rate": 0.5,
+     "pnl_usd": -18.3316,
+     "avg_ev_after_cost": 0.094798,
      "all_reconciled": true
     },
     "DOWN": {
-     "n": 12,
-     "win_rate": 0.75,
-     "pnl_usd": 5.6919,
-     "avg_ev_after_cost": 0.12121,
+     "n": 16,
+     "win_rate": 0.625,
+     "pnl_usd": -6.8454,
+     "avg_ev_after_cost": 0.138119,
      "all_reconciled": true
     }
    },
    "by_signal_level": {
     "UP_STRONG": {
-     "n": 9,
-     "win_rate": 0.5556,
-     "pnl_usd": -7.8232,
-     "avg_ev_after_cost": 0.090899,
+     "n": 14,
+     "win_rate": 0.4286,
+     "pnl_usd": -17.6717,
+     "avg_ev_after_cost": 0.091713,
      "all_reconciled": true
     },
     "UP_WEAK": {
-     "n": 4,
-     "win_rate": 0.5,
-     "pnl_usd": -5.9584,
-     "avg_ev_after_cost": 0.113241,
+     "n": 6,
+     "win_rate": 0.6667,
+     "pnl_usd": -0.6599,
+     "avg_ev_after_cost": 0.101997,
      "all_reconciled": true
     },
     "DOWN_WEAK": {
-     "n": 7,
-     "win_rate": 0.8571,
-     "pnl_usd": 5.7171,
-     "avg_ev_after_cost": 0.108695,
+     "n": 10,
+     "win_rate": 0.7,
+     "pnl_usd": -1.8203,
+     "avg_ev_after_cost": 0.142838,
      "all_reconciled": true
     },
     "DOWN_STRONG": {
-     "n": 5,
-     "win_rate": 0.6,
-     "pnl_usd": -0.0251,
-     "avg_ev_after_cost": 0.138731,
+     "n": 6,
+     "win_rate": 0.5,
+     "pnl_usd": -5.0251,
+     "avg_ev_after_cost": 0.130253,
      "all_reconciled": true
     }
    },
    "by_strength_bucket": {
     ">=0.8": {
-     "n": 14,
-     "win_rate": 0.5714,
-     "pnl_usd": -7.8484,
-     "avg_ev_after_cost": 0.107982,
+     "n": 20,
+     "win_rate": 0.45,
+     "pnl_usd": -22.6968,
+     "avg_ev_after_cost": 0.103275,
      "all_reconciled": true
     },
     "0.5-0.8": {
-     "n": 11,
-     "win_rate": 0.7273,
-     "pnl_usd": -0.2413,
-     "avg_ev_after_cost": 0.110348,
+     "n": 16,
+     "win_rate": 0.6875,
+     "pnl_usd": -2.4802,
+     "avg_ev_after_cost": 0.127522,
      "all_reconciled": true
     }
    },
    "by_indicator_name": {
     "Hermes BTC Pulse Composite v3 Loose": {
-     "n": 25,
-     "win_rate": 0.64,
-     "pnl_usd": -8.0897,
-     "avg_ev_after_cost": 0.109023,
+     "n": 31,
+     "win_rate": 0.5806,
+     "pnl_usd": -20.8231,
+     "avg_ev_after_cost": 0.117457,
+     "all_reconciled": true
+    },
+    "Hermes BTC Pulse Composite v4 Orderflow Loose": {
+     "n": 5,
+     "win_rate": 0.4,
+     "pnl_usd": -4.354,
+     "avg_ev_after_cost": 0.092938,
      "all_reconciled": true
     }
    },
    "by_hurst_regime": {
     "trending": {
-     "n": 23,
-     "win_rate": 0.6957,
-     "pnl_usd": 1.9103,
-     "avg_ev_after_cost": 0.111746,
+     "n": 34,
+     "win_rate": 0.5882,
+     "pnl_usd": -15.177,
+     "avg_ev_after_cost": 0.116189,
      "all_reconciled": true
     },
     "noise": {
@@ -882,40 +913,40 @@
    },
    "by_zscore_bucket": {
     "-1..1": {
-     "n": 21,
-     "win_rate": 0.7143,
-     "pnl_usd": 6.3548,
-     "avg_ev_after_cost": 0.114845,
+     "n": 28,
+     "win_rate": 0.6429,
+     "pnl_usd": 3.7729,
+     "avg_ev_after_cost": 0.123336,
      "all_reconciled": true
     },
     "-2..-1": {
-     "n": 3,
-     "win_rate": 0.3333,
-     "pnl_usd": -9.4444,
-     "avg_ev_after_cost": 0.078374,
+     "n": 5,
+     "win_rate": 0.2,
+     "pnl_usd": -19.4444,
+     "avg_ev_after_cost": 0.079727,
      "all_reconciled": true
     },
     "1..2": {
-     "n": 1,
-     "win_rate": 0.0,
-     "pnl_usd": -5.0,
-     "avg_ev_after_cost": 0.078704,
+     "n": 3,
+     "win_rate": 0.3333,
+     "pnl_usd": -9.5055,
+     "avg_ev_after_cost": 0.08461,
      "all_reconciled": true
     }
    },
    "by_ttc_bucket": {
     "120-240s": {
-     "n": 18,
-     "win_rate": 0.6667,
-     "pnl_usd": -3.5097,
-     "avg_ev_after_cost": 0.107977,
+     "n": 25,
+     "win_rate": 0.64,
+     "pnl_usd": -0.5971,
+     "avg_ev_after_cost": 0.104508,
      "all_reconciled": true
     },
     ">=240s": {
-     "n": 4,
-     "win_rate": 0.25,
-     "pnl_usd": -10.9091,
-     "avg_ev_after_cost": 0.101142,
+     "n": 5,
+     "win_rate": 0.2,
+     "pnl_usd": -15.9091,
+     "avg_ev_after_cost": 0.098487,
      "all_reconciled": true
     },
     "60-120s": {
@@ -924,30 +955,37 @@
      "pnl_usd": 6.3291,
      "avg_ev_after_cost": 0.125808,
      "all_reconciled": true
+    },
+    "<60s": {
+     "n": 3,
+     "win_rate": 0.0,
+     "pnl_usd": -15.0,
+     "avg_ev_after_cost": 0.207771,
+     "all_reconciled": true
     }
    },
    "by_spread_bucket": {
     "<=0.01": {
-     "n": 24,
-     "win_rate": 0.625,
-     "pnl_usd": -9.7563,
-     "avg_ev_after_cost": 0.106597,
+     "n": 34,
+     "win_rate": 0.5588,
+     "pnl_usd": -21.8437,
+     "avg_ev_after_cost": 0.113262,
      "all_reconciled": true
     },
     "0.01-0.03": {
-     "n": 1,
-     "win_rate": 1.0,
-     "pnl_usd": 1.6667,
-     "avg_ev_after_cost": 0.167252,
+     "n": 2,
+     "win_rate": 0.5,
+     "pnl_usd": -3.3333,
+     "avg_ev_after_cost": 0.12747,
      "all_reconciled": true
     }
    },
    "by_depth_bucket": {
     ">=1000": {
-     "n": 25,
-     "win_rate": 0.64,
-     "pnl_usd": -8.0897,
-     "avg_ev_after_cost": 0.109023,
+     "n": 36,
+     "win_rate": 0.5556,
+     "pnl_usd": -25.177,
+     "avg_ev_after_cost": 0.114052,
      "all_reconciled": true
     }
    },
@@ -960,17 +998,17 @@
      "all_reconciled": true
     },
     "above": {
-     "n": 11,
-     "win_rate": 0.5455,
-     "pnl_usd": -11.6825,
-     "avg_ev_after_cost": 0.099946,
+     "n": 18,
+     "win_rate": 0.5,
+     "pnl_usd": -16.2326,
+     "avg_ev_after_cost": 0.095795,
      "all_reconciled": true
     },
     "below": {
-     "n": 10,
-     "win_rate": 0.7,
-     "pnl_usd": 2.9042,
-     "avg_ev_after_cost": 0.132787,
+     "n": 14,
+     "win_rate": 0.5714,
+     "pnl_usd": -9.6331,
+     "avg_ev_after_cost": 0.148803,
      "all_reconciled": true
     },
     "reject": {
@@ -983,72 +1021,79 @@
    },
    "by_bb_state": {
     "squeeze": {
-     "n": 22,
-     "win_rate": 0.6364,
-     "pnl_usd": -8.0897,
-     "avg_ev_after_cost": 0.106683,
+     "n": 28,
+     "win_rate": 0.5714,
+     "pnl_usd": -20.8231,
+     "avg_ev_after_cost": 0.116522,
      "all_reconciled": true
     },
     "expansion_up": {
-     "n": 1,
-     "win_rate": 1.0,
-     "pnl_usd": 1.6667,
-     "avg_ev_after_cost": 0.167252,
+     "n": 4,
+     "win_rate": 0.5,
+     "pnl_usd": 1.8182,
+     "avg_ev_after_cost": 0.118785,
      "all_reconciled": true
     },
     "normal": {
-     "n": 2,
+     "n": 4,
      "win_rate": 0.5,
-     "pnl_usd": -1.6667,
-     "avg_ev_after_cost": 0.10565,
+     "pnl_usd": -6.1722,
+     "avg_ev_after_cost": 0.092025,
      "all_reconciled": true
     }
    },
    "by_volume_state": {
     "spike": {
-     "n": 6,
-     "win_rate": 0.1667,
-     "pnl_usd": -23.2432,
-     "avg_ev_after_cost": 0.101354,
+     "n": 8,
+     "win_rate": 0.125,
+     "pnl_usd": -33.2432,
+     "avg_ev_after_cost": 0.10025,
      "all_reconciled": true
     },
     "dead": {
-     "n": 10,
-     "win_rate": 0.7,
-     "pnl_usd": 1.4005,
-     "avg_ev_after_cost": 0.089775,
+     "n": 14,
+     "win_rate": 0.6429,
+     "pnl_usd": -5.6423,
+     "avg_ev_after_cost": 0.091327,
      "all_reconciled": true
     },
     "active": {
-     "n": 9,
-     "win_rate": 0.8889,
-     "pnl_usd": 13.7531,
-     "avg_ev_after_cost": 0.135521,
+     "n": 14,
+     "win_rate": 0.7143,
+     "pnl_usd": 13.7085,
+     "avg_ev_after_cost": 0.144662,
      "all_reconciled": true
     }
    },
    "by_htf_bias": {
     "bullish": {
-     "n": 21,
-     "win_rate": 0.6667,
-     "pnl_usd": -7.3204,
-     "avg_ev_after_cost": 0.097252,
+     "n": 31,
+     "win_rate": 0.5806,
+     "pnl_usd": -19.4078,
+     "avg_ev_after_cost": 0.107571,
      "all_reconciled": true
     },
     "bearish": {
-     "n": 4,
-     "win_rate": 0.5,
-     "pnl_usd": -0.7692,
-     "avg_ev_after_cost": 0.170821,
+     "n": 5,
+     "win_rate": 0.4,
+     "pnl_usd": -5.7692,
+     "avg_ev_after_cost": 0.15423,
      "all_reconciled": true
     }
    },
    "by_composite_version": {
     "v3": {
-     "n": 25,
-     "win_rate": 0.64,
-     "pnl_usd": -8.0897,
-     "avg_ev_after_cost": 0.109023,
+     "n": 31,
+     "win_rate": 0.5806,
+     "pnl_usd": -20.8231,
+     "avg_ev_after_cost": 0.117457,
+     "all_reconciled": true
+    },
+    "v4": {
+     "n": 5,
+     "win_rate": 0.4,
+     "pnl_usd": -4.354,
+     "avg_ev_after_cost": 0.092938,
      "all_reconciled": true
     }
    },
@@ -1061,93 +1106,100 @@
      "all_reconciled": true
     },
     "weak_trend": {
-     "n": 10,
-     "win_rate": 0.7,
-     "pnl_usd": -6.7638,
-     "avg_ev_after_cost": 0.094828,
+     "n": 16,
+     "win_rate": 0.5625,
+     "pnl_usd": -19.4972,
+     "avg_ev_after_cost": 0.116492,
+     "all_reconciled": true
+    },
+    "strong_trend": {
+     "n": 5,
+     "win_rate": 0.4,
+     "pnl_usd": -4.354,
+     "avg_ev_after_cost": 0.092938,
      "all_reconciled": true
     }
    },
    "by_supertrend_direction": {
     "bearish": {
-     "n": 9,
-     "win_rate": 0.4444,
-     "pnl_usd": -11.5498,
-     "avg_ev_after_cost": 0.133071,
+     "n": 15,
+     "win_rate": 0.4,
+     "pnl_usd": -24.2832,
+     "avg_ev_after_cost": 0.140882,
      "all_reconciled": true
     },
     "bullish": {
-     "n": 16,
-     "win_rate": 0.75,
-     "pnl_usd": 3.4601,
-     "avg_ev_after_cost": 0.095496,
+     "n": 21,
+     "win_rate": 0.6667,
+     "pnl_usd": -0.8939,
+     "avg_ev_after_cost": 0.094887,
      "all_reconciled": true
     }
    },
    "by_candle_pressure": {
     "bull_close_near_high": {
-     "n": 4,
-     "win_rate": 0.75,
-     "pnl_usd": 2.9511,
-     "avg_ev_after_cost": 0.090774,
+     "n": 9,
+     "win_rate": 0.4444,
+     "pnl_usd": -14.5862,
+     "avg_ev_after_cost": 0.132088,
      "all_reconciled": true
     },
     "lower_wick_rejection": {
-     "n": 5,
-     "win_rate": 0.6,
-     "pnl_usd": 0.2333,
-     "avg_ev_after_cost": 0.127817,
+     "n": 6,
+     "win_rate": 0.6667,
+     "pnl_usd": 10.3848,
+     "avg_ev_after_cost": 0.125722,
      "all_reconciled": true
     },
     "bear_close_near_low": {
-     "n": 11,
-     "win_rate": 0.5455,
-     "pnl_usd": -15.3051,
-     "avg_ev_after_cost": 0.099541,
+     "n": 13,
+     "win_rate": 0.5385,
+     "pnl_usd": -19.8106,
+     "avg_ev_after_cost": 0.097194,
      "all_reconciled": true
     },
     "upper_wick_rejection": {
-     "n": 3,
+     "n": 4,
      "win_rate": 1.0,
-     "pnl_usd": 7.0867,
-     "avg_ev_after_cost": 0.102313,
+     "pnl_usd": 11.8906,
+     "avg_ev_after_cost": 0.09921,
      "all_reconciled": true
     },
     "neutral_candle": {
-     "n": 2,
-     "win_rate": 0.5,
-     "pnl_usd": -3.0556,
-     "avg_ev_after_cost": 0.160749,
+     "n": 4,
+     "win_rate": 0.25,
+     "pnl_usd": -13.0556,
+     "avg_ev_after_cost": 0.125595,
      "all_reconciled": true
     }
    },
    "by_range_state": {
     "breakout_up": {
-     "n": 2,
-     "win_rate": 1.0,
-     "pnl_usd": 3.4234,
-     "avg_ev_after_cost": 0.114948,
+     "n": 3,
+     "win_rate": 0.6667,
+     "pnl_usd": -1.5766,
+     "avg_ev_after_cost": 0.100072,
      "all_reconciled": true
     },
     "range_top": {
-     "n": 6,
-     "win_rate": 0.3333,
-     "pnl_usd": -14.58,
-     "avg_ev_after_cost": 0.075933,
+     "n": 10,
+     "win_rate": 0.3,
+     "pnl_usd": -19.4285,
+     "avg_ev_after_cost": 0.085117,
      "all_reconciled": true
     },
     "range_middle": {
-     "n": 9,
-     "win_rate": 0.7778,
-     "pnl_usd": 6.8433,
-     "avg_ev_after_cost": 0.116756,
+     "n": 14,
+     "win_rate": 0.6429,
+     "pnl_usd": -0.8901,
+     "avg_ev_after_cost": 0.135434,
      "all_reconciled": true
     },
     "range_bottom": {
-     "n": 5,
-     "win_rate": 0.6,
-     "pnl_usd": -4.1359,
-     "avg_ev_after_cost": 0.157036,
+     "n": 6,
+     "win_rate": 0.6667,
+     "pnl_usd": -3.6414,
+     "avg_ev_after_cost": 0.142382,
      "all_reconciled": true
     },
     "breakout_down": {
@@ -1167,17 +1219,17 @@
      "all_reconciled": true
     },
     "bullish_aligned": {
-     "n": 4,
-     "win_rate": 0.25,
-     "pnl_usd": -13.3333,
-     "avg_ev_after_cost": 0.097162,
+     "n": 9,
+     "win_rate": 0.2222,
+     "pnl_usd": -23.1818,
+     "avg_ev_after_cost": 0.094949,
      "all_reconciled": true
     },
     "mixed": {
-     "n": 13,
-     "win_rate": 0.7692,
-     "pnl_usd": 11.2937,
-     "avg_ev_after_cost": 0.118506,
+     "n": 19,
+     "win_rate": 0.6842,
+     "pnl_usd": 4.0548,
+     "avg_ev_after_cost": 0.129209,
      "all_reconciled": true
     },
     "bearish_aligned": {
@@ -1188,102 +1240,145 @@
      "all_reconciled": true
     }
    },
+   "by_cvd_state": {
+    "unknown": {
+     "n": 2,
+     "win_rate": 1.0,
+     "pnl_usd": 10.646,
+     "avg_ev_after_cost": 0.092179,
+     "all_reconciled": true
+    },
+    "neutral": {
+     "n": 3,
+     "win_rate": 0.0,
+     "pnl_usd": -15.0,
+     "avg_ev_after_cost": 0.093444,
+     "all_reconciled": true
+    }
+   },
+   "by_funding_state": {
+    "neutral": {
+     "n": 5,
+     "win_rate": 0.4,
+     "pnl_usd": -4.354,
+     "avg_ev_after_cost": 0.092938,
+     "all_reconciled": true
+    }
+   },
+   "by_liquidation_spike": {
+    "False": {
+     "n": 5,
+     "win_rate": 0.4,
+     "pnl_usd": -4.354,
+     "avg_ev_after_cost": 0.092938,
+     "all_reconciled": true
+    }
+   },
+   "by_event_blackout": {
+    "True": {
+     "n": 5,
+     "win_rate": 0.4,
+     "pnl_usd": -4.354,
+     "avg_ev_after_cost": 0.092938,
+     "all_reconciled": true
+    }
+   },
    "best_signal_levels": [
     {
      "signal_level": "DOWN_WEAK",
-     "n": 7,
-     "win_rate": 0.8571,
-     "pnl_usd": 5.7171,
-     "avg_ev_after_cost": 0.108695,
+     "n": 10,
+     "win_rate": 0.7,
+     "pnl_usd": -1.8203,
+     "avg_ev_after_cost": 0.142838,
+     "all_reconciled": true
+    },
+    {
+     "signal_level": "UP_WEAK",
+     "n": 6,
+     "win_rate": 0.6667,
+     "pnl_usd": -0.6599,
+     "avg_ev_after_cost": 0.101997,
      "all_reconciled": true
     },
     {
      "signal_level": "DOWN_STRONG",
-     "n": 5,
-     "win_rate": 0.6,
-     "pnl_usd": -0.0251,
-     "avg_ev_after_cost": 0.138731,
-     "all_reconciled": true
-    },
-    {
-     "signal_level": "UP_STRONG",
-     "n": 9,
-     "win_rate": 0.5556,
-     "pnl_usd": -7.8232,
-     "avg_ev_after_cost": 0.090899,
+     "n": 6,
+     "win_rate": 0.5,
+     "pnl_usd": -5.0251,
+     "avg_ev_after_cost": 0.130253,
      "all_reconciled": true
     }
    ],
    "worst_signal_levels": [
     {
-     "signal_level": "UP_WEAK",
-     "n": 4,
-     "win_rate": 0.5,
-     "pnl_usd": -5.9584,
-     "avg_ev_after_cost": 0.113241,
-     "all_reconciled": true
-    },
-    {
      "signal_level": "UP_STRONG",
-     "n": 9,
-     "win_rate": 0.5556,
-     "pnl_usd": -7.8232,
-     "avg_ev_after_cost": 0.090899,
+     "n": 14,
+     "win_rate": 0.4286,
+     "pnl_usd": -17.6717,
+     "avg_ev_after_cost": 0.091713,
      "all_reconciled": true
     },
     {
      "signal_level": "DOWN_STRONG",
-     "n": 5,
-     "win_rate": 0.6,
-     "pnl_usd": -0.0251,
-     "avg_ev_after_cost": 0.138731,
+     "n": 6,
+     "win_rate": 0.5,
+     "pnl_usd": -5.0251,
+     "avg_ev_after_cost": 0.130253,
+     "all_reconciled": true
+    },
+    {
+     "signal_level": "UP_WEAK",
+     "n": 6,
+     "win_rate": 0.6667,
+     "pnl_usd": -0.6599,
+     "avg_ev_after_cost": 0.101997,
      "all_reconciled": true
     }
    ],
    "best_buckets": [
     {
+     "dimension": "ttc_bucket",
+     "bucket": "<60s",
+     "n": 3,
+     "win_rate": 0.0,
+     "pnl_usd": -15.0,
+     "avg_ev_after_cost": 0.207771,
+     "all_reconciled": true
+    },
+    {
      "dimension": "htf_bias",
      "bucket": "bearish",
-     "n": 4,
-     "win_rate": 0.5,
-     "pnl_usd": -0.7692,
-     "avg_ev_after_cost": 0.170821,
+     "n": 5,
+     "win_rate": 0.4,
+     "pnl_usd": -5.7692,
+     "avg_ev_after_cost": 0.15423,
      "all_reconciled": true
     },
     {
-     "dimension": "range_state",
-     "bucket": "range_bottom",
-     "n": 5,
-     "win_rate": 0.6,
-     "pnl_usd": -4.1359,
-     "avg_ev_after_cost": 0.157036,
-     "all_reconciled": true
-    },
-    {
-     "dimension": "signal_level",
-     "bucket": "DOWN_STRONG",
-     "n": 5,
-     "win_rate": 0.6,
-     "pnl_usd": -0.0251,
-     "avg_ev_after_cost": 0.138731,
+     "dimension": "vwap_state",
+     "bucket": "below",
+     "n": 14,
+     "win_rate": 0.5714,
+     "pnl_usd": -9.6331,
+     "avg_ev_after_cost": 0.148803,
      "all_reconciled": true
     },
     {
      "dimension": "volume_state",
      "bucket": "active",
-     "n": 9,
-     "win_rate": 0.8889,
-     "pnl_usd": 13.7531,
-     "avg_ev_after_cost": 0.135521,
+     "n": 14,
+     "win_rate": 0.7143,
+     "pnl_usd": 13.7085,
+     "avg_ev_after_cost": 0.144662,
      "all_reconciled": true
     },
     {
-     "dimension": "supertrend_direction",
-     "bucket": "bearish",
-     "n": 9,
-     "win_rate": 0.4444,
-     "pnl_usd": -11.5498,
-     "avg_ev_after_cost": 0.133071,
+     "dimension": "signal_level",
+     "bucket": "DOWN_WEAK",
+     "n": 10,
+     "win_rate": 0.7,
+     "pnl_usd": -1.8203,
+     "avg_ev_after_cost": 0.142838,
      "all_reconciled": true
     }
    ],
@@ -1298,15 +1393,6 @@
      "all_reconciled": true
     },
     {
-     "dimension": "range_state",
-     "bucket": "range_top",
-     "n": 6,
-     "win_rate": 0.3333,
-     "pnl_usd": -14.58,
-     "avg_ev_after_cost": 0.075933,
-     "all_reconciled": true
-    },
-    {
      "dimension": "vwap_state",
      "bucket": "reclaim",
      "n": 3,
@@ -1318,19 +1404,28 @@
     {
      "dimension": "zscore_bucket",
      "bucket": "-2..-1",
-     "n": 3,
-     "win_rate": 0.3333,
-     "pnl_usd": -9.4444,
-     "avg_ev_after_cost": 0.078374,
+     "n": 5,
+     "win_rate": 0.2,
+     "pnl_usd": -19.4444,
+     "avg_ev_after_cost": 0.079727,
      "all_reconciled": true
     },
     {
-     "dimension": "mtf_alignment",
-     "bucket": "neutral",
-     "n": 6,
-     "win_rate": 0.8333,
-     "pnl_usd": 3.95,
-     "avg_ev_after_cost": 0.086608,
+     "dimension": "zscore_bucket",
+     "bucket": "1..2",
+     "n": 3,
+     "win_rate": 0.3333,
+     "pnl_usd": -9.5055,
+     "avg_ev_after_cost": 0.08461,
+     "all_reconciled": true
+    },
+    {
+     "dimension": "range_state",
+     "bucket": "range_top",
+     "n": 10,
+     "win_rate": 0.3,
+     "pnl_usd": -19.4285,
+     "avg_ev_after_cost": 0.085117,
      "all_reconciled": true
     }
    ],
@@ -1354,21 +1449,48 @@
    "execution_gate_still_authoritative": true,
    "max_signal_age_s": 300.0,
    "note": "when active, a paper trade is taken only if a fresh TradingView signal agrees with the side; it can only PREVENT trades, never force or bypass them."
+  },
+  "context_gate": {
+   "enabled": true,
+   "mode": "restrict_only_context_prior",
+   "affects_trading": true,
+   "can_force_trade": false,
+   "execution_gate_still_authoritative": true,
+   "blocked_volume_states": [
+    "spike"
+   ],
+   "blocked_hurst_regimes": [
+    "noise"
+   ],
+   "max_ttc_s": 240.0,
+   "exploration_rate": 0.05,
+   "passed": 110,
+   "blocked": 41,
+   "explored": 2,
+   "block_reasons": {
+    "tv_context_volume_spike": 28,
+    "tv_context_ttc_too_far": 13
+   },
+   "explore_reasons": {
+    "tv_context_volume_spike": 1,
+    "tv_context_ttc_too_far": 2
+   },
+   "note": "hard prior gate: blocks proven-losing entry contexts (volume spikes, noise regime, far-from-resolution) before enough samples exist for the learned selectivity gate. Can only PREVENT trades \u2014 never forces, sizes, or bypasses the execution gate, which remains the sole trade authority."
   }
  },
  "learning": {
   "enabled": true,
-  "active": false,
-  "weight": 0.0,
-  "reason": "insufficient_samples",
+  "active": true,
+  "weight": 0.015,
+  "reason": "active",
   "paper_only": true,
   "execution_gate_still_authoritative": true,
   "max_weight": 0.5,
   "min_samples": 60,
   "ramp_samples": 300.0,
   "max_calibration_error": 0.15,
-  "model_n_labeled": 58,
-  "model_calibration_error": 0.0926,
+  "model_n_labeled": 69,
+  "model_calibration_error": 0.064,
   "note": "the bot's own settled-trade experience (calibrated edge model) adjusts the directional probability; it grows as more trades settle. The execution-quality gate, paper-realism, and reconciliation are unchanged and still veto every trade \u2014 learning can never bypass them."
  },
  "grok_signal_intel": {
@@ -1376,13 +1498,13 @@
   "affects_trading": false,
   "off_hot_path": true,
   "budget": {
-   "daily_usd_cap": 5.0,
+   "daily_usd_cap": 20.0,
    "est_usd_per_call": 0.02,
-   "spent_today_usd": 2.74,
-   "calls_today": 137,
+   "spent_today_usd": 1.62,
+   "calls_today": 81,
    "per_feature_hourly": {
-    "predictor": 30,
-    "analyst": 4,
+    "predictor": 120,
+    "analyst": 6,
     "overlay": 20
    }
   },
@@ -1391,35 +1513,30 @@
    "observe_only": true,
    "affects_trading": false,
    "interval_s": 1800.0,
-   "calls": 11,
+   "calls": 21,
    "errors": 0,
    "skipped_budget": 0,
    "last_note": {
-    "summary": "With only 24 accepted signals total, DOWN (n=11, WR 0.73), trending regime (n=22, WR 0.68), active volume (n=8, WR 0.875), supertrend bullish (n=15, WR 0.73), and z-score -1..1 (n=20, WR 0.7) show modestly positive separation in both WR and PnL/EV, while UP, noise regime, volume spike, and supertrend bearish buckets are clearly worse. Most other slices have n\u22645 and are indistinguishable from noise. Positive avg EV coexists with negative realized PnL, underscoring the tiny sample.",
+    "summary": "With only 35 settled signals the sample is too small for reliable inference; DOWN_WEAK, z-score -1..1, active volume, and supertrend_bullish show elevated win-rates (0.65-0.71) and positive EV while most other slices are flat-to-negative. UP_STRONG, volume spike, and >=240 s TTC buckets post clear losses. Extreme win-rate variance (0 or 1.0) appears in every bucket with n<=5.",
     "working": [
-     "DOWN direction",
-     "trending regime",
-     "active volume state",
-     "supertrend bullish",
-     "z-score -1..1",
-     "60-120s TTC"
+     "DOWN_WEAK (n=10, WR 0.70, EV 0.143)",
+     "zscore -1..1 (n=28, WR 0.643, +PnL)",
+     "volume_state=active (n=14, WR 0.714, +PnL)",
+     "supertrend_bullish (n=20, WR 0.65)"
     ],
     "failing": [
-     "UP direction",
-     "noise regime (n=2)",
-     "volume spike",
-     "supertrend bearish",
-     "range_top",
-     "bear_close_near_low"
+     "UP_STRONG (n=14, WR 0.429)",
+     "volume_state=spike (n=8, WR 0.125)",
+     "strength >=0.8 (n=20, WR 0.45)",
+     "ttc >=240s (n=5, WR 0.2)"
     ],
     "warnings": [
-     "n=24 total makes every bucket high-variance and overfitting-prone",
-     "2689 rejections imply heavy selection bias",
-     "negative total PnL despite +EV suggests cost/slippage or luck",
-     "watch for regime or volume stability in next 50+ signals before any further consideration"
+     "Total n=35 and most buckets n<10; all 0/1.0 win-rates are small-sample artifacts",
+     "Positive avg_EV but negative realized PnL suggests unmodeled costs/slippage",
+     "Multi-way slicing on 15+ dimensions on 35 rows guarantees overfitting; watch for degradation on next 50 signals"
     ]
    },
-   "last_note_ts": 1782121196.8776162,
+   "last_note_ts": 1782134378.1705043,
    "note": "observe-only Grok research analysis of signal performance; never trades."
   },
   "predictor_B": {
@@ -1427,13 +1544,13 @@
    "observe_only": true,
    "affects_trading": false,
    "off_hot_path": true,
-   "requested": 52,
-   "predicted": 52,
+   "requested": 89,
+   "predicted": 89,
    "errors": 0,
    "skipped_budget": 0,
-   "scored": 50,
-   "accuracy": 0.48,
-   "brier": 0.2591,
+   "scored": 85,
+   "accuracy": 0.5059,
+   "brier": 0.256,
    "pending": 0,
    "note": "observe-only Grok P(up) per signal; graded vs realized BTC move before it could ever be trusted; never places/sizes/bypasses a trade."
   },
@@ -1444,98 +1561,112 @@
   "observe_only": true,
   "report_only": true,
   "affects_trading": false,
-  "settled": 34,
+  "settled": 45,
   "by_stale_divergence": {
    "not_stale": {
-    "n": 30,
-    "win_rate": 0.6333,
-    "pnl_usd": -8.0587,
-    "avg_ev_after_cost": 0.098207,
+    "n": 38,
+    "win_rate": 0.5789,
+    "pnl_usd": -15.6406,
+    "avg_ev_after_cost": 0.107276,
     "all_reconciled": true
    },
    "already_priced": {
-    "n": 3,
-    "win_rate": 0.6667,
-    "pnl_usd": -0.3632,
-    "avg_ev_after_cost": 0.17349,
+    "n": 4,
+    "win_rate": 0.5,
+    "pnl_usd": -5.3632,
+    "avg_ev_after_cost": 0.153416,
     "all_reconciled": true
    },
    "stale_polymarket_up": {
-    "n": 1,
+    "n": 2,
     "win_rate": 0.0,
-    "pnl_usd": -5.0,
-    "avg_ev_after_cost": 0.060908,
+    "pnl_usd": -10.0,
+    "avg_ev_after_cost": 0.074298,
+    "all_reconciled": true
+   },
+   "stale_polymarket_down": {
+    "n": 1,
+    "win_rate": 1.0,
+    "pnl_usd": 0.4945,
+    "avg_ev_after_cost": 0.069114,
     "all_reconciled": true
    }
   },
   "by_ttc_bucket": {
    "240_300s": {
-    "n": 11,
-    "win_rate": 0.4545,
-    "pnl_usd": -12.2655,
-    "avg_ev_after_cost": 0.091928,
+    "n": 12,
+    "win_rate": 0.4167,
+    "pnl_usd": -17.2655,
+    "avg_ev_after_cost": 0.09159,
     "all_reconciled": true
    },
    "180_240s": {
-    "n": 9,
-    "win_rate": 0.8889,
-    "pnl_usd": 12.2993,
-    "avg_ev_after_cost": 0.115295,
+    "n": 14,
+    "win_rate": 0.7857,
+    "pnl_usd": 10.0605,
+    "avg_ev_after_cost": 0.108657,
     "all_reconciled": true
    },
    "90_180s": {
-    "n": 11,
-    "win_rate": 0.4545,
-    "pnl_usd": -19.7849,
-    "avg_ev_after_cost": 0.100117,
+    "n": 13,
+    "win_rate": 0.4615,
+    "pnl_usd": -14.6334,
+    "avg_ev_after_cost": 0.098988,
     "all_reconciled": true
    },
    "30_90s": {
-    "n": 3,
-    "win_rate": 1.0,
-    "pnl_usd": 6.3291,
-    "avg_ev_after_cost": 0.125808,
+    "n": 6,
+    "win_rate": 0.5,
+    "pnl_usd": -8.6709,
+    "avg_ev_after_cost": 0.16679,
     "all_reconciled": true
    }
   },
   "by_ob_pressure": {
    "ask_heavy": {
-    "n": 34,
-    "win_rate": 0.6176,
-    "pnl_usd": -13.422,
-    "avg_ev_after_cost": 0.103752,
+    "n": 44,
+    "win_rate": 0.5455,
+    "pnl_usd": -31.0038,
+    "avg_ev_after_cost": 0.109972,
+    "all_reconciled": true
+   },
+   "bid_heavy": {
+    "n": 1,
+    "win_rate": 1.0,
+    "pnl_usd": 0.4945,
+    "avg_ev_after_cost": 0.069114,
     "all_reconciled": true
    }
   },
   "by_edge_score": {
    "medium": {
-    "n": 22,
-    "win_rate": 0.6364,
-    "pnl_usd": -0.7376,
-    "avg_ev_after_cost": 0.109067,
+    "n": 24,
+    "win_rate": 0.625,
+    "pnl_usd": 4.4139,
+    "avg_ev_after_cost": 0.109197,
     "all_reconciled": true
    },
    "high": {
-    "n": 11,
-    "win_rate": 0.6364,
-    "pnl_usd": -7.6843,
-    "avg_ev_after_cost": 0.097061,
+    "n": 19,
+    "win_rate": 0.5263,
+    "pnl_usd": -24.9232,
+    "avg_ev_after_cost": 0.093909,
     "all_reconciled": true
    },
    "low": {
-    "n": 1,
+    "n": 2,
     "win_rate": 0.0,
-    "pnl_usd": -5.0,
-    "avg_ev_after_cost": 0.060439,
+    "pnl_usd": -10.0,
+    "avg_ev_after_cost": 0.251435,
     "all_reconciled": true
    }
   },
   "by_cex_agreement": {
    "strong": {
-    "n": 21,
-    "win_rate": 0.5714,
-    "pnl_usd": -19.2821,
-    "avg_ev_after_cost": 0.104685,
+    "n": 29,
+    "win_rate": 0.4828,
+    "pnl_usd": -42.0155,
+    "avg_ev_after_cost": 0.101789,
     "all_reconciled": true
    },
    "na": {
@@ -1546,68 +1677,68 @@
     "all_reconciled": true
    },
    "moderate": {
-    "n": 10,
-    "win_rate": 0.7,
-    "pnl_usd": 1.0407,
-    "avg_ev_after_cost": 0.081249,
+    "n": 13,
+    "win_rate": 0.6923,
+    "pnl_usd": 6.6867,
+    "avg_ev_after_cost": 0.110714,
     "all_reconciled": true
    }
   },
   "best_buckets_after_cost": [
    {
     "dimension": "ttc_bucket",
-    "bucket": "180_240s",
-    "n": 9,
-    "win_rate": 0.8889,
-    "pnl_usd": 12.2993,
-    "avg_ev_after_cost": 0.115295,
-    "all_reconciled": true
-   },
-   {
-    "dimension": "edge_score",
-    "bucket": "medium",
-    "n": 22,
-    "win_rate": 0.6364,
-    "pnl_usd": -0.7376,
-    "avg_ev_after_cost": 0.109067,
+    "bucket": "30_90s",
+    "n": 6,
+    "win_rate": 0.5,
+    "pnl_usd": -8.6709,
+    "avg_ev_after_cost": 0.16679,
     "all_reconciled": true
    },
    {
     "dimension": "cex_agreement",
-    "bucket": "strong",
-    "n": 21,
-    "win_rate": 0.5714,
-    "pnl_usd": -19.2821,
-    "avg_ev_after_cost": 0.104685,
+    "bucket": "moderate",
+    "n": 13,
+    "win_rate": 0.6923,
+    "pnl_usd": 6.6867,
+    "avg_ev_after_cost": 0.110714,
+    "all_reconciled": true
+   },
+   {
+    "dimension": "ob_pressure",
+    "bucket": "ask_heavy",
+    "n": 44,
+    "win_rate": 0.5455,
+    "pnl_usd": -31.0038,
+    "avg_ev_after_cost": 0.109972,
     "all_reconciled": true
    }
   ],
   "worst_buckets_after_cost": [
    {
-    "dimension": "cex_agreement",
-    "bucket": "moderate",
-    "n": 10,
-    "win_rate": 0.7,
-    "pnl_usd": 1.0407,
-    "avg_ev_after_cost": 0.081249,
-    "all_reconciled": true
-   },
-   {
     "dimension": "ttc_bucket",
     "bucket": "240_300s",
-    "n": 11,
-    "win_rate": 0.4545,
-    "pnl_usd": -12.2655,
-    "avg_ev_after_cost": 0.091928,
+    "n": 12,
+    "win_rate": 0.4167,
+    "pnl_usd": -17.2655,
+    "avg_ev_after_cost": 0.09159,
     "all_reconciled": true
    },
    {
     "dimension": "edge_score",
     "bucket": "high",
-    "n": 11,
-    "win_rate": 0.6364,
-    "pnl_usd": -7.6843,
-    "avg_ev_after_cost": 0.097061,
+    "n": 19,
+    "win_rate": 0.5263,
+    "pnl_usd": -24.9232,
+    "avg_ev_after_cost": 0.093909,
+    "all_reconciled": true
+   },
+   {
+    "dimension": "ttc_bucket",
+    "bucket": "90_180s",
+    "n": 13,
+    "win_rate": 0.4615,
+    "pnl_usd": -14.6334,
+    "avg_ev_after_cost": 0.098988,
     "all_reconciled": true
    }
   ],
@@ -1621,7 +1752,7 @@
    "any_eligible": false,
    "note": "observe-only diagnostic; eligible buckets are NOT auto-promoted to trading authority unless promotion_allowed_by_config is true AND explicitly wired. The execution gate remains the sole trade authority."
   },
-  "snapshots": 6149,
+  "snapshots": 9260,
   "cex_basket_coverage": {
    "members": [
     "binance_btcusdt",
@@ -1649,15 +1780,15 @@
   "min_win_rate": 0.52,
   "exploration_rate": 0.05,
   "accepted": 0,
-  "rejected": 361,
-  "explored": 21,
+  "rejected": 554,
+  "explored": 32,
   "reject_reasons": {
-   "bad_bucket:ttc_bucket=>=240s": 3,
+   "bad_bucket:ttc_bucket=>=240s": 4,
    "bad_bucket:confidence_tier=high": 7,
-   "bad_bucket:zscore_bucket=-1..1": 8,
+   "bad_bucket:zscore_bucket=-1..1": 11,
    "bad_bucket:confidence_tier=medium": 1,
-   "bad_bucket:hurst_regime=trending": 338,
-   "bad_bucket:ttc_bucket=120-240s": 4
+   "bad_bucket:hurst_regime=trending": 513,
+   "bad_bucket:ttc_bucket=120-240s": 18
   },
   "pnl_by_gate_decision": {
    "passed": {
@@ -1666,36 +1797,135 @@
     "pnl_usd": -5.0
    },
    "explored": {
-    "n": 21,
-    "win_rate": 0.7143,
-    "pnl_usd": 5.1536
+    "n": 32,
+    "win_rate": 0.5938,
+    "pnl_usd": -11.9338
    }
   },
   "win_rate_by_gate_decision": {
    "passed": 0.0,
-   "explored": 0.7143
+   "explored": 0.5938
   },
   "note": "rejects candidates in proven-losing buckets using live ledger evidence; can only make the bot MORE selective \u2014 never trades, resizes, or bypasses the execution gate. Exploration trades are tracked separately from passed.",
   "counterfactual": {
-   "replayed": 221,
-   "trades_rejected": 221,
-   "losses_avoided": 106,
-   "pnl_removed_by_rejects": -99.7153,
+   "replayed": 205,
+   "trades_rejected": 205,
+   "losses_avoided": 100,
+   "pnl_removed_by_rejects": -105.1524,
    "counterfactual_trades": 0,
    "counterfactual_win_rate": null,
    "counterfactual_pnl_usd": 0,
-   "baseline_trades": 221,
-   "baseline_win_rate": 0.5204,
-   "baseline_pnl_usd": -99.7153,
+   "baseline_trades": 205,
+   "baseline_win_rate": 0.5122,
+   "baseline_pnl_usd": -105.1524,
    "reject_reasons_by_bucket": {
-    "bad_bucket:ttc_bucket=120-240s": 3,
+    "bad_bucket:hurst_regime=trending": 185,
+    "bad_bucket:ttc_bucket=120-240s": 2,
     "bad_bucket:zscore_bucket=-1..1": 2,
-    "bad_bucket:hurst_regime=trending": 187,
-    "bad_bucket:ttc_bucket=>=240s": 23,
-    "bad_bucket:direction=up": 3,
-    "bad_bucket:direction=down": 3
+    "bad_bucket:ttc_bucket=>=240s": 16
    },
    "note": "in-sample replay using final accumulated bucket evidence (diagnostic estimate)"
+  }
+ },
+ "late_window_entry": {
+  "gate": {
+   "enabled": false,
+   "mode": "restrict_only_late_high_conviction",
+   "affects_trading": false,
+   "can_force_trade": false,
+   "execution_gate_still_authoritative": true,
+   "max_ttc_s": 120.0,
+   "min_conviction": 0.4,
+   "passed": 0,
+   "rejected": 0,
+   "reject_reasons": {},
+   "note": "when enabled, only late-window AND high-conviction setups may trade; can only PREVENT trades, never force/size/bypass the execution gate."
+  },
+  "edge_measurement": {
+   "observe_only": true,
+   "report_only": true,
+   "affects_trading": false,
+   "reference_max_ttc_s": 120.0,
+   "reference_min_conviction": 0.4,
+   "min_cohort": 20,
+   "verdict": "insufficient_evidence",
+   "cohort_late_high_conviction": {
+    "n": 1,
+    "win_rate": 0.0,
+    "pnl_usd": -5.0,
+    "avg_pnl_usd": -5.0,
+    "avg_ev_after_cost": 0.093194
+   },
+   "cohort_other": {
+    "n": 4,
+    "win_rate": 0.5,
+    "pnl_usd": 0.646,
+    "avg_pnl_usd": 0.1615,
+    "avg_ev_after_cost": 0.092874
+   },
+   "by_conviction_bucket": {
+    "<0.2": {
+     "n": 1,
+     "win_rate": 1.0,
+     "pnl_usd": 10.1515,
+     "avg_pnl_usd": 10.1515,
+     "avg_ev_after_cost": 0.115245
+    },
+    "0.2-0.4": {
+     "n": 2,
+     "win_rate": 0.0,
+     "pnl_usd": -10.0,
+     "avg_pnl_usd": -5.0,
+     "avg_ev_after_cost": 0.093568
+    },
+    "0.4-0.6": {
+     "n": 1,
+     "win_rate": 0.0,
+     "pnl_usd": -5.0,
+     "avg_pnl_usd": -5.0,
+     "avg_ev_after_cost": 0.093194
+    },
+    ">=0.8": {
+     "n": 1,
+     "win_rate": 1.0,
+     "pnl_usd": 0.4945,
+     "avg_pnl_usd": 0.4945,
+     "avg_ev_after_cost": 0.069114
+    }
+   },
+   "by_ttc_bucket": {
+    "120-240s": {
+     "n": 3,
+     "win_rate": 0.6667,
+     "pnl_usd": 5.646,
+     "avg_pnl_usd": 1.882,
+     "avg_ev_after_cost": 0.094603
+    },
+    "<60s": {
+     "n": 2,
+     "win_rate": 0.0,
+     "pnl_usd": -10.0,
+     "avg_pnl_usd": -5.0,
+     "avg_ev_after_cost": 0.09044
+    }
+   },
+   "by_entry_mode": {
+    "standard": {
+     "n": 4,
+     "win_rate": 0.5,
+     "pnl_usd": 0.646,
+     "avg_pnl_usd": 0.1615,
+     "avg_ev_after_cost": 0.092874
+    },
+    "late_window": {
+     "n": 1,
+     "win_rate": 0.0,
+     "pnl_usd": -5.0,
+     "avg_pnl_usd": -5.0,
+     "avg_ev_after_cost": 0.093194
+    }
+   },
+   "note": "observe-only: grades whether late-window high-conviction trades win more (cohort vs other) from live settled trades; never affects trading."
   }
  }
 }
