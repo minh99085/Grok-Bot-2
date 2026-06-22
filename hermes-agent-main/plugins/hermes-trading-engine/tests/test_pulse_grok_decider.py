@@ -88,6 +88,24 @@ def test_decider_grades_view_even_on_no_trade():
     assert rep["accuracy_by_context"]["hurst_regime"]["trending"]["n"] == 1
 
 
+def test_view_edge_promotion_flags_real_edge_only():
+    # a context with a strong, well-sampled view edge is flagged; a coin-flip one is not.
+    g = GrokDecider(decider_fn=lambda b: {"action": "no_trade", "p_up": 0.7, "confidence": 0.5},
+                    mode="shadow", view_promote_min_samples=20)
+    # 30 graded views in 'trending', 24 correct (~0.8) -> Wilson lower > 0.5 -> edge candidate
+    for i in range(30):
+        g.grade_fields(action="no_trade", p_up=(0.7 if i < 24 else 0.3),
+                       context={"hurst_regime": "trending"}, outcome_up=True)
+    cands = g.report()["view_edge_candidates"]
+    assert any(c["dimension"] == "hurst_regime" and c["bucket"] == "trending" for c in cands)
+    # a 50/50 context with enough samples is NOT flagged
+    g2 = GrokDecider(mode="shadow", view_promote_min_samples=20)
+    for i in range(30):                            # always predicts up; outcome alternates -> ~0.5
+        g2.grade_fields(action="no_trade", p_up=0.6,
+                        context={"hurst_regime": "noise"}, outcome_up=(i % 2 == 0))
+    assert g2.report()["view_edge_candidates"] == []
+
+
 def test_normalize_decision_includes_p_up():
     assert normalize_decision({"action": "no_trade", "p_up": 0.62})["p_up"] == 0.62
     # derive p_up from action+confidence when omitted

@@ -37,6 +37,19 @@ _ACTION_ALIASES = {
 }
 
 
+def _wilson_lower(correct: int, n: int, z: float = 1.64) -> Optional[float]:
+    """One-sided lower bound of the Wilson interval — used to flag a directional edge only when we
+    are statistically confident accuracy is above 0.5 (not just a small-sample fluke)."""
+    if n <= 0:
+        return None
+    import math
+    phat = correct / n
+    denom = 1.0 + z * z / n
+    center = (phat + z * z / (2 * n)) / denom
+    margin = (z * math.sqrt((phat * (1.0 - phat) + z * z / (4 * n)) / n)) / denom
+    return max(0.0, center - margin)
+
+
 def _clamp01(v, default: Optional[float] = None) -> Optional[float]:
     try:
         return max(0.0, min(1.0, float(v)))
@@ -237,7 +250,9 @@ class GrokDecider:
                  mode: str = "shadow", min_confidence: float = 0.55, ttl_s: float = 240.0,
                  max_consecutive_losses: int = 4, daily_loss_cap_usd: float = 30.0,
                  max_latency_s: float = 20.0, cooldown_s: float = 1800.0,
+                 view_promote_min_samples: int = 25,
                  max_pending: int = 200, max_results: int = 5000):
+        self.view_promote_min_samples = int(view_promote_min_samples)
         self._fn = decider_fn if decider_fn is not None else make_decider_fn()
         self._budget = budget
         self.mode = mode if mode in ("off", "shadow", "follow") else "off"
@@ -465,6 +480,24 @@ class GrokDecider:
             self.brier_sum += (ap - (1.0 if outcome_up else 0.0)) ** 2
             b["wins"] += int(correct)
 
+    def _view_edge_candidates_locked(self) -> list:
+        """Contexts where Grok's directional VIEW is a STATISTICALLY real edge: enough graded views
+        and a Wilson lower bound of accuracy > 0.5 (profit-discovery trigger). Observe-only — flags
+        where it would be reasonable to start trading the view; never auto-acts."""
+        out = []
+        for dim, buckets in self.by_context.items():
+            for b, s in buckets.items():
+                n = s["n"]
+                if n < self.view_promote_min_samples:
+                    continue
+                lo = _wilson_lower(s["correct"], n, 1.64)
+                if lo is not None and lo > 0.5:
+                    out.append({"dimension": dim, "bucket": b, "n": n,
+                                "accuracy": round(s["correct"] / n, 4),
+                                "accuracy_lower_ci": round(lo, 4)})
+        out.sort(key=lambda r: r["accuracy_lower_ci"], reverse=True)
+        return out
+
     def report(self) -> dict:
         with self._lock:
             acc = round(self.correct / self.graded, 4) if self.graded else None
@@ -486,6 +519,7 @@ class GrokDecider:
                 "avg_latency_s": avg_lat,
                 "graded_directional": self.graded, "direction_accuracy": acc, "brier": brier,
                 "views_graded": self.view_graded, "view_accuracy": v_acc, "view_brier": v_brier,
+                "view_edge_candidates": self._view_edge_candidates_locked(),
                 "abstains": self.abstains, "by_action": by_action,
                 "accuracy_by_context": {
                     dim: {b: {"n": s["n"],
