@@ -112,6 +112,7 @@ class PulseConfig:
     selectivity_gate_enabled: bool = True
     selectivity_min_samples: int = 30
     selectivity_min_win_rate: float = 0.52
+    selectivity_confidence_z: float = 1.64   # one-sided z for "confidently below breakeven" test
     selectivity_exploration_rate: float = 0.05
     calibration_min_samples: int = 30
     calibration_max_shrink: float = 0.5
@@ -242,6 +243,7 @@ class PulseConfig:
             .strip().lower() in ("1", "true", "yes", "on"),
             selectivity_min_samples=int(_envf("PULSE_SELECTIVITY_MIN_SAMPLES", 30)),
             selectivity_min_win_rate=_envf("PULSE_SELECTIVITY_MIN_WIN_RATE", 0.52),
+            selectivity_confidence_z=_envf("PULSE_SELECTIVITY_CONFIDENCE_Z", 1.64),
             selectivity_exploration_rate=_envf("PULSE_SELECTIVITY_EXPLORATION_RATE", 0.05),
             calibration_min_samples=int(_envf("PULSE_CALIB_MIN_SAMPLES", 30)),
             calibration_max_shrink=_envf("PULSE_CALIB_MAX_SHRINK", 0.5),
@@ -382,6 +384,7 @@ class PulseEngine:
             enabled=bool(self.cfg.selectivity_gate_enabled),
             min_samples=self.cfg.selectivity_min_samples,
             min_win_rate=self.cfg.selectivity_min_win_rate,
+            confidence_z=self.cfg.selectivity_confidence_z,
             exploration_rate=self.cfg.selectivity_exploration_rate)
         self.reconciler = LifecycleReconciler()   # GS-Quant-style candidate lifecycle audit
         self.gate_obs = GateObservations()        # orderbook-reality observations seen at the gate
