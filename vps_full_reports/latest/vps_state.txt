@@ -1,5 +1,4 @@
-VPS report pulled: 2026-06-21T21:11Z UTC
-VPS HEAD: e5252683abe79b88fc262ef8ff85473102322d70
-Container: healthy
-global_reconciled: true | trades 229 settled 229 | win 52.4% | pnl -$30.93 | readiness not_ready
-learning: enabled, cold-start (15/60 labels) | TV gate active | TV intake reset (BTCUSD only going forward)
+VPS report pulled 2026-06-22T35Z UTC
+VPS HEAD 2c80cff52c6a3ac58d8f64f67bd107a52e873ef2
+Learned Selectivity Gate v1 live (paper-only)
+counterfactual on 199 settled: would reject 199, avoid 99 losses, PnL -99.87 -> 0.00 (dominant: hurst_regime=trending 166)
