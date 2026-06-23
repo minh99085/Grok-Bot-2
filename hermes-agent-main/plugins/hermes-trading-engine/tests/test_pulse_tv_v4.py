@@ -48,6 +48,20 @@ def test_v4_fields_parsed():
     assert ev.to_dict()["cvd_state"] == "bullish"
 
 
+def test_v4_accepts_composite_pine_vocabulary():
+    # the Composite v4 Pine script emits buy_pressure/sell_pressure + long_crowded/short_crowded;
+    # these must be captured (not coerced to "unknown") so the data is usable for learning.
+    intake = _intake()
+    intake.ingest(_alert(cvd_state="buy_pressure", funding_state="long_crowded",
+                         event_id="v4-vocab"), now=1_000_000.0)
+    ev = intake.latest
+    assert ev.cvd_state == "buy_pressure" and ev.funding_state == "long_crowded"
+    assert ev.cvd_state in CVD_STATES and ev.funding_state in FUNDING_STATES
+    intake.ingest(_alert(cvd_state="sell_pressure", funding_state="short_crowded",
+                         event_id="v4-vocab2"), now=1_000_001.0)
+    assert intake.latest.cvd_state == "sell_pressure"
+
+
 def test_v4_missing_fields_safe():
     intake = _intake()
     code, body = intake.ingest(_alert(event_id="v4-missing"), now=1_000_000.0)

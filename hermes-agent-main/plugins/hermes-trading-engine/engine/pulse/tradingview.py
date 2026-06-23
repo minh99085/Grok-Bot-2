@@ -107,9 +107,12 @@ MTF_ALIGNMENTS = ("bullish_aligned", "bearish_aligned", "mixed", "neutral", "unk
 # ---- Order-flow / event schema (v4) optional fields (OBSERVE-ONLY; invalid -> "unknown"/None) ----
 # These let real order-flow + event data be fed so the bot can GRADE whether each has an edge. They
 # NEVER place/size/veto a trade (event_blackout is measured only — it does not trigger a blackout).
-CVD_STATES = ("bullish", "bearish", "neutral", "divergence_bull", "divergence_bear", "unknown")
+CVD_STATES = ("bullish", "bearish", "neutral", "divergence_bull", "divergence_bear",
+              # accept the Composite v4 Pine vocabulary too (so the field isn't dropped to unknown)
+              "buy_pressure", "sell_pressure", "unknown")
 FUNDING_STATES = ("positive", "negative", "neutral", "extreme_positive", "extreme_negative",
-                  "unknown")
+                  # Composite v4 Pine crowding vocabulary
+                  "long_crowded", "short_crowded", "unknown")
 
 
 def _enum(value, allowed: tuple, default: str = "unknown") -> str:
