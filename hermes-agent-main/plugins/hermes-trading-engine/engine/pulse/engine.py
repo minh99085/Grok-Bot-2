@@ -129,6 +129,8 @@ class PulseConfig:
     settlement_source_priority: tuple = ("polymarket_resolution", "rtds_chainlink_proxy")
     proxy_max_close_lag_s: float = 30.0
     rtds_enabled: bool = True
+    rtds_max_age_s: float = 45.0             # RTDS oracle tick older than this -> feed gets None (stale)
+    price_max_age_s: float = 60.0            # abstain ("stale_price") if the price feed is older than this
     # strict execution-quality gate (orderbook-reality EV after VWAP/slippage)
     exec_max_spread: float = 0.06
     exec_min_order_usd: float = 1.0
@@ -316,6 +318,8 @@ class PulseConfig:
                 "HERMES_SETTLEMENT_SOURCE_PRIORITY",
                 "polymarket_resolution,rtds_chainlink_proxy").split(",") if s.strip()),
             proxy_max_close_lag_s=_envf("HERMES_PROXY_MAX_CLOSE_LAG_S", 30.0),
+            rtds_max_age_s=_envf("PULSE_RTDS_MAX_AGE_S", 45.0),
+            price_max_age_s=_envf("PULSE_PRICE_MAX_AGE_S", 60.0),
             rtds_enabled=str(os.getenv("HERMES_RTDS_ENABLED", "1")).strip().lower()
             in ("1", "true", "yes", "on"),
             exec_max_spread=_envf("PULSE_EXEC_MAX_SPREAD", 0.06),
@@ -430,9 +434,14 @@ class PulseEngine:
             from engine.pulse.rtds import RTDSClient, TOPIC_CHAINLINK, TOPIC_BINANCE
             self.rtds = RTDSClient(subscriptions=[(TOPIC_CHAINLINK, self.cfg.oracle_symbol),
                                                   (TOPIC_BINANCE, "btcusdt")])
+            self.rtds.max_age_s = float(self.cfg.rtds_max_age_s)
             self.rtds.start()
+            # poll the FRESH oracle price: a stale/dead socket returns None so the feed fails CLOSED
+            # (last_ts stops advancing) instead of serving an aged cached level as 'live'.
+            _rtds = self.rtds
             self.price = PulsePriceFeed(
-                fetcher=self.rtds.oracle_price, source_name="rtds_chainlink",
+                fetcher=lambda: _rtds.fresh_oracle_price(self.cfg.rtds_max_age_s),
+                source_name="rtds_chainlink",
                 vol=RollingVol(window_s=self.cfg.vol_window_s),
                 max_open_lag_s=self.cfg.max_open_lag_s,
                 sampler_interval_s=self.cfg.price_sampler_interval_s)
@@ -938,6 +947,10 @@ class PulseEngine:
                 continue
             if s_now is None or sigma is None:
                 _finalize(dr, "missing_data", reason="no_price_or_vol")
+                continue
+            # FAIL-CLOSED on a stale oracle: never compute fair value / trade on an aged price.
+            if not self.price.is_fresh(self.cfg.price_max_age_s, now):
+                _finalize(dr, "skipped", reason="stale_price")
                 continue
             if self.price.vol.samples < self.cfg.min_vol_samples \
                     or sigma <= self.cfg.sigma_trust_floor:

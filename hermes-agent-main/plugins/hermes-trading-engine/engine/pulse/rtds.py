@@ -38,13 +38,19 @@ class RTDSClient:
     """Streams Chainlink (oracle) + Binance (lead) prices from Polymarket RTDS."""
 
     def __init__(self, *, subscriptions: Optional[list] = None, url: str = RTDS_URL,
-                 reconnect_delay_s: float = 3.0, spike_filter: float = 0.10):
+                 reconnect_delay_s: float = 3.0, spike_filter: float = 0.10,
+                 max_age_s: float = 30.0, spike_filter_fresh_s: float = 10.0):
         # subscriptions: list of (topic, symbol)
         self.subscriptions = subscriptions or [(TOPIC_CHAINLINK, "btc/usd"),
                                                (TOPIC_BINANCE, "btcusdt")]
         self.url = url
         self.reconnect_delay_s = float(reconnect_delay_s)
         self.spike_filter = float(spike_filter)
+        # the oracle price is only "fresh" if its last receipt is within max_age_s; the spike filter
+        # only rejects a jump when the PRIOR tick is itself fresh (else a post-reconnect/stale prior
+        # would lock the price at a wrong level — so we FLUSH to the new value instead).
+        self.max_age_s = float(max_age_s)
+        self.spike_filter_fresh_s = float(spike_filter_fresh_s)
         self._latest: dict = {}            # (topic, symbol) -> (price, ts_ms, observed_ts)
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -66,14 +72,42 @@ class RTDSClient:
     def oracle_price(self) -> Optional[float]:
         return self.latest_price(TOPIC_CHAINLINK, "btc/usd")
 
+    def age_s(self, topic: str, symbol: str, now: Optional[float] = None) -> Optional[float]:
+        """Seconds since the last RECEIPT of this (topic, symbol), or None if never received."""
+        now = float(now if now is not None else time.time())
+        with self._lock:
+            v = self._latest.get((topic, symbol.lower()))
+        return (now - float(v[2])) if (v and len(v) >= 3 and v[2]) else None
+
+    def oracle_age_s(self, now: Optional[float] = None) -> Optional[float]:
+        return self.age_s(TOPIC_CHAINLINK, "btc/usd", now=now)
+
+    def fresh_oracle_price(self, max_age_s: Optional[float] = None,
+                           now: Optional[float] = None) -> Optional[float]:
+        """The Chainlink oracle price ONLY if it was received within ``max_age_s``; else None.
+        This is what the price feed should poll so a dead/stale socket fails CLOSED (the feed's
+        last_ts stops advancing) instead of silently serving an hours-old cached level as 'live'."""
+        max_age = self.max_age_s if max_age_s is None else float(max_age_s)
+        now = float(now if now is not None else time.time())
+        with self._lock:
+            v = self._latest.get((TOPIC_CHAINLINK, "btc/usd"))
+        if not v or v[0] is None or v[0] <= 0:
+            return None
+        if v[2] and (now - float(v[2])) > max_age:
+            return None
+        return v[0]
+
     def _record(self, topic: str, symbol: str, value: float, ts_ms: Optional[float]) -> None:
         key = (topic, symbol.lower())
         now = time.time()
         with self._lock:
             prev = self._latest.get(key)
-            if prev and prev[0] > 0 and abs(value - prev[0]) / prev[0] > self.spike_filter:
-                return                     # reject >10% spike (bad tick guard)
-            self._latest[key] = (value, ts_ms, now)
+            prev_fresh = bool(prev and len(prev) >= 3 and prev[2]
+                              and (now - float(prev[2])) <= self.spike_filter_fresh_s)
+            if (prev and prev[0] > 0 and prev_fresh
+                    and abs(value - prev[0]) / prev[0] > self.spike_filter):
+                return                     # reject >spike vs a FRESH prior (bad-tick guard)
+            self._latest[key] = (value, ts_ms, now)   # else accept (incl. flush of a stale prior)
         self.messages += 1
 
     @staticmethod
@@ -150,6 +184,10 @@ class RTDSClient:
         with self._lock:
             latest = {f"{t}:{s}": (round(v[0], 2) if v else None)
                       for (t, s), v in self._latest.items()}
+        oracle_age = self.oracle_age_s()
         return {"url": self.url, "connected": self.connected, "messages": self.messages,
                 "reconnects": self.reconnects, "latest": latest,
+                "oracle_age_s": (round(oracle_age, 2) if oracle_age is not None else None),
+                "oracle_fresh": bool(self.fresh_oracle_price() is not None),
+                "max_age_s": self.max_age_s,
                 "running": bool(self._thread is not None and self._thread.is_alive())}

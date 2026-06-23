@@ -71,7 +71,8 @@ class PulsePriceFeed:
         self.max_open_lag_s = float(max_open_lag_s)
         self.sampler_interval_s = float(sampler_interval_s)
         self._last_price: Optional[float] = None
-        self._last_ts: float = 0.0
+        self._last_ts: float = 0.0        # wall-clock of the last SUCCESSFUL fetch (freshness clock)
+        self.last_fetch_ok: bool = False  # did the most recent poll get a live value?
         self._opens: dict = {}            # window_key -> OpenSnapshot
         self.polls = 0
         self.errors = 0
@@ -108,15 +109,32 @@ class PulsePriceFeed:
             px = None
         if px is not None and px > 0:
             self._last_price = float(px)
-            self._last_ts = now
+            self._last_ts = now           # only advances on a LIVE fetch -> true freshness clock
+            self.last_fetch_ok = True
             self.vol.observe(px, now)
             self.polls += 1
         else:
+            self.last_fetch_ok = False    # stale read: keep _last_price but DON'T advance _last_ts
             self.errors += 1
         return self._last_price
 
     def current(self) -> Optional[float]:
         return self._last_price
+
+    def age_s(self, now: Optional[float] = None) -> Optional[float]:
+        """Seconds since the last SUCCESSFUL price fetch (None if never)."""
+        if self._last_ts <= 0:
+            return None
+        return max(0.0, float(now if now is not None else time.time()) - self._last_ts)
+
+    def is_fresh(self, max_age_s: float, now: Optional[float] = None) -> bool:
+        """True if we have a price AND it was fetched within ``max_age_s`` (<=0 disables the gate)."""
+        if self._last_price is None:
+            return False
+        if max_age_s is None or max_age_s <= 0:
+            return True
+        age = self.age_s(now)
+        return age is not None and age <= float(max_age_s)
 
     def sigma_per_sec(self, now: Optional[float] = None) -> Optional[float]:
         return self.vol.per_sec(now)
@@ -149,7 +167,8 @@ class PulsePriceFeed:
 
     def status(self) -> dict:
         return {"source": self.source_name, "last_price": self._last_price,
-                "last_ts": self._last_ts, "polls": self.polls, "errors": self.errors,
+                "last_ts": self._last_ts, "age_s": self.age_s(), "last_fetch_ok": self.last_fetch_ok,
+                "polls": self.polls, "errors": self.errors,
                 "sampler_interval_s": self.sampler_interval_s,
                 "sampler_running": bool(self._thread is not None and self._thread.is_alive()),
                 "vol_samples": self.vol.samples,
