@@ -2087,7 +2087,11 @@ class PulseEngine:
                 continue
             dim, _, bucket = str(ctx).partition("=")
             dim = dim.strip().lower()
-            bucket = bucket.strip().lower()                  # case-insensitive: tags are lowercase
+            bucket = bucket.strip()
+            for sep in (" (", "(", " "):                     # drop any prose the model appended
+                if sep in bucket:
+                    bucket = bucket.split(sep, 1)[0]
+            bucket = bucket.strip().strip(",").strip().lower()   # tags are lowercase
             cdim = self._RESEARCH_DIM_ALIAS.get(dim, dim)
             if cdim not in self._RESEARCH_AVOID_DIMS or not bucket:
                 continue

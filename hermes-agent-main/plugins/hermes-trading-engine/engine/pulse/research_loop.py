@@ -18,6 +18,28 @@ from engine.pulse.grok_intel import _parse_json, GrokBudget
 from engine.pulse.claude_client import claude_chat
 
 
+# the EXACT per-candidate dimensions the live gate can act on (so avoid_contexts are applicable)
+GATEABLE_DIMS = ("hurst_regime", "zscore_bucket", "ttc_bucket", "confidence_tier", "spread_bucket",
+                 "depth_bucket", "markov_state", "edge_quality_bucket", "stale_divergence")
+
+
+def _clean_context(x) -> Optional[str]:
+    """Normalize a model-proposed context to a clean ``dim=bucket`` (strip prose like
+    'edge_quality=high (20% win, n=12)' -> 'edge_quality=high'); return None if not parseable."""
+    s = str(x).strip()
+    if "=" not in s:
+        return None
+    dim, _, bucket = s.partition("=")
+    dim = dim.strip().lower()
+    # bucket ends at the first space or '(' (drop any explanatory suffix the model appended)
+    bucket = bucket.strip()
+    for sep in (" (", "(", " "):
+        if sep in bucket:
+            bucket = bucket.split(sep, 1)[0]
+    bucket = bucket.strip().strip(",").strip()
+    return ("%s=%s" % (dim, bucket)) if dim and bucket else None
+
+
 def make_research_fn(*, model: Optional[str] = None, timeout_s: float = 30.0, chat=claude_chat):
     box: dict = {}
     system = ("You are a quant research lead reviewing a PAPER BTC 5-minute up/down bot's full "
@@ -31,15 +53,19 @@ def make_research_fn(*, model: Optional[str] = None, timeout_s: float = 30.0, ch
         prompt = ("Analyze and respond with STRICT JSON ONLY: {\"summary\":\"<2-3 sentences>\","
                   "\"exploit_contexts\":[\"dim=bucket\"],\"avoid_contexts\":[\"dim=bucket\"],"
                   "\"knob_recommendations\":[{\"knob\":\"<name>\",\"value\":<num>,\"reason\":\"<short>\"}],"
-                  "\"new_lessons\":[{\"key\":\"<unique>\",\"rule\":\"<short>\"}]}.\nREPORT: "
-                  + json.dumps(report, default=str)[:12000])
+                  "\"new_lessons\":[{\"key\":\"<unique>\",\"rule\":\"<short>\"}]}.\n"
+                  "For avoid_contexts/exploit_contexts use ONLY these dimensions and a BARE "
+                  "'dim=bucket' (NO prose, NO stats in the string): " + ", ".join(GATEABLE_DIMS)
+                  + ". Example: \"avoid_contexts\":[\"hurst_regime=trending\",\"ttc_bucket=<60s\"].\n"
+                  "REPORT: " + json.dumps(report, default=str)[:12000])
         d = _parse_json(chat(prompt, model=model, timeout_s=timeout_s, box=box, system=system,
                              max_tokens=1500))
         if not d:
             return None
+        ex = [c for c in (_clean_context(x) for x in (d.get("exploit_contexts") or [])) if c][:10]
+        av = [c for c in (_clean_context(x) for x in (d.get("avoid_contexts") or [])) if c][:10]
         return {"summary": str(d.get("summary", ""))[:1000],
-                "exploit_contexts": [str(x)[:60] for x in (d.get("exploit_contexts") or [])][:10],
-                "avoid_contexts": [str(x)[:60] for x in (d.get("avoid_contexts") or [])][:10],
+                "exploit_contexts": ex, "avoid_contexts": av,
                 "knob_recommendations": [{"knob": str(r.get("knob"))[:40], "value": r.get("value"),
                                           "reason": str(r.get("reason"))[:160]}
                                          for r in (d.get("knob_recommendations") or [])

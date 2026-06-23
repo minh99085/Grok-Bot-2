@@ -90,6 +90,21 @@ def test_research_loop_adds_lessons_observe_only():
     assert rl2.report()["errors"] == 1
 
 
+def test_research_clean_context_strips_prose_and_filters_dims():
+    from engine.pulse.research_loop import _clean_context, make_research_fn
+    # prose / stats appended by the model are stripped to a bare dim=bucket
+    assert _clean_context("hurst_regime=trending (40% win, n=30)") == "hurst_regime=trending"
+    assert _clean_context("ttc_bucket=<60s") == "ttc_bucket=<60s"
+    assert _clean_context("edge_quality=high  extra words") == "edge_quality=high"
+    assert _clean_context("no equals sign") is None
+    # the research fn normalizes contexts coming back from the model
+    note = {"summary": "s", "avoid_contexts": ["hurst_regime=noise (bad, n=20)", "junk"],
+            "exploit_contexts": [], "knob_recommendations": [], "new_lessons": []}
+    fn = make_research_fn(chat=lambda *a, **k: __import__("json").dumps(note))
+    out = fn({})
+    assert out["avoid_contexts"] == ["hurst_regime=noise"]
+
+
 def test_research_loop_auto_apply_invokes_apply_fn():
     # closing the loop: when auto_apply is on, avoid_contexts are passed to apply_fn and the applied
     # rules are reported (bounded, safety-only).
