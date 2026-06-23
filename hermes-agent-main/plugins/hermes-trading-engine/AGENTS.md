@@ -14,7 +14,11 @@ pulse paper engine profitable, fast.
   sync (ideally SHA-for-SHA) on every turn. Never leave `main` and the VPS diverged. After a code
   change, the standard deploy is: push to `main` → sync the VPS → `docker compose down
   --remove-orphans` → `docker compose build` → `docker compose up -d` in the pulse plugin compose
-  dir, then verify health/reconciliation.
+  dir, then verify health/reconciliation. **CRITICAL: the trading/persist LOOP runs in the
+  `hermes-training` container (`scripts/run_btc_pulse.py`); `hermes-trading-engine` is only the
+  API/dashboard. Rebuild + recreate BOTH services (`docker compose build` with NO service arg, then
+  `up -d`). Rebuilding only `hermes-trading-engine` leaves the loop on stale code and `/data` keeps
+  the OLD report schema — verify the new code is live in `hermes-training`, not just the API.**
 - **ALWAYS push every full report to the `vps_full_reports/` directory on `main`** (the repo's
   `vps_full_reports/` tree). Whenever you pull a
   full report, refresh `vps_full_reports/latest/` (`btc_pulse_light_report.json`,
