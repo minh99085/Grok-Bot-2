@@ -10,11 +10,15 @@ pulse paper engine profitable, fast.
 
 - **ALWAYS end every response with the exact line `I AM DONE THINKING`** as the final line, so
   the operator knows the answer is complete. This applies to every turn, no exceptions.
+- **MEMORY — ALWAYS REMOVE ORPHANS THEN REBUILD ON EVERY CODEBASE UPDATE.** Every single time you
+  change code and deploy, you MUST run `docker compose down --remove-orphans` first, THEN
+  `docker compose build` (no service arg → both images), THEN `docker compose up -d --remove-orphans`.
+  Never hot-swap a file or recreate a single service in isolation. This is non-negotiable.
 - **ALWAYS push every change to BOTH the GitHub `main` repo AND the live VPS**, and keep them in
   sync (ideally SHA-for-SHA) on every turn. Never leave `main` and the VPS diverged. After a code
   change, the standard deploy is: push to `main` → sync the VPS → `docker compose down
-  --remove-orphans` → `docker compose build` → `docker compose up -d` in the pulse plugin compose
-  dir, then verify health/reconciliation. **CRITICAL: the trading/persist LOOP runs in the
+  --remove-orphans` → `docker compose build` → `docker compose up -d --remove-orphans` in the pulse
+  plugin compose dir, then verify health/reconciliation. **CRITICAL: the trading/persist LOOP runs in the
   `hermes-training` container (`scripts/run_btc_pulse.py`); `hermes-trading-engine` is only the
   API/dashboard. Rebuild + recreate BOTH services (`docker compose build` with NO service arg, then
   `up -d`). Rebuilding only `hermes-trading-engine` leaves the loop on stale code and `/data` keeps
