@@ -140,6 +140,15 @@ class PulseConfig:
     edge_promotion_allowed: bool = False
     edge_promotion_min_samples: int = 50
     edge_promotion_min_win_rate: float = 0.80
+    # ---- CEX-lead latency edge (grades CEX-implied P(up) vs the MARKET price; PAPER ONLY) ----
+    # mode: "shadow" grades only; "gated" may PROPOSE a side on a Wilson-proven bucket (still
+    # subject to the deterministic safety floor + execution gate). Default shadow = never trades.
+    cex_lead_enabled: bool = True
+    cex_lead_mode: str = "shadow"
+    cex_lead_min_samples: int = 60
+    cex_lead_min_divergence: float = 0.04
+    cex_lead_confidence_z: float = 1.64
+    cex_lead_min_edge_vs_market: float = 0.0   # required Brier improvement over the market
     # ---- Learned Selectivity Gate v1 (between decision and execution; PAPER ONLY) ----
     # Uses live settled-trade bucket evidence to REJECT proven-losing buckets. Can only make the
     # bot MORE selective; never trades/resizes/bypasses the execution gate.
@@ -309,6 +318,13 @@ class PulseConfig:
             .strip().lower() in ("1", "true", "yes", "on"),
             edge_promotion_min_samples=int(_envf("HERMES_EDGE_PROMOTION_MIN_SAMPLES", 50)),
             edge_promotion_min_win_rate=_envf("HERMES_EDGE_PROMOTION_MIN_WIN_RATE", 0.80),
+            cex_lead_enabled=str(os.getenv("PULSE_CEX_LEAD_ENABLED", "1"))
+            .strip().lower() in ("1", "true", "yes", "on"),
+            cex_lead_mode=str(os.getenv("PULSE_CEX_LEAD_MODE", "shadow")).strip().lower(),
+            cex_lead_min_samples=int(_envf("PULSE_CEX_LEAD_MIN_SAMPLES", 60)),
+            cex_lead_min_divergence=_envf("PULSE_CEX_LEAD_MIN_DIVERGENCE", 0.04),
+            cex_lead_confidence_z=_envf("PULSE_CEX_LEAD_CONFIDENCE_Z", 1.64),
+            cex_lead_min_edge_vs_market=_envf("PULSE_CEX_LEAD_MIN_EDGE_VS_MARKET", 0.0),
             selectivity_gate_enabled=str(os.getenv("PULSE_SELECTIVITY_GATE_ENABLED", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
             selectivity_min_samples=int(_envf("PULSE_SELECTIVITY_MIN_SAMPLES", 30)),
@@ -488,6 +504,17 @@ class PulseEngine:
                 except Exception:  # noqa: BLE001
                     self._cex_extra = {}
             self.edge_signal = EdgeSignalEngine(members)
+        # CEX-lead latency edge (grades CEX-implied P(up) vs the market; PAPER ONLY, shadow default).
+        self.cex_lead = None
+        self._cex_lead_pending: list = []
+        if bool(getattr(self.cfg, "cex_lead_enabled", True)):
+            from engine.pulse.cex_lead import CexLeadEdge
+            self.cex_lead = CexLeadEdge(
+                enabled=True, mode=self.cfg.cex_lead_mode,
+                min_samples=self.cfg.cex_lead_min_samples,
+                min_divergence=self.cfg.cex_lead_min_divergence,
+                confidence_z=self.cfg.cex_lead_confidence_z,
+                min_edge_vs_market=self.cfg.cex_lead_min_edge_vs_market)
         self._ev_before_sum = 0.0                 # EV before/after costs (accepted candidates)
         self._ev_after_sum = 0.0
         self._ev_n = 0
@@ -687,6 +714,9 @@ class PulseEngine:
         self._tv_pending = list(acct.get("tv_pending") or [])
         if self.edge_signal is not None:
             self.edge_signal.load_state(acct.get("edge_signal") or {})
+        if self.cex_lead is not None:
+            self.cex_lead.load_state(acct.get("cex_lead") or {})
+            self._cex_lead_pending = list(acct.get("cex_lead_pending") or [])
         self.selectivity_evidence.load_state(acct.get("selectivity_evidence") or {})
         self.selectivity_gate.load_state(acct.get("selectivity_gate") or {})
         self.tv_context_gate.load_state(acct.get("tv_context_gate") or {})
@@ -809,6 +839,7 @@ class PulseEngine:
                     if gp is not None:
                         tv_feature = {**feat, "grok_p_up": gp.get("p_up")}
         self._grade_grok_decisions(now)   # grade prior Grok decisions vs realized window close
+        self._grade_cex_lead(now)         # grade prior CEX-lead signals vs realized window close
         ov = self.overlay.current(now) if self.overlay is not None else None
         ov_blackout = bool(ov and ov.get("blackout"))
         ov_vol_mult = float(ov.get("vol_multiplier", 1.0)) if ov else 1.0
@@ -954,6 +985,24 @@ class PulseEngine:
                     fair_used = blended
                 else:
                     dr.learning = {"applied": False, "weight": round(w_learn, 4), "reason": why}
+            # ---- CEX-LEAD LATENCY EDGE (grade CEX-implied P(up) vs the MARKET price; PAPER ONLY) ----
+            # cex_p_up uses the SAME sigma as fair, so its only difference from fair is the price
+            # SOURCE (fresh CEX spot vs the bot's RTDS price) -> isolates the lead-lag. Graded vs the
+            # realized close every window; in SHADOW it only measures; in GATED a Wilson-PROVEN bucket
+            # may PROPOSE a side (still subject to the safety floor + execution gate below).
+            cex_lead_drive = None
+            if self.cex_lead is not None:
+                cex_px_l = (getattr(self.leads, "_latest", {}) or {}).get(
+                    "binance_btcusdt", (None,))[0]
+                cex_p_up = (digital_p_up(cex_px_l, snap.price, sigma * ov_vol_mult, ttc)
+                            if cex_px_l else None)
+                cl_sig = self.cex_lead.signal(cex_p_up=cex_p_up, poly_yes=mc.poly_yes,
+                                              fair=fair_used, ttc_s=ttc)
+                dr.cex_lead = cl_sig
+                if cl_sig.get("has_signal"):
+                    self._schedule_cex_lead_grade(mc.decision_id, snap.price, w.close_ts, cl_sig)
+                cex_lead_drive = self.cex_lead.decide(cex_p_up=cex_p_up, poly_yes=mc.poly_yes,
+                                                      fair=fair_used, ttc_s=ttc)
             # ---- GROK DECISION ENGINE ("Grok decides, bot executes"; PAPER ONLY) ----
             # Request one decision per window (async, off the tick loop), record it observe-only, and
             # schedule a grade vs the realized close (traded or not). In SHADOW mode this is the only
@@ -986,6 +1035,7 @@ class PulseEngine:
             # FOLLOW only when: mode=follow, breaker not tripped, and this window is in the A/B canary
             # follow-fraction. Otherwise fall through to the baseline path (the A/B control arm).
             grok_follow = False
+            cex_lead_active = False
             if self.cfg.grok_decider_mode == "follow" and self.grok_decider is not None:
                 ok, _br = self.grok_decider.should_follow(now)
                 grok_follow = ok and self._follow_canary(mc.decision_id)
@@ -1081,6 +1131,33 @@ class PulseEngine:
                                   token_id=(w.up_token_id if side == "up" else w.down_token_id),
                                   price=float(ask), fair_p_up=fair_used, edge=0.0, reason=entry_mode)
                 context_explored = False
+            elif cex_lead_drive is not None:
+                # CEX-LEAD DRIVE: a Wilson-PROVEN divergence bucket proposes the side. Opinion gates
+                # bypassed (the proven edge owns the direction); the safety floor (selectivity +
+                # calibration + EV gate + caps + breaker) below still applies and stays authoritative.
+                cex_lead_active = True
+                side = cex_lead_drive["side"]
+                entry_mode = "cex_lead"
+                cex_oprob = float(cex_lead_drive["outcome_prob"])
+                book = w.up_book if side == "up" else w.down_book
+                ask = book.best_ask if book else None
+                if ask is None:
+                    dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
+                                                     outcome_prob=None, model_edge=0.0,
+                                                     tradeable=False, reason="no_tradeable_ask")
+                    _finalize(dr, "rejected", reason="no_tradeable_ask", stage="cex_lead")
+                    continue
+                if float(ask) > self.cfg.max_price:
+                    dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
+                                                     outcome_prob=None, model_edge=0.0,
+                                                     tradeable=False, reason="cex_lead_max_price")
+                    _finalize(dr, "rejected", reason="cex_lead_max_price", stage="cex_lead")
+                    continue
+                from engine.pulse.strategy import PulseDecision
+                d = PulseDecision(trade=True, side=side,
+                                  token_id=(w.up_token_id if side == "up" else w.down_token_id),
+                                  price=float(ask), fair_p_up=fair_used, edge=0.0, reason=entry_mode)
+                context_explored = False
             else:
                 d = decide(w, fair_used, now, min_edge=self.cfg.min_edge,
                            min_seconds_to_close=self.cfg.min_seconds_to_close,
@@ -1091,6 +1168,8 @@ class PulseEngine:
                            min_reward_risk=self.cfg.min_reward_risk)
             if grok_follow:
                 outcome_prob = grok_oprob              # Grok's P(chosen side wins) (action or view)
+            elif cex_lead_active:
+                outcome_prob = cex_oprob               # CEX-lead P(chosen side wins) on a proven bucket
             else:
                 outcome_prob = (fair_used if d.side == "up" else (1.0 - fair_used)) \
                     if fair_used is not None else None
@@ -1104,9 +1183,10 @@ class PulseEngine:
                 _finalize(dr, "rejected", reason=d.reason, stage="directional")
                 continue
             # --- quant OPINION gates (TV-signal / context / late-window / selectivity). These are
-            # the quant's directional opinion; in FOLLOW mode Grok OWNS the direction so they are
-            # bypassed. The deterministic FLOOR (execution-quality gate + caps) below still applies.
-            if not grok_follow:
+            # the quant's directional opinion; in FOLLOW / CEX-LEAD-DRIVE mode the direction is owned
+            # by the proven driver so they are bypassed. The deterministic FLOOR (selectivity +
+            # calibration + execution-quality gate + caps) below still applies in every mode.
+            if not grok_follow and not cex_lead_active:
                 tv_reason = self._tv_signal_gate(tv_feature, d.side)
                 if tv_reason is not None:
                     dr.action = RejectAction(stage="directional", reason=tv_reason)
@@ -1186,6 +1266,9 @@ class PulseEngine:
             if grok_follow:
                 gate_decision = ("grok_follow_explored" if gate_res["decision"] == "explore"
                                  else "grok_follow")
+            elif cex_lead_active:
+                gate_decision = ("cex_lead_explored" if gate_res["decision"] == "explore"
+                                 else "cex_lead")
             else:
                 gate_decision = "explored" if gate_res["decision"] == "explore" else "passed"
             # STRICT execution-quality gate (AUTHORITATIVE): EV from the live ask-ladder VWAP, using
@@ -1688,6 +1771,43 @@ class PulseEngine:
                 still.append(p)
         self._grok_pending = still[-2000:]
 
+    def _schedule_cex_lead_grade(self, decision_id: str, price0, close_ts: float,
+                                 sig: dict) -> None:
+        """Queue a CEX-lead signal for grading at window close. The gradeable fields are SNAPSHOTTED
+        and persisted, so grading survives a restart (leakage-free: price0 captured at entry)."""
+        if price0 is None or self.cex_lead is None or not sig.get("has_signal"):
+            return
+        for p in self._cex_lead_pending:
+            if p["decision_id"] == decision_id:
+                return
+        self._cex_lead_pending.append({
+            "decision_id": decision_id, "price0": float(price0), "close_ts": float(close_ts),
+            "bucket": sig.get("bucket"), "side": sig.get("side"),
+            "cex_p_up": sig.get("cex_p_up"), "poly_yes": sig.get("poly_yes"),
+            "fair": sig.get("fair")})
+
+    def _grade_cex_lead(self, now: float) -> None:
+        """Grade due CEX-lead signals vs the realized 5-min outcome (UP if close >= open), traded or
+        not. This is the always-on, unbiased measurement of whether the CEX-implied probability beats
+        the market price — the gate for ever promoting it to drive trades."""
+        if not self._cex_lead_pending or self.cex_lead is None:
+            return
+        px = self.price.current()
+        still = []
+        for p in self._cex_lead_pending:
+            if now < p["close_ts"]:
+                still.append(p)
+                continue
+            if px is not None:
+                outcome_up = float(px) >= float(p["price0"])
+                if p.get("cex_p_up") is not None and p.get("poly_yes") is not None:
+                    self.cex_lead.record(
+                        bucket=p.get("bucket"), side=p.get("side"), cex_p_up=p["cex_p_up"],
+                        poly_yes=p["poly_yes"], fair=p.get("fair"), outcome_up=outcome_up)
+            elif now <= p["close_ts"] + 600:
+                still.append(p)
+        self._cex_lead_pending = still[-2000:]
+
     def _recent_windows_view(self, n: int = 10) -> dict:
         """Recent resolved BTC 5m windows + a momentum summary (up-rate + current streak) for Grok."""
         rows = self._recent_windows[-n:]
@@ -1808,6 +1928,8 @@ class PulseEngine:
         report["lessons"] = self.lessons.report()
         report["loops"] = self.loops.report()
         report["edge_signal"] = self._edge_signal_report()
+        report["cex_lead_edge"] = (self.cex_lead.report() if self.cex_lead is not None
+                                   else {"enabled": False})
         report["learned_selectivity_gate"] = self._selectivity_report()
         report["late_window_entry"] = self._late_window_report()
         return report
@@ -2105,6 +2227,8 @@ class PulseEngine:
             "lessons": self.lessons.report(),
             "loops": self.loops.report(),
             "edge_signal": self._edge_signal_report(),
+            "cex_lead_edge": (self.cex_lead.report() if self.cex_lead is not None
+                              else {"enabled": False}),
             "learned_selectivity_gate": self._selectivity_report(),
             "late_window_entry": self._late_window_report(),
             "tradingview": self._tradingview_report(),
@@ -2130,6 +2254,9 @@ class PulseEngine:
                               "tv_pending": self._tv_pending[-1000:],
                               "edge_signal": (self.edge_signal.to_state()
                                               if self.edge_signal is not None else {}),
+                              "cex_lead": (self.cex_lead.to_state()
+                                           if self.cex_lead is not None else {}),
+                              "cex_lead_pending": self._cex_lead_pending[-2000:],
                               "grok_predictor": (self.grok_predictor.to_state()
                                                  if self.grok_predictor is not None else {}),
                               "grok_analyst": (self.grok_analyst.to_state()

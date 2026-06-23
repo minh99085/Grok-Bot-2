@@ -166,6 +166,15 @@ services:
       HERMES_EDGE_PROMOTION_ALLOWED: "${HERMES_EDGE_PROMOTION_ALLOWED:-0}"
       HERMES_EDGE_PROMOTION_MIN_SAMPLES: "${HERMES_EDGE_PROMOTION_MIN_SAMPLES:-50}"
       HERMES_EDGE_PROMOTION_MIN_WIN_RATE: "${HERMES_EDGE_PROMOTION_MIN_WIN_RATE:-0.80}"
+      # CEX-lead latency edge: grade CEX-implied P(up) vs the MARKET price per divergence bucket and
+      # (only in "gated" mode, on a Wilson-PROVEN bucket that BEATS the market) propose a side. The
+      # safety floor + execution gate stay authoritative. Default "shadow" = grade only, never trade.
+      PULSE_CEX_LEAD_ENABLED: "${PULSE_CEX_LEAD_ENABLED:-1}"
+      PULSE_CEX_LEAD_MODE: "${PULSE_CEX_LEAD_MODE:-shadow}"
+      PULSE_CEX_LEAD_MIN_SAMPLES: "${PULSE_CEX_LEAD_MIN_SAMPLES:-60}"
+      PULSE_CEX_LEAD_MIN_DIVERGENCE: "${PULSE_CEX_LEAD_MIN_DIVERGENCE:-0.04}"
+      PULSE_CEX_LEAD_CONFIDENCE_Z: "${PULSE_CEX_LEAD_CONFIDENCE_Z:-1.64}"
+      PULSE_CEX_LEAD_MIN_EDGE_VS_MARKET: "${PULSE_CEX_LEAD_MIN_EDGE_VS_MARKET:-0}"
       # Learned Selectivity Gate v1: reject proven-losing buckets (live evidence) between decision
       # and execution. Only makes the bot MORE selective; never trades/resizes/bypasses the gate.
       PULSE_SELECTIVITY_GATE_ENABLED: "${PULSE_SELECTIVITY_GATE_ENABLED:-1}"

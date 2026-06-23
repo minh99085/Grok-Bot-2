@@ -129,7 +129,7 @@ async function tick(){
  const cards=document.getElementById('cards');cards.innerHTML='';
  // ===== PLAIN-ENGLISH SUMMARY (read this first) =====
  const cap=s.capital||{}, gd=s.grok_decider||{}, ver=s.verifier||{}, rl=s.research_loop||{},
-       les=s.lessons||{}, lp=(s.loops||{}).loops||{};
+       les=s.lessons||{}, lp=(s.loops||{}).loops||{}, cl=s.cex_lead_edge||{};
  const onhand=cap.on_hand_capital_usd, start0=cap.starting_capital_usd||500, up=(onhand>=start0);
  const info=(title,lines)=>{const c=$(`<div class="card"><h2>${title}</h2></div>`);
    lines.forEach(t=>{const r=$(`<div style="padding:4px 0;border-bottom:1px dashed #1c2533">${t}</div>`);c.appendChild(r)});return c};
@@ -195,7 +195,8 @@ async function tick(){
  // Grok Decision Engine — detailed (Grok decides, bot executes; PAPER ONLY)
  if(gd.enabled){const cb=gd.circuit_breaker||{},nd=gd.news_digest||{};
    cards.appendChild(card('Grok Decision Engine',[['mode',gd.mode||'off',gd.mode==='follow'?'ok':'muted'],['follows trades',gd.affects_trading?'YES':'no (shadow)',gd.affects_trading?'ok':'muted'],['decided',gd.decided],['errors',gd.errors,(gd.errors>0?'bad':'')],['avg latency',gd.avg_latency_s==null?'—':f(gd.avg_latency_s,1)+'s'],['direction acc',gd.direction_accuracy==null?'—':f(gd.direction_accuracy*100,1)+'%',(gd.direction_accuracy>0.5?'ok':(gd.direction_accuracy==null?'muted':'bad'))],['brier',f(gd.brier,3)],['abstains',gd.abstains],['follow fraction',f(gd.follow_fraction,2)],['breaker',cb.tripped?('TRIPPED: '+(cb.reason||'')):'ok',cb.tripped?'bad':'ok'],['consec losses',cb.consecutive_losses],['news',nd.enabled?((nd.latest&&nd.latest.sentiment||'—')+' · risk '+((nd.latest&&nd.latest.event_risk)||'—')):'off',nd.enabled?'':'muted']]));}
- if(ver.enabled){cards.appendChild(card('Verifier (Claude maker-checker)',[['verified',ver.verified],['approved',ver.approvals,'ok'],['vetoed',ver.vetoes,'bad'],['errors',ver.errors,(ver.errors>0?'bad':'')],['approve rate',ver.approve_rate==null?'—':f(ver.approve_rate*100,0)+'%'],['avg latency',ver.avg_latency_s==null?'—':f(ver.avg_latency_s,1)+'s']]));}
+ if(cl.enabled){const clb=(cl.buckets||[]).slice(0,4).map(b=>['· '+b.bucket+' (n'+b.n+')','acc '+f((b.accuracy||0)*100,0)+'% · cexBrier '+f(b.brier_cex,3)+' vs mkt '+f(b.brier_market,3),(b.proven?'ok':(b.beats_market?'':'muted'))]);cards.appendChild(card('CEX-lead latency edge',[['mode',cl.mode||'off',cl.mode==='gated'?'ok':'muted'],['drives trades',cl.affects_trading?'YES':'no (shadow)',cl.affects_trading?'ok':'muted'],['signals seen',cl.signals_seen||0],['graded',cl.graded||0],['drove entries',cl.drove_entries||0],['any proven (beats market)',cl.any_proven?'YES':'not yet',cl.any_proven?'ok':'muted'],...clb]));}
+if(ver.enabled){cards.appendChild(card('Verifier (Claude maker-checker)',[['verified',ver.verified],['approved',ver.approvals,'ok'],['vetoed',ver.vetoes,'bad'],['errors',ver.errors,(ver.errors>0?'bad':'')],['approve rate',ver.approve_rate==null?'—':f(ver.approve_rate*100,0)+'%'],['avg latency',ver.avg_latency_s==null?'—':f(ver.avg_latency_s,1)+'s']]));}
  if(rl.enabled){cards.appendChild(card('Research loop (Claude)',[['runs',rl.calls],['lessons added',rl.lessons_added],['auto-apply',rl.auto_apply?'on':'off'],['last summary',((rl.last_note||{}).summary||'—').slice(0,80)]]));}
  // Gating architecture: learned selectivity + entry gates (apply on the baseline arm; bypassed when Grok follows)
  const sg=s.learned_selectivity_gate||{},cgx=(s.tradingview||{}).context_gate||{},lw=s.late_window_entry||{},cfgs=s.config||{};
