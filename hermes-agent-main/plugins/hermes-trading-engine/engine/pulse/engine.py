@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -204,6 +205,8 @@ class PulseConfig:
     learning_max_weight: float = 0.5         # cap on the model's weight in the blend (<=0.5)
     learning_ramp_samples: float = 300.0     # labels over which weight ramps 0 -> max
     learning_max_calib_error: float = 0.15   # disable influence if ECE worse than this
+    learning_bench_min_samples: int = 50     # graded windows before the market-beating gate applies
+    learning_bench_margin: float = 0.0       # model Brier must beat market Brier by >= this to blend
     sizing_enabled: bool = False             # paper Kelly sizing: default OFF (size unchanged)
     sizing_hard_cap_usd: float = 10.0
     sizing_daily_loss_cap_usd: float = 50.0
@@ -383,6 +386,8 @@ class PulseConfig:
             learning_enabled=str(os.getenv("PULSE_LEARNING_ENABLED", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
             learning_min_samples=int(_envf("PULSE_LEARNING_MIN_SAMPLES", 60)),
+            learning_bench_min_samples=int(_envf("PULSE_LEARNING_BENCH_MIN_SAMPLES", 50)),
+            learning_bench_margin=_envf("PULSE_LEARNING_BENCH_MARGIN", 0.0),
             learning_max_weight=_envf("PULSE_LEARNING_MAX_WEIGHT", 0.5),
             learning_ramp_samples=_envf("PULSE_LEARNING_RAMP_SAMPLES", 300.0),
             learning_max_calib_error=_envf("PULSE_LEARNING_MAX_CALIB_ERROR", 0.15),
@@ -537,6 +542,11 @@ class PulseEngine:
         # CEX-lead latency edge (grades CEX-implied P(up) vs the market; PAPER ONLY, shadow default).
         self.cex_lead = None
         self._cex_lead_pending: list = []
+        # market-beating benchmark for the learning blend: grade the edge model's P(up) vs the MARKET
+        # price (poly_yes) per window; the blend only activates when the model actually beats the
+        # market out-of-sample (kills phantom edge — calibrated != more accurate than the market).
+        self._mkt_bench_pending: list = []
+        self._mkt_bench_recent: deque = deque(maxlen=400)   # (model_se, market_se, fair_se)
         if bool(getattr(self.cfg, "cex_lead_enabled", True)):
             from engine.pulse.cex_lead import CexLeadEdge
             self.cex_lead = CexLeadEdge(
@@ -755,6 +765,9 @@ class PulseEngine:
         if self.cex_lead is not None:
             self.cex_lead.load_state(acct.get("cex_lead") or {})
             self._cex_lead_pending = list(acct.get("cex_lead_pending") or [])
+        self._mkt_bench_pending = list(acct.get("mkt_bench_pending") or [])
+        self._mkt_bench_recent = deque((tuple(x) for x in (acct.get("mkt_bench_recent") or [])),
+                                       maxlen=400)
         # restore research avoid-rules, but RE-VALIDATE each against current evidence (drops legacy
         # 'direction=', excluded liquidity dims, and any rule no longer confidently losing).
         self._research_avoid = set()
@@ -893,6 +906,7 @@ class PulseEngine:
                         tv_feature = {**feat, "grok_p_up": gp.get("p_up")}
         self._grade_grok_decisions(now)   # grade prior Grok decisions vs realized window close
         self._grade_cex_lead(now)         # grade prior CEX-lead signals vs realized window close
+        self._grade_market_benchmark(now) # grade model-vs-market accuracy (learning-blend gate)
         ov = self.overlay.current(now) if self.overlay is not None else None
         ov_blackout = bool(ov and ov.get("blackout"))
         ov_vol_mult = float(ov.get("vol_multiplier", 1.0)) if ov else 1.0
@@ -1029,6 +1043,15 @@ class PulseEngine:
             # the overlay can only RAISE sigma (>=1.0) -> more conservative P(up)
             fair = digital_p_up(s_now, snap.price, sigma * ov_vol_mult, ttc)
             fair_used = fair
+            # ALWAYS grade the model's P(up) vs the MARKET price (poly_yes) per window so the blend
+            # can self-gate on out-of-sample market-beating accuracy (independent of whether it's
+            # currently active). Leakage-free: snapshot at decision, grade at window close.
+            if (self.edge_model is not None and model_vec is not None and fair is not None
+                    and mc.poly_yes is not None):
+                _mp_grade = self.edge_model.decision_p_up(model_vec)
+                if _mp_grade is not None:
+                    self._schedule_market_benchmark(mc.decision_id, snap.price, w.close_ts,
+                                                    _mp_grade, mc.poly_yes, fair)
             if (fair is not None and self.cfg.learning_enabled and self.edge_model is not None
                     and model_vec is not None):
                 w_learn, why = self._learning_weight()
@@ -1669,10 +1692,13 @@ class PulseEngine:
         gr = global_reconciliation(lifecycle=lc, exec_gate=eg, ledger_stats=ls,
                                    baseline=(self._baseline or empty_baseline()))
         recon_ok = bool(gr.get("global_reconciled"))
+        # calibration_error gate expects an ECE (<=0.10), NOT the Brier score — pass the model's
+        # actual ECE (None if unavailable -> gate stays unmet, which is the honest default).
+        model_ece = (self.edge_model.calibration_error() if self.edge_model is not None else None)
         return readiness_report(
             accepted=int(ls.get("settled", 0) or 0), win_rate=ls.get("win_rate"),
             net_pnl=ls.get("realized_pnl_usd"), profit_factor=ls.get("profit_factor"),
-            calibration_error=cal.get("brier"), max_drawdown=ls.get("max_drawdown_usd"),
+            calibration_error=model_ece, max_drawdown=ls.get("max_drawdown_usd"),
             avg_win=ls.get("avg_win_usd"), avg_loss=ls.get("avg_loss_usd"),
             reconciliation_ok=recon_ok, missing_settlement=False, unmodeled_fill=False,
             safety_bypass=False)
@@ -1905,6 +1931,55 @@ class PulseEngine:
                 still.append(p)
         self._cex_lead_pending = still[-2000:]
 
+    def _schedule_market_benchmark(self, decision_id: str, price0, close_ts: float,
+                                   model_p_up, market_p_up, fair_p_up) -> None:
+        """Queue a model-vs-market accuracy grade at window close (leakage-free snapshot)."""
+        if price0 is None or model_p_up is None or market_p_up is None:
+            return
+        for p in self._mkt_bench_pending:
+            if p["decision_id"] == decision_id:
+                return
+        self._mkt_bench_pending.append({
+            "decision_id": decision_id, "price0": float(price0), "close_ts": float(close_ts),
+            "model_p_up": float(model_p_up), "market_p_up": float(market_p_up),
+            "fair_p_up": (float(fair_p_up) if fair_p_up is not None else None)})
+
+    def _grade_market_benchmark(self, now: float) -> None:
+        """Grade due windows: accumulate squared error of model P(up), market price, and digital fair
+        vs the realized outcome — the rolling comparison powering the learning blend's market gate."""
+        if not self._mkt_bench_pending:
+            return
+        px = self.price.current()
+        still = []
+        for p in self._mkt_bench_pending:
+            if now < p["close_ts"]:
+                still.append(p)
+                continue
+            if px is not None:
+                o = 1.0 if float(px) >= float(p["price0"]) else 0.0
+                m_se = (float(p["model_p_up"]) - o) ** 2
+                k_se = (float(p["market_p_up"]) - o) ** 2
+                f_se = ((float(p["fair_p_up"]) - o) ** 2 if p.get("fair_p_up") is not None else None)
+                self._mkt_bench_recent.append((m_se, k_se, f_se))
+            elif now <= p["close_ts"] + 600:
+                still.append(p)
+        self._mkt_bench_pending = still[-2000:]
+
+    def _market_benchmark(self) -> dict:
+        """Rolling Brier of model vs market vs digital-fair on graded windows (out-of-sample)."""
+        rows = list(self._mkt_bench_recent)
+        n = len(rows)
+        if n == 0:
+            return {"n": 0, "model_brier": None, "market_brier": None, "fair_brier": None,
+                    "model_beats_market": None}
+        mb = sum(r[0] for r in rows) / n
+        kb = sum(r[1] for r in rows) / n
+        fr = [r[2] for r in rows if r[2] is not None]
+        fb = (sum(fr) / len(fr)) if fr else None
+        return {"n": n, "model_brier": round(mb, 5), "market_brier": round(kb, 5),
+                "fair_brier": (round(fb, 5) if fb is not None else None),
+                "model_beats_market": bool(mb < kb)}
+
     def _recent_windows_view(self, n: int = 10) -> dict:
         """Recent resolved BTC 5m windows + a momentum summary (up-rate + current streak) for Grok."""
         rows = self._recent_windows[-n:]
@@ -1955,6 +2030,14 @@ class PulseEngine:
             return 0.0, "calibration_unknown"
         if ece > self.cfg.learning_max_calib_error:
             return 0.0, "calibration_degraded"          # auto-disable a miscalibrated model
+        # MARKET-BEATING GATE (kills phantom edge): a calibrated model is not necessarily MORE
+        # accurate than the Polymarket price. Only blend when the model's out-of-sample Brier
+        # actually beats the market's by the required margin over enough graded windows.
+        bench = self._market_benchmark()
+        if (bench["n"] >= self.cfg.learning_bench_min_samples
+                and bench["model_brier"] is not None and bench["market_brier"] is not None
+                and bench["model_brier"] > bench["market_brier"] - self.cfg.learning_bench_margin):
+            return 0.0, "model_not_beating_market"
         ramp = max(1.0, float(self.cfg.learning_ramp_samples))
         progress = (self.edge_model.n_labeled - self.cfg.learning_min_samples) / ramp
         weight = self.cfg.learning_max_weight * min(1.0, max(0.0, progress))
@@ -1972,6 +2055,7 @@ class PulseEngine:
                 "model_n_labeled": (self.edge_model.n_labeled if self.edge_model else 0),
                 "model_calibration_error": (self.edge_model.calibration_error()
                                             if self.edge_model else None),
+                "market_benchmark": self._market_benchmark(),
                 "note": ("the bot's own settled-trade experience (calibrated edge model) adjusts "
                          "the directional probability; it grows as more trades settle. The "
                          "execution-quality gate, paper-realism, and reconciliation are unchanged "
@@ -2472,6 +2556,8 @@ class PulseEngine:
                               "cex_lead": (self.cex_lead.to_state()
                                            if self.cex_lead is not None else {}),
                               "cex_lead_pending": self._cex_lead_pending[-2000:],
+                              "mkt_bench_pending": self._mkt_bench_pending[-2000:],
+                              "mkt_bench_recent": [list(x) for x in self._mkt_bench_recent],
                               "research_avoid": sorted(self._research_avoid),
                               "research_exploit": sorted(self._research_exploit),
                               "grok_predictor": (self.grok_predictor.to_state()
