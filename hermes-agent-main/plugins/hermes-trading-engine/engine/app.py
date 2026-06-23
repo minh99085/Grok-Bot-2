@@ -127,26 +127,71 @@ async function tick(){
  const L=s.ledger||{},o=s.oracle||{},c=s.calibration||{},p=s.price||{},g=s.grok_overlay||{},eg=s.execution_gate||{};
  const lf=(o.lead_features||{}).feeds||{},rt=o.rtds||{},rec=L.proxy_official_reconciliation||{};
  const cards=document.getElementById('cards');cards.innerHTML='';
- // P&L hero
- const pnl=$(`<div class="card"><h2>Paper P&L</h2><div class="big ${(L.realized_pnl_usd||0)>=0?'':'bad'}" style="color:${(L.realized_pnl_usd||0)>=0?'var(--grn)':'var(--red)'}">${money(L.realized_pnl_usd)}</div><div class="sub">${L.settled||0} settled · win-rate ${f((L.win_rate||0)*100,1)}% · edge ${f(L.edge_realized,3)}</div></div>`);cards.appendChild(pnl);
- // On-hand capital hero (paper) — starting capital + realized P&L
- const cap=s.capital||{};
- const onhand=cap.on_hand_capital_usd, start0=cap.starting_capital_usd;
- const capCard=$(`<div class="card"><h2>On-hand capital (paper)</h2><div class="big" style="color:${(onhand>=start0)?'var(--grn)':'var(--red)'}">${money(onhand)}</div><div class="sub">start ${money(start0)} · P&L ${money(cap.realized_pnl_usd)} (${f(cap.return_pct,2)}%) · open exposure ${money(cap.open_exposure_usd)} (${cap.open_positions||0})</div></div>`);cards.appendChild(capCard);
- // Decision architecture banner: who is deciding right now
- const gdm=(s.config||{}).grok_decider_mode||'off';
- const archTxt=gdm==='follow'?'Grok DECIDES → bot executes (veto-only floor)':(gdm==='shadow'?'Grok shadow (graded, not trading) · quant decides':'Quant decides (Grok off)');
- cards.appendChild(card('Decision architecture',[['mode',gdm,gdm==='follow'?'ok':'muted'],['who decides',archTxt],['voting','no — decider + guardrails','muted']]));
+ // ===== PLAIN-ENGLISH SUMMARY (read this first) =====
+ const cap=s.capital||{}, gd=s.grok_decider||{}, ver=s.verifier||{}, rl=s.research_loop||{},
+       les=s.lessons||{}, lp=(s.loops||{}).loops||{};
+ const onhand=cap.on_hand_capital_usd, start0=cap.starting_capital_usd||500, up=(onhand>=start0);
+ const info=(title,lines)=>{const c=$(`<div class="card"><h2>${title}</h2></div>`);
+   lines.forEach(t=>{const r=$(`<div style="padding:4px 0;border-bottom:1px dashed #1c2533">${t}</div>`);c.appendChild(r)});return c};
+ // 1) Money (full width)
+ cards.appendChild($(`<div class="card" style="grid-column:1/-1"><h2>Money on hand (practice money)</h2>`+
+   `<div class="big" style="color:${up?'var(--grn)':'var(--red)'}">${money(onhand)}</div>`+
+   `<div class="sub">Started with ${money(start0)} · Profit/Loss so far ${money(cap.realized_pnl_usd)} (${f(cap.return_pct,1)}%) · This is paper money — no real funds at risk.</div></div>`));
+ // 2) Is it working?
+ const trading=(L.open_positions>0)?'Placing a trade right now':'Waiting for a setup it likes';
+ const wr=(L.win_rate||0)*100, wrtxt=f(wr,0)+'% of trades won'+((wr>47&&wr<53)?' (about a coin flip)':'');
+ cards.appendChild(info('Is the bot working?',[
+   'Status: <b style="color:var(--grn)">Running</b>',
+   'Right now: <b>'+trading+'</b>',
+   'Trades placed: <b>'+(L.trades||0)+'</b> ('+(L.settled||0)+' finished)',
+   'Track record: <b>'+wrtxt+'</b>']));
+ // 3) How it decides
+ cards.appendChild(info('How the bot decides a trade',[
+   '1) <b>Grok</b> (AI #1) reads the market and picks UP, DOWN, or SKIP',
+   '2) <b>Claude</b> (AI #2) double-checks it and can say NO',
+   '3) Safety brakes can still stop it',
+   '&rarr; Only trades <b>both AIs allow</b> are placed',
+   '<span class="muted">Grok decided '+(gd.decided||0)+' times · Claude approved '+(ver.approvals||0)+', blocked '+(ver.vetoes||0)+'</span>']));
+ // 4) edge
+ const va=gd.view_accuracy, edges=(gd.view_edge_candidates||[]);
+ cards.appendChild(info('Has it found a winning edge yet?',[
+   "Grok's up/down guesses are right <b>"+(va==null?'—':f(va*100,0)+'%')+"</b> of the time <span class=\"muted\">(50% = pure luck)</span>",
+   'Proven winning setups: <b>'+(edges.length?edges.map(e=>e.dimension+'='+e.bucket).join(', '):'none yet')+'</b>',
+   '<b style="color:'+(edges.length?'var(--grn)':'var(--mut)')+'">'+(edges.length?'Found some — it now bets bigger on those':'Not yet — still learning, keeping bets small and safe')+'</b>']));
+ // 5) boldness
+ const ag=(gd.aggression||{}).aggression, aglvl=(ag==null?'—':(ag<0.34?'Low (careful)':(ag<0.67?'Medium':'High (bold)')));
+ cards.appendChild(info('How bold is the bot right now?',[
+   'Boldness: <b>'+aglvl+'</b>',
+   '<span class="muted">It automatically gets bolder when it wins and more careful when it loses.</span>']));
+ // 6) safety
+ const cb=gd.circuit_breaker||{}, balanced=((s.reconciliation||{}).global_reconciled!==false);
+ cards.appendChild(info('Safety',[
+   'Safety brake: '+(cb.tripped?('<b style="color:var(--red)">STOPPED ('+(cb.reason||'')+')</b>'):'<b style="color:var(--grn)">OK</b>'),
+   'Max loss allowed per day: <b>$'+(cb.daily_loss_cap_usd!=null?cb.daily_loss_cap_usd:'—')+'</b> (used $'+f(cb.daily_follow_loss_usd,2)+')',
+   'Books balanced: '+(balanced?'<b style="color:var(--grn)">Yes</b>':'<b style="color:var(--red)">No</b>'),
+   'Real money at risk: <b>None (paper)</b>']));
+ // 7) lessons
+ const lessons=(les.recent||[]).slice(-6).reverse();
+ cards.appendChild(info('What the bot has learned ('+(les.count||0)+' rules)',
+   lessons.length?lessons.map(l=>'<span class="muted">['+(l.kind||'')+']</span> '+(l.rule||'')):
+   ['<span class="muted">No lessons yet — it writes a rule each time something wins or loses.</span>']));
+ // 8) helper loops (plain names)
+ const friendly={heartbeat:'Heartbeat',data_ingestion:'Market data feed',signal_generation:'Decider (Grok)',verifier:'Double-checker (Claude)',execution:'Order placer',risk_monitor:'Risk monitor',news:'News reader',research_meta:'Researcher (Claude)',lessons:'Memory'};
+ cards.appendChild(info("The bot's helpers (all running loops)",
+   Object.keys(friendly).filter(k=>lp[k]).map(k=>'<span style="color:var(--grn)">&#10003;</span> '+friendly[k])));
+ // divider into technical detail
+ cards.appendChild($(`<div style="grid-column:1/-1;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;font-size:11px;padding:6px 2px;border-top:1px solid var(--bd)">Technical details below &darr;</div>`));
  cards.appendChild(card('Ledger',[['trades',L.trades],['settled',L.settled],['wins',L.wins],['win-rate',f((L.win_rate||0)*100,1)+'%'],['avg entry',f(L.avg_entry_price,3)],['edge realized',f(L.edge_realized,3)],['avg pnl/trade',money(L.avg_pnl_per_trade)],['open',L.open_positions]]));
  cards.appendChild(card('Oracle (reference model)',[['feed type',o.oracle_feed_type||'—'],['symbol',o.oracle_symbol||'—'],['price source',p.source||'—'],['Chainlink btc/usd',f(rt.latest&&rt.latest['crypto_prices_chainlink:btc/usd'])],['RTDS connected',rt.connected?'yes':'no',rt.connected?'ok':'bad'],['open/close snap',o.open_snapshot_source||'—'],['σ/sec',f(p.sigma_per_sec,6)],['sampler',p.sampler_running?(p.sampler_interval_s+'s'):'off']]));
  cards.appendChild(card('Lead feeds (features only)',[['binance btcusdt',f(lf.binance_btcusdt&&lf.binance_btcusdt.price)],['coinbase btcusd',f(lf.coinbase_btcusd&&lf.coinbase_btcusd.price)],['settlement eligible','no','muted']]));
  cards.appendChild(card('Execution gate',[['candidates',eg.candidates],['accepted (fills)',eg.accepted,'ok'],['rejected',eg.rejected_total,'bad'],...Object.entries(eg.rejected||{}).filter(([,v])=>v>0).map(([k,v])=>['· '+k,v,'bad']),['reconciled',eg.reconciled?'yes':'NO',eg.reconciled?'ok':'bad']]));
  cards.appendChild(card('Settlement & calibration',[['sources',JSON.stringify(L.settle_sources||{})],['proxy vs official','both '+(rec.both||0)+' · agree '+(rec.agree||0)+' · disagree '+(rec.disagree||0)],['Brier',f(c.brier,3)+' (base 0.25)'],['log-loss',f(c.log_loss,3)],['samples',c.samples],['base-rate up',f(c.base_rate_up,2)]]));
  cards.appendChild(card('Grok event-risk overlay',[['enabled',g.enabled?'yes':'no'],['regime',(g.state||{}).regime||'—'],['blackout',(g.state||{}).blackout?'YES':'no',(g.state||{}).blackout?'bad':''],['calls',g.calls],['reason',(g.state||{}).reason||'—']]));
- // Grok Decision Engine (Grok decides, bot executes; PAPER ONLY)
- const gd=s.grok_decider||{};
+ // Grok Decision Engine — detailed (Grok decides, bot executes; PAPER ONLY)
  if(gd.enabled){const cb=gd.circuit_breaker||{},nd=gd.news_digest||{};
    cards.appendChild(card('Grok Decision Engine',[['mode',gd.mode||'off',gd.mode==='follow'?'ok':'muted'],['follows trades',gd.affects_trading?'YES':'no (shadow)',gd.affects_trading?'ok':'muted'],['decided',gd.decided],['errors',gd.errors,(gd.errors>0?'bad':'')],['avg latency',gd.avg_latency_s==null?'—':f(gd.avg_latency_s,1)+'s'],['direction acc',gd.direction_accuracy==null?'—':f(gd.direction_accuracy*100,1)+'%',(gd.direction_accuracy>0.5?'ok':(gd.direction_accuracy==null?'muted':'bad'))],['brier',f(gd.brier,3)],['abstains',gd.abstains],['follow fraction',f(gd.follow_fraction,2)],['breaker',cb.tripped?('TRIPPED: '+(cb.reason||'')):'ok',cb.tripped?'bad':'ok'],['consec losses',cb.consecutive_losses],['news',nd.enabled?((nd.latest&&nd.latest.sentiment||'—')+' · risk '+((nd.latest&&nd.latest.event_risk)||'—')):'off',nd.enabled?'':'muted']]));}
+ if(ver.enabled){cards.appendChild(card('Verifier (Claude maker-checker)',[['verified',ver.verified],['approved',ver.approvals,'ok'],['vetoed',ver.vetoes,'bad'],['errors',ver.errors,(ver.errors>0?'bad':'')],['approve rate',ver.approve_rate==null?'—':f(ver.approve_rate*100,0)+'%'],['avg latency',ver.avg_latency_s==null?'—':f(ver.avg_latency_s,1)+'s']]));}
+ if(rl.enabled){cards.appendChild(card('Research loop (Claude)',[['runs',rl.calls],['lessons added',rl.lessons_added],['auto-apply',rl.auto_apply?'on':'off'],['last summary',((rl.last_note||{}).summary||'—').slice(0,80)]]));}
  // Gating architecture: learned selectivity + entry gates (apply on the baseline arm; bypassed when Grok follows)
  const sg=s.learned_selectivity_gate||{},cgx=(s.tradingview||{}).context_gate||{},lw=s.late_window_entry||{},cfgs=s.config||{};
  cards.appendChild(card('Learned selectivity gate',[['rule',sg.decision_rule||'—'],['accepted',sg.accepted],['rejected',sg.rejected,(sg.rejected>0?'bad':'')],['explored',sg.explored],['confidence z',f(sg.confidence_z,2)]]));
