@@ -1943,6 +1943,13 @@ class PulseEngine:
             lr = self.light_report()
             (self._data_dir / "btc_pulse_light_report.json").write_text(
                 json.dumps(lr, default=str, indent=1))
+            # always write the COMPLETE human-readable performance report (for ChatGPT/Grok review)
+            try:
+                from engine.pulse.reporting import build_full_report_md
+                (self._data_dir / "report.md").write_text(
+                    build_full_report_md(lr, self.status(), self.ledger.to_dict()), encoding="utf-8")
+            except Exception:  # noqa: BLE001 — report writing never breaks the loop
+                pass
             from engine.pulse.meta_learning import build_bundle
             (self._data_dir / "btc_pulse_meta_bundle.json").write_text(
                 json.dumps(build_bundle(lr), default=str, indent=1))
