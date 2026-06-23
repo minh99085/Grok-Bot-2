@@ -51,12 +51,14 @@ def make_research_fn(*, model: Optional[str] = None, timeout_s: float = 30.0, ch
 
 class ResearchLoop:
     def __init__(self, *, research_fn=None, budget: Optional[GrokBudget] = None,
-                 interval_s: float = 3600.0, report_provider: Optional[Callable[[], dict]] = None,
+                 interval_s: float = 1800.0, event_min_gap_s: float = 600.0,
+                 report_provider: Optional[Callable[[], dict]] = None,
                  lessons=None, apply_fn: Optional[Callable[[dict], list]] = None,
                  auto_apply: bool = False):
         self._fn = research_fn if research_fn is not None else make_research_fn()
         self._budget = budget
-        self.interval_s = max(300.0, float(interval_s))
+        self.interval_s = max(300.0, float(interval_s))          # idle FLOOR (run at least this often)
+        self.event_min_gap_s = max(60.0, float(event_min_gap_s))  # min gap between event-triggered runs
         self._report_provider = report_provider
         self._lessons = lessons
         self._apply_fn = apply_fn
@@ -69,10 +71,23 @@ class ResearchLoop:
         self.errors = 0
         self.skipped_budget = 0
         self.lessons_added = 0
+        self.event_runs = 0
+        self.triggers: dict = {}
+        self._pending_event: Optional[str] = None
+        self._last_run_ts = 0.0
+        self._last_trigger: Optional[str] = None
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
-    def refresh(self) -> Optional[dict]:
+    def request_run(self, reason: str) -> None:
+        """Ask the meta-loop to re-analyze SOON because something material changed (new edge, breaker
+        trip, new avoid-rule, fresh samples). Respects event_min_gap_s so it never spams Claude."""
+        with self._lock:
+            self._pending_event = str(reason)
+
+    def refresh(self, trigger: str = "manual") -> Optional[dict]:
+        self._last_trigger = trigger
+        self._last_run_ts = time.time()
         if self._budget is not None and not self._budget.try_spend("research"):
             self.skipped_budget += 1
             return None
@@ -112,10 +127,22 @@ class ResearchLoop:
         self._stop.wait(min(self.interval_s, 90.0))
         while not self._stop.is_set():
             try:
-                self.refresh()
+                now = time.time()
+                due = (now - self._last_run_ts) >= self.interval_s          # idle floor reached
+                ev = None
+                with self._lock:
+                    if (self._pending_event is not None
+                            and (now - self._last_run_ts) >= self.event_min_gap_s):
+                        ev = self._pending_event
+                        self._pending_event = None
+                if due or ev is not None:
+                    if ev is not None:
+                        self.event_runs += 1
+                        self.triggers[ev] = self.triggers.get(ev, 0) + 1
+                    self.refresh(trigger=(ev or "interval"))
             except Exception:  # noqa: BLE001
                 pass
-            self._stop.wait(self.interval_s)
+            self._stop.wait(min(30.0, self.interval_s))   # check often; actual runs are gap-limited
 
     def start(self) -> "ResearchLoop":
         if self._thread is None or not self._thread.is_alive():
@@ -129,8 +156,11 @@ class ResearchLoop:
 
     def report(self) -> dict:
         with self._lock:
-            return {"enabled": True, "interval_s": self.interval_s, "auto_apply": self.auto_apply,
-                    "calls": self.calls, "errors": self.errors, "skipped_budget": self.skipped_budget,
+            return {"enabled": True, "interval_floor_s": self.interval_s,
+                    "event_min_gap_s": self.event_min_gap_s, "auto_apply": self.auto_apply,
+                    "calls": self.calls, "event_runs": self.event_runs, "triggers": dict(self.triggers),
+                    "pending_event": self._pending_event, "last_trigger": self._last_trigger,
+                    "errors": self.errors, "skipped_budget": self.skipped_budget,
                     "lessons_added": self.lessons_added, "last_note": self._note,
                     "last_note_ts": self._note_ts, "recent_applied": list(self._applied),
                     "note": ("strategy-layer research meta-loop: independent model proposes "
@@ -141,7 +171,8 @@ class ResearchLoop:
         with self._lock:
             return {"calls": self.calls, "errors": self.errors, "skipped_budget": self.skipped_budget,
                     "lessons_added": self.lessons_added, "note": self._note, "note_ts": self._note_ts,
-                    "applied": list(self._applied)}
+                    "applied": list(self._applied), "event_runs": self.event_runs,
+                    "triggers": dict(self.triggers), "last_run_ts": self._last_run_ts}
 
     def load_state(self, data: dict) -> None:
         if not data:
@@ -154,3 +185,6 @@ class ResearchLoop:
             self._note = data.get("note")
             self._note_ts = float(data.get("note_ts", 0.0) or 0.0)
             self._applied = list(data.get("applied") or [])
+            self.event_runs = int(data.get("event_runs", 0) or 0)
+            self.triggers = {k: int(v or 0) for k, v in (data.get("triggers") or {}).items()}
+            self._last_run_ts = float(data.get("last_run_ts", 0.0) or 0.0)

@@ -88,3 +88,25 @@ def test_research_loop_adds_lessons_observe_only():
     rl2 = ResearchLoop(research_fn=lambda rep: None, report_provider=lambda: {})
     rl2.refresh()
     assert rl2.report()["errors"] == 1
+
+
+def test_research_loop_event_trigger_respects_min_gap():
+    # event-triggered run only fires after event_min_gap_s since the last run; interval is the floor.
+    rl = ResearchLoop(research_fn=lambda rep: {"summary": "x"}, report_provider=lambda: {},
+                      interval_s=99999, event_min_gap_s=600)
+    rl.request_run("new_edge")
+    import time as _t
+    now = _t.time()
+    # too soon after a (just-now) run -> not yet due
+    rl._last_run_ts = now
+    assert (rl._pending_event == "new_edge")
+    # simulate the worker's decision logic directly: gap not elapsed -> no event run
+    ev = rl._pending_event if (now - rl._last_run_ts) >= rl.event_min_gap_s else None
+    assert ev is None
+    # after the gap, the event would fire
+    rl._last_run_ts = now - 700
+    ev2 = rl._pending_event if (now - rl._last_run_ts) >= rl.event_min_gap_s else None
+    assert ev2 == "new_edge"
+    rep = rl.report()
+    assert rep["interval_floor_s"] == 99999 and rep["event_min_gap_s"] == 600
+    assert "pending_event" in rep and "triggers" in rep

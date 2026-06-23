@@ -107,7 +107,8 @@ class PulseConfig:
     verifier_fail_open: bool = True          # no verdict in time -> approve (don't freeze) but log
     verifier_max_calls_per_hour: int = 120
     research_loop_enabled: bool = False
-    research_interval_s: float = 3600.0
+    research_interval_s: float = 1800.0      # idle FLOOR; the loop is mainly EVENT-triggered
+    research_event_min_gap_s: float = 600.0  # min gap between event-triggered research runs
     research_auto_apply: bool = False        # whitelisted, bounded auto-apply of recommendations
     research_max_calls_per_hour: int = 6
     claude_budget_daily_usd: float = 10.0
@@ -272,7 +273,8 @@ class PulseConfig:
             verifier_max_calls_per_hour=int(_envf("PULSE_VERIFIER_MAX_CALLS_PER_HOUR", 120)),
             research_loop_enabled=str(os.getenv("PULSE_RESEARCH_LOOP_ENABLED", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
-            research_interval_s=_envf("PULSE_RESEARCH_INTERVAL_S", 3600.0),
+            research_interval_s=_envf("PULSE_RESEARCH_INTERVAL_S", 1800.0),
+            research_event_min_gap_s=_envf("PULSE_RESEARCH_EVENT_MIN_GAP_S", 600.0),
             research_auto_apply=str(os.getenv("PULSE_RESEARCH_AUTO_APPLY", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
             research_max_calls_per_hour=int(_envf("PULSE_RESEARCH_MAX_CALLS_PER_HOUR", 6)),
@@ -586,6 +588,7 @@ class PulseEngine:
                     from engine.pulse.research_loop import ResearchLoop
                     self.research_loop = ResearchLoop(
                         budget=self.claude_budget, interval_s=self.cfg.research_interval_s,
+                        event_min_gap_s=self.cfg.research_event_min_gap_s,
                         report_provider=self._research_report, lessons=self.lessons,
                         auto_apply=self.cfg.research_auto_apply).start()
         except Exception:  # noqa: BLE001 — verifier/research never block startup
@@ -1849,26 +1852,40 @@ class PulseEngine:
         """Turn proven outcomes into compounding rules (deduped): avoid confidently-losing buckets,
         exploit proven-edge contexts, and note breaker trips. Fed back to maker + checker."""
         try:
+            new_lesson = False
             be = self.selectivity_gate.bucket_evidence(self.selectivity_evidence, top=8)
             for r in be.get("buckets", []):
                 if r.get("confidently_losing"):
-                    self.lessons.add(kind="avoid", key="sel:%s=%s" % (r["dimension"], r["bucket"]),
-                                     rule=("AVOID %s=%s — confidently below breakeven (WR %s vs %s, "
-                                           "n %s, EV/trade %s)." % (r["dimension"], r["bucket"],
-                                           r.get("win_rate"), r.get("breakeven_win_rate"),
-                                           r.get("n"), r.get("ev_per_trade"))))
+                    new_lesson |= self.lessons.add(
+                        kind="avoid", key="sel:%s=%s" % (r["dimension"], r["bucket"]),
+                        rule=("AVOID %s=%s — confidently below breakeven (WR %s vs %s, n %s, "
+                              "EV/trade %s)." % (r["dimension"], r["bucket"], r.get("win_rate"),
+                              r.get("breakeven_win_rate"), r.get("n"), r.get("ev_per_trade"))))
             if self.grok_decider is not None:
                 for c in (self.grok_decider.report().get("view_edge_candidates") or []):
-                    self.lessons.add(kind="exploit", key="edge:%s=%s" % (c["dimension"], c["bucket"]),
-                                     rule=("EXPLOIT %s=%s — Grok's directional view is a real edge "
-                                           "(acc %s, lowerCI %s, n %s)." % (c["dimension"], c["bucket"],
-                                           c.get("accuracy"), c.get("accuracy_lower_ci"), c.get("n"))))
+                    if self.lessons.add(
+                            kind="exploit", key="edge:%s=%s" % (c["dimension"], c["bucket"]),
+                            rule=("EXPLOIT %s=%s — Grok's directional view is a real edge (acc %s, "
+                                  "lowerCI %s, n %s)." % (c["dimension"], c["bucket"], c.get("accuracy"),
+                                  c.get("accuracy_lower_ci"), c.get("n")))):
+                        new_lesson = True
+                        if self.research_loop is not None:
+                            self.research_loop.request_run("new_edge")
                 br = self.grok_decider.breaker_status()
                 if br.get("tripped"):
                     day = int((self.last_tick_ts or time.time()) // 86400)
-                    self.lessons.add(kind="risk", key="breaker:%s:%s" % (br.get("reason"), day),
-                                     rule="Circuit breaker tripped (%s) — follow paused, baseline only."
-                                          % br.get("reason"))
+                    if self.lessons.add(kind="risk", key="breaker:%s:%s" % (br.get("reason"), day),
+                                        rule="Circuit breaker tripped (%s) — follow paused, baseline "
+                                             "only." % br.get("reason")):
+                        new_lesson = True
+                        if self.research_loop is not None:
+                            self.research_loop.request_run("breaker")
+            # event-trigger the research meta-loop on any new lesson, and on a fresh-sample cadence
+            if self.research_loop is not None:
+                if new_lesson:
+                    self.research_loop.request_run("new_lesson")
+                elif int(self.ledger.stats().get("settled", 0) or 0) % 15 == 0:
+                    self.research_loop.request_run("fresh_samples")
         except Exception:  # noqa: BLE001 — lessons never break settlement
             pass
 
