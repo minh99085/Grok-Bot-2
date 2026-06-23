@@ -261,12 +261,32 @@ def build_full_report_md(light: dict, status: Optional[dict] = None,
                % (rsi.get("signal_direction_hit_rate"), rsi.get("signals_evaluated"),
                   rsi.get("prediction_accuracy")))
 
-    h("11. Edge signal & readiness")
+    h("11. Loop engineering (maker-checker / lessons / loops / research)")
+    ver = light.get("verifier", {}) or {}
+    out.append("**Verifier (independent Claude maker-checker):** `%s`"
+               % json.dumps({k: ver.get(k) for k in
+                             ("enabled", "verified", "approvals", "vetoes", "errors", "approve_rate",
+                              "approved_acted_settled", "avg_latency_s")}, default=str)[:600])
+    rl = light.get("research_loop", {}) or {}
+    out.append("\n**Research meta-loop:** `%s`"
+               % json.dumps({k: rl.get(k) for k in ("enabled", "calls", "auto_apply", "lessons_added")},
+                            default=str)[:400])
+    if rl.get("last_note"):
+        out.append("\n- research summary: %s" % (rl["last_note"] or {}).get("summary"))
+    les = light.get("lessons", {}) or {}
+    out.append("\n**Lessons (compounding rules):** count %s" % les.get("count"))
+    for ln in (les.get("recent") or [])[-10:]:
+        out.append("- [`%s`] %s" % (ln.get("kind"), ln.get("rule")))
+    loops = (light.get("loops", {}) or {}).get("loops", {})
+    if loops:
+        out.append("\n**Sub-loops:** " + ", ".join(sorted(loops.keys())))
+
+    h("12. Edge signal & readiness")
     out.append("edge_signal `%s`" % json.dumps({k: es.get(k) for k in list(es)[:8]},
                                                default=str)[:700])
     out.append("\nreadiness `%s`" % (light.get("readiness", {})))
 
-    h("12. Recent paper positions")
+    h("13. Recent paper positions")
     positions = (ledger.get("positions") or [])[:15]
     if positions:
         table([[(p.get("title") or "")[-18:], p.get("side"),

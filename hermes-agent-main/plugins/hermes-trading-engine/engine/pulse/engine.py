@@ -102,6 +102,16 @@ class PulseConfig:
     # adaptive self-improvement loop: auto-EXPLOIT contexts with a proven view-edge (Wilson lower >
     # 0.5), AVOID proven-losing contexts, and only EXPLORE the uncertain ones. Default ON.
     grok_decider_adaptive: bool = True
+    # ---- #1 maker-checker VERIFIER (independent Claude model) + #4 research meta-loop ----
+    verifier_enabled: bool = False
+    verifier_fail_open: bool = True          # no verdict in time -> approve (don't freeze) but log
+    verifier_max_calls_per_hour: int = 120
+    research_loop_enabled: bool = False
+    research_interval_s: float = 3600.0
+    research_auto_apply: bool = False        # whitelisted, bounded auto-apply of recommendations
+    research_max_calls_per_hour: int = 6
+    claude_budget_daily_usd: float = 10.0
+    claude_est_usd_per_call: float = 0.01
     grok_news_refresh_s: float = 300.0               # periodic web/X news digest cadence
     # price feed: 'auto' uses Chainlink Data Streams (exact resolution feed) when creds are
     # set, else the Coinbase proxy. A sub-second background sampler keeps the price fresh
@@ -255,6 +265,19 @@ class PulseConfig:
             grok_decider_explore_size_fraction=_envf("PULSE_GROK_DECIDER_EXPLORE_SIZE_FRACTION", 0.5),
             grok_decider_adaptive=str(os.getenv("PULSE_GROK_DECIDER_ADAPTIVE", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
+            verifier_enabled=str(os.getenv("PULSE_VERIFIER_ENABLED", "0"))
+            .strip().lower() in ("1", "true", "yes", "on"),
+            verifier_fail_open=str(os.getenv("PULSE_VERIFIER_FAIL_OPEN", "1"))
+            .strip().lower() in ("1", "true", "yes", "on"),
+            verifier_max_calls_per_hour=int(_envf("PULSE_VERIFIER_MAX_CALLS_PER_HOUR", 120)),
+            research_loop_enabled=str(os.getenv("PULSE_RESEARCH_LOOP_ENABLED", "0"))
+            .strip().lower() in ("1", "true", "yes", "on"),
+            research_interval_s=_envf("PULSE_RESEARCH_INTERVAL_S", 3600.0),
+            research_auto_apply=str(os.getenv("PULSE_RESEARCH_AUTO_APPLY", "0"))
+            .strip().lower() in ("1", "true", "yes", "on"),
+            research_max_calls_per_hour=int(_envf("PULSE_RESEARCH_MAX_CALLS_PER_HOUR", 6)),
+            claude_budget_daily_usd=_envf("CLAUDE_BUDGET_DAILY_USD", 10.0),
+            claude_est_usd_per_call=_envf("CLAUDE_EST_USD_PER_CALL", 0.01),
             grok_news_refresh_s=_envf("PULSE_GROK_NEWS_REFRESH_S", 300.0),
             price_source=(os.getenv("PULSE_PRICE_SOURCE", "auto") or "auto").strip().lower(),
             price_sampler_interval_s=_envf("PULSE_PRICE_SAMPLER_INTERVAL_S", 1.0),
@@ -536,6 +559,39 @@ class PulseEngine:
             logger.exception("grok init failed; continuing as pure quant")
             self.grok_budget = self.overlay = self.grok_analyst = self.grok_predictor = None
             self.grok_decider = self.grok_news = None
+        # ---- #2 compounding lessons + #3 loop registry ----
+        from engine.pulse.lessons import LessonsBook
+        from engine.pulse.loops import LoopRegistry
+        self.lessons = LessonsBook()
+        self.loops = LoopRegistry()
+        # ---- #1 independent Claude maker-checker verifier + #4 research meta-loop ----
+        self.claude_budget = None
+        self.verifier = None
+        self.research_loop = None
+        try:
+            from engine.pulse.claude_client import anthropic_key
+            need_claude = bool(self.cfg.verifier_enabled) or bool(self.cfg.research_loop_enabled)
+            if need_claude and anthropic_key():
+                from engine.pulse.grok_intel import GrokBudget
+                self.claude_budget = GrokBudget(
+                    daily_usd_cap=self.cfg.claude_budget_daily_usd,
+                    est_usd_per_call=self.cfg.claude_est_usd_per_call,
+                    per_feature_hourly={"verifier": self.cfg.verifier_max_calls_per_hour,
+                                        "research": self.cfg.research_max_calls_per_hour})
+                if self.cfg.verifier_enabled:
+                    from engine.pulse.verifier import ClaudeVerifier
+                    self.verifier = ClaudeVerifier(budget=self.claude_budget, enabled=True,
+                                                   fail_open=self.cfg.verifier_fail_open).start()
+                if self.cfg.research_loop_enabled:
+                    from engine.pulse.research_loop import ResearchLoop
+                    self.research_loop = ResearchLoop(
+                        budget=self.claude_budget, interval_s=self.cfg.research_interval_s,
+                        report_provider=self._research_report, lessons=self.lessons,
+                        auto_apply=self.cfg.research_auto_apply).start()
+        except Exception:  # noqa: BLE001 — verifier/research never block startup
+            logger.exception("claude verifier/research init failed; continuing")
+            self.claude_budget = self.verifier = self.research_loop = None
+        self._register_loops()
         # OBSERVE-ONLY TradingView indicator webhook intake (enabled only when a secret is set).
         # Alerts become candidate signals only; they can never place/resize/bypass a paper trade.
         self.tradingview = None
@@ -653,6 +709,11 @@ class PulseEngine:
             self.grok_news.load_state(acct.get("grok_news") or {})
         self._grok_pending = list(acct.get("grok_pending") or [])
         self._recent_windows = list(acct.get("recent_windows") or [])
+        self.lessons.load_state(acct.get("lessons") or {})
+        if self.verifier is not None:
+            self.verifier.load_state(acct.get("verifier") or {})
+        if self.research_loop is not None:
+            self.research_loop.load_state(acct.get("research_loop") or {})
         if self.edge_model is not None:          # the learned edge model accumulates across runs
             self.edge_model.load_state(acct.get("edge_model") or {})
         ev = acct.get("ev") or {}
@@ -896,6 +957,7 @@ class PulseEngine:
             # effect. In FOLLOW mode the decision drives side/size below, subject to the floor.
             grok_dec = None
             grok_size_frac = 1.0
+            grok_verdict = None
             if self.grok_decider is not None:
                 self.grok_decider.request(
                     mc.decision_id,
@@ -905,6 +967,19 @@ class PulseEngine:
                 dr.grok_decision = grok_dec
                 if grok_dec is not None:
                     self._schedule_grok_grade(mc.decision_id, snap.price, w.close_ts, grok_dec)
+                    if self.verifier is not None:
+                        self.verifier.request(mc.decision_id, {
+                            "decision": {k: grok_dec.get(k) for k in
+                                         ("action", "p_up", "confidence", "size_fraction",
+                                          "rationale")},
+                            "context": grok_dec.get("context"),
+                            "payoff": {"up_ask": (w.up_book.best_ask if w.up_book else None),
+                                       "down_ask": (w.down_book.best_ask if w.down_book else None),
+                                       "min_reward_risk": self.cfg.min_reward_risk},
+                            "digital_fair_p_up": fair_used, "poly_yes": mc.poly_yes,
+                            "recent_windows": self._recent_windows_view(6),
+                            "lessons": self.lessons.recent(10),
+                            "view_accuracy": self.grok_decider.report().get("view_accuracy")})
             # FOLLOW only when: mode=follow, breaker not tripped, and this window is in the A/B canary
             # follow-fraction. Otherwise fall through to the baseline path (the A/B control arm).
             grok_follow = False
@@ -968,6 +1043,21 @@ class PulseEngine:
                                                   float(self.cfg.grok_decider_explore_size_fraction)
                                                   * self.grok_decider.aggr.size_scale()))
                     self._grok_policy_counts["explore"] += 1
+                # #1 MAKER-CHECKER: an independent Claude verdict can VETO or shrink (never enlarge)
+                grok_verdict = None
+                if self.verifier is not None:
+                    grok_verdict = self.verifier.verdict_or_failopen(mc.decision_id)
+                    if not grok_verdict.get("approve"):
+                        vr = "verifier_pending" if grok_verdict.get("pending") else "verifier_veto"
+                        dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
+                                                         outcome_prob=None, model_edge=0.0,
+                                                         tradeable=False, reason=vr)
+                        if self.markov is not None:
+                            self.markov.record_terminal(state=cand_state, accepted=False)
+                        _finalize(dr, "rejected", reason=vr, stage="verifier")
+                        continue
+                    grok_size_frac = min(grok_size_frac,
+                                         float(grok_verdict.get("max_size_fraction") or 1.0))
                 book = w.up_book if side == "up" else w.down_book
                 ask = book.best_ask if book else None
                 cap = min(self.cfg.max_price, grok_dec.get("max_price") or self.cfg.max_price)
@@ -1143,6 +1233,10 @@ class PulseEngine:
             pos.research["entry_mode"] = entry_mode
             pos.research["entry_ttc_s"] = float(ttc)
             pos.research["conviction_bucket"] = _conv_bucket(fair_used)
+            if self.verifier is not None and grok_verdict:
+                pos.research["verifier"] = {"approved": True,
+                                            "max_size_fraction": grok_verdict.get("max_size_fraction"),
+                                            "reason": grok_verdict.get("reason")}
             if esnap is not None:
                 pos.research.update({"edge_stale_divergence": esnap.stale_divergence_class,
                                      "edge_ttc_bucket": esnap.ttc_bucket,
@@ -1323,6 +1417,11 @@ class PulseEngine:
                     in ("grok_follow", "grok_explore", "grok_adaptive")):
                 self.grok_decider.record_follow_result(
                     won=bool(pos.won), pnl=float(pos.pnl_usd or 0.0), now=now)
+            # grade the maker-checker (approved trade outcome) + record lessons from this settlement
+            if self.verifier is not None and (pos.research or {}).get("verifier"):
+                self.verifier.grade(pos.decision_id or pos.window_key, won=bool(pos.won),
+                                    pnl=float(pos.pnl_usd or 0.0), acted=True)
+            self._record_lessons_from_settlement(pos)
             ext = pos.external or {}
             if ext.get("source") == "tradingview":
                 rt = pos.research or {}
@@ -1489,6 +1588,7 @@ class PulseEngine:
                        "min_reward_risk_floor": self.cfg.min_reward_risk,
                        "note": "only trade a side if your P(win) clears its breakeven_win_rate after costs"},
             "recent_windows": self._recent_windows_view(10),
+            "lessons": self.lessons.recent(10),
             "tradingview_signal": tv,
             "news": (self.grok_news.latest() if self.grok_news is not None else None),
             "research": {"hurst_regime": rf.get("hurst_regime"),
@@ -1682,6 +1782,12 @@ class PulseEngine:
         report["capital"] = self._capital_status()
         report["grok_signal_intel"] = self._grok_intel_report()
         report["grok_decider"] = self._grok_decider_report()
+        report["verifier"] = (self.verifier.report() if self.verifier is not None
+                              else {"enabled": False})
+        report["research_loop"] = (self.research_loop.report() if self.research_loop is not None
+                                   else {"enabled": False})
+        report["lessons"] = self.lessons.report()
+        report["loops"] = self.loops.report()
         report["edge_signal"] = self._edge_signal_report()
         report["learned_selectivity_gate"] = self._selectivity_report()
         report["late_window_entry"] = self._late_window_report()
@@ -1738,6 +1844,72 @@ class PulseEngine:
             return rep
         except Exception:  # noqa: BLE001
             return {}
+
+    def _record_lessons_from_settlement(self, pos) -> None:
+        """Turn proven outcomes into compounding rules (deduped): avoid confidently-losing buckets,
+        exploit proven-edge contexts, and note breaker trips. Fed back to maker + checker."""
+        try:
+            be = self.selectivity_gate.bucket_evidence(self.selectivity_evidence, top=8)
+            for r in be.get("buckets", []):
+                if r.get("confidently_losing"):
+                    self.lessons.add(kind="avoid", key="sel:%s=%s" % (r["dimension"], r["bucket"]),
+                                     rule=("AVOID %s=%s — confidently below breakeven (WR %s vs %s, "
+                                           "n %s, EV/trade %s)." % (r["dimension"], r["bucket"],
+                                           r.get("win_rate"), r.get("breakeven_win_rate"),
+                                           r.get("n"), r.get("ev_per_trade"))))
+            if self.grok_decider is not None:
+                for c in (self.grok_decider.report().get("view_edge_candidates") or []):
+                    self.lessons.add(kind="exploit", key="edge:%s=%s" % (c["dimension"], c["bucket"]),
+                                     rule=("EXPLOIT %s=%s — Grok's directional view is a real edge "
+                                           "(acc %s, lowerCI %s, n %s)." % (c["dimension"], c["bucket"],
+                                           c.get("accuracy"), c.get("accuracy_lower_ci"), c.get("n"))))
+                br = self.grok_decider.breaker_status()
+                if br.get("tripped"):
+                    day = int((self.last_tick_ts or time.time()) // 86400)
+                    self.lessons.add(kind="risk", key="breaker:%s:%s" % (br.get("reason"), day),
+                                     rule="Circuit breaker tripped (%s) — follow paused, baseline only."
+                                          % br.get("reason"))
+        except Exception:  # noqa: BLE001 — lessons never break settlement
+            pass
+
+    def _research_report(self) -> dict:
+        """Compact report for the research meta-loop: full light report + the compounding lessons."""
+        try:
+            rep = self.light_report()
+            rep["lessons"] = self.lessons.recent(20)
+            return rep
+        except Exception:  # noqa: BLE001
+            return {"lessons": self.lessons.recent(20)}
+
+    def _register_loops(self) -> None:
+        """Formalize the sub-loops for uniform observability (#3)."""
+        r = self.loops
+        r.register("heartbeat", role="automation", trigger="tick",
+                   interval_s=self.cfg.tick_seconds, skill="AGENTS.md",
+                   stop_condition="process running")
+        r.register("data_ingestion", role="data", trigger="tick", skill="price/book/CEX/RTDS",
+                   status_fn=lambda: {"enabled": True})
+        r.register("signal_generation", role="signal", trigger="per_window",
+                   skill="research/factors/markov/edge_model",
+                   status_fn=(lambda: self._grok_decider_report()) if self.grok_decider else None)
+        r.register("verifier", role="verify(maker-checker)", trigger="per_decision",
+                   skill="independent Claude verdict", verifier="claude",
+                   stop_condition="approve/veto verdict",
+                   status_fn=(lambda: self.verifier.report()) if self.verifier else None)
+        r.register("execution", role="execute", trigger="per_decision",
+                   skill="execution-quality gate (authoritative)", stop_condition="fill or reject")
+        r.register("risk_monitor", role="risk", trigger="per_settlement",
+                   skill="breaker + reconciliation",
+                   status_fn=(lambda: self.grok_decider.breaker_status()) if self.grok_decider else None)
+        r.register("news", role="context", trigger="interval",
+                   interval_s=self.cfg.grok_news_refresh_s,
+                   status_fn=(lambda: self.grok_news.report()) if self.grok_news else None)
+        r.register("research_meta", role="research(/goal)", trigger="interval",
+                   interval_s=self.cfg.research_interval_s, verifier="claude",
+                   stop_condition="verifiable metric improvement",
+                   status_fn=(lambda: self.research_loop.report()) if self.research_loop else None)
+        r.register("lessons", role="memory", trigger="per_settlement", skill="LESSONS.md",
+                   status_fn=lambda: {"calls": len(self.lessons.lessons)})
 
     def _capital_status(self) -> dict:
         """On-hand paper capital = starting capital + realized PnL, with open exposure (stake at risk
@@ -1894,6 +2066,11 @@ class PulseEngine:
                              else {"enabled": False}),
             "grok_signal_intel": self._grok_intel_report(),
             "grok_decider": self._grok_decider_report(),
+            "verifier": (self.verifier.report() if self.verifier is not None else {"enabled": False}),
+            "research_loop": (self.research_loop.report() if self.research_loop is not None
+                              else {"enabled": False}),
+            "lessons": self.lessons.report(),
+            "loops": self.loops.report(),
             "edge_signal": self._edge_signal_report(),
             "learned_selectivity_gate": self._selectivity_report(),
             "late_window_entry": self._late_window_report(),
@@ -1930,6 +2107,11 @@ class PulseEngine:
                                             if self.grok_news is not None else {}),
                               "grok_pending": self._grok_pending[-2000:],
                               "recent_windows": self._recent_windows[-40:],
+                              "verifier": (self.verifier.to_state() if self.verifier is not None
+                                           else {}),
+                              "research_loop": (self.research_loop.to_state()
+                                                if self.research_loop is not None else {}),
+                              "lessons": self.lessons.to_state(),
                               "edge_model": (self.edge_model.to_state()
                                              if self.edge_model is not None else {}),
                               "selectivity_evidence": self.selectivity_evidence.to_state(),
@@ -1948,6 +2130,8 @@ class PulseEngine:
                 from engine.pulse.reporting import build_full_report_md
                 (self._data_dir / "report.md").write_text(
                     build_full_report_md(lr, self.status(), self.ledger.to_dict()), encoding="utf-8")
+                (self._data_dir / "LESSONS.md").write_text(self.lessons.to_markdown(),
+                                                           encoding="utf-8")
             except Exception:  # noqa: BLE001 — report writing never breaks the loop
                 pass
             from engine.pulse.meta_learning import build_bundle
