@@ -82,6 +82,9 @@ services:
       PULSE_GROK_DECIDER_DAILY_LOSS_CAP_USD: "${PULSE_GROK_DECIDER_DAILY_LOSS_CAP_USD:-30}"
       PULSE_GROK_DECIDER_MAX_LATENCY_S: "${PULSE_GROK_DECIDER_MAX_LATENCY_S:-20}"
       PULSE_GROK_DECIDER_COOLDOWN_S: "${PULSE_GROK_DECIDER_COOLDOWN_S:-1800}"
+      # FOLLOW exploration: when Grok abstains, trade its view at this rate (paper data-gathering).
+      PULSE_GROK_DECIDER_EXPLORE_RATE: "${PULSE_GROK_DECIDER_EXPLORE_RATE:-0}"
+      PULSE_GROK_DECIDER_EXPLORE_SIZE_FRACTION: "${PULSE_GROK_DECIDER_EXPLORE_SIZE_FRACTION:-0.5}"
       PULSE_GROK_NEWS_REFRESH_S: "${PULSE_GROK_NEWS_REFRESH_S:-300}"
       # ---- BTC 5-min pulse engine (LOOSENED quality gates; PAPER ONLY) ----
       # Loose edge/depth so it actively takes PAPER trades on btc-up-or-down-5m windows.

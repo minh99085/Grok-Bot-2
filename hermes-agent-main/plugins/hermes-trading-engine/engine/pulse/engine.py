@@ -95,6 +95,10 @@ class PulseConfig:
     grok_decider_daily_loss_cap_usd: float = 30.0    # breaker: trip after this much follow-loss/day
     grok_decider_max_latency_s: float = 20.0         # breaker: trip on sustained high decision latency
     grok_decider_cooldown_s: float = 1800.0          # breaker: stay tripped (use baseline) this long
+    # FOLLOW exploration: when Grok ABSTAINS, trade its directional VIEW at this rate (paper data
+    # gathering so the bot keeps trading + learns action-level P&L). 0 = never (pure follow).
+    grok_decider_explore_rate: float = 0.0
+    grok_decider_explore_size_fraction: float = 0.5
     grok_news_refresh_s: float = 300.0               # periodic web/X news digest cadence
     # price feed: 'auto' uses Chainlink Data Streams (exact resolution feed) when creds are
     # set, else the Coinbase proxy. A sub-second background sampler keeps the price fresh
@@ -244,6 +248,8 @@ class PulseConfig:
             grok_decider_daily_loss_cap_usd=_envf("PULSE_GROK_DECIDER_DAILY_LOSS_CAP_USD", 30.0),
             grok_decider_max_latency_s=_envf("PULSE_GROK_DECIDER_MAX_LATENCY_S", 20.0),
             grok_decider_cooldown_s=_envf("PULSE_GROK_DECIDER_COOLDOWN_S", 1800.0),
+            grok_decider_explore_rate=_envf("PULSE_GROK_DECIDER_EXPLORE_RATE", 0.0),
+            grok_decider_explore_size_fraction=_envf("PULSE_GROK_DECIDER_EXPLORE_SIZE_FRACTION", 0.5),
             grok_news_refresh_s=_envf("PULSE_GROK_NEWS_REFRESH_S", 300.0),
             price_source=(os.getenv("PULSE_PRICE_SOURCE", "auto") or "auto").strip().lower(),
             price_sampler_interval_s=_envf("PULSE_PRICE_SAMPLER_INTERVAL_S", 1.0),
@@ -465,6 +471,8 @@ class PulseEngine:
         self.grok_news = None
         self._grok_pending: list = []             # pending decision grades (decision_id/price0/close)
         self._recent_windows: list = []           # rolling recent BTC 5m window outcomes (for Grok)
+        import random as _random
+        self._grok_rng = _random.Random()         # exploration sampler (follow-mode data gathering)
         try:
             from engine.pulse.grok_intel import (GrokBudget, GrokSignalAnalyst,
                                                  GrokSignalPredictor, xai_key)
@@ -900,9 +908,17 @@ class PulseEngine:
             # the directional decision uses the (possibly learning-adjusted) probability; the
             # STRICT execution gate below is UNCHANGED and remains the sole trade authority.
             if grok_follow:
-                # FOLLOW: Grok owns direction/size; the opinion gates are bypassed, only the
-                # deterministic floor (freshness, max_price, execution realism, caps) may abstain.
-                if not self.grok_decider.is_actionable(grok_dec, now=now):
+                # FOLLOW: act on Grok; opinion gates bypassed, only the deterministic floor
+                # (freshness, max_price, execution realism, caps, breaker) may abstain. When Grok is
+                # actionable -> follow its action. When it ABSTAINS, EXPLORE its directional VIEW
+                # (p_up) at a capped rate so the bot keeps trading + gathers action-level P&L data
+                # (paper; breaker-protected) instead of freezing.
+                actionable = self.grok_decider.is_actionable(grok_dec, now=now)
+                explore = (not actionable and grok_dec is not None
+                           and grok_dec.get("p_up") is not None
+                           and self.cfg.grok_decider_explore_rate > 0.0
+                           and self._grok_rng.random() < self.cfg.grok_decider_explore_rate)
+                if not actionable and not explore:
                     reason = ("grok_no_decision" if not grok_dec
                               else ("grok_abstain" if grok_dec.get("action") == "no_trade"
                                     else "grok_low_confidence_or_stale"))
@@ -913,7 +929,18 @@ class PulseEngine:
                         self.markov.record_terminal(state=cand_state, accepted=False)
                     _finalize(dr, "rejected", reason=reason, stage="grok_decider")
                     continue
-                side = grok_dec["action"]
+                if actionable:
+                    side = grok_dec["action"]
+                    entry_mode = "grok_follow"
+                    grok_oprob = float(grok_dec.get("confidence") or 0.5)
+                    grok_size_frac = max(0.0, min(1.0, float(grok_dec.get("size_fraction") or 1.0)))
+                else:                              # exploration trade on Grok's directional view
+                    pu = float(grok_dec.get("p_up"))
+                    side = "up" if pu >= 0.5 else "down"
+                    entry_mode = "grok_explore"
+                    grok_oprob = pu if side == "up" else (1.0 - pu)
+                    grok_size_frac = max(0.0, min(1.0,
+                                                  float(self.cfg.grok_decider_explore_size_fraction)))
                 book = w.up_book if side == "up" else w.down_book
                 ask = book.best_ask if book else None
                 cap = min(self.cfg.max_price, grok_dec.get("max_price") or self.cfg.max_price)
@@ -932,10 +959,7 @@ class PulseEngine:
                 from engine.pulse.strategy import PulseDecision
                 d = PulseDecision(trade=True, side=side,
                                   token_id=(w.up_token_id if side == "up" else w.down_token_id),
-                                  price=float(ask), fair_p_up=fair_used, edge=0.0,
-                                  reason="grok_follow")
-                grok_size_frac = max(0.0, min(1.0, float(grok_dec.get("size_fraction") or 1.0)))
-                entry_mode = "grok_follow"
+                                  price=float(ask), fair_p_up=fair_used, edge=0.0, reason=entry_mode)
                 context_explored = False
             else:
                 d = decide(w, fair_used, now, min_edge=self.cfg.min_edge,
@@ -946,7 +970,7 @@ class PulseEngine:
                            basis_buffer=self.cfg.basis_buffer,
                            min_reward_risk=self.cfg.min_reward_risk)
             if grok_follow:
-                outcome_prob = float(grok_dec.get("confidence") or 0.5)   # Grok's P(chosen side wins)
+                outcome_prob = grok_oprob              # Grok's P(chosen side wins) (action or view)
             else:
                 outcome_prob = (fair_used if d.side == "up" else (1.0 - fair_used)) \
                     if fair_used is not None else None
@@ -1266,9 +1290,9 @@ class PulseEngine:
                 ev_after_cost=(pos.research or {}).get("ev_after_cost"), outcome_up=outcome)
             self.selectivity_gate.record_settled((pos.research or {}).get("gate_decision"),
                                                  won=bool(pos.won), pnl=float(pos.pnl_usd or 0.0))
-            # feed FOLLOW-mode trades back to the Grok decider's circuit breaker
+            # feed FOLLOW/EXPLORE trades back to the Grok decider's circuit breaker
             if (self.grok_decider is not None
-                    and (pos.research or {}).get("entry_mode") == "grok_follow"):
+                    and (pos.research or {}).get("entry_mode") in ("grok_follow", "grok_explore")):
                 self.grok_decider.record_follow_result(
                     won=bool(pos.won), pnl=float(pos.pnl_usd or 0.0), now=now)
             ext = pos.external or {}

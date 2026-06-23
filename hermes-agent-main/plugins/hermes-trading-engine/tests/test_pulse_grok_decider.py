@@ -355,6 +355,27 @@ def test_recent_windows_view_summary():
     assert v["n"] == 4 and v["up_rate"] == 0.75 and v["current_streak"] == "upx3"
 
 
+def test_engine_follow_explore_trades_view_when_grok_abstains(tmp_path):
+    # Grok abstains (no_trade) but its p_up view leans up; explore_rate=1.0 -> bot trades the view
+    eng, t0 = _engine(tmp_path, mode="follow",
+                      decision={"action": "no_trade", "p_up": 0.62, "confidence": 0.4, "ttl_s": 240},
+                      grok_decider_explore_rate=1.0, grok_decider_explore_size_fraction=0.5)
+    _drive(eng, t0)
+    assert eng.ledger.trades >= 1
+    pos = list(eng.ledger.positions.values())[0]
+    assert pos.side == "up" and (pos.research or {}).get("entry_mode") == "grok_explore"
+    assert eng.light_report()["global_reconciled"] is True
+
+
+def test_engine_follow_explore_off_still_abstains(tmp_path):
+    # explore_rate=0 (default) -> abstain on no_trade as before (no trades)
+    eng, t0 = _engine(tmp_path, mode="follow",
+                      decision={"action": "no_trade", "p_up": 0.62, "confidence": 0.4, "ttl_s": 240},
+                      grok_decider_explore_rate=0.0)
+    _drive(eng, t0)
+    assert eng.ledger.trades == 0
+
+
 def test_engine_follow_fraction_zero_uses_baseline(tmp_path):
     # A/B canary control arm: follow_fraction=0 -> never follows; trades by baseline logic instead
     eng, t0 = _engine(tmp_path, mode="follow",
