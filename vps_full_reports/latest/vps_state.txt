@@ -1,14 +1,13 @@
-VPS full report snapshot — 2026-06-22 17:12 UTC
+VPS full report snapshot — 2026-06-23 03:53 UTC
 
 == containers ==
-hermes-training	Up 2 hours (healthy)
-hermes-trading-engine	Up 2 hours (healthy)
+hermes-training	Up About a minute (healthy)
+hermes-trading-engine	Up About a minute (healthy)
 
-== enabled features ==
-GROK_BUDGET_DAILY_USD=20
-PULSE_LATE_WINDOW_ENTRY=0
-PULSE_MIN_REWARD_RISK=0.25
-PULSE_SELECTIVITY_CONFIDENCE_Z=1.64
-PULSE_TRADINGVIEW_SIGNAL_GATE=1
-PULSE_TV_CONTEXT_GATE=1
-PULSE_TV_SIGNAL_MAX_FEATURE_AGE_S=600
+== key features ==
+PULSE_GROK_DECIDER_ADAPTIVE=1
+PULSE_GROK_DECIDER_EXPLORE_RATE=0.5
+PULSE_GROK_DECIDER_MODE=follow
+PULSE_GROK_DECIDER_MODEL=grok-4.3
+PULSE_GROK_DECIDER_USE_SEARCH=1
+PULSE_STARTING_CAPITAL_USD=500

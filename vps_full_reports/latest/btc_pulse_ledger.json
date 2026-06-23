@@ -1,30 +1,30 @@
 {
  "paper_only": true,
  "stats": {
-  "trades": 290,
-  "settled": 290,
-  "wins": 153,
-  "win_rate": 0.5276,
-  "avg_entry_price": 0.5418,
-  "edge_realized": -0.0142,
-  "win_rate_up": 0.5368,
-  "win_rate_down": 0.5195,
+  "trades": 305,
+  "settled": 304,
+  "wins": 159,
+  "win_rate": 0.523,
+  "avg_entry_price": 0.539,
+  "edge_realized": -0.0159,
+  "win_rate_up": 0.5328,
+  "win_rate_down": 0.515,
   "side_counts": {
-   "up": 136,
-   "down": 154
+   "up": 137,
+   "down": 167
   },
   "settle_sources": {
-   "polymarket_resolution": 129,
-   "rtds_chainlink_proxy": 145
+   "polymarket_resolution": 136,
+   "rtds_chainlink_proxy": 152
   },
   "proxy_official_reconciliation": {
-   "both": 128,
-   "agree": 122,
+   "both": 135,
+   "agree": 129,
    "disagree": 6
   },
   "execution_gate": {
-   "candidates": 245,
-   "accepted": 245,
+   "candidates": 260,
+   "accepted": 260,
    "rejected_total": 0,
    "rejected": {
     "wide_spread": 0,
@@ -36,38 +36,38 @@
     "missing_market_data": 0,
     "stale_orderbook": 0
    },
-   "fills": 245,
+   "fills": 260,
    "reconciled": true
   },
-  "realized_pnl_usd": -76.8008,
-  "avg_pnl_per_trade": -0.2648,
-  "profit_factor": 0.8165,
-  "avg_win_usd": 2.8285,
-  "avg_loss_usd": 3.8686,
-  "max_drawdown_usd": 135.6993,
-  "open_positions": 0
+  "realized_pnl_usd": -87.245,
+  "avg_pnl_per_trade": -0.287,
+  "profit_factor": 0.8068,
+  "avg_win_usd": 2.829,
+  "avg_loss_usd": 3.8448,
+  "max_drawdown_usd": 142.5879,
+  "open_positions": 1
  },
  "accumulators": {
-  "settled_entry_sum": 157.112468,
+  "settled_entry_sum": 163.846384,
   "side_n": {
-   "up": 136,
-   "down": 154
+   "up": 137,
+   "down": 167
   },
   "side_wins": {
    "up": 73,
-   "down": 80
+   "down": 86
   },
   "settle_sources": {
-   "polymarket_resolution": 129,
-   "rtds_chainlink_proxy": 145
+   "polymarket_resolution": 136,
+   "rtds_chainlink_proxy": 152
   },
   "recon": {
-   "both": 128,
-   "agree": 122,
+   "both": 135,
+   "agree": 129,
    "disagree": 6
   },
-  "exec_candidates": 245,
-  "exec_accepted": 245,
+  "exec_candidates": 260,
+  "exec_accepted": 260,
   "exec_rejected": {
    "wide_spread": 0,
    "insufficient_depth": 0,
@@ -78,13 +78,1034 @@
    "missing_market_data": 0,
    "stale_orderbook": 0
   },
-  "gross_win": 432.757192,
-  "gross_loss": 530.0,
-  "equity": -97.242808,
+  "gross_win": 449.813117,
+  "gross_loss": 557.5,
+  "equity": -107.686883,
   "equity_peak": 33.8197,
-  "max_drawdown": 135.69926
+  "max_drawdown": 142.587932
  },
  "positions": [
+  {
+   "window_key": "620867",
+   "market_id": "2636359",
+   "title": "Bitcoin Up or Down - June 22, 11:50PM-11:55PM ET",
+   "side": "down",
+   "token_id": "46992761501423198088977269612284257963995222328971088501118456194871307685635",
+   "entry_price": 0.22,
+   "size_usd": 2.5,
+   "shares": 11.363636,
+   "fair_at_entry": 0.7009455406832006,
+   "edge_at_entry": 0.0,
+   "open_ts": 1782186600.0,
+   "close_ts": 1782186900.0,
+   "entry_ts": 1782186632.9265416,
+   "status": "open",
+   "outcome_up": null,
+   "won": null,
+   "pnl_usd": null,
+   "s_open": 63928.790113627176,
+   "s_close": null,
+   "close_lag_s": null,
+   "research": {
+    "hurst_regime": "trending",
+    "zscore_bucket": ">=2",
+    "half_life_bucket": "<30s",
+    "ttc_bucket": ">=240s",
+    "edge_quality_bucket": "high",
+    "markov_state": "stale_polymarket_up",
+    "model_features": {
+     "hurst": 0.5904,
+     "autocorr_lag1": 0.1191,
+     "realized_vol_scaled": 0.5395,
+     "zscore": 3.0073,
+     "signal_strength_signed": 0.2936,
+     "edge_quality_score": 0.9356,
+     "orderbook_imbalance": -0.5874
+    },
+    "spread_bucket": "<=0.01",
+    "depth_bucket": ">=1000",
+    "confidence_tier": "high",
+    "ev_after_cost": 0.29000000000000004,
+    "gate_decision": "grok_follow",
+    "context_gate": "pass",
+    "entry_mode": "grok_explore",
+    "entry_ttc_s": 267.07345843315125,
+    "conviction_bucket": "0.4-0.6",
+    "edge_stale_divergence": "not_stale",
+    "edge_ttc_bucket": "240_300s",
+    "edge_ob_pressure": "ask_heavy",
+    "edge_score_bucket": "medium",
+    "edge_cex_agreement": "na"
+   },
+   "decision_id": "620867",
+   "external": null
+  },
+  {
+   "window_key": "620856",
+   "market_id": "2636347",
+   "title": "Bitcoin Up or Down - June 22, 11:45PM-11:50PM ET",
+   "side": "down",
+   "token_id": "83937006998767459515550090744341584328086976545988981046926739288281814308651",
+   "entry_price": 0.5,
+   "size_usd": 2.5,
+   "shares": 5.0,
+   "fair_at_entry": 0.6093947182560404,
+   "edge_at_entry": 0.0,
+   "open_ts": 1782186300.0,
+   "close_ts": 1782186600.0,
+   "entry_ts": 1782186316.9213808,
+   "status": "settled",
+   "outcome_up": true,
+   "won": false,
+   "pnl_usd": -2.5,
+   "s_open": 63920.33587322156,
+   "s_close": 63928.790113627176,
+   "close_lag_s": 0.9260056018829346,
+   "research": {
+    "hurst_regime": "trending",
+    "zscore_bucket": "-1..1",
+    "half_life_bucket": "<30s",
+    "ttc_bucket": ">=240s",
+    "edge_quality_bucket": "high",
+    "markov_state": "stale_polymarket_up",
+    "model_features": {
+     "hurst": 0.7327,
+     "autocorr_lag1": 0.0887,
+     "realized_vol_scaled": 0.5339,
+     "zscore": 0.5505,
+     "signal_strength_signed": 0.367,
+     "edge_quality_score": 0.9534,
+     "orderbook_imbalance": -0.736
+    },
+    "spread_bucket": "<=0.01",
+    "depth_bucket": ">=1000",
+    "confidence_tier": "high",
+    "ev_after_cost": 0.008000000000000007,
+    "gate_decision": "grok_follow",
+    "context_gate": "pass",
+    "entry_mode": "grok_explore",
+    "entry_ttc_s": 283.0786192417145,
+    "conviction_bucket": "0.2-0.4",
+    "edge_stale_divergence": "not_stale",
+    "edge_ttc_bucket": "240_300s",
+    "edge_ob_pressure": "ask_heavy",
+    "edge_score_bucket": "medium",
+    "edge_cex_agreement": "strong"
+   },
+   "decision_id": "620856",
+   "external": null
+  },
+  {
+   "window_key": "620845",
+   "market_id": "2636338",
+   "title": "Bitcoin Up or Down - June 22, 11:40PM-11:45PM ET",
+   "side": "down",
+   "token_id": "20726430776540820259106326516154505132499423528877880530977863325688924500280",
+   "entry_price": 0.45,
+   "size_usd": 2.5,
+   "shares": 5.555556,
+   "fair_at_entry": 0.42433897216193917,
+   "edge_at_entry": 0.0,
+   "open_ts": 1782186000.0,
+   "close_ts": 1782186300.0,
+   "entry_ts": 1782186148.9185789,
+   "status": "settled",
+   "outcome_up": true,
+   "won": false,
+   "pnl_usd": -2.5,
+   "s_open": 63908.492130719336,
+   "s_close": 63920.33587322156,
+   "close_lag_s": 0.9211280345916748,
+   "research": {
+    "hurst_regime": "insufficient_data",
+    "zscore_bucket": "1..2",
+    "half_life_bucket": "<30s",
+    "ttc_bucket": "120-240s",
+    "edge_quality_bucket": "high",
+    "markov_state": "stale_polymarket_up",
+    "model_features": {
+     "hurst": 0.0,
+     "autocorr_lag1": 0.0426,
+     "realized_vol_scaled": 0.5374,
+     "zscore": 1.5055,
+     "signal_strength_signed": 0.1626,
+     "edge_quality_score": 0.8068,
+     "orderbook_imbalance": -0.791
+    },
+    "spread_bucket": "<=0.01",
+    "depth_bucket": ">=1000",
+    "confidence_tier": "high",
+    "ev_after_cost": 0.065,
+    "gate_decision": "grok_follow",
+    "context_gate": "pass",
+    "entry_mode": "grok_explore",
+    "entry_ttc_s": 151.08142113685608,
+    "conviction_bucket": "<0.2",
+    "edge_stale_divergence": "not_stale",
+    "edge_ttc_bucket": "90_180s",
+    "edge_ob_pressure": "ask_heavy",
+    "edge_score_bucket": "low",
+    "edge_cex_agreement": "strong"
+   },
+   "decision_id": "620845",
+   "external": null
+  },
+  {
+   "window_key": "620842",
+   "market_id": "2636282",
+   "title": "Bitcoin Up or Down - June 22, 11:35PM-11:40PM ET",
+   "side": "down",
+   "token_id": "97236638871049646839317553474424329284927534338959617353143739177541243012408",
+   "entry_price": 0.5,
+   "size_usd": 2.5,
+   "shares": 5.0,
+   "fair_at_entry": 0.5015105423406077,
+   "edge_at_entry": 0.0,
+   "open_ts": 1782185700.0,
+   "close_ts": 1782186000.0,
+   "entry_ts": 1782185713.502167,
+   "status": "settled",
+   "outcome_up": false,
+   "won": true,
+   "pnl_usd": 2.5,
+   "s_open": 63950.530894143594,
+   "s_close": 63908.492130719336,
+   "close_lag_s": 0.9160902500152588,
+   "research": {
+    "hurst_regime": "trending",
+    "zscore_bucket": "1..2",
+    "half_life_bucket": "<30s",
+    "ttc_bucket": ">=240s",
+    "edge_quality_bucket": "high",
+    "markov_state": "stale_polymarket_down",
+    "model_features": {
+     "hurst": 0.701,
+     "autocorr_lag1": 0.2442,
+     "realized_vol_scaled": 0.6375000000000001,
+     "zscore": 1.2509,
+     "signal_strength_signed": -0.2166,
+     "edge_quality_score": 0.9572,
+     "orderbook_imbalance": -0.7509
+    },
+    "spread_bucket": "<=0.01",
+    "depth_bucket": ">=1000",
+    "confidence_tier": "high",
+    "ev_after_cost": 0.0020000000000000018,
+    "gate_decision": "grok_follow",
+    "context_gate": "pass",
+    "entry_mode": "grok_explore",
+    "entry_ttc_s": 286.49783301353455,
+    "conviction_bucket": "<0.2",
+    "edge_stale_divergence": "not_stale",
+    "edge_ttc_bucket": "240_300s",
+    "edge_ob_pressure": "ask_heavy",
+    "edge_score_bucket": "high",
+    "edge_cex_agreement": "strong"
+   },
+   "decision_id": "620842",
+   "external": null
+  },
+  {
+   "window_key": "620820",
+   "market_id": "2636187",
+   "title": "Bitcoin Up or Down - June 22, 11:25PM-11:30PM ET",
+   "side": "down",
+   "token_id": "79860581303990968383614817919363219864165833981048382322227490531657112957244",
+   "entry_price": 0.37,
+   "size_usd": 2.5,
+   "shares": 6.756757,
+   "fair_at_entry": 0.5604452508501454,
+   "edge_at_entry": 0.0,
+   "open_ts": 1782185100.0,
+   "close_ts": 1782185400.0,
+   "entry_ts": 1782185145.4928694,
+   "status": "settled",
+   "outcome_up": true,
+   "won": false,
+   "pnl_usd": -2.5,
+   "s_open": 63961.15354630086,
+   "s_close": 64018.13005888388,
+   "close_lag_s": 1.4970290660858154,
+   "research": {
+    "hurst_regime": "trending",
+    "zscore_bucket": "1..2",
+    "half_life_bucket": "<30s",
+    "ttc_bucket": ">=240s",
+    "edge_quality_bucket": "high",
+    "markov_state": "chop_noise",
+    "model_features": {
+     "hurst": 0.5741,
+     "autocorr_lag1": 0.2612,
+     "realized_vol_scaled": 0.6842999999999999,
+     "zscore": 1.8606,
+     "signal_strength_signed": 0.0,
+     "edge_quality_score": 0.9217,
+     "orderbook_imbalance": -0.7231
+    },
+    "spread_bucket": "<=0.01",
+    "depth_bucket": ">=1000",
+    "confidence_tier": "high",
+    "ev_after_cost": 0.17000000000000004,
+    "gate_decision": "grok_follow",
+    "context_gate": "pass",
+    "entry_mode": "grok_explore",
+    "entry_ttc_s": 254.50713062286377,
+    "conviction_bucket": "<0.2",
+    "edge_stale_divergence": "not_stale",
+    "edge_ttc_bucket": "240_300s",
+    "edge_ob_pressure": "ask_heavy",
+    "edge_score_bucket": "medium",
+    "edge_cex_agreement": "moderate"
+   },
+   "decision_id": "620820",
+   "external": null
+  },
+  {
+   "window_key": "620798",
+   "market_id": "2636167",
+   "title": "Bitcoin Up or Down - June 22, 11:15PM-11:20PM ET",
+   "side": "down",
+   "token_id": "73595303110125495738683651745986643141083121432498637571097749275937225262065",
+   "entry_price": 0.43000000000000005,
+   "size_usd": 2.5,
+   "shares": 5.813953,
+   "fair_at_entry": 0.5264569428938204,
+   "edge_at_entry": 0.0,
+   "open_ts": 1782184500.0,
+   "close_ts": 1782184800.0,
+   "entry_ts": 1782184553.4830127,
+   "status": "settled",
+   "outcome_up": true,
+   "won": false,
+   "pnl_usd": -2.5,
+   "s_open": 63941.32693873233,
+   "s_close": 63975.91172149865,
+   "close_lag_s": 1.4870309829711914,
+   "research": {
+    "hurst_regime": "insufficient_data",
+    "zscore_bucket": "na",
+    "half_life_bucket": "na",
+    "ttc_bucket": ">=240s",
+    "edge_quality_bucket": "high",
+    "markov_state": "stale_polymarket_up",
+    "model_features": {
+     "hurst": 0.0,
+     "autocorr_lag1": 0.236,
+     "realized_vol_scaled": 0.6384,
+     "zscore": 0.0,
+     "signal_strength_signed": 0.322,
+     "edge_quality_score": 0.9128,
+     "orderbook_imbalance": -0.7741
+    },
+    "spread_bucket": "<=0.01",
+    "depth_bucket": ">=1000",
+    "confidence_tier": "high",
+    "ev_after_cost": 0.07799999999999996,
+    "gate_decision": "grok_follow",
+    "context_gate": "pass",
+    "entry_mode": "grok_explore",
+    "entry_ttc_s": 246.516987323761,
+    "conviction_bucket": "<0.2",
+    "edge_stale_divergence": "not_stale",
+    "edge_ttc_bucket": "240_300s",
+    "edge_ob_pressure": "ask_heavy",
+    "edge_score_bucket": "medium",
+    "edge_cex_agreement": "moderate"
+   },
+   "decision_id": "620798",
+   "external": {
+    "source": "tradingview",
+    "direction": "DOWN",
+    "timeframe": "5",
+    "symbol": "BTCUSD",
+    "indicator_name": "Hermes BTC Pulse Composite v4 Orderflow Loose",
+    "strength": 0.82,
+    "strength_bucket": ">=0.8",
+    "signal_level": "DOWN_STRONG",
+    "price": 63959.56,
+    "ev_after_cost": 0.07799999999999996,
+    "vwap_state": "below",
+    "bb_state": "expansion_down",
+    "volume_state": "dead",
+    "htf_bias": "bearish",
+    "composite_version": "v4",
+    "adx_state": "normal_trend",
+    "supertrend_direction": "bearish",
+    "candle_pressure": "bull_close_near_high",
+    "range_state": "range_bottom",
+    "mtf_alignment": "mixed",
+    "cvd_state": "unknown",
+    "funding_state": "neutral",
+    "liquidation_spike": false,
+    "event_blackout": true,
+    "rsi_trend_state": "down_streak1",
+    "rsi_predicted_next": "DOWN",
+    "rsi_pred_prob_up": 0.3571
+   }
+  },
+  {
+   "window_key": "620770",
+   "market_id": "2636136",
+   "title": "Bitcoin Up or Down - June 22, 11:00PM-11:05PM ET",
+   "side": "down",
+   "token_id": "83444231235370572154732639974689707120478267942091018310967708962755358200723",
+   "entry_price": 0.5,
+   "size_usd": 2.5,
+   "shares": 5.0,
+   "fair_at_entry": 0.4494325639795902,
+   "edge_at_entry": 0.0,
+   "open_ts": 1782183600.0,
+   "close_ts": 1782183900.0,
+   "entry_ts": 1782183614.2677667,
+   "status": "settled",
+   "outcome_up": false,
+   "won": true,
+   "pnl_usd": 2.5,
+   "s_open": 64123.57645168859,
+   "s_close": 63952.19616849551,
+   "close_lag_s": 2.2723729610443115,
+   "research": {
+    "hurst_regime": "trending",
+    "zscore_bucket": "-1..1",
+    "half_life_bucket": "<30s",
+    "ttc_bucket": ">=240s",
+    "edge_quality_bucket": "high",
+    "markov_state": "stale_polymarket_down",
+    "model_features": {
+     "hurst": 0.6219,
+     "autocorr_lag1": -0.0853,
+     "realized_vol_scaled": 0.7091,
+     "zscore": 0.9633,
+     "signal_strength_signed": -0.4634,
+     "edge_quality_score": 0.9564,
+     "orderbook_imbalance": -0.7708
+    },
+    "spread_bucket": "<=0.01",
+    "depth_bucket": ">=1000",
+    "confidence_tier": "high",
+    "ev_after_cost": 0.0010000000000000009,
+    "gate_decision": "grok_follow",
+    "context_gate": "pass",
+    "entry_mode": "grok_explore",
+    "entry_ttc_s": 285.73223328590393,
+    "conviction_bucket": "<0.2",
+    "edge_stale_divergence": "not_stale",
+    "edge_ttc_bucket": "240_300s",
+    "edge_ob_pressure": "ask_heavy",
+    "edge_score_bucket": "high",
+    "edge_cex_agreement": "strong"
+   },
+   "decision_id": "620770",
+   "external": null
+  },
+  {
+   "window_key": "620764",
+   "market_id": "2636118",
+   "title": "Bitcoin Up or Down - June 22, 10:55PM-11:00PM ET",
+   "side": "down",
+   "token_id": "102473294047027530021322533390321518676584063969260034098188681427741665137227",
+   "entry_price": 0.4799999999999999,
+   "size_usd": 2.5,
+   "shares": 5.208333,
+   "fair_at_entry": 0.4386728454091663,
+   "edge_at_entry": 0.0,
+   "open_ts": 1782183300.0,
+   "close_ts": 1782183600.0,
+   "entry_ts": 1782183386.2640333,
+   "status": "settled",
+   "outcome_up": false,
+   "won": true,
+   "pnl_usd": 2.708333,
+   "s_open": 64162.048775,
+   "s_close": 64123.57645168859,
+   "close_lag_s": 2.267571210861206,
+   "research": {
+    "hurst_regime": "trending",
+    "zscore_bucket": "1..2",
+    "half_life_bucket": "<30s",
+    "ttc_bucket": "120-240s",
+    "edge_quality_bucket": "high",
+    "markov_state": "chop_noise",
+    "model_features": {
+     "hurst": 0.6394,
+     "autocorr_lag1": 0.0528,
+     "realized_vol_scaled": 0.49539999999999995,
+     "zscore": 1.0044,
+     "signal_strength_signed": 0.0,
+     "edge_quality_score": 0.8764,
+     "orderbook_imbalance": -0.7951
+    },
+    "spread_bucket": "<=0.01",
+    "depth_bucket": ">=1000",
+    "confidence_tier": "medium",
+    "ev_after_cost": 0.023000000000000076,
+    "gate_decision": "grok_follow",
+    "context_gate": "pass",
+    "entry_mode": "grok_explore",
+    "entry_ttc_s": 213.73596668243408,
+    "conviction_bucket": "<0.2",
+    "edge_stale_divergence": "not_stale",
+    "edge_ttc_bucket": "180_240s",
+    "edge_ob_pressure": "ask_heavy",
+    "edge_score_bucket": "medium",
+    "edge_cex_agreement": "moderate"
+   },
+   "decision_id": "620764",
+   "external": null
+  },
+  {
+   "window_key": "620748",
+   "market_id": "2636100",
+   "title": "Bitcoin Up or Down - June 22, 10:50PM-10:55PM ET",
+   "side": "down",
+   "token_id": "12496273859260477479456035860674688409061489183992351550417662529859986298750",
+   "entry_price": 0.4799999999999999,
+   "size_usd": 2.5,
+   "shares": 5.208333,
+   "fair_at_entry": 0.5139612120827818,
+   "edge_at_entry": 0.0,
+   "open_ts": 1782183000.0,
+   "close_ts": 1782183300.0,
+   "entry_ts": 1782183014.2580247,
+   "status": "settled",
+   "outcome_up": true,
+   "won": false,
+   "pnl_usd": -2.5,
+   "s_open": 64100.61103317469,
+   "s_close": 64162.048775,
+   "close_lag_s": 2.262709140777588,
+   "research": {
+    "hurst_regime": "trending",
+    "zscore_bucket": "na",
+    "half_life_bucket": "na",
+    "ttc_bucket": ">=240s",
+    "edge_quality_bucket": "high",
+    "markov_state": "stale_polymarket_up",
+    "model_features": {
+     "hurst": 0.5841,
+     "autocorr_lag1": 0.035,
+     "realized_vol_scaled": 0.4327,
+     "zscore": 0.0,
+     "signal_strength_signed": 0.1818,
+     "edge_quality_score": 0.9564,
+     "orderbook_imbalance": -0.7759
+    },
+    "spread_bucket": "<=0.01",
+    "depth_bucket": ">=1000",
+    "confidence_tier": "high",
+    "ev_after_cost": 0.02800000000000008,
+    "gate_decision": "grok_follow",
+    "context_gate": "pass",
+    "entry_mode": "grok_explore",
+    "entry_ttc_s": 285.7419753074646,
+    "conviction_bucket": "<0.2",
+    "edge_stale_divergence": "not_stale",
+    "edge_ttc_bucket": "240_300s",
+    "edge_ob_pressure": "ask_heavy",
+    "edge_score_bucket": "medium",
+    "edge_cex_agreement": "moderate"
+   },
+   "decision_id": "620748",
+   "external": null
+  },
+  {
+   "window_key": "619608",
+   "market_id": "2632187",
+   "title": "Bitcoin Up or Down - June 22, 2:30PM-2:35PM ET",
+   "side": "down",
+   "token_id": "33344783965253129341173470268135721187019112640104544334350458323276905161059",
+   "entry_price": 0.63,
+   "size_usd": 5.0,
+   "shares": 7.936508,
+   "fair_at_entry": 0.16871135832232878,
+   "edge_at_entry": 0.17128864167767124,
+   "open_ts": 1782153000.0,
+   "close_ts": 1782153300.0,
+   "entry_ts": 1782153263.015148,
+   "status": "settled",
+   "outcome_up": false,
+   "won": true,
+   "pnl_usd": 2.936508,
+   "s_open": 64526.04346365864,
+   "s_close": 64503.46356175041,
+   "close_lag_s": 3.0158233642578125,
+   "research": {
+    "hurst_regime": "trending",
+    "zscore_bucket": "-2..-1",
+    "half_life_bucket": "<30s",
+    "ttc_bucket": "<60s",
+    "edge_quality_bucket": "high",
+    "markov_state": "stale_polymarket_down",
+    "model_features": {
+     "hurst": 0.6427,
+     "autocorr_lag1": 0.2347,
+     "realized_vol_scaled": 0.7851,
+     "zscore": -1.7038,
+     "signal_strength_signed": -0.5138,
+     "edge_quality_score": 0.68,
+     "orderbook_imbalance": -0.8168
+    },
+    "spread_bucket": "<=0.01",
+    "depth_bucket": ">=1000",
+    "confidence_tier": "high",
+    "ev_after_cost": 0.20128864167767124,
+    "gate_decision": "explored",
+    "context_gate": "pass",
+    "entry_mode": "late_window",
+    "entry_ttc_s": 36.98485207557678,
+    "conviction_bucket": "0.6-0.8",
+    "edge_stale_divergence": "not_stale",
+    "edge_ttc_bucket": "30_90s",
+    "edge_ob_pressure": "ask_heavy",
+    "edge_score_bucket": "high",
+    "edge_cex_agreement": "strong"
+   },
+   "decision_id": "619608",
+   "external": {
+    "source": "tradingview",
+    "direction": "DOWN",
+    "timeframe": "5",
+    "symbol": "BTCUSD",
+    "indicator_name": "Hermes BTC Pulse Composite v4 Orderflow Loose",
+    "strength": 0.82,
+    "strength_bucket": ">=0.8",
+    "signal_level": "DOWN_STRONG",
+    "price": 64545.19,
+    "ev_after_cost": 0.20128864167767124,
+    "vwap_state": "above",
+    "bb_state": "squeeze",
+    "volume_state": "active",
+    "htf_bias": "bearish",
+    "composite_version": "v4",
+    "adx_state": "normal_trend",
+    "supertrend_direction": "bearish",
+    "candle_pressure": "bear_close_near_low",
+    "range_state": "range_middle",
+    "mtf_alignment": "bearish_aligned",
+    "cvd_state": "neutral",
+    "funding_state": "neutral",
+    "liquidation_spike": false,
+    "event_blackout": true,
+    "rsi_trend_state": "down_streak1",
+    "rsi_predicted_next": "DOWN",
+    "rsi_pred_prob_up": 0.4
+   }
+  },
+  {
+   "window_key": "619576",
+   "market_id": "2632121",
+   "title": "Bitcoin Up or Down - June 22, 2:15PM-2:20PM ET",
+   "side": "down",
+   "token_id": "33889094626504687258235521018344504187316277910935011344127443592205487096073",
+   "entry_price": 0.63,
+   "size_usd": 5.0,
+   "shares": 7.936508,
+   "fair_at_entry": 0.2233626380729752,
+   "edge_at_entry": 0.11663736192702481,
+   "open_ts": 1782152100.0,
+   "close_ts": 1782152400.0,
+   "entry_ts": 1782152334.9992397,
+   "status": "settled",
+   "outcome_up": false,
+   "won": true,
+   "pnl_usd": 2.936508,
+   "s_open": 64603.37030948951,
+   "s_close": 64576.72984948988,
+   "close_lag_s": 3.0004260540008545,
+   "research": {
+    "hurst_regime": "trending",
+    "zscore_bucket": "-1..1",
+    "half_life_bucket": "<30s",
+    "ttc_bucket": "60-120s",
+    "edge_quality_bucket": "high",
+    "markov_state": "stale_polymarket_down",
+    "model_features": {
+     "hurst": 0.5759,
+     "autocorr_lag1": 0.2725,
+     "realized_vol_scaled": 0.8965,
+     "zscore": -0.9147,
+     "signal_strength_signed": -0.3091,
+     "edge_quality_score": 0.7111,
+     "orderbook_imbalance": -0.8065
+    },
+    "spread_bucket": "<=0.01",
+    "depth_bucket": ">=1000",
+    "confidence_tier": "high",
+    "ev_after_cost": 0.1466373619270248,
+    "gate_decision": "explored",
+    "context_gate": "pass",
+    "entry_mode": "late_window",
+    "entry_ttc_s": 65.00076031684875,
+    "conviction_bucket": "0.4-0.6",
+    "edge_stale_divergence": "not_stale",
+    "edge_ttc_bucket": "30_90s",
+    "edge_ob_pressure": "ask_heavy",
+    "edge_score_bucket": "medium",
+    "edge_cex_agreement": "strong"
+   },
+   "decision_id": "619576",
+   "external": {
+    "source": "tradingview",
+    "direction": "DOWN",
+    "timeframe": "5",
+    "symbol": "BTCUSD",
+    "indicator_name": "Hermes BTC Pulse Composite v4 Orderflow Loose",
+    "strength": 0.58,
+    "strength_bucket": "0.5-0.8",
+    "signal_level": "DOWN_WEAK",
+    "price": 64614.42,
+    "ev_after_cost": 0.1466373619270248,
+    "vwap_state": "above",
+    "bb_state": "squeeze",
+    "volume_state": "active",
+    "htf_bias": "bearish",
+    "composite_version": "v4",
+    "adx_state": "strong_trend",
+    "supertrend_direction": "bearish",
+    "candle_pressure": "bear_close_near_low",
+    "range_state": "range_top",
+    "mtf_alignment": "neutral",
+    "cvd_state": "unknown",
+    "funding_state": "neutral",
+    "liquidation_spike": false,
+    "event_blackout": true,
+    "rsi_trend_state": "down_streak1",
+    "rsi_predicted_next": "DOWN",
+    "rsi_pred_prob_up": 0.4
+   }
+  },
+  {
+   "window_key": "619565",
+   "market_id": "2632107",
+   "title": "Bitcoin Up or Down - June 22, 2:10PM-2:15PM ET",
+   "side": "down",
+   "token_id": "109725545214515679477580822053716310808983850565705967699825895652209237402804",
+   "entry_price": 0.21391622262844698,
+   "size_usd": 5.0,
+   "shares": 23.373636,
+   "fair_at_entry": 0.6655454499273238,
+   "edge_at_entry": 0.1044545500726762,
+   "open_ts": 1782151800.0,
+   "close_ts": 1782152100.0,
+   "entry_ts": 1782152094.9949827,
+   "status": "settled",
+   "outcome_up": true,
+   "won": false,
+   "pnl_usd": -5.0,
+   "s_open": 64598.3944343362,
+   "s_close": 64603.37030948951,
+   "close_lag_s": 2.995145797729492,
+   "research": {
+    "hurst_regime": "trending",
+    "zscore_bucket": "-1..1",
+    "half_life_bucket": "<30s",
+    "ttc_bucket": "<60s",
+    "edge_quality_bucket": "medium",
+    "markov_state": "resolution_danger",
+    "model_features": {
+     "hurst": 0.5813,
+     "autocorr_lag1": 0.27,
+     "realized_vol_scaled": 0.8876,
+     "zscore": 0.8405,
+     "signal_strength_signed": 0.0,
+     "edge_quality_score": 0.5251,
+     "orderbook_imbalance": -0.6391
+    },
+    "spread_bucket": "<=0.01",
+    "depth_bucket": ">=1000",
+    "confidence_tier": "high",
+    "ev_after_cost": 0.12053832744422924,
+    "gate_decision": "explored",
+    "context_gate": "pass",
+    "entry_mode": "standard",
+    "entry_ttc_s": 5.005017280578613,
+    "conviction_bucket": "0.2-0.4",
+    "edge_stale_divergence": "not_stale",
+    "edge_ttc_bucket": "0_30s",
+    "edge_ob_pressure": "ask_heavy",
+    "edge_score_bucket": "medium",
+    "edge_cex_agreement": "strong"
+   },
+   "decision_id": "619565",
+   "external": {
+    "source": "tradingview",
+    "direction": "DOWN",
+    "timeframe": "5",
+    "symbol": "BTCUSD",
+    "indicator_name": "Hermes BTC Pulse Composite v4 Orderflow Loose",
+    "strength": 0.58,
+    "strength_bucket": "0.5-0.8",
+    "signal_level": "DOWN_WEAK",
+    "price": 64614.42,
+    "ev_after_cost": 0.12053832744422924,
+    "vwap_state": "above",
+    "bb_state": "squeeze",
+    "volume_state": "active",
+    "htf_bias": "bearish",
+    "composite_version": "v4",
+    "adx_state": "strong_trend",
+    "supertrend_direction": "bearish",
+    "candle_pressure": "bear_close_near_low",
+    "range_state": "range_top",
+    "mtf_alignment": "neutral",
+    "cvd_state": "unknown",
+    "funding_state": "neutral",
+    "liquidation_spike": false,
+    "event_blackout": true,
+    "rsi_trend_state": "down_streak1",
+    "rsi_predicted_next": "DOWN",
+    "rsi_pred_prob_up": 0.4444
+   }
+  },
+  {
+   "window_key": "619558",
+   "market_id": "2632100",
+   "title": "Bitcoin Up or Down - June 22, 2:05PM-2:10PM ET",
+   "side": "up",
+   "token_id": "34634193531257702881881815175859387274126782236088741890400142308682303659266",
+   "entry_price": 0.62,
+   "size_usd": 5.0,
+   "shares": 8.064516,
+   "fair_at_entry": 0.7950185603314788,
+   "edge_at_entry": 0.14501856033147878,
+   "open_ts": 1782151500.0,
+   "close_ts": 1782151800.0,
+   "entry_ts": 1782151622.986017,
+   "status": "settled",
+   "outcome_up": false,
+   "won": false,
+   "pnl_usd": -5.0,
+   "s_open": 64623.54646698867,
+   "s_close": 64598.3944343362,
+   "close_lag_s": 2.9895758628845215,
+   "research": {
+    "hurst_regime": "trending",
+    "zscore_bucket": "-1..1",
+    "half_life_bucket": "<30s",
+    "ttc_bucket": "120-240s",
+    "edge_quality_bucket": "high",
+    "markov_state": "stale_polymarket_up",
+    "model_features": {
+     "hurst": 0.6195,
+     "autocorr_lag1": 0.2962,
+     "realized_vol_scaled": 0.9719,
+     "zscore": 0.1514,
+     "signal_strength_signed": 0.3028,
+     "edge_quality_score": 0.8356,
+     "orderbook_imbalance": -0.6559
+    },
+    "spread_bucket": "<=0.01",
+    "depth_bucket": ">=1000",
+    "confidence_tier": "high",
+    "ev_after_cost": 0.17501856033147878,
+    "gate_decision": "explored",
+    "context_gate": "pass",
+    "entry_mode": "standard",
+    "entry_ttc_s": 177.01398301124573,
+    "conviction_bucket": "0.4-0.6",
+    "edge_stale_divergence": "already_priced",
+    "edge_ttc_bucket": "90_180s",
+    "edge_ob_pressure": "ask_heavy",
+    "edge_score_bucket": "medium",
+    "edge_cex_agreement": "strong"
+   },
+   "decision_id": "619558",
+   "external": {
+    "source": "tradingview",
+    "direction": "UP",
+    "timeframe": "5",
+    "symbol": "BTCUSD",
+    "indicator_name": "Hermes BTC Pulse Composite v4 Orderflow Loose",
+    "strength": 0.58,
+    "strength_bucket": "0.5-0.8",
+    "signal_level": "UP_WEAK",
+    "price": 64639.74,
+    "ev_after_cost": 0.17501856033147878,
+    "vwap_state": "above",
+    "bb_state": "squeeze",
+    "volume_state": "active",
+    "htf_bias": "bearish",
+    "composite_version": "v4",
+    "adx_state": "strong_trend",
+    "supertrend_direction": "bearish",
+    "candle_pressure": "bull_close_near_high",
+    "range_state": "range_top",
+    "mtf_alignment": "neutral",
+    "cvd_state": "unknown",
+    "funding_state": "neutral",
+    "liquidation_spike": false,
+    "event_blackout": true,
+    "rsi_trend_state": "up_streak1",
+    "rsi_predicted_next": "UP",
+    "rsi_pred_prob_up": 0.5556
+   }
+  },
+  {
+   "window_key": "619492",
+   "market_id": "2631901",
+   "title": "Bitcoin Up or Down - June 22, 1:35PM-1:40PM ET",
+   "side": "down",
+   "token_id": "57171575860911354384626765198529441502313749345691544638936126638974272975035",
+   "entry_price": 0.34,
+   "size_usd": 5.0,
+   "shares": 14.705882,
+   "fair_at_entry": 0.5282115331574825,
+   "edge_at_entry": 0.1017884668425175,
+   "open_ts": 1782149700.0,
+   "close_ts": 1782150000.0,
+   "entry_ts": 1782149954.7278433,
+   "status": "settled",
+   "outcome_up": true,
+   "won": false,
+   "pnl_usd": -5.0,
+   "s_open": 64385.93772190761,
+   "s_close": 64398.962550876764,
+   "close_lag_s": 2.728675127029419,
+   "research": {
+    "hurst_regime": "trending",
+    "zscore_bucket": "-1..1",
+    "half_life_bucket": "<30s",
+    "ttc_bucket": "<60s",
+    "edge_quality_bucket": "high",
+    "markov_state": "stale_polymarket_down",
+    "model_features": {
+     "hurst": 0.6897,
+     "autocorr_lag1": 0.2113,
+     "realized_vol_scaled": 1.1408,
+     "zscore": 0.6487,
+     "signal_strength_signed": -0.1652,
+     "edge_quality_score": 0.6892,
+     "orderbook_imbalance": -0.6533
+    },
+    "spread_bucket": "<=0.01",
+    "depth_bucket": ">=1000",
+    "confidence_tier": "high",
+    "ev_after_cost": 0.1317884668425175,
+    "gate_decision": "explored",
+    "context_gate": "pass",
+    "entry_mode": "standard",
+    "entry_ttc_s": 45.272156715393066,
+    "conviction_bucket": "<0.2",
+    "edge_stale_divergence": "not_stale",
+    "edge_ttc_bucket": "30_90s",
+    "edge_ob_pressure": "ask_heavy",
+    "edge_score_bucket": "high",
+    "edge_cex_agreement": "strong"
+   },
+   "decision_id": "619492",
+   "external": {
+    "source": "tradingview",
+    "direction": "DOWN",
+    "timeframe": "5",
+    "symbol": "BTCUSD",
+    "indicator_name": "Hermes BTC Pulse Composite v4 Orderflow Loose",
+    "strength": 0.82,
+    "strength_bucket": ">=0.8",
+    "signal_level": "DOWN_STRONG",
+    "price": 64401.41,
+    "ev_after_cost": 0.1317884668425175,
+    "vwap_state": "below",
+    "bb_state": "squeeze",
+    "volume_state": "active",
+    "htf_bias": "bearish",
+    "composite_version": "v4",
+    "adx_state": "strong_trend",
+    "supertrend_direction": "bearish",
+    "candle_pressure": "neutral_candle",
+    "range_state": "breakout_down",
+    "mtf_alignment": "bearish_aligned",
+    "cvd_state": "unknown",
+    "funding_state": "neutral",
+    "liquidation_spike": false,
+    "event_blackout": true,
+    "rsi_trend_state": "down_streak3",
+    "rsi_predicted_next": "DOWN",
+    "rsi_pred_prob_up": 0.4865
+   }
+  },
+  {
+   "window_key": "619443",
+   "market_id": "2631793",
+   "title": "Bitcoin Up or Down - June 22, 1:15PM-1:20PM ET",
+   "side": "down",
+   "token_id": "94015293617507136910224534087439067294038291856054568301883471151648415556628",
+   "entry_price": 0.59,
+   "size_usd": 5.0,
+   "shares": 8.474576,
+   "fair_at_entry": 0.34934067876195035,
+   "edge_at_entry": 0.030659321238049625,
+   "open_ts": 1782148500.0,
+   "close_ts": 1782148800.0,
+   "entry_ts": 1782148658.393572,
+   "status": "settled",
+   "outcome_up": false,
+   "won": true,
+   "pnl_usd": 3.474576,
+   "s_open": 64600.66163032653,
+   "s_close": 64552.56126459765,
+   "close_lag_s": 2.3961920738220215,
+   "research": {
+    "hurst_regime": "trending",
+    "zscore_bucket": "-1..1",
+    "half_life_bucket": "<30s",
+    "ttc_bucket": "120-240s",
+    "edge_quality_bucket": "high",
+    "markov_state": "chop_noise",
+    "model_features": {
+     "hurst": 0.6312,
+     "autocorr_lag1": 0.128,
+     "realized_vol_scaled": 1.0294999999999999,
+     "zscore": -0.6103,
+     "signal_strength_signed": 0.0,
+     "edge_quality_score": 0.7962,
+     "orderbook_imbalance": -0.7197
+    },
+    "spread_bucket": "<=0.01",
+    "depth_bucket": ">=1000",
+    "confidence_tier": "high",
+    "ev_after_cost": 0.060659321238049624,
+    "gate_decision": "explored",
+    "context_gate": "pass",
+    "entry_mode": "standard",
+    "entry_ttc_s": 141.60642790794373,
+    "conviction_bucket": "0.2-0.4",
+    "edge_stale_divergence": "not_stale",
+    "edge_ttc_bucket": "90_180s",
+    "edge_ob_pressure": "ask_heavy",
+    "edge_score_bucket": "medium",
+    "edge_cex_agreement": "moderate"
+   },
+   "decision_id": "619443",
+   "external": {
+    "source": "tradingview",
+    "direction": "DOWN",
+    "timeframe": "5",
+    "symbol": "BTCUSD",
+    "indicator_name": "Hermes BTC Pulse Composite v4 Orderflow Loose",
+    "strength": 0.82,
+    "strength_bucket": ">=0.8",
+    "signal_level": "DOWN_STRONG",
+    "price": 64616.1,
+    "ev_after_cost": 0.060659321238049624,
+    "vwap_state": "above",
+    "bb_state": "squeeze",
+    "volume_state": "dead",
+    "htf_bias": "bearish",
+    "composite_version": "v4",
+    "adx_state": "strong_trend",
+    "supertrend_direction": "bearish",
+    "candle_pressure": "neutral_candle",
+    "range_state": "range_middle",
+    "mtf_alignment": "bearish_aligned",
+    "cvd_state": "unknown",
+    "funding_state": "neutral",
+    "liquidation_spike": false,
+    "event_blackout": true,
+    "rsi_trend_state": "down_streak3",
+    "rsi_predicted_next": "UP",
+    "rsi_pred_prob_up": 0.5455
+   }
+  },
   {
    "window_key": "619387",
    "market_id": "2630582",
@@ -10071,792 +11092,161 @@
    },
    "decision_id": null,
    "external": null
-  },
-  {
-   "window_key": "614930",
-   "market_id": "2616999",
-   "title": "Bitcoin Up or Down - June 21, 6:20AM-6:25AM ET",
-   "side": "down",
-   "token_id": "104969291631894665275288670072825896133379194492487701862471619115785993781",
-   "entry_price": 0.43000000000000005,
-   "size_usd": 5.0,
-   "shares": 11.627907,
-   "fair_at_entry": 0.49093290347518614,
-   "edge_at_entry": 0.049067096524813864,
-   "open_ts": 1782037200.0,
-   "close_ts": 1782037500.0,
-   "entry_ts": 1782037231.264542,
-   "status": "settled",
-   "outcome_up": true,
-   "won": false,
-   "pnl_usd": -5.0,
-   "s_open": 64207.44885071248,
-   "s_close": 64276.70020932316,
-   "close_lag_s": 3.2692067623138428,
-   "research": {
-    "hurst_regime": "trending",
-    "zscore_bucket": "-1..1",
-    "half_life_bucket": "<30s",
-    "ttc_bucket": ">=240s",
-    "edge_quality_bucket": "high",
-    "markov_state": "stale_polymarket_up",
-    "model_features": {
-     "hurst": 0.6805,
-     "autocorr_lag1": 0.117,
-     "realized_vol_scaled": 0.5739,
-     "zscore": 0.562,
-     "signal_strength_signed": 0.1784,
-     "edge_quality_score": 0.9375,
-     "orderbook_imbalance": -0.8151
-    },
-    "spread_bucket": "<=0.01",
-    "depth_bucket": ">=1000",
-    "confidence_tier": "high"
-   },
-   "decision_id": null,
-   "external": null
-  },
-  {
-   "window_key": "614924",
-   "market_id": "2616992",
-   "title": "Bitcoin Up or Down - June 21, 6:15AM-6:20AM ET",
-   "side": "up",
-   "token_id": "5473144754519395954135809530747227085044882389591920195155004844831358434933",
-   "entry_price": 0.33,
-   "size_usd": 5.0,
-   "shares": 15.151515,
-   "fair_at_entry": 0.40027482430131517,
-   "edge_at_entry": 0.040274824301315154,
-   "open_ts": 1782036900.0,
-   "close_ts": 1782037200.0,
-   "entry_ts": 1782036935.2594013,
-   "status": "settled",
-   "outcome_up": true,
-   "won": true,
-   "pnl_usd": 10.151515,
-   "s_open": 64201.12390553225,
-   "s_close": 64207.44885071248,
-   "close_lag_s": 3.264087200164795,
-   "research": {
-    "hurst_regime": "trending",
-    "zscore_bucket": "-2..-1",
-    "half_life_bucket": "<30s",
-    "ttc_bucket": ">=240s",
-    "edge_quality_bucket": "high",
-    "markov_state": "stale_polymarket_down",
-    "model_features": {
-     "hurst": 0.6248,
-     "autocorr_lag1": 0.0922,
-     "realized_vol_scaled": 0.6239,
-     "zscore": -1.5425,
-     "signal_strength_signed": -0.2178,
-     "edge_quality_score": 0.9331,
-     "orderbook_imbalance": -0.8607
-    },
-    "spread_bucket": "<=0.01",
-    "depth_bucket": ">=1000",
-    "confidence_tier": "high"
-   },
-   "decision_id": null,
-   "external": null
-  },
-  {
-   "window_key": "614914",
-   "market_id": "2616980",
-   "title": "Bitcoin Up or Down - June 21, 6:10AM-6:15AM ET",
-   "side": "down",
-   "token_id": "10060843066358803018814932052378696703618094077396469629455709198516704889129",
-   "entry_price": 0.59,
-   "size_usd": 5.0,
-   "shares": 8.474576,
-   "fair_at_entry": 0.3381826770881397,
-   "edge_at_entry": 0.04181732291186027,
-   "open_ts": 1782036600.0,
-   "close_ts": 1782036900.0,
-   "entry_ts": 1782036635.2542021,
-   "status": "settled",
-   "outcome_up": true,
-   "won": false,
-   "pnl_usd": -5.0,
-   "s_open": 64193.757743382565,
-   "s_close": 64201.12390553225,
-   "close_lag_s": 3.2588770389556885,
-   "research": {
-    "hurst_regime": "trending",
-    "zscore_bucket": "-1..1",
-    "half_life_bucket": "<30s",
-    "ttc_bucket": ">=240s",
-    "edge_quality_bucket": "high",
-    "markov_state": "chop_noise",
-    "model_features": {
-     "hurst": 0.6028,
-     "autocorr_lag1": 0.0791,
-     "realized_vol_scaled": 0.6584000000000001,
-     "zscore": -0.7985,
-     "signal_strength_signed": 0.0,
-     "edge_quality_score": 0.9331,
-     "orderbook_imbalance": -0.8314
-    },
-    "spread_bucket": "<=0.01",
-    "depth_bucket": ">=1000",
-    "confidence_tier": "medium"
-   },
-   "decision_id": null,
-   "external": null
-  },
-  {
-   "window_key": "614902",
-   "market_id": "2616967",
-   "title": "Bitcoin Up or Down - June 21, 6:05AM-6:10AM ET",
-   "side": "down",
-   "token_id": "89506045706875431145513576535549877675657728800371030496997960953501350230160",
-   "entry_price": 0.58,
-   "size_usd": 5.0,
-   "shares": 8.62069,
-   "fair_at_entry": 0.3475717243737171,
-   "edge_at_entry": 0.04242827562628296,
-   "open_ts": 1782036300.0,
-   "close_ts": 1782036600.0,
-   "entry_ts": 1782036335.2485132,
-   "status": "settled",
-   "outcome_up": true,
-   "won": false,
-   "pnl_usd": -5.0,
-   "s_open": 64138.067016736735,
-   "s_close": 64193.757743382565,
-   "close_lag_s": 3.2535910606384277,
-   "research": {
-    "hurst_regime": "trending",
-    "zscore_bucket": "-1..1",
-    "half_life_bucket": "<30s",
-    "ttc_bucket": ">=240s",
-    "edge_quality_bucket": "high",
-    "markov_state": "stale_polymarket_down",
-    "model_features": {
-     "hurst": 0.6152,
-     "autocorr_lag1": 0.0461,
-     "realized_vol_scaled": 0.5654,
-     "zscore": -0.8078,
-     "signal_strength_signed": -0.3866,
-     "edge_quality_score": 0.9331,
-     "orderbook_imbalance": -0.8502
-    },
-    "spread_bucket": "<=0.01",
-    "depth_bucket": ">=1000",
-    "confidence_tier": "high"
-   },
-   "decision_id": null,
-   "external": null
-  },
-  {
-   "window_key": "614892",
-   "market_id": "2616952",
-   "title": "Bitcoin Up or Down - June 21, 6:00AM-6:05AM ET",
-   "side": "up",
-   "token_id": "94140845958947089094286445709419256894642504589449564741334757062705039405638",
-   "entry_price": 0.45,
-   "size_usd": 5.0,
-   "shares": 11.111111,
-   "fair_at_entry": 0.5223264677565508,
-   "edge_at_entry": 0.04232646775655077,
-   "open_ts": 1782036000.0,
-   "close_ts": 1782036300.0,
-   "entry_ts": 1782036051.243488,
-   "status": "settled",
-   "outcome_up": true,
-   "won": true,
-   "pnl_usd": 6.111111,
-   "s_open": 64127.96501298514,
-   "s_close": 64138.067016736735,
-   "close_lag_s": 3.2479217052459717,
-   "research": {
-    "hurst_regime": "trending",
-    "zscore_bucket": "-1..1",
-    "half_life_bucket": "<30s",
-    "ttc_bucket": ">=240s",
-    "edge_quality_bucket": "high",
-    "markov_state": "chop_noise",
-    "model_features": {
-     "hurst": 0.6373,
-     "autocorr_lag1": 0.1492,
-     "realized_vol_scaled": 0.5676,
-     "zscore": -0.663,
-     "signal_strength_signed": 0.0,
-     "edge_quality_score": 0.9153,
-     "orderbook_imbalance": -0.8269
-    },
-    "spread_bucket": "<=0.01",
-    "depth_bucket": ">=1000",
-    "confidence_tier": "low"
-   },
-   "decision_id": null,
-   "external": null
-  },
-  {
-   "window_key": "614886",
-   "market_id": "2616943",
-   "title": "Bitcoin Up or Down - June 21, 5:55AM-6:00AM ET",
-   "side": "up",
-   "token_id": "16968401409529208339207805979157136631035224095205276009865086248022215587569",
-   "entry_price": 0.57,
-   "size_usd": 5.0,
-   "shares": 8.77193,
-   "fair_at_entry": 0.6884539404222183,
-   "edge_at_entry": 0.08845394042221835,
-   "open_ts": 1782035700.0,
-   "close_ts": 1782036000.0,
-   "entry_ts": 1782035735.2381258,
-   "status": "settled",
-   "outcome_up": true,
-   "won": true,
-   "pnl_usd": 3.77193,
-   "s_open": 64117.331950970445,
-   "s_close": 64127.96501298514,
-   "close_lag_s": 3.242705821990967,
-   "research": {
-    "hurst_regime": "trending",
-    "zscore_bucket": "-1..1",
-    "half_life_bucket": "<30s",
-    "ttc_bucket": ">=240s",
-    "edge_quality_bucket": "high",
-    "markov_state": "stale_polymarket_up",
-    "model_features": {
-     "hurst": 0.637,
-     "autocorr_lag1": 0.2492,
-     "realized_vol_scaled": 0.7388,
-     "zscore": 0.282,
-     "signal_strength_signed": 0.5025,
-     "edge_quality_score": 0.9331,
-     "orderbook_imbalance": -0.7734
-    },
-    "spread_bucket": "<=0.01",
-    "depth_bucket": ">=1000",
-    "confidence_tier": "high"
-   },
-   "decision_id": null,
-   "external": null
-  },
-  {
-   "window_key": "614861",
-   "market_id": "2616907",
-   "title": "Bitcoin Up or Down - June 21, 5:50AM-5:55AM ET",
-   "side": "up",
-   "token_id": "84748349142805690732787856981819316235465696947498959187614422541297328234539",
-   "entry_price": 0.57,
-   "size_usd": 5.0,
-   "shares": 8.77193,
-   "fair_at_entry": 0.7541348572709392,
-   "edge_at_entry": 0.15413485727093926,
-   "open_ts": 1782035400.0,
-   "close_ts": 1782035700.0,
-   "entry_ts": 1782035431.23263,
-   "status": "settled",
-   "outcome_up": true,
-   "won": true,
-   "pnl_usd": 3.77193,
-   "s_open": 64058.6862630204,
-   "s_close": 64117.331950970445,
-   "close_lag_s": 3.2376105785369873,
-   "research": {
-    "hurst_regime": "trending",
-    "zscore_bucket": "-1..1",
-    "half_life_bucket": "<30s",
-    "ttc_bucket": ">=240s",
-    "edge_quality_bucket": "high",
-    "markov_state": "stale_polymarket_up",
-    "model_features": {
-     "hurst": 0.6943,
-     "autocorr_lag1": 0.2684,
-     "realized_vol_scaled": 0.7160000000000001,
-     "zscore": 0.2932,
-     "signal_strength_signed": 0.5051,
-     "edge_quality_score": 0.9375,
-     "orderbook_imbalance": -0.7176
-    },
-    "spread_bucket": "<=0.01",
-    "depth_bucket": ">=1000",
-    "confidence_tier": "high"
-   },
-   "decision_id": null,
-   "external": null
-  },
-  {
-   "window_key": "614847",
-   "market_id": "2616895",
-   "title": "Bitcoin Up or Down - June 21, 5:45AM-5:50AM ET",
-   "side": "up",
-   "token_id": "5777421613177475256546805083291615991689063244029189122645017784227097332605",
-   "entry_price": 0.4105250811275756,
-   "size_usd": 5.0,
-   "shares": 12.179524,
-   "fair_at_entry": 0.4957341125469155,
-   "edge_at_entry": 0.05573411254691554,
-   "open_ts": 1782035100.0,
-   "close_ts": 1782035400.0,
-   "entry_ts": 1782035131.2272289,
-   "status": "settled",
-   "outcome_up": true,
-   "won": true,
-   "pnl_usd": 7.179524,
-   "s_open": 64054.314861727915,
-   "s_close": 64058.6862630204,
-   "close_lag_s": 3.232121706008911,
-   "research": {
-    "hurst_regime": "trending",
-    "zscore_bucket": "-1..1",
-    "half_life_bucket": "<30s",
-    "ttc_bucket": ">=240s",
-    "edge_quality_bucket": "high",
-    "markov_state": "chop_noise",
-    "model_features": {
-     "hurst": 0.6853,
-     "autocorr_lag1": 0.2923,
-     "realized_vol_scaled": 0.6999,
-     "zscore": -0.9828,
-     "signal_strength_signed": 0.0,
-     "edge_quality_score": 0.9097,
-     "orderbook_imbalance": -0.8801
-    },
-    "spread_bucket": "0.01-0.03",
-    "depth_bucket": ">=1000",
-    "confidence_tier": "high"
-   },
-   "decision_id": null,
-   "external": null
-  },
-  {
-   "window_key": "614838",
-   "market_id": "2616882",
-   "title": "Bitcoin Up or Down - June 21, 5:40AM-5:45AM ET",
-   "side": "down",
-   "token_id": "52129991631850353589156475508859368074404095204250332829390753848148608455438",
-   "entry_price": 0.71,
-   "size_usd": 5.0,
-   "shares": 7.042254,
-   "fair_at_entry": 0.20021005715673018,
-   "edge_at_entry": 0.0597899428432698,
-   "open_ts": 1782034800.0,
-   "close_ts": 1782035100.0,
-   "entry_ts": 1782034831.2218854,
-   "status": "settled",
-   "outcome_up": false,
-   "won": true,
-   "pnl_usd": 2.042254,
-   "s_open": 64147.814105,
-   "s_close": 64054.314861727915,
-   "close_lag_s": 3.2267415523529053,
-   "research": {
-    "hurst_regime": "trending",
-    "zscore_bucket": "-2..-1",
-    "half_life_bucket": "<30s",
-    "ttc_bucket": ">=240s",
-    "edge_quality_bucket": "high",
-    "markov_state": "stale_polymarket_down",
-    "model_features": {
-     "hurst": 0.65,
-     "autocorr_lag1": 0.2541,
-     "realized_vol_scaled": 0.6824,
-     "zscore": -1.4525,
-     "signal_strength_signed": -0.1743,
-     "edge_quality_score": 0.9375,
-     "orderbook_imbalance": -0.8893
-    },
-    "spread_bucket": "<=0.01",
-    "depth_bucket": ">=1000",
-    "confidence_tier": "medium"
-   },
-   "decision_id": null,
-   "external": null
-  },
-  {
-   "window_key": "614834",
-   "market_id": "2616863",
-   "title": "Bitcoin Up or Down - June 21, 5:35AM-5:40AM ET",
-   "side": "up",
-   "token_id": "9506218275671059929536561931892418103941533369887629922688570542198191035017",
-   "entry_price": 0.71,
-   "size_usd": 5.0,
-   "shares": 7.042254,
-   "fair_at_entry": 0.802248394877098,
-   "edge_at_entry": 0.06224839487709802,
-   "open_ts": 1782034500.0,
-   "close_ts": 1782034800.0,
-   "entry_ts": 1782034531.2166724,
-   "status": "settled",
-   "outcome_up": true,
-   "won": true,
-   "pnl_usd": 2.042254,
-   "s_open": 64021.30604,
-   "s_close": 64147.814105,
-   "close_lag_s": 3.2213995456695557,
-   "research": {
-    "hurst_regime": "trending",
-    "zscore_bucket": "1..2",
-    "half_life_bucket": "<30s",
-    "ttc_bucket": ">=240s",
-    "edge_quality_bucket": "high",
-    "markov_state": "stale_polymarket_up",
-    "model_features": {
-     "hurst": 0.7371,
-     "autocorr_lag1": 0.1975,
-     "realized_vol_scaled": 0.4769,
-     "zscore": 1.3265,
-     "signal_strength_signed": 0.4892,
-     "edge_quality_score": 0.9375,
-     "orderbook_imbalance": -0.7765
-    },
-    "spread_bucket": "<=0.01",
-    "depth_bucket": ">=1000",
-    "confidence_tier": "high"
-   },
-   "decision_id": null,
-   "external": null
-  },
-  {
-   "window_key": "614814",
-   "market_id": "2616808",
-   "title": "Bitcoin Up or Down - June 21, 5:30AM-5:35AM ET",
-   "side": "down",
-   "token_id": "4224231592660996853364332411509435739491897258504635799784796205103181959195",
-   "entry_price": 0.23999999999999996,
-   "size_usd": 5.0,
-   "shares": 20.833333,
-   "fair_at_entry": 0.6978055004494399,
-   "edge_at_entry": 0.03219449955056011,
-   "open_ts": 1782034200.0,
-   "close_ts": 1782034500.0,
-   "entry_ts": 1782034231.2114568,
-   "status": "settled",
-   "outcome_up": true,
-   "won": false,
-   "pnl_usd": -5.0,
-   "s_open": 63973.37659219962,
-   "s_close": 64021.30604,
-   "close_lag_s": 3.2162344455718994,
-   "research": {
-    "hurst_regime": "trending",
-    "zscore_bucket": "1..2",
-    "half_life_bucket": "<30s",
-    "ttc_bucket": ">=240s",
-    "edge_quality_bucket": "high",
-    "markov_state": "chop_noise",
-    "model_features": {
-     "hurst": 0.6483,
-     "autocorr_lag1": 0.2143,
-     "realized_vol_scaled": 0.4709,
-     "zscore": 1.8413,
-     "signal_strength_signed": 0.0,
-     "edge_quality_score": 0.9376,
-     "orderbook_imbalance": -0.6834
-    },
-    "spread_bucket": "<=0.01",
-    "depth_bucket": ">=1000",
-    "confidence_tier": "high"
-   },
-   "decision_id": null,
-   "external": null
-  },
-  {
-   "window_key": "614813",
-   "market_id": "2616805",
-   "title": "Bitcoin Up or Down - June 21, 5:25AM-5:30AM ET",
-   "side": "up",
-   "token_id": "114504308261811195206021623190189862922127009455326121922859494759495137681636",
-   "entry_price": 0.82,
-   "size_usd": 5.0,
-   "shares": 6.097561,
-   "fair_at_entry": 0.884785264416787,
-   "edge_at_entry": 0.034785264416787004,
-   "open_ts": 1782033900.0,
-   "close_ts": 1782034200.0,
-   "entry_ts": 1782033931.2061129,
-   "status": "settled",
-   "outcome_up": true,
-   "won": true,
-   "pnl_usd": 1.097561,
-   "s_open": 63938.426807544165,
-   "s_close": 63973.37659219962,
-   "close_lag_s": 3.2109999656677246,
-   "research": {
-    "hurst_regime": "trending",
-    "zscore_bucket": ">=2",
-    "half_life_bucket": "<30s",
-    "ttc_bucket": ">=240s",
-    "edge_quality_bucket": "high",
-    "markov_state": "stale_polymarket_up",
-    "model_features": {
-     "hurst": 0.6933,
-     "autocorr_lag1": 0.1879,
-     "realized_vol_scaled": 0.44620000000000004,
-     "zscore": 2.2488,
-     "signal_strength_signed": 0.7264,
-     "edge_quality_score": 0.9376,
-     "orderbook_imbalance": -0.6928
-    },
-    "spread_bucket": "<=0.01",
-    "depth_bucket": ">=1000",
-    "confidence_tier": "high"
-   },
-   "decision_id": null,
-   "external": null
-  },
-  {
-   "window_key": "614805",
-   "market_id": "2616793",
-   "title": "Bitcoin Up or Down - June 21, 5:20AM-5:25AM ET",
-   "side": "up",
-   "token_id": "6449257279792460464169026158555403730918289868582991238669877950845630365172",
-   "entry_price": 0.37,
-   "size_usd": 5.0,
-   "shares": 13.513514,
-   "fair_at_entry": 0.4444864429315893,
-   "edge_at_entry": 0.04448644293158929,
-   "open_ts": 1782033600.0,
-   "close_ts": 1782033900.0,
-   "entry_ts": 1782033643.2010767,
-   "status": "settled",
-   "outcome_up": true,
-   "won": true,
-   "pnl_usd": 8.513514,
-   "s_open": 63894.918455,
-   "s_close": 63938.426807544165,
-   "close_lag_s": 3.2056338787078857,
-   "research": {
-    "hurst_regime": "trending",
-    "zscore_bucket": "-2..-1",
-    "half_life_bucket": "<30s",
-    "ttc_bucket": ">=240s",
-    "edge_quality_bucket": "high",
-    "markov_state": "stale_polymarket_down",
-    "model_features": {
-     "hurst": 0.6117,
-     "autocorr_lag1": 0.0281,
-     "realized_vol_scaled": 0.6582,
-     "zscore": -1.2966,
-     "signal_strength_signed": -0.1834,
-     "edge_quality_score": 0.9242,
-     "orderbook_imbalance": -0.789
-    },
-    "spread_bucket": "<=0.01",
-    "depth_bucket": ">=1000",
-    "confidence_tier": "high"
-   },
-   "decision_id": null,
-   "external": null
-  },
-  {
-   "window_key": "614795",
-   "market_id": "2616783",
-   "title": "Bitcoin Up or Down - June 21, 5:15AM-5:20AM ET",
-   "side": "down",
-   "token_id": "21492414105578107983506339073141959141067383489044721151559415469820329492459",
-   "entry_price": 0.54,
-   "size_usd": 5.0,
-   "shares": 9.259259,
-   "fair_at_entry": 0.3162604145100089,
-   "edge_at_entry": 0.113739585489991,
-   "open_ts": 1782033300.0,
-   "close_ts": 1782033600.0,
-   "entry_ts": 1782033351.1956646,
-   "status": "settled",
-   "outcome_up": true,
-   "won": false,
-   "pnl_usd": -5.0,
-   "s_open": 63895.071355,
-   "s_close": 63894.918455,
-   "close_lag_s": 3.2003512382507324,
-   "research": {
-    "hurst_regime": "trending",
-    "zscore_bucket": "-1..1",
-    "half_life_bucket": "<30s",
-    "ttc_bucket": ">=240s",
-    "edge_quality_bucket": "high",
-    "markov_state": "stale_polymarket_down",
-    "model_features": {
-     "hurst": 0.6348,
-     "autocorr_lag1": -0.0118,
-     "realized_vol_scaled": 0.6445,
-     "zscore": -0.4368,
-     "signal_strength_signed": -0.3343,
-     "edge_quality_score": 0.9153,
-     "orderbook_imbalance": -0.8275
-    },
-    "spread_bucket": "<=0.01",
-    "depth_bucket": ">=1000",
-    "confidence_tier": "high"
-   },
-   "decision_id": null,
-   "external": null
-  },
-  {
-   "window_key": "614780",
-   "market_id": "2616761",
-   "title": "Bitcoin Up or Down - June 21, 5:10AM-5:15AM ET",
-   "side": "down",
-   "token_id": "14870298258645523053302858041582414260356832001082562651840537109699983679095",
-   "entry_price": 0.43000000000000005,
-   "size_usd": 5.0,
-   "shares": 11.627907,
-   "fair_at_entry": 0.5013743738280895,
-   "edge_at_entry": 0.03862562617191054,
-   "open_ts": 1782033000.0,
-   "close_ts": 1782033300.0,
-   "entry_ts": 1782033031.1900635,
-   "status": "settled",
-   "outcome_up": false,
-   "won": true,
-   "pnl_usd": 6.627907,
-   "s_open": 63895.4968510666,
-   "s_close": 63894.588515,
-   "close_lag_s": 3.1947977542877197,
-   "research": {
-    "hurst_regime": "trending",
-    "zscore_bucket": "-1..1",
-    "half_life_bucket": "<30s",
-    "ttc_bucket": ">=240s",
-    "edge_quality_bucket": "high",
-    "markov_state": "chop_noise",
-    "model_features": {
-     "hurst": 0.5636,
-     "autocorr_lag1": 0.0192,
-     "realized_vol_scaled": 0.6834,
-     "zscore": 0.312,
-     "signal_strength_signed": 0.0,
-     "edge_quality_score": 0.9376,
-     "orderbook_imbalance": -0.7535
-    },
-    "spread_bucket": "<=0.01",
-    "depth_bucket": ">=1000",
-    "confidence_tier": "medium"
-   },
-   "decision_id": null,
-   "external": null
   }
  ],
  "calibration_state": {
-  "n": 290,
-  "sq": 67.45455415285912,
-  "ll": 192.21069124019206,
-  "up_outcomes": 147
+  "n": 304,
+  "sq": 70.40502569982728,
+  "ll": 200.8174216600266,
+  "up_outcomes": 154
  },
  "accounting_state": {
   "lifecycle": {
-   "created": 16352,
-   "feature_scored": 15698,
-   "execution_costed": 139,
-   "ledgered": 139,
-   "reported": 16352,
+   "created": 25305,
+   "feature_scored": 24248,
+   "execution_costed": 154,
+   "ledgered": 154,
+   "reported": 25305,
    "terminals": {
-    "accepted": 139,
-    "rejected": 15559,
-    "skipped": 635,
+    "accepted": 154,
+    "rejected": 24094,
+    "skipped": 1025,
     "expired": 0,
-    "missing_data": 19
+    "missing_data": 32
    },
    "rejected_by_stage": {
-    "directional": 14642,
+    "directional": 15620,
     "execution_gate": 0,
-    "selectivity_gate": 727,
-    "context_gate": 190
+    "selectivity_gate": 837,
+    "context_gate": 217,
+    "grok_decider": 7420
    },
    "skipped_by_reason": {
-    "open_snapshot_late": 628,
-    "untrusted_vol": 7
+    "open_snapshot_late": 1017,
+    "untrusted_vol": 8
    },
    "missing_by_reason": {
-    "no_open_snapshot": 18,
-    "no_price_or_vol": 1
+    "no_open_snapshot": 30,
+    "no_price_or_vol": 2
    }
   },
   "gate_observations": {
-   "n": 139,
+   "n": 154,
    "fields": {
     "spread": {
      "min": 0.01,
      "max": 0.02,
-     "sum": 1.420000000000001,
-     "n": 139
+     "sum": 1.5700000000000012,
+     "n": 154
     },
     "ask_depth_usd": {
-     "min": 11002.2,
+     "min": 8791.12,
      "max": 96424.06,
-     "sum": 4655115.38,
-     "n": 139
+     "sum": 5101028.4,
+     "n": 154
     },
     "slippage": {
      "min": -1.1102230246251565e-16,
-     "max": 0.008176652377629434,
-     "sum": 0.03194232864317431,
-     "n": 139
+     "max": 0.013916222628446967,
+     "sum": 0.04585855127162122,
+     "n": 154
     },
     "ev_after_slippage": {
-     "min": 0.06003441608599214,
+     "min": 0.0010000000000000009,
      "max": 0.4424310118886283,
-     "sum": 14.976677776501958,
-     "n": 139
+     "sum": 16.477608455962926,
+     "n": 154
     },
     "ttc_s": {
-     "min": 5.634716272354126,
-     "max": 269.76834511756897,
-     "sum": 31427.346296310425,
-     "n": 139
+     "min": 5.005017280578613,
+     "max": 286.49783301353455,
+     "sum": 34172.195118665695,
+     "n": 154
     }
    }
   },
   "ev": {
-   "before_sum": 15.71862,
-   "after_sum": 14.976677,
-   "n": 139
+   "before_sum": 17.308467,
+   "after_sum": 16.477608,
+   "n": 154
   },
   "tv_edge": {
-   "n_total": 43,
-   "outcomes_up": 18,
-   "n_with_signal": 43,
-   "n_no_signal": 0,
-   "signal_evaluated": 43,
-   "signal_correct": 24,
+   "n_total": 57,
+   "outcomes_up": 25,
+   "n_with_signal": 50,
+   "n_no_signal": 7,
+   "signal_evaluated": 50,
+   "signal_correct": 27,
    "dims": {
     "direction": {
      "UP": {
-      "n": 21,
-      "sig_eval": 21,
-      "sig_correct": 10,
-      "bot_wins": 10,
-      "pnl": -23.331644
-     },
-     "DOWN": {
       "n": 22,
       "sig_eval": 22,
-      "sig_correct": 14,
-      "bot_wins": 14,
-      "pnl": -5.879522
+      "sig_correct": 10,
+      "bot_wins": 10,
+      "pnl": -28.331644
+     },
+     "DOWN": {
+      "n": 28,
+      "sig_eval": 28,
+      "sig_correct": 17,
+      "bot_wins": 17,
+      "pnl": -9.03193
+     },
+     "none": {
+      "n": 7,
+      "sig_eval": 0,
+      "sig_correct": 0,
+      "bot_wins": 3,
+      "pnl": -2.291667
      }
     },
     "timeframe": {
      "5": {
-      "n": 43,
-      "sig_eval": 43,
-      "sig_correct": 24,
-      "bot_wins": 24,
-      "pnl": -29.211166
+      "n": 50,
+      "sig_eval": 50,
+      "sig_correct": 27,
+      "bot_wins": 27,
+      "pnl": -37.363574
+     },
+     "none": {
+      "n": 7,
+      "sig_eval": 0,
+      "sig_correct": 0,
+      "bot_wins": 3,
+      "pnl": -2.291667
      }
     },
     "symbol": {
      "BTCUSD": {
-      "n": 43,
-      "sig_eval": 43,
-      "sig_correct": 24,
-      "bot_wins": 24,
-      "pnl": -29.211166
+      "n": 50,
+      "sig_eval": 50,
+      "sig_correct": 27,
+      "bot_wins": 27,
+      "pnl": -37.363574
+     },
+     "none": {
+      "n": 7,
+      "sig_eval": 0,
+      "sig_correct": 0,
+      "bot_wins": 3,
+      "pnl": -2.291667
      }
     },
     "alignment": {
      "aligned": {
-      "n": 43,
-      "sig_eval": 43,
-      "sig_correct": 24,
-      "bot_wins": 24,
-      "pnl": -29.211166
+      "n": 50,
+      "sig_eval": 50,
+      "sig_correct": 27,
+      "bot_wins": 27,
+      "pnl": -37.363574
+     },
+     "no_signal": {
+      "n": 7,
+      "sig_eval": 0,
+      "sig_correct": 0,
+      "bot_wins": 3,
+      "pnl": -2.291667
      }
     }
    }
@@ -10865,259 +11255,259 @@
    "hist": {
     "BTCUSD": [
      [
-      1782123600.0,
-      "UP"
-     ],
-     [
-      1782123900.0,
-      "UP"
-     ],
-     [
-      1782127500.0,
-      "UP"
-     ],
-     [
-      1782127800.0,
-      "UP"
-     ],
-     [
-      1782128100.0,
-      "UP"
-     ],
-     [
-      1782128400.0,
-      "UP"
-     ],
-     [
-      1782128700.0,
-      "UP"
-     ],
-     [
-      1782129000.0,
-      "UP"
-     ],
-     [
-      1782129300.0,
-      "UP"
-     ],
-     [
-      1782129600.0,
-      "UP"
-     ],
-     [
-      1782129900.0,
-      "UP"
-     ],
-     [
-      1782130200.0,
-      "UP"
-     ],
-     [
-      1782130500.0,
-      "UP"
-     ],
-     [
-      1782130800.0,
-      "UP"
-     ],
-     [
-      1782131100.0,
-      "UP"
-     ],
-     [
-      1782131400.0,
-      "UP"
-     ],
-     [
-      1782131700.0,
-      "UP"
-     ],
-     [
-      1782132000.0,
-      "UP"
-     ],
-     [
-      1782132300.0,
-      "UP"
-     ],
-     [
-      1782132600.0,
-      "UP"
-     ],
-     [
-      1782132900.0,
-      "UP"
-     ],
-     [
-      1782133200.0,
-      "UP"
-     ],
-     [
-      1782133500.0,
-      "UP"
-     ],
-     [
-      1782133800.0,
-      "UP"
-     ],
-     [
-      1782134100.0,
-      "UP"
-     ],
-     [
-      1782134400.0,
-      "UP"
-     ],
-     [
-      1782134700.0,
-      "UP"
-     ],
-     [
-      1782135000.0,
-      "UP"
-     ],
-     [
-      1782135300.0,
-      "UP"
-     ],
-     [
-      1782135600.0,
-      "UP"
-     ],
-     [
-      1782135900.0,
-      "UP"
-     ],
-     [
-      1782136200.0,
-      "UP"
-     ],
-     [
-      1782136500.0,
-      "UP"
-     ],
-     [
-      1782136800.0,
-      "UP"
-     ],
-     [
-      1782137100.0,
-      "UP"
-     ],
-     [
-      1782137400.0,
-      "UP"
-     ],
-     [
-      1782137700.0,
-      "UP"
-     ],
-     [
-      1782138300.0,
+      1782162000.0,
       "DOWN"
      ],
      [
-      1782138600.0,
+      1782162300.0,
       "DOWN"
      ],
      [
-      1782138900.0,
+      1782162600.0,
       "DOWN"
      ],
      [
-      1782139200.0,
+      1782162900.0,
       "DOWN"
      ],
      [
-      1782139500.0,
+      1782163200.0,
       "DOWN"
      ],
      [
-      1782140100.0,
+      1782163500.0,
       "DOWN"
      ],
      [
-      1782140700.0,
+      1782163800.0,
+      "DOWN"
+     ],
+     [
+      1782164100.0,
+      "DOWN"
+     ],
+     [
+      1782164400.0,
+      "DOWN"
+     ],
+     [
+      1782164700.0,
+      "DOWN"
+     ],
+     [
+      1782165000.0,
+      "DOWN"
+     ],
+     [
+      1782165300.0,
+      "DOWN"
+     ],
+     [
+      1782165600.0,
+      "DOWN"
+     ],
+     [
+      1782166200.0,
+      "DOWN"
+     ],
+     [
+      1782166500.0,
+      "DOWN"
+     ],
+     [
+      1782166800.0,
+      "DOWN"
+     ],
+     [
+      1782167100.0,
+      "DOWN"
+     ],
+     [
+      1782167400.0,
+      "DOWN"
+     ],
+     [
+      1782167700.0,
+      "DOWN"
+     ],
+     [
+      1782168000.0,
+      "DOWN"
+     ],
+     [
+      1782168300.0,
+      "DOWN"
+     ],
+     [
+      1782168600.0,
+      "DOWN"
+     ],
+     [
+      1782168900.0,
+      "DOWN"
+     ],
+     [
+      1782169200.0,
+      "DOWN"
+     ],
+     [
+      1782169500.0,
+      "DOWN"
+     ],
+     [
+      1782169800.0,
+      "DOWN"
+     ],
+     [
+      1782170100.0,
+      "DOWN"
+     ],
+     [
+      1782170400.0,
+      "DOWN"
+     ],
+     [
+      1782170700.0,
+      "DOWN"
+     ],
+     [
+      1782171000.0,
+      "DOWN"
+     ],
+     [
+      1782171300.0,
+      "DOWN"
+     ],
+     [
+      1782171600.0,
+      "DOWN"
+     ],
+     [
+      1782171900.0,
+      "DOWN"
+     ],
+     [
+      1782172200.0,
+      "DOWN"
+     ],
+     [
+      1782172500.0,
+      "DOWN"
+     ],
+     [
+      1782172800.0,
+      "DOWN"
+     ],
+     [
+      1782173400.0,
+      "DOWN"
+     ],
+     [
+      1782173700.0,
+      "DOWN"
+     ],
+     [
+      1782174000.0,
+      "DOWN"
+     ],
+     [
+      1782174300.0,
+      "DOWN"
+     ],
+     [
+      1782174600.0,
+      "DOWN"
+     ],
+     [
+      1782174900.0,
       "UP"
      ],
      [
-      1782141300.0,
+      1782175200.0,
       "UP"
      ],
      [
-      1782141600.0,
-      "DOWN"
-     ],
-     [
-      1782142200.0,
-      "DOWN"
-     ],
-     [
-      1782142500.0,
+      1782175500.0,
       "UP"
      ],
      [
-      1782143100.0,
+      1782175800.0,
       "UP"
      ],
      [
-      1782143400.0,
+      1782176100.0,
+      "UP"
+     ],
+     [
+      1782176400.0,
+      "UP"
+     ],
+     [
+      1782176700.0,
+      "UP"
+     ],
+     [
+      1782177000.0,
+      "UP"
+     ],
+     [
+      1782177300.0,
+      "UP"
+     ],
+     [
+      1782177600.0,
+      "UP"
+     ],
+     [
+      1782177900.0,
+      "UP"
+     ],
+     [
+      1782178200.0,
+      "UP"
+     ],
+     [
+      1782178800.0,
       "DOWN"
      ],
      [
-      1782143700.0,
+      1782179100.0,
       "DOWN"
      ],
      [
-      1782144000.0,
+      1782179400.0,
       "DOWN"
      ],
      [
-      1782144300.0,
+      1782179700.0,
+      "UP"
+     ],
+     [
+      1782180000.0,
+      "UP"
+     ],
+     [
+      1782180300.0,
+      "UP"
+     ],
+     [
+      1782180600.0,
       "DOWN"
      ],
      [
-      1782144600.0,
-      "DOWN"
+      1782181200.0,
+      "UP"
      ],
      [
-      1782144900.0,
-      "DOWN"
+      1782181500.0,
+      "UP"
      ],
      [
-      1782145500.0,
-      "DOWN"
+      1782181800.0,
+      "UP"
      ],
      [
-      1782145800.0,
-      "DOWN"
-     ],
-     [
-      1782146100.0,
-      "DOWN"
-     ],
-     [
-      1782146400.0,
-      "DOWN"
-     ],
-     [
-      1782146700.0,
-      "DOWN"
-     ],
-     [
-      1782147000.0,
-      "DOWN"
-     ],
-     [
-      1782147300.0,
-      "DOWN"
-     ],
-     [
-      1782147600.0,
-      "DOWN"
-     ],
-     [
-      1782148200.0,
+      1782184500.0,
       "DOWN"
      ]
     ]
@@ -11125,49 +11515,49 @@
    "state_counts": {
     "BTCUSD": {
      "up_streak1": {
+      "up": 8,
+      "n": 15
+     },
+     "up_streak2": {
+      "up": 3,
+      "n": 13
+     },
+     "up_streak3": {
+      "up": 36,
+      "n": 70
+     },
+     "down_streak1": {
+      "up": 6,
+      "n": 15
+     },
+     "down_streak2": {
       "up": 5,
       "n": 9
      },
-     "up_streak2": {
-      "up": 1,
-      "n": 9
-     },
-     "up_streak3": {
-      "up": 30,
-      "n": 57
-     },
-     "down_streak1": {
-      "up": 4,
-      "n": 9
-     },
-     "down_streak2": {
-      "up": 4,
-      "n": 6
-     },
      "down_streak3": {
-      "up": 17,
-      "n": 32
+      "up": 52,
+      "n": 101
      }
     }
    },
-   "pred_n": 76,
-   "pred_correct": 32,
+   "pred_n": 175,
+   "pred_correct": 71,
    "pred_by_symbol": {
     "BTCUSD": {
-     "n": 76,
-     "correct": 32
+     "n": 175,
+     "correct": 71
     }
    },
-   "sig_n": 122,
-   "sig_correct": 58,
+   "sig_n": 223,
+   "sig_correct": 109,
    "sig_by_direction": {
     "UP": {
-     "n": 75,
-     "correct": 36
+     "n": 98,
+     "correct": 47
     },
     "DOWN": {
-     "n": 47,
-     "correct": 22
+     "n": 125,
+     "correct": 62
     }
    }
   },
@@ -11175,18 +11565,18 @@
    "dims": {
     "direction": {
      "UP": {
-      "n": 21,
+      "n": 22,
       "wins": 10,
-      "pnl": -23.331644,
-      "ev": 1.957348,
-      "reconciled_n": 21
+      "pnl": -28.331644,
+      "ev": 2.132367,
+      "reconciled_n": 22
      },
      "DOWN": {
-      "n": 22,
-      "wins": 14,
-      "pnl": -5.879522,
-      "ev": 2.909616,
-      "reconciled_n": 22
+      "n": 28,
+      "wins": 17,
+      "pnl": -9.03193,
+      "ev": 3.648527,
+      "reconciled_n": 28
      }
     },
     "signal_level": {
@@ -11198,41 +11588,41 @@
       "reconciled_n": 14
      },
      "UP_WEAK": {
-      "n": 7,
+      "n": 8,
       "wins": 4,
-      "pnl": -5.659939,
-      "ev": 0.673362,
-      "reconciled_n": 7
+      "pnl": -10.659939,
+      "ev": 0.848381,
+      "reconciled_n": 8
      },
      "DOWN_WEAK": {
-      "n": 11,
-      "wins": 8,
-      "pnl": 3.179749,
-      "ev": 1.517815,
-      "reconciled_n": 11
+      "n": 13,
+      "wins": 9,
+      "pnl": 1.116257,
+      "ev": 1.78499,
+      "reconciled_n": 13
      },
      "DOWN_STRONG": {
-      "n": 11,
-      "wins": 6,
-      "pnl": -9.059271,
-      "ev": 1.391801,
-      "reconciled_n": 11
+      "n": 15,
+      "wins": 8,
+      "pnl": -10.148187,
+      "ev": 1.863537,
+      "reconciled_n": 15
      }
     },
     "strength_bucket": {
      ">=0.8": {
-      "n": 25,
-      "wins": 12,
-      "pnl": -26.730976,
-      "ev": 2.675787,
-      "reconciled_n": 25
+      "n": 29,
+      "wins": 14,
+      "pnl": -27.819892,
+      "ev": 3.147523,
+      "reconciled_n": 29
      },
      "0.5-0.8": {
-      "n": 18,
-      "wins": 12,
-      "pnl": -2.48019,
-      "ev": 2.191177,
-      "reconciled_n": 18
+      "n": 21,
+      "wins": 13,
+      "pnl": -9.543682,
+      "ev": 2.633371,
+      "reconciled_n": 21
      }
     },
     "indicator_name": {
@@ -11244,20 +11634,20 @@
       "reconciled_n": 31
      },
      "Hermes BTC Pulse Composite v4 Orderflow Loose": {
-      "n": 12,
-      "wins": 6,
-      "pnl": -8.388114,
-      "ev": 1.225793,
-      "reconciled_n": 12
+      "n": 19,
+      "wins": 9,
+      "pnl": -16.540522,
+      "ev": 2.139723,
+      "reconciled_n": 19
      }
     },
     "hurst_regime": {
      "trending": {
-      "n": 41,
-      "wins": 24,
-      "pnl": -19.211166,
-      "ev": 4.711545,
-      "reconciled_n": 41
+      "n": 47,
+      "wins": 27,
+      "pnl": -24.863574,
+      "ev": 5.547475,
+      "reconciled_n": 47
      },
      "noise": {
       "n": 2,
@@ -11265,22 +11655,29 @@
       "pnl": -10.0,
       "ev": 0.155419,
       "reconciled_n": 2
+     },
+     "insufficient_data": {
+      "n": 1,
+      "wins": 0,
+      "pnl": -2.5,
+      "ev": 0.078,
+      "reconciled_n": 1
      }
     },
     "zscore_bucket": {
      "-1..1": {
-      "n": 28,
-      "wins": 18,
-      "pnl": 3.772907,
-      "ev": 3.453398,
-      "reconciled_n": 28
+      "n": 33,
+      "wins": 20,
+      "pnl": -4.816009,
+      "ev": 4.088039,
+      "reconciled_n": 33
      },
      "-2..-1": {
-      "n": 9,
-      "wins": 4,
-      "pnl": -14.807692,
-      "ev": 0.769666,
-      "reconciled_n": 9
+      "n": 10,
+      "wins": 5,
+      "pnl": -11.871184,
+      "ev": 0.970955,
+      "reconciled_n": 10
      },
      "1..2": {
       "n": 6,
@@ -11288,45 +11685,52 @@
       "pnl": -18.176381,
       "ev": 0.6439,
       "reconciled_n": 6
+     },
+     "na": {
+      "n": 1,
+      "wins": 0,
+      "pnl": -2.5,
+      "ev": 0.078,
+      "reconciled_n": 1
      }
     },
     "ttc_bucket": {
      "120-240s": {
-      "n": 28,
-      "wins": 19,
-      "pnl": 5.368811,
-      "ev": 2.951791,
-      "reconciled_n": 28
+      "n": 30,
+      "wins": 20,
+      "pnl": 3.843387,
+      "ev": 3.187469,
+      "reconciled_n": 30
      },
      ">=240s": {
-      "n": 5,
+      "n": 6,
       "wins": 1,
-      "pnl": -15.909091,
-      "ev": 0.492434,
-      "reconciled_n": 5
+      "pnl": -18.409091,
+      "ev": 0.570434,
+      "reconciled_n": 6
      },
      "60-120s": {
-      "n": 5,
-      "wins": 4,
-      "pnl": 6.329114,
-      "ev": 0.528245,
-      "reconciled_n": 5
+      "n": 6,
+      "wins": 5,
+      "pnl": 9.265622,
+      "ev": 0.674882,
+      "reconciled_n": 6
      },
      "<60s": {
-      "n": 5,
-      "wins": 0,
-      "pnl": -25.0,
-      "ev": 0.894494,
-      "reconciled_n": 5
+      "n": 8,
+      "wins": 1,
+      "pnl": -32.063492,
+      "ev": 1.348109,
+      "reconciled_n": 8
      }
     },
     "spread_bucket": {
      "<=0.01": {
-      "n": 41,
-      "wins": 23,
-      "pnl": -25.877833,
-      "ev": 4.612025,
-      "reconciled_n": 41
+      "n": 48,
+      "wins": 26,
+      "pnl": -34.030241,
+      "ev": 5.525955,
+      "reconciled_n": 48
      },
      "0.01-0.03": {
       "n": 2,
@@ -11338,11 +11742,11 @@
     },
     "depth_bucket": {
      ">=1000": {
-      "n": 43,
-      "wins": 24,
-      "pnl": -29.211166,
-      "ev": 4.866964,
-      "reconciled_n": 43
+      "n": 50,
+      "wins": 27,
+      "pnl": -37.363574,
+      "ev": 5.780894,
+      "reconciled_n": 50
      }
     },
     "vwap_state": {
@@ -11354,18 +11758,18 @@
       "reconciled_n": 3
      },
      "above": {
-      "n": 25,
-      "wins": 13,
-      "pnl": -20.266699,
-      "ev": 2.485419,
-      "reconciled_n": 25
+      "n": 30,
+      "wins": 16,
+      "pnl": -20.919107,
+      "ev": 3.189561,
+      "reconciled_n": 30
      },
      "below": {
-      "n": 14,
+      "n": 16,
       "wins": 8,
-      "pnl": -9.633112,
-      "ev": 2.083245,
-      "reconciled_n": 14
+      "pnl": -17.133112,
+      "ev": 2.293033,
+      "reconciled_n": 16
      },
      "reject": {
       "n": 1,
@@ -11377,11 +11781,11 @@
     },
     "bb_state": {
      "squeeze": {
-      "n": 33,
-      "wins": 19,
-      "pnl": -22.549494,
-      "ev": 3.715483,
-      "reconciled_n": 33
+      "n": 39,
+      "wins": 22,
+      "pnl": -28.201902,
+      "ev": 4.551413,
+      "reconciled_n": 39
      },
      "expansion_up": {
       "n": 4,
@@ -11398,11 +11802,11 @@
       "reconciled_n": 4
      },
      "expansion_down": {
-      "n": 2,
+      "n": 3,
       "wins": 1,
-      "pnl": -2.307692,
-      "ev": 0.308238,
-      "reconciled_n": 2
+      "pnl": -4.807692,
+      "ev": 0.386238,
+      "reconciled_n": 3
      }
     },
     "volume_state": {
@@ -11414,18 +11818,18 @@
       "reconciled_n": 8
      },
      "dead": {
-      "n": 15,
-      "wins": 10,
-      "pnl": -0.64229,
-      "ev": 1.368021,
-      "reconciled_n": 15
+      "n": 17,
+      "wins": 11,
+      "pnl": 0.332286,
+      "ev": 1.50668,
+      "reconciled_n": 17
      },
      "active": {
-      "n": 20,
-      "wins": 13,
-      "pnl": 4.674367,
-      "ev": 2.696941,
-      "reconciled_n": 20
+      "n": 25,
+      "wins": 15,
+      "pnl": -4.452617,
+      "ev": 3.472212,
+      "reconciled_n": 25
      }
     },
     "htf_bias": {
@@ -11437,11 +11841,11 @@
       "reconciled_n": 38
      },
      "bearish": {
-      "n": 5,
-      "wins": 2,
-      "pnl": -5.76923,
-      "ev": 0.77115,
-      "reconciled_n": 5
+      "n": 12,
+      "wins": 5,
+      "pnl": -13.921638,
+      "ev": 1.68508,
+      "reconciled_n": 12
      }
     },
     "composite_version": {
@@ -11453,20 +11857,20 @@
       "reconciled_n": 31
      },
      "v4": {
-      "n": 12,
-      "wins": 6,
-      "pnl": -8.388114,
-      "ev": 1.225793,
-      "reconciled_n": 12
+      "n": 19,
+      "wins": 9,
+      "pnl": -16.540522,
+      "ev": 2.139723,
+      "reconciled_n": 19
      }
     },
     "adx_state": {
      "normal_trend": {
-      "n": 17,
-      "wins": 10,
-      "pnl": -4.996727,
-      "ev": 1.957568,
-      "reconciled_n": 17
+      "n": 19,
+      "wins": 11,
+      "pnl": -4.560219,
+      "ev": 2.236857,
+      "reconciled_n": 19
      },
      "weak_trend": {
       "n": 16,
@@ -11476,20 +11880,20 @@
       "reconciled_n": 16
      },
      "strong_trend": {
-      "n": 10,
-      "wins": 5,
-      "pnl": -4.717228,
-      "ev": 1.045521,
-      "reconciled_n": 10
+      "n": 15,
+      "wins": 7,
+      "pnl": -13.306144,
+      "ev": 1.680162,
+      "reconciled_n": 15
      }
     },
     "supertrend_direction": {
      "bearish": {
-      "n": 22,
-      "wins": 10,
-      "pnl": -28.317311,
-      "ev": 2.874336,
-      "reconciled_n": 22
+      "n": 29,
+      "wins": 13,
+      "pnl": -36.469719,
+      "ev": 3.788266,
+      "reconciled_n": 29
      },
      "bullish": {
       "n": 21,
@@ -11501,11 +11905,11 @@
     },
     "candle_pressure": {
      "bull_close_near_high": {
-      "n": 9,
+      "n": 11,
       "wins": 4,
-      "pnl": -14.586224,
-      "ev": 1.188794,
-      "reconciled_n": 9
+      "pnl": -22.086224,
+      "ev": 1.441813,
+      "reconciled_n": 11
      },
      "lower_wick_rejection": {
       "n": 7,
@@ -11515,11 +11919,11 @@
       "reconciled_n": 7
      },
      "bear_close_near_low": {
-      "n": 15,
-      "wins": 8,
-      "pnl": -22.866195,
-      "ev": 1.446673,
-      "reconciled_n": 15
+      "n": 18,
+      "wins": 10,
+      "pnl": -21.993179,
+      "ev": 1.915137,
+      "reconciled_n": 18
      },
      "upper_wick_rejection": {
       "n": 5,
@@ -11529,11 +11933,11 @@
       "reconciled_n": 5
      },
      "neutral_candle": {
-      "n": 7,
-      "wins": 3,
-      "pnl": -10.363248,
-      "ev": 0.900055,
-      "reconciled_n": 7
+      "n": 9,
+      "wins": 4,
+      "pnl": -11.888672,
+      "ev": 1.092502,
+      "reconciled_n": 9
      }
     },
     "range_state": {
@@ -11545,41 +11949,41 @@
       "reconciled_n": 3
      },
      "range_top": {
-      "n": 11,
-      "wins": 3,
-      "pnl": -24.428462,
-      "ev": 0.912556,
-      "reconciled_n": 11
-     },
-     "range_middle": {
       "n": 14,
-      "wins": 9,
-      "pnl": -0.890098,
-      "ev": 1.896081,
+      "wins": 4,
+      "pnl": -31.491954,
+      "ev": 1.35475,
       "reconciled_n": 14
      },
+     "range_middle": {
+      "n": 16,
+      "wins": 11,
+      "pnl": 5.520986,
+      "ev": 2.158029,
+      "reconciled_n": 16
+     },
      "range_bottom": {
-      "n": 10,
+      "n": 11,
       "wins": 8,
-      "pnl": 7.324492,
-      "ev": 1.282832,
-      "reconciled_n": 10
+      "pnl": 4.824492,
+      "ev": 1.360832,
+      "reconciled_n": 11
      },
      "breakout_down": {
-      "n": 5,
+      "n": 6,
       "wins": 2,
-      "pnl": -9.640522,
-      "ev": 0.475279,
-      "reconciled_n": 5
+      "pnl": -14.640522,
+      "ev": 0.607067,
+      "reconciled_n": 6
      }
     },
     "mtf_alignment": {
      "neutral": {
-      "n": 7,
-      "wins": 5,
-      "pnl": -1.050008,
-      "ev": 0.58103,
-      "reconciled_n": 7
+      "n": 10,
+      "wins": 6,
+      "pnl": -8.1135,
+      "ev": 1.023224,
+      "reconciled_n": 10
      },
      "bullish_aligned": {
       "n": 9,
@@ -11589,104 +11993,94 @@
       "reconciled_n": 9
      },
      "mixed": {
-      "n": 25,
+      "n": 26,
       "wins": 17,
-      "pnl": 5.02066,
-      "ev": 3.154694,
-      "reconciled_n": 25
+      "pnl": 2.52066,
+      "ev": 3.232694,
+      "reconciled_n": 26
      },
      "bearish_aligned": {
-      "n": 2,
-      "wins": 0,
-      "pnl": -10.0,
-      "ev": 0.276695,
-      "reconciled_n": 2
+      "n": 5,
+      "wins": 2,
+      "pnl": -8.588916,
+      "ev": 0.670431,
+      "reconciled_n": 5
      }
     },
     "cvd_state": {
      "unknown": {
-      "n": 6,
-      "wins": 4,
-      "pnl": 6.975134,
-      "ev": 0.663867,
-      "reconciled_n": 6
+      "n": 12,
+      "wins": 6,
+      "pnl": -4.113782,
+      "ev": 1.376508,
+      "reconciled_n": 12
      },
      "neutral": {
-      "n": 6,
-      "wins": 2,
-      "pnl": -15.363248,
-      "ev": 0.561926,
-      "reconciled_n": 6
+      "n": 7,
+      "wins": 3,
+      "pnl": -12.42674,
+      "ev": 0.763215,
+      "reconciled_n": 7
      }
     },
     "funding_state": {
      "neutral": {
-      "n": 12,
-      "wins": 6,
-      "pnl": -8.388114,
-      "ev": 1.225793,
-      "reconciled_n": 12
+      "n": 19,
+      "wins": 9,
+      "pnl": -16.540522,
+      "ev": 2.139723,
+      "reconciled_n": 19
      }
     },
     "liquidation_spike": {
      "False": {
-      "n": 12,
-      "wins": 6,
-      "pnl": -8.388114,
-      "ev": 1.225793,
-      "reconciled_n": 12
+      "n": 19,
+      "wins": 9,
+      "pnl": -16.540522,
+      "ev": 2.139723,
+      "reconciled_n": 19
      }
     },
     "event_blackout": {
      "True": {
-      "n": 12,
-      "wins": 6,
-      "pnl": -8.388114,
-      "ev": 1.225793,
-      "reconciled_n": 12
+      "n": 19,
+      "wins": 9,
+      "pnl": -16.540522,
+      "ev": 2.139723,
+      "reconciled_n": 19
      }
     }
    },
-   "settled": 43,
-   "accepted": 42,
-   "rejected": 7649,
+   "settled": 50,
+   "accepted": 49,
+   "rejected": 15824,
    "accepted_by_direction": {
-    "UP": 20,
-    "DOWN": 22
+    "UP": 21,
+    "DOWN": 28
    },
    "rejected_by_direction": {
-    "UP": 4840,
-    "DOWN": 2809
+    "UP": 6750,
+    "DOWN": 9074
    }
   },
-  "tv_pending": [
-   {
-    "symbol": "BTCUSD",
-    "direction": "DOWN",
-    "event_id": "BTCUSD-5-1782147900000-DOWN_STRONG-v4-orderflow",
-    "state": "down_streak3",
-    "model_pred": "UP",
-    "price0": 64572.30796883574,
-    "due_ts": 1782148500.0
-   }
-  ],
+  "tv_pending": [],
   "edge_signal": {
    "learner": {
     "dims": {
      "stale_divergence": {
       "not_stale": {
-       "n": 43,
-       "wins": 25,
-       "pnl": -16.003827,
-       "ev": 4.524532,
-       "reconciled_n": 43
+       "n": 56,
+       "wins": 31,
+       "pnl": -21.447902,
+       "ev": 5.560443,
+       "reconciled_n": 56
       },
       "already_priced": {
-       "n": 4,
+       "n": 5,
        "wins": 2,
-       "pnl": -5.363248,
-       "ev": 0.613664,
-       "reconciled_n": 4
+       "pnl": -10.363248,
+       "ev": 0.788683,
+       "reconciled_n": 5
       },
       "stale_polymarket_up": {
        "n": 3,
@@ -11705,48 +12099,48 @@
      },
      "ttc_bucket": {
       "240_300s": {
-       "n": 12,
-       "wins": 5,
-       "pnl": -17.265477,
-       "ev": 1.099075,
-       "reconciled_n": 12
+       "n": 18,
+       "wins": 7,
+       "pnl": -22.265477,
+       "ev": 1.386075,
+       "reconciled_n": 18
       },
       "180_240s": {
-       "n": 16,
-       "wins": 13,
-       "pnl": 14.697213,
-       "ev": 1.741417,
-       "reconciled_n": 16
+       "n": 17,
+       "wins": 14,
+       "pnl": 17.405546,
+       "ev": 1.764417,
+       "reconciled_n": 17
       },
       "90_180s": {
-       "n": 15,
-       "wins": 8,
-       "pnl": -8.304306,
-       "ev": 1.495175,
-       "reconciled_n": 15
+       "n": 18,
+       "wins": 9,
+       "pnl": -12.32973,
+       "ev": 1.795853,
+       "reconciled_n": 18
       },
       "30_90s": {
-       "n": 8,
-       "wins": 3,
-       "pnl": -18.670886,
-       "ev": 1.139127,
-       "reconciled_n": 8
+       "n": 11,
+       "wins": 5,
+       "pnl": -17.79787,
+       "ev": 1.618841,
+       "reconciled_n": 11
       },
       "0_30s": {
-       "n": 1,
+       "n": 2,
        "wins": 0,
-       "pnl": -5.0,
-       "ev": 0.194175,
-       "reconciled_n": 1
+       "pnl": -10.0,
+       "ev": 0.314713,
+       "reconciled_n": 2
       }
      },
      "ob_pressure": {
       "ask_heavy": {
-       "n": 50,
-       "wins": 28,
-       "pnl": -30.037961,
-       "ev": 5.522848,
-       "reconciled_n": 50
+       "n": 64,
+       "wins": 34,
+       "pnl": -40.482036,
+       "ev": 6.733778,
+       "reconciled_n": 64
       },
       "bid_heavy": {
        "n": 1,
@@ -11765,34 +12159,34 @@
      },
      "edge_score": {
       "medium": {
-       "n": 27,
-       "wins": 16,
-       "pnl": -0.586119,
-       "ev": 2.848551,
-       "reconciled_n": 27
+       "n": 36,
+       "wins": 19,
+       "pnl": -11.466702,
+       "ev": 3.658404,
+       "reconciled_n": 36
       },
       "high": {
-       "n": 23,
-       "wins": 13,
-       "pnl": -23.957337,
-       "ev": 2.317548,
-       "reconciled_n": 23
+       "n": 27,
+       "wins": 16,
+       "pnl": -21.020829,
+       "ev": 2.653625,
+       "reconciled_n": 27
       },
       "low": {
-       "n": 2,
+       "n": 3,
        "wins": 0,
-       "pnl": -10.0,
-       "ev": 0.50287,
-       "reconciled_n": 2
+       "pnl": -12.5,
+       "ev": 0.56787,
+       "reconciled_n": 3
       }
      },
      "cex_agreement": {
       "strong": {
-       "n": 33,
-       "wins": 17,
-       "pnl": -38.741956,
-       "ev": 3.460524,
-       "reconciled_n": 33
+       "n": 42,
+       "wins": 21,
+       "pnl": -47.86894,
+       "ev": 4.311795,
+       "reconciled_n": 42
       },
       "na": {
        "n": 3,
@@ -11802,121 +12196,596 @@
        "reconciled_n": 3
       },
       "moderate": {
-       "n": 16,
-       "wins": 10,
-       "pnl": -0.620967,
-       "ev": 1.691729,
-       "reconciled_n": 16
+       "n": 21,
+       "wins": 12,
+       "pnl": -1.938058,
+       "ev": 2.051388,
+       "reconciled_n": 21
       }
      }
     },
-    "settled": 52
+    "settled": 66
    },
-   "snapshots": 11964
+   "snapshots": 20514
   },
   "grok_predictor": {
-   "requested": 123,
-   "predicted": 121,
-   "errors": 2,
+   "requested": 223,
+   "predicted": 220,
+   "errors": 3,
    "skipped_budget": 0,
-   "scored": 113,
-   "correct": 56,
-   "brier_sum": 28.8707
+   "scored": 204,
+   "correct": 104,
+   "brier_sum": 52.1096
   },
   "grok_analyst": {
-   "calls": 30,
-   "errors": 0,
+   "calls": 58,
+   "errors": 1,
    "skipped_budget": 0,
    "note": {
-    "summary": "With only 42 settled trades total, DOWN_WEAK/DOWN signals, zscore -1..1, ttc 120-240s, active volume, mixed mtf alignment, and range_bottom show win-rates 0.64-0.80 with positive or near-zero pnl and EV>0.12 after costs (n>=10); trending regime and 0.5-0.8 strength also hold modest edges. UP_STRONG, volume spikes, and long ttc remain unprofitable. Overall pnl still negative due to variance and a few large losers despite positive avg EV.",
+    "summary": "With n=50 settled trades, DOWN_WEAK (wr 0.6923), 120-240s TTC (0.6667), range_middle (0.6875), range_bottom (0.7273), mixed MTF (0.6538) and dead volume (0.6471) show win-rates comfortably above breakeven with positive realized pnl and n>=8; trending regime and z-score -1..1 also look stable. Most other buckets remain marginal or negative-EV in practice despite positive avg_ev_after_cost. Overall book is still slightly negative due to small sample and a few toxic sub-buckets.",
     "working": [
-     "DOWN direction n=21 WR0.67 EV0.129",
-     "zscore -1..1 n=28 WR0.64 pnl+3.8",
-     "ttc 120-240s n=28 WR0.68 pnl+5.4",
-     "volume active n=19 WR0.68 pnl+9.7",
-     "mtf mixed n=24 WR0.71 pnl+10.0",
-     "DOWN_WEAK n=11 WR0.73 pnl+3.2"
+     "DOWN_WEAK n=13 wr=0.69",
+     "120-240s TTC n=30 wr=0.67",
+     "range_middle n=16 wr=0.69",
+     "range_bottom n=11 wr=0.73",
+     "mixed MTF n=26 wr=0.65",
+     "dead volume n=17 wr=0.65",
+     "bullish supertrend n=21 wr=0.67"
     ],
     "failing": [
-     "UP_STRONG n=14 WR0.43 pnl-17.7",
-     "volume spike n=8 WR0.125 pnl-33.2",
-     "range_top n=11 WR0.27 pnl-24.4",
-     "UP overall n=21 WR0.48 pnl-23.3"
+     "UP_STRONG n=14 wr=0.43",
+     "volume spike n=8 wr=0.125",
+     "range_top n=14 wr=0.29",
+     "<60s TTC n=8 wr=0.125",
+     "UP_WEAK n=8 wr=0.5"
     ],
     "warnings": [
-     "n=42 total remains too small for confirmation; many buckets n<8 ignored; overall realized pnl negative despite positive EV; all data from observe-only mode"
+     "total n=50 still tiny; many buckets near n=8-11 boundary",
+     "realized pnl negative despite positive avg_ev_after_cost across board",
+     "ignore all n<8 buckets entirely"
     ],
     "changes_since_last": [
-     "first analysis; no prior baseline"
+     "first analysis - no prior baseline"
     ],
     "focus_next": [
-     "accumulate samples specifically in DOWN_WEAK + active volume + mixed mtf + zscore -1..1 intersections",
-     "track EV stability and max drawdown per bucket as n grows past 30"
+     "accumulate samples specifically in DOWN_WEAK + 120-240s + range_middle intersection",
+     "track whether dead-volume and mixed-MTF edges persist above n=30",
+     "monitor UP direction for any improvement"
     ]
    },
-   "note_ts": 1782147144.639129,
+   "note_ts": 1782186719.3360035,
    "history": [
     {
-     "ts": 1782141712.5,
-     "summary": "With only 36 settled trades, realized performance remains negative overall (-25 USD) despite positive avg_ev_after_cost across most buckets; the few n>=8 segments showing positive realized pnl are zscore -1..1, volume active, and mtf mixed. Most other buckets exhibit win-rates near or below breakeven with negative pnl and are likely noise given small samples. No confirmed high-confidence profitable regimes exist yet.",
+     "ts": 1782156318.4,
+     "summary": "With only 49 settled trades the sample remains small; DOWN signals (n=27, WR 0.63) and a few buckets with n>=8 (120-240s TTC n=30 WR 0.667, dead volume n=16 WR 0.688, range_middle n=16 WR 0.688, mixed MTF n=25 WR 0.68, range_bottom n=10 WR 0.8) show WR above 0.5 and positive avg_ev_after_cost, while UP signals and several other slices remain unprofitable or noisy.",
+     "changes_since_last": [
+      "first analysis; no prior baseline"
+     ]
+    },
+    {
+     "ts": 1782158126.8,
+     "summary": "With only 49 settled trades, DOWN direction (WR 0.63, n=27) and mixed MTF alignment (WR 0.68, n=25) show the strongest signals above breakeven with positive EV; most other buckets remain too noisy or negative-PnL despite positive avg_ev. Trending regime and squeeze BB dominate volume but deliver flat-to-negative realized PnL. No confirmed profitable patterns yet; all edges appear overfit or cost-drag limited.",
      "changes_since_last": [
       "First analysis; no prior baseline"
      ]
     },
     {
-     "ts": 1782143525.3,
-     "summary": "With only 37 settled trades, no patterns meet strict confirmation criteria (n>=8, win-rate confidently > breakeven, positive realized EV after costs, stable across slices); zscore -1..1 (n=28, wr=0.643, +3.77 pnl), volume active (n=15, wr=0.667), mtf mixed (n=19, wr=0.684), and supertrend bullish (n=21, wr=0.667) show the least negative or positive realized pnl but remain within noise given variance and overall -30 pnl.",
+     "ts": 1782159938.5,
+     "summary": "With 49 settled trades, DOWN direction (esp. DOWN_WEAK n=13 WR=0.69 EV=0.137 and DOWN_STRONG n=14), ttc 120-240s (n=30 WR=0.667), volume dead/active, range_middle/bottom, mtf mixed, zscore -1..1, and trending regime show WR above typical breakeven with positive EV; UP signals and short ttc remain weak. Overall pnl still negative despite positive avg EV, indicating variance or incomplete cost capture in small sample. Most other buckets are noise or n<8.",
+     "changes_since_last": []
+    },
+    {
+     "ts": 1782161743.8,
+     "summary": "With 49 settled trades the sample remains small; only DOWN direction (n=27, wr 0.63), ttc 120-240 s (n=30, wr 0.67, +3.8 USD), volume=dead (n=16, wr 0.69), range_middle/bottom and mixed mtf_alignment show win-rates above breakeven with positive EV after cost and n>=8. All other buckets are either n<8 or exhibit negative realized pnl despite positive avg_ev. No prior analysis exists so all observations are new.",
+     "changes_since_last": []
+    },
+    {
+     "ts": 1782163559.3,
+     "summary": "With 49 settled trades, DOWN_WEAK/DOWN signals in trending regimes show win-rates above breakeven with modestly positive realized PnL in larger buckets (n>=13); 120-240s TTC, dead volume, range middle/bottom, mixed MTF alignment, and bullish supertrend also exhibit confirmed edges after costs. UP_STRONG, short-TTC, spike volume, and range-top buckets are clearly failing with negative EV and sub-breakeven rates. Overall PnL remains negative due to small sample and UP-side drag, but selectivity on DOWN + favorable regimes is directionally validated.",
      "changes_since_last": [
-      "First analysis; no prior baseline available"
+      "First analysis - no prior"
      ]
     },
     {
-     "ts": 1782145335.8,
-     "summary": "With only 39 settled trades, evidence remains too thin for confident confirmation of any edge; most n>=8 buckets show mixed win-rates near 0.5-0.65 with negative realized PnL despite positive avg_ev_after_cost, indicating either cost underestimation or variance. Z-score -1..1 (n=28, wr=0.643, +3.77 PnL), volume=active (n=17, wr=0.647, +5.04 PnL), and ttc=120-240s (n=26, wr=0.654, +0.73 PnL) are the only buckets with both n>=8 and non-negative PnL. DOWN direction and v3 composite slightly outperform UP/v4 but still net negative overall.",
+     "ts": 1782163894.2,
+     "summary": "DOWN direction and DOWN_WEAK signals show confirmed edge with n>=13, win-rates 0.63-0.69 above breakeven, positive EV after cost, and small positive realized PnL; 120-240s TTC, dead volume, range_middle/bottom, and mixed MTF also look robust. UP signals, <60s TTC, volume spikes, and range_top are failing with negative PnL and sub-breakeven rates despite some high EV claims. Overall sample remains tiny (49 settled) with net negative PnL, so most other buckets are still noise or overfit.",
      "changes_since_last": [
       "No prior analysis provided; first observation"
      ]
     },
     {
-     "ts": 1782147144.6,
-     "summary": "With only 42 settled trades total, DOWN_WEAK/DOWN signals, zscore -1..1, ttc 120-240s, active volume, mixed mtf alignment, and range_bottom show win-rates 0.64-0.80 with positive or near-zero pnl and EV>0.12 after costs (n>=10); trending regime and 0.5-0.8 strength also hold modest edges. UP_STRONG, volume spikes, and long ttc remain unprofitable. Overall pnl still negative due to variance and a few large losers despite positive avg EV.",
+     "ts": 1782165529.1,
+     "summary": "With 49 settled trades, DOWN_WEAK/DOWN signals in trending regimes, 120-240s TTC, dead volume, supertrend bullish, range middle/bottom, and mixed MTF show win-rates 0.63-0.80 with positive or near-zero PnL and EV>0.11 after costs (n>=13); UP signals, <60s TTC, volume spikes, and range tops remain unprofitable. Overall book is still negative due to UP and short-TTC noise but selectivity evidence is directionally consistent. Sample remains small so most buckets are still tentative.",
      "changes_since_last": [
-      "first analysis; no prior baseline"
+      "No prior analysis provided; this is baseline"
+     ]
+    },
+    {
+     "ts": 1782166252.3,
+     "summary": "With 49 settled trades, DOWN_WEAK/DOWN signals in dead volume, 120-240s TTC, range_middle/bottom, mixed MTF alignment, and bullish supertrend show win-rates above breakeven with positive realized PnL and n>=8-30; UP signals, <60s TTC, volume spikes, and range_top remain negative-EV. Most buckets still exhibit high variance and negative aggregate PnL despite positive avg_ev_after_cost, indicating costs and small-sample noise dominate. No prior analysis available so all patterns treated as provisional.",
+     "changes_since_last": []
+    },
+    {
+     "ts": 1782168077.7,
+     "summary": "With 49 settled signals, DOWN_WEAK (n=13, WR 0.69), ttc 120-240s (n=30, WR 0.67, +$3.84), range_middle/bottom (n=16/10, WR 0.69/0.80, positive PnL), mixed mtf (n=25, WR 0.68), and dead volume (n=16, WR 0.69) show confirmed positive EV and WR above breakeven after costs. UP signals, <60s ttc, volume spikes, and range_top remain negative EV with no confirmation. Overall book PnL is still negative due to UP and short-hold buckets.",
+     "changes_since_last": [
+      "first analysis, no prior"
+     ]
+    },
+    {
+     "ts": 1782169521.4,
+     "summary": "With 49 settled trades, DOWN signals (esp. DOWN_WEAK n=13 wr=0.69 and DOWN_STRONG n=14 wr=0.57) plus ttc 120-240s (n=30 wr=0.67), mixed mtf_alignment (n=25 wr=0.68), range_middle (n=16 wr=0.69) and range_bottom (n=10 wr=0.80) show win-rates above breakeven with positive avg_ev_after_cost and sufficient samples; these stand out as confirmed while most other buckets remain noisy or under-sampled. Overall pnl remains negative despite positive ev metrics, indicating cost or variance drag. No prior analysis provided so this is baseline.",
+     "changes_since_last": [
+      "Initial analysis; no prior"
+     ]
+    },
+    {
+     "ts": 1782171331.5,
+     "summary": "With 49 settled trades, only a handful of buckets with n>=8 show confirmed edge: DOWN_WEAK (n=13, wr=0.69, +pnl), 120-240s TTC (n=30, wr=0.67, +pnl), volume=dead (n=16, wr=0.69, +pnl), range_middle/bottom (n=16/10), mixed MTF (n=25), and supertrend_bullish (n=21). Most other slices have positive avg_ev_after_cost yet negative realized pnl, indicating either cost underestimation or insufficient sample to overcome variance. Overall selectivity remains extremely high (48 accepted vs 12k rejected) with no material improvement in UP direction.",
+     "changes_since_last": [
+      "No prior analysis provided in input"
+     ]
+    },
+    {
+     "ts": 1782173142.3,
+     "summary": "With 49 settled trades, only a handful of buckets with n>=8 show confirmed positive realized PnL and win-rates above breakeven after costs: 120-240s TTC (n=30), volume=dead (n=16), range_middle (n=16), range_bottom (n=10), and mtf=mixed (n=25). DOWN direction and supertrend_bullish also edge positive while UP, short TTC, volume_spike, and range_top remain clearly loss-making. Most other slices remain too small or mixed to confirm.",
+     "changes_since_last": [
+      "First analysis; no prior results to compare"
+     ]
+    },
+    {
+     "ts": 1782174954.3,
+     "summary": "With 49 settled trades, DOWN signals (esp. DOWN_WEAK), ttc 120-240s, volume=dead, range_middle/bottom, mtf=mixed, and supertrend=bullish show win-rates 0.63-0.80 with positive realized pnl and EV>0.10 after costs (n>=10-30); UP signals, volume=spike, range_top, and ttc<60s are clearly failing. Most other buckets remain noisy or marginal given small n and overall negative realized pnl despite positive EV. No material changes possible without prior_analysis.",
+     "changes_since_last": []
+    },
+    {
+     "ts": 1782176763.8,
+     "summary": "With only 49 settled trades, DOWN signals (esp. DOWN_WEAK n=13 WR 0.69 and ttc 120-240s n=30 WR 0.67) show win-rates above plausible breakeven and positive realized pnl in small samples, while UP signals and short ttc remain negative EV in practice despite positive avg_ev_after_cost. Volume=dead, range_middle/bottom and supertrend_bullish buckets also clear n>=8 thresholds with constructive stats; all other slices are too small or mixed to confirm. Overall book remains slightly negative, indicating edge is still fragile.",
+     "changes_since_last": [
+      "first analysis; no prior reference"
+     ]
+    },
+    {
+     "ts": 1782178574.9,
+     "summary": "With only 49 settled trades, no buckets meet strict criteria for confirmed profitability (win-rate confidently > breakeven + positive realized EV after costs + n>=8); DOWN_WEAK, DOWN direction, 120-240s TTC, mixed MTF, and dead volume show elevated win-rates but still negative aggregate PnL. Most patterns remain noise or overfit given variance, negative realized PnL across nearly all slices, and tiny per-bucket samples. This is the first analysis so no evolution yet observed.",
+     "changes_since_last": [
+      "First analysis; no prior baseline available"
+     ]
+    },
+    {
+     "ts": 1782180385.4,
+     "summary": "DOWN signals (esp. DOWN_WEAK n=13 wr=0.692) and mixed_mtf/range_middle/range_bottom/dead_volume/120-240s_ttc buckets show confirmed positive EV (0.12-0.14) with wr above breakeven and n>=8; trending/-1..1_zscore/bullish_supertrend also stable. UP_STRONG, <60s_ttc, volume_spike and range_top remain negative EV and overfit noise. Overall 49 trades still too small for live but selectivity improving on DOWN.",
+     "changes_since_last": [
+      "DOWN_WEAK now confirmed with n=13",
+      "range_middle/bottom edges stabilized"
+     ]
+    },
+    {
+     "ts": 1782181725.1,
+     "summary": "With 49 settled trades, DOWN signals (esp. DOWN_WEAK), 120-240s TTC, dead volume, range_middle/bottom, mixed MTF, and bullish supertrend show win-rates 0.60-0.80 above breakeven with positive EV_after_cost and n>=8-30, confirming edge; UP_STRONG, <60s TTC, volume spike, and range_top remain negative EV or low WR. Overall PnL still negative due to costs and weak buckets, but selectivity by signal level and regime is improving calibration. No material change possible without prior_analysis.",
+     "changes_since_last": [
+      "No prior_analysis supplied; first calibration pass"
+     ]
+    },
+    {
+     "ts": 1782182834.6,
+     "summary": "With only 49 settled trades, patterns with n>=8 show mixed results: confirmed positive EV and above-breakeven WR appear in ttc 120-240s (n=30, WR 0.667, +3.84 pnl), mixed mtf alignment (n=25, WR 0.68, +5.02 pnl), range_middle (n=16, WR 0.6875, +5.52 pnl), range_bottom (n=10, WR 0.8, +7.32 pnl), dead volume (n=16, WR 0.6875), and DOWN_WEAK signals (n=13, WR 0.6923), while overall pnl remains negative due to poor buckets. Many other dimensions (zscore, adx, supertrend, vwap) show WR near 0.5-0.6 but negative realized pnl and are likely noise given small samples and high variance. No prior analysis exists so all observations are baseline.",
+     "changes_since_last": [
+      "First analysis; no prior baseline available"
+     ]
+    },
+    {
+     "ts": 1782185967.0,
+     "summary": "With n=50 settled signals, DOWN direction (n=28, wr=0.607), DOWN_WEAK (n=13, wr=0.692), 120-240s TTC (n=30, wr=0.667), mixed MTF (n=26, wr=0.654), range_middle/bottom, dead/active volume, and bullish supertrend show win-rates above plausible breakeven with positive avg_ev_after_cost; UP signals and short-TTC buckets remain weak. Overall pnl negative but EV metrics stable across v3/v4 and trending regimes. Sample still too small for high-confidence confirmation beyond a few buckets.",
+     "changes_since_last": [
+      "First analysis; sample reached 50 settled trades with DOWN bias emerging"
+     ]
+    },
+    {
+     "ts": 1782186719.3,
+     "summary": "With n=50 settled trades, DOWN_WEAK (wr 0.6923), 120-240s TTC (0.6667), range_middle (0.6875), range_bottom (0.7273), mixed MTF (0.6538) and dead volume (0.6471) show win-rates comfortably above breakeven with positive realized pnl and n>=8; trending regime and z-score -1..1 also look stable. Most other buckets remain marginal or negative-EV in practice despite positive avg_ev_after_cost. Overall book is still slightly negative due to small sample and a few toxic sub-buckets.",
+     "changes_since_last": [
+      "first analysis - no prior baseline"
      ]
     }
    ]
   },
+  "grok_decider": {
+   "requested": 120,
+   "decided": 116,
+   "errors": 4,
+   "skipped_budget": 0,
+   "latency_sum": 686.318,
+   "graded": 0,
+   "correct": 0,
+   "brier_sum": 0.0,
+   "abstains": 108,
+   "view_graded": 65,
+   "view_correct": 30,
+   "view_brier_sum": 16.48936,
+   "aggression": {
+    "aggression": 0.0,
+    "updates": 3,
+    "recent": [
+     2.5,
+     -2.5,
+     -2.5
+    ]
+   },
+   "by_action": {
+    "no_trade": {
+     "n": 108,
+     "wins": 0,
+     "pnl": 0.0
+    }
+   },
+   "trips": 0,
+   "consec_losses": 2,
+   "daily_loss": 12.5,
+   "daily_key": 20627,
+   "tripped_until": 0.0,
+   "trip_reason": null,
+   "by_context": {
+    "hurst_regime": {
+     "insufficient_data": {
+      "n": 6,
+      "correct": 1
+     },
+     "trending": {
+      "n": 59,
+      "correct": 29
+     }
+    },
+    "markov_state": {
+     "stale_polymarket_up": {
+      "n": 25,
+      "correct": 12
+     },
+     "stale_polymarket_down": {
+      "n": 20,
+      "correct": 10
+     },
+     "chop_noise": {
+      "n": 20,
+      "correct": 8
+     }
+    },
+    "ttc_bucket": {
+     ">=240s": {
+      "n": 65,
+      "correct": 30
+     }
+    },
+    "conviction_bucket": {
+     "coinflip": {
+      "n": 65,
+      "correct": 30
+     }
+    }
+   },
+   "recent": [
+    {
+     "action": "no_trade",
+     "p_up": 0.495,
+     "confidence": 0.0,
+     "outcome_up": false,
+     "view_correct": true,
+     "context": {
+      "hurst_regime": "trending",
+      "markov_state": "stale_polymarket_up",
+      "ttc_bucket": ">=240s",
+      "conviction_bucket": "coinflip"
+     }
+    },
+    {
+     "action": "no_trade",
+     "p_up": 0.498,
+     "confidence": 0.0,
+     "outcome_up": true,
+     "view_correct": false,
+     "context": {
+      "hurst_regime": "trending",
+      "markov_state": "stale_polymarket_down",
+      "ttc_bucket": ">=240s",
+      "conviction_bucket": "coinflip"
+     }
+    },
+    {
+     "action": "no_trade",
+     "p_up": 0.49,
+     "confidence": 0.0,
+     "outcome_up": false,
+     "view_correct": true,
+     "context": {
+      "hurst_regime": "trending",
+      "markov_state": "stale_polymarket_down",
+      "ttc_bucket": ">=240s",
+      "conviction_bucket": "coinflip"
+     }
+    },
+    {
+     "action": "no_trade",
+     "p_up": 0.492,
+     "confidence": 0.0,
+     "outcome_up": true,
+     "view_correct": false,
+     "context": {
+      "hurst_regime": "insufficient_data",
+      "markov_state": "chop_noise",
+      "ttc_bucket": ">=240s",
+      "conviction_bucket": "coinflip"
+     }
+    },
+    {
+     "action": "no_trade",
+     "p_up": 0.497,
+     "confidence": 0.0,
+     "outcome_up": false,
+     "view_correct": true,
+     "context": {
+      "hurst_regime": "trending",
+      "markov_state": "chop_noise",
+      "ttc_bucket": ">=240s",
+      "conviction_bucket": "coinflip"
+     }
+    },
+    {
+     "action": "no_trade",
+     "p_up": 0.499,
+     "confidence": 0.0,
+     "outcome_up": false,
+     "view_correct": true,
+     "context": {
+      "hurst_regime": "trending",
+      "markov_state": "stale_polymarket_down",
+      "ttc_bucket": ">=240s",
+      "conviction_bucket": "coinflip"
+     }
+    },
+    {
+     "action": "no_trade",
+     "p_up": 0.492,
+     "confidence": 0.0,
+     "outcome_up": true,
+     "view_correct": false,
+     "context": {
+      "hurst_regime": "insufficient_data",
+      "markov_state": "stale_polymarket_up",
+      "ttc_bucket": ">=240s",
+      "conviction_bucket": "coinflip"
+     }
+    },
+    {
+     "action": "no_trade",
+     "p_up": 0.46,
+     "confidence": 0.0,
+     "outcome_up": true,
+     "view_correct": false,
+     "context": {
+      "hurst_regime": "trending",
+      "markov_state": "chop_noise",
+      "ttc_bucket": ">=240s",
+      "conviction_bucket": "coinflip"
+     }
+    },
+    {
+     "action": "no_trade",
+     "p_up": 0.498,
+     "confidence": 0.0,
+     "outcome_up": false,
+     "view_correct": true,
+     "context": {
+      "hurst_regime": "trending",
+      "markov_state": "stale_polymarket_up",
+      "ttc_bucket": ">=240s",
+      "conviction_bucket": "coinflip"
+     }
+    },
+    {
+     "action": "no_trade",
+     "p_up": 0.498,
+     "confidence": 0.0,
+     "outcome_up": false,
+     "view_correct": true,
+     "context": {
+      "hurst_regime": "trending",
+      "markov_state": "stale_polymarket_down",
+      "ttc_bucket": ">=240s",
+      "conviction_bucket": "coinflip"
+     }
+    },
+    {
+     "action": "no_trade",
+     "p_up": 0.485,
+     "confidence": 0.0,
+     "outcome_up": true,
+     "view_correct": false,
+     "context": {
+      "hurst_regime": "insufficient_data",
+      "markov_state": "chop_noise",
+      "ttc_bucket": ">=240s",
+      "conviction_bucket": "coinflip"
+     }
+    },
+    {
+     "action": "no_trade",
+     "p_up": 0.492,
+     "confidence": 0.0,
+     "outcome_up": true,
+     "view_correct": false,
+     "context": {
+      "hurst_regime": "trending",
+      "markov_state": "stale_polymarket_up",
+      "ttc_bucket": ">=240s",
+      "conviction_bucket": "coinflip"
+     }
+    }
+   ]
+  },
+  "grok_news": {
+   "calls": 113,
+   "errors": 2,
+   "skipped_budget": 0,
+   "digest": {
+    "sentiment": "neutral",
+    "confidence": 0.55,
+    "headlines": [
+     "Strategy/Saylor adds 520 BTC (~$35M); holdings ~848k BTC (X post ~3:51 GMT)",
+     "BTC ETF daily net inflow reported +$95.67M (XT exchange summary)",
+     "US extends Iran-related license, easing sanctions fears; BTC rebounding to ~$64k (X)",
+     "Ark Invest buys $32M SpaceX shares amid plunge (X ~3:48 GMT)",
+     "Bitcoin liquidation heatmaps show liquidity clusters $65.5k-$66.5k (X)"
+    ],
+    "event_risk": "low"
+   },
+   "ts": 1782186778.7471843
+  },
+  "grok_pending": [
+   {
+    "decision_id": "620867",
+    "price0": 63928.790113627176,
+    "close_ts": 1782186900.0,
+    "action": "no_trade",
+    "p_up": 0.49,
+    "context": {
+     "hurst_regime": "trending",
+     "markov_state": "stale_polymarket_down",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   }
+  ],
+  "recent_windows": [
+   {
+    "close_ts": 1782181800.0,
+    "s_open": 64104.88,
+    "s_close": 64097.57,
+    "outcome": "down",
+    "move_pct": -0.0114
+   },
+   {
+    "close_ts": 1782182100.0,
+    "s_open": 64097.57,
+    "s_close": 64138.63,
+    "outcome": "up",
+    "move_pct": 0.0641
+   },
+   {
+    "close_ts": 1782182400.0,
+    "s_open": 64138.63,
+    "s_close": 64116.12,
+    "outcome": "down",
+    "move_pct": -0.0351
+   },
+   {
+    "close_ts": 1782182700.0,
+    "s_open": 64116.12,
+    "s_close": 64126.51,
+    "outcome": "up",
+    "move_pct": 0.0162
+   },
+   {
+    "close_ts": 1782183000.0,
+    "s_open": 64126.51,
+    "s_close": 64100.61,
+    "outcome": "down",
+    "move_pct": -0.0404
+   },
+   {
+    "close_ts": 1782183300.0,
+    "s_open": 64100.61,
+    "s_close": 64162.05,
+    "outcome": "up",
+    "move_pct": 0.0958
+   },
+   {
+    "close_ts": 1782183600.0,
+    "s_open": 64162.05,
+    "s_close": 64123.58,
+    "outcome": "down",
+    "move_pct": -0.06
+   },
+   {
+    "close_ts": 1782183900.0,
+    "s_open": 64123.58,
+    "s_close": 63952.2,
+    "outcome": "down",
+    "move_pct": -0.2673
+   },
+   {
+    "close_ts": 1782184800.0,
+    "s_open": 63941.33,
+    "s_close": 63975.91,
+    "outcome": "up",
+    "move_pct": 0.0541
+   },
+   {
+    "close_ts": 1782185400.0,
+    "s_open": 63961.15,
+    "s_close": 64018.13,
+    "outcome": "up",
+    "move_pct": 0.0891
+   },
+   {
+    "close_ts": 1782185700.0,
+    "s_open": 64018.13,
+    "s_close": 63950.53,
+    "outcome": "down",
+    "move_pct": -0.1056
+   },
+   {
+    "close_ts": 1782186000.0,
+    "s_open": 63950.53,
+    "s_close": 63908.49,
+    "outcome": "down",
+    "move_pct": -0.0657
+   },
+   {
+    "close_ts": 1782186300.0,
+    "s_open": 63908.49,
+    "s_close": 63920.34,
+    "outcome": "up",
+    "move_pct": 0.0185
+   },
+   {
+    "close_ts": 1782186600.0,
+    "s_open": 63920.34,
+    "s_close": 63928.79,
+    "outcome": "up",
+    "move_pct": 0.0132
+   }
+  ],
   "edge_model": {
    "w": {
-    "hurst": -0.023190407358883405,
-    "autocorr_lag1": -0.02570019175160432,
-    "realized_vol_scaled": -0.08017858269154696,
-    "zscore": 0.3789851106030877,
-    "signal_strength_signed": 0.0376606068259897,
-    "edge_quality_score": -0.07515169075709872,
-    "orderbook_imbalance": 0.1739006152322245
+    "hurst": -0.03620841917987618,
+    "autocorr_lag1": -0.018618550502891535,
+    "realized_vol_scaled": -0.06804511302732733,
+    "zscore": 0.45991127268632576,
+    "signal_strength_signed": 0.08364802373447314,
+    "edge_quality_score": -0.05277767737470958,
+    "orderbook_imbalance": 0.1545905355309825
    },
-   "b": -0.0707927234003904,
-   "n_labeled": 76,
+   "b": -0.038630237501875456,
+   "n_labeled": 90,
    "calib": {
     "0.5-0.6": {
-     "n": 29,
-     "up": 14
+     "n": 33,
+     "up": 16
     },
     "0.4-0.5": {
-     "n": 41,
-     "up": 20
+     "n": 47,
+     "up": 24
     },
     "0.6-0.7": {
      "n": 1,
      "up": 0
     },
     "0.3-0.4": {
-     "n": 4,
-     "up": 1
+     "n": 7,
+     "up": 2
     },
     "0.2-0.3": {
-     "n": 1,
+     "n": 2,
      "up": 0
     }
    },
@@ -12224,6 +13093,62 @@
     [
      0.550587,
      1.0
+    ],
+    [
+     0.357197,
+     0.0
+    ],
+    [
+     0.458177,
+     1.0
+    ],
+    [
+     0.439816,
+     0.0
+    ],
+    [
+     0.497049,
+     1.0
+    ],
+    [
+     0.327644,
+     0.0
+    ],
+    [
+     0.243458,
+     0.0
+    ],
+    [
+     0.406453,
+     1.0
+    ],
+    [
+     0.540871,
+     0.0
+    ],
+    [
+     0.499607,
+     0.0
+    ],
+    [
+     0.393149,
+     1.0
+    ],
+    [
+     0.592717,
+     1.0
+    ],
+    [
+     0.553999,
+     0.0
+    ],
+    [
+     0.566611,
+     1.0
+    ],
+    [
+     0.480003,
+     1.0
     ]
    ]
   },
@@ -12252,51 +13177,51 @@
       "up": 2
      },
      "trending": {
-      "n": 205,
-      "wins": 108,
-      "pnl": -84.363452,
-      "gross_win": 400.636548,
-      "gross_loss": 485.0,
-      "ev": 5.273947,
-      "up": 108
+      "n": 217,
+      "wins": 114,
+      "pnl": -89.807527,
+      "gross_win": 417.692473,
+      "gross_loss": 507.5,
+      "ev": 6.341877,
+      "up": 113
      },
      "insufficient_data": {
-      "n": 24,
+      "n": 26,
       "wins": 9,
-      "pnl": -31.477268,
+      "pnl": -36.477268,
       "gross_win": 43.522732,
-      "gross_loss": 75.0,
-      "ev": 0.239603,
-      "up": 11
+      "gross_loss": 80.0,
+      "ev": 0.382603,
+      "up": 13
      }
     },
     "zscore_bucket": {
      "-1..1": {
-      "n": 115,
-      "wins": 58,
-      "pnl": -56.757517,
-      "gross_win": 228.242483,
-      "gross_loss": 285.0,
-      "ev": 3.829608,
-      "up": 67
+      "n": 122,
+      "wins": 61,
+      "pnl": -65.346433,
+      "gross_win": 237.153567,
+      "gross_loss": 302.5,
+      "ev": 4.473249,
+      "up": 70
      },
      "na": {
-      "n": 29,
+      "n": 31,
       "wins": 10,
-      "pnl": -52.803949,
+      "pnl": -57.803949,
       "gross_win": 42.196051,
-      "gross_loss": 95.0,
-      "ev": 0.239603,
-      "up": 13
+      "gross_loss": 100.0,
+      "ev": 0.345603,
+      "up": 15
      },
      "1..2": {
-      "n": 28,
-      "wins": 12,
-      "pnl": -23.533199,
-      "gross_win": 56.466801,
-      "gross_loss": 80.0,
-      "ev": 0.830092,
-      "up": 17
+      "n": 32,
+      "wins": 14,
+      "pnl": -23.324866,
+      "gross_win": 61.675134,
+      "gross_loss": 85.0,
+      "ev": 1.090092,
+      "up": 19
      },
      "<=-2": {
       "n": 13,
@@ -12317,70 +13242,70 @@
       "up": 11
      },
      "-2..-1": {
-      "n": 36,
-      "wins": 22,
-      "pnl": 8.287739,
-      "gross_win": 78.287739,
+      "n": 37,
+      "wins": 23,
+      "pnl": 11.224247,
+      "gross_win": 81.224247,
       "gross_loss": 70.0,
-      "ev": 0.769666,
+      "ev": 0.970955,
       "up": 10
      }
     },
     "ttc_bucket": {
      "120-240s": {
-      "n": 53,
-      "wins": 29,
-      "pnl": -40.945128,
-      "gross_win": 79.054872,
-      "gross_loss": 120.0,
-      "ev": 3.147155,
-      "up": 19
+      "n": 57,
+      "wins": 31,
+      "pnl": -42.262219,
+      "gross_win": 85.237781,
+      "gross_loss": 127.5,
+      "ev": 3.470833,
+      "up": 20
      },
      ">=240s": {
-      "n": 165,
-      "wins": 83,
-      "pnl": -58.011964,
-      "gross_win": 351.988036,
-      "gross_loss": 410.0,
-      "ev": 1.099075,
-      "up": 93
+      "n": 171,
+      "wins": 85,
+      "pnl": -63.011964,
+      "gross_win": 356.988036,
+      "gross_loss": 420.0,
+      "ev": 1.386075,
+      "up": 97
      },
      "60-120s": {
-      "n": 5,
-      "wins": 4,
-      "pnl": 6.329114,
-      "gross_win": 11.329114,
+      "n": 6,
+      "wins": 5,
+      "pnl": 9.265622,
+      "gross_win": 14.265622,
       "gross_loss": 5.0,
-      "ev": 0.528245,
+      "ev": 0.674882,
       "up": 3
      },
      "<60s": {
-      "n": 5,
-      "wins": 0,
-      "pnl": -25.0,
-      "gross_win": 0.0,
-      "gross_loss": 25.0,
-      "ev": 0.894494,
-      "up": 3
+      "n": 8,
+      "wins": 1,
+      "pnl": -32.063492,
+      "gross_win": 2.936508,
+      "gross_loss": 35.0,
+      "ev": 1.348109,
+      "up": 5
      }
     },
     "confidence_tier": {
      "high": {
-      "n": 164,
-      "wins": 86,
-      "pnl": -82.311375,
-      "gross_win": 307.688625,
-      "gross_loss": 390.0,
-      "ev": 4.001184,
-      "up": 85
+      "n": 177,
+      "wins": 91,
+      "pnl": -95.463783,
+      "gross_win": 322.036217,
+      "gross_loss": 417.5,
+      "ev": 5.189114,
+      "up": 92
      },
      "medium": {
-      "n": 42,
-      "wins": 21,
-      "pnl": -13.457157,
-      "gross_win": 91.542843,
+      "n": 43,
+      "wins": 22,
+      "pnl": -10.748824,
+      "gross_win": 94.251176,
       "gross_loss": 105.0,
-      "ev": 0.852533,
+      "ev": 0.875533,
       "up": 20
      },
      "low": {
@@ -12395,13 +13320,13 @@
     },
     "spread_bucket": {
      "<=0.01": {
-      "n": 210,
-      "wins": 107,
-      "pnl": -105.750367,
-      "gross_win": 409.249633,
-      "gross_loss": 515.0,
-      "ev": 5.41403,
-      "up": 109
+      "n": 224,
+      "wins": 113,
+      "pnl": -116.194442,
+      "gross_win": 426.305558,
+      "gross_loss": 542.5,
+      "ev": 6.62496,
+      "up": 116
      },
      "0.01-0.03": {
       "n": 7,
@@ -12424,71 +13349,71 @@
     },
     "depth_bucket": {
      ">=1000": {
-      "n": 218,
-      "wins": 112,
-      "pnl": -97.242808,
-      "gross_win": 432.757192,
-      "gross_loss": 530.0,
-      "ev": 5.668969,
-      "up": 113
+      "n": 232,
+      "wins": 118,
+      "pnl": -107.686883,
+      "gross_win": 449.813117,
+      "gross_loss": 557.5,
+      "ev": 6.879899,
+      "up": 120
      }
     },
     "markov_state": {
      "stale_polymarket_up": {
-      "n": 64,
+      "n": 69,
       "wins": 34,
-      "pnl": -50.429148,
+      "pnl": -65.429148,
       "gross_win": 99.570852,
-      "gross_loss": 150.0,
-      "ev": 1.660125,
-      "up": 38
+      "gross_loss": 165.0,
+      "ev": 2.014144,
+      "up": 42
      },
      "chop_noise": {
-      "n": 82,
-      "wins": 35,
-      "pnl": -47.045844,
-      "gross_win": 187.954156,
-      "gross_loss": 235.0,
-      "ev": 2.155958,
-      "up": 46
+      "n": 85,
+      "wins": 37,
+      "pnl": -43.362935,
+      "gross_win": 194.137065,
+      "gross_loss": 237.5,
+      "ev": 2.409617,
+      "up": 47
      },
      "stale_polymarket_down": {
-      "n": 74,
-      "wins": 44,
-      "pnl": -2.075508,
-      "gross_win": 147.924492,
-      "gross_loss": 150.0,
-      "ev": 1.658711,
-      "up": 29
+      "n": 79,
+      "wins": 48,
+      "pnl": 3.797508,
+      "gross_win": 158.797508,
+      "gross_loss": 155.0,
+      "ev": 2.141425,
+      "up": 30
      },
      "resolution_danger": {
-      "n": 1,
+      "n": 2,
       "wins": 0,
-      "pnl": -5.0,
+      "pnl": -10.0,
       "gross_win": 0.0,
-      "gross_loss": 5.0,
-      "ev": 0.194175,
-      "up": 1
+      "gross_loss": 10.0,
+      "ev": 0.314713,
+      "up": 2
      }
     },
     "edge_quality_bucket": {
      "high": {
-      "n": 218,
-      "wins": 113,
-      "pnl": -89.5505,
-      "gross_win": 435.4495,
-      "gross_loss": 525.0,
-      "ev": 5.3101,
-      "up": 112
+      "n": 231,
+      "wins": 119,
+      "pnl": -94.994575,
+      "gross_win": 452.505425,
+      "gross_loss": 547.5,
+      "ev": 6.400492,
+      "up": 118
      },
      "medium": {
-      "n": 3,
+      "n": 4,
       "wins": 0,
-      "pnl": -15.0,
+      "pnl": -20.0,
       "gross_win": 0.0,
-      "gross_loss": 15.0,
-      "ev": 0.358869,
-      "up": 2
+      "gross_loss": 20.0,
+      "ev": 0.479407,
+      "up": 3
      }
     },
     "stale_divergence": {
@@ -12502,21 +13427,21 @@
       "up": 0
      },
      "not_stale": {
-      "n": 43,
-      "wins": 25,
-      "pnl": -16.003827,
-      "gross_win": 73.996173,
-      "gross_loss": 90.0,
-      "ev": 4.524532,
-      "up": 18
+      "n": 56,
+      "wins": 31,
+      "pnl": -21.447902,
+      "gross_win": 91.052098,
+      "gross_loss": 112.5,
+      "ev": 5.560443,
+      "up": 25
      },
      "already_priced": {
-      "n": 4,
+      "n": 5,
       "wins": 2,
-      "pnl": -5.363248,
+      "pnl": -10.363248,
       "gross_win": 4.636752,
-      "gross_loss": 10.0,
-      "ev": 0.613664,
+      "gross_loss": 15.0,
+      "ev": 0.788683,
       "up": 2
      },
      "stale_polymarket_down": {
@@ -12531,40 +13456,40 @@
     },
     "direction": {
      "up": {
-      "n": 112,
+      "n": 113,
       "wins": 60,
-      "pnl": -28.798173,
+      "pnl": -33.798173,
       "gross_win": 231.201827,
-      "gross_loss": 260.0,
-      "ev": 2.688279,
+      "gross_loss": 265.0,
+      "ev": 2.863298,
       "up": 60
      },
      "down": {
-      "n": 127,
-      "wins": 63,
-      "pnl": -92.038591,
-      "gross_win": 227.961409,
-      "gross_loss": 320.0,
-      "ev": 2.98069,
-      "up": 64
+      "n": 140,
+      "wins": 69,
+      "pnl": -97.482666,
+      "gross_win": 245.017334,
+      "gross_loss": 342.5,
+      "ev": 4.016601,
+      "up": 71
      }
     }
    }
   },
   "selectivity_gate": {
    "accepted": 1,
-   "rejected": 727,
-   "explored": 38,
+   "rejected": 837,
+   "explored": 44,
    "reject_reasons": {
     "bad_bucket:ttc_bucket=>=240s": 4,
-    "bad_bucket:confidence_tier=high": 7,
+    "bad_bucket:confidence_tier=high": 17,
     "bad_bucket:zscore_bucket=-1..1": 11,
     "bad_bucket:confidence_tier=medium": 1,
     "bad_bucket:hurst_regime=trending": 516,
     "bad_bucket:ttc_bucket=120-240s": 114,
-    "bad_bucket:direction=down": 45,
-    "bad_bucket:markov_state=stale_polymarket_up": 7,
-    "bad_bucket:spread_bucket=<=0.01": 22
+    "bad_bucket:direction=down": 95,
+    "bad_bucket:markov_state=stale_polymarket_up": 14,
+    "bad_bucket:spread_bucket=<=0.01": 65
    },
    "by_decision": {
     "passed": {
@@ -12573,24 +13498,29 @@
      "pnl": -10.0
     },
     "explored": {
-     "n": 38,
-     "wins": 23,
-     "pnl": -10.967923
+     "n": 44,
+     "wins": 26,
+     "pnl": -16.620331
+    },
+    "grok_follow": {
+     "n": 8,
+     "wins": 3,
+     "pnl": -4.791667
     }
    }
   },
   "tv_context_gate": {
-   "passed": 284,
-   "blocked": 190,
-   "explored": 8,
+   "passed": 398,
+   "blocked": 217,
+   "explored": 10,
    "block_reasons": {
     "tv_context_volume_spike": 111,
-    "tv_context_ttc_too_far": 58,
+    "tv_context_ttc_too_far": 85,
     "tv_context_hurst_noise": 21
    },
    "explore_reasons": {
     "tv_context_volume_spike": 4,
-    "tv_context_ttc_too_far": 5,
+    "tv_context_ttc_too_far": 7,
     "tv_context_hurst_noise": 2
    }
   },
@@ -12602,36 +13532,36 @@
   "late_window_edge": {
    "cohorts": {
     "other": {
-     "n": 9,
-     "wins": 6,
-     "pnl": 6.611886,
-     "ev": 0.994209
+     "n": 21,
+     "wins": 10,
+     "pnl": -9.705205,
+     "ev": 1.857213
     },
     "late_high_conviction": {
-     "n": 3,
-     "wins": 0,
-     "pnl": -15.0,
-     "ev": 0.231584
+     "n": 5,
+     "wins": 2,
+     "pnl": -9.126984,
+     "ev": 0.57951
     }
    },
    "by_conviction": {
     "<0.2": {
-     "n": 2,
-     "wins": 2,
-     "pnl": 15.151515,
-     "ev": 0.204682
+     "n": 10,
+     "wins": 5,
+     "pnl": 7.859848,
+     "ev": 0.70347
     },
     "0.2-0.4": {
-     "n": 3,
-     "wins": 0,
-     "pnl": -15.0,
-     "ev": 0.381312
+     "n": 6,
+     "wins": 1,
+     "pnl": -19.025424,
+     "ev": 0.570509
     },
     "0.4-0.6": {
-     "n": 2,
-     "wins": 1,
-     "pnl": -2.307692,
-     "ev": 0.207257
+     "n": 4,
+     "wins": 2,
+     "pnl": -4.371184,
+     "ev": 0.528913
     },
     ">=0.8": {
      "n": 2,
@@ -12640,44 +13570,56 @@
      "ev": 0.188003
     },
     "0.6-0.8": {
-     "n": 3,
-     "wins": 1,
-     "pnl": -8.055556,
-     "ev": 0.244539
+     "n": 4,
+     "wins": 2,
+     "pnl": -5.119048,
+     "ev": 0.445828
     }
    },
    "by_ttc": {
     "120-240s": {
-     "n": 6,
-     "wins": 5,
-     "pnl": 11.611886,
-     "ev": 0.62291
+     "n": 10,
+     "wins": 7,
+     "pnl": 10.294795,
+     "ev": 0.946588
     },
     "<60s": {
-     "n": 4,
-     "wins": 0,
-     "pnl": -20.0,
-     "ev": 0.452063
+     "n": 7,
+     "wins": 1,
+     "pnl": -27.063492,
+     "ev": 0.905678
     },
     "60-120s": {
-     "n": 2,
-     "wins": 1,
-     "pnl": 0.0,
-     "ev": 0.15082
+     "n": 3,
+     "wins": 2,
+     "pnl": 2.936508,
+     "ev": 0.297457
+    },
+    ">=240s": {
+     "n": 6,
+     "wins": 2,
+     "pnl": -5.0,
+     "ev": 0.287
     }
    },
    "by_entry_mode": {
     "standard": {
-     "n": 9,
-     "wins": 6,
-     "pnl": 6.611886,
-     "ev": 0.994209
+     "n": 13,
+     "wins": 7,
+     "pnl": -4.913538,
+     "ev": 1.482213
     },
     "late_window": {
-     "n": 3,
-     "wins": 0,
-     "pnl": -15.0,
-     "ev": 0.231584
+     "n": 5,
+     "wins": 2,
+     "pnl": -9.126984,
+     "ev": 0.57951
+    },
+    "grok_explore": {
+     "n": 8,
+     "wins": 3,
+     "pnl": -4.791667,
+     "ev": 0.375
     }
    }
   },
