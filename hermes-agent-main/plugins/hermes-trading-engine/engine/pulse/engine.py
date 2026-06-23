@@ -464,6 +464,7 @@ class PulseEngine:
         self.grok_decider = None
         self.grok_news = None
         self._grok_pending: list = []             # pending decision grades (decision_id/price0/close)
+        self._recent_windows: list = []           # rolling recent BTC 5m window outcomes (for Grok)
         try:
             from engine.pulse.grok_intel import (GrokBudget, GrokSignalAnalyst,
                                                  GrokSignalPredictor, xai_key)
@@ -637,6 +638,7 @@ class PulseEngine:
         if self.grok_news is not None:
             self.grok_news.load_state(acct.get("grok_news") or {})
         self._grok_pending = list(acct.get("grok_pending") or [])
+        self._recent_windows = list(acct.get("recent_windows") or [])
         if self.edge_model is not None:          # the learned edge model accumulates across runs
             self.edge_model.load_state(acct.get("edge_model") or {})
         ev = acct.get("ev") or {}
@@ -1434,6 +1436,7 @@ class PulseEngine:
             "payoff": {"up": self._reward_risk(up_ask), "down": self._reward_risk(dn_ask),
                        "min_reward_risk_floor": self.cfg.min_reward_risk,
                        "note": "only trade a side if your P(win) clears its breakeven_win_rate after costs"},
+            "recent_windows": self._recent_windows_view(10),
             "tradingview_signal": tv,
             "news": (self.grok_news.latest() if self.grok_news is not None else None),
             "research": {"hurst_regime": rf.get("hurst_regime"),
@@ -1499,12 +1502,40 @@ class PulseEngine:
                 still.append(p)
                 continue
             if px is not None:
+                s_open, s_close = float(p["price0"]), float(px)
+                outcome_up = s_close >= s_open
                 self.grok_decider.grade_fields(
                     action=p.get("action"), p_up=p.get("p_up"), context=p.get("context") or {},
-                    outcome_up=bool(float(px) >= float(p["price0"])))
+                    outcome_up=outcome_up)
+                # record the resolved window so Grok sees the recent sequence of outcomes
+                self._recent_windows.append({
+                    "close_ts": round(float(p["close_ts"]), 1), "s_open": round(s_open, 2),
+                    "s_close": round(s_close, 2), "outcome": ("up" if outcome_up else "down"),
+                    "move_pct": (round((s_close - s_open) / s_open * 100, 4) if s_open else None)})
+                self._recent_windows = self._recent_windows[-40:]
             elif now <= p["close_ts"] + 600:
                 still.append(p)
         self._grok_pending = still[-2000:]
+
+    def _recent_windows_view(self, n: int = 10) -> dict:
+        """Recent resolved BTC 5m windows + a momentum summary (up-rate + current streak) for Grok."""
+        rows = self._recent_windows[-n:]
+        full = self._recent_windows[-20:]
+        ups = sum(1 for w in full if w.get("outcome") == "up")
+        streak = 0
+        last = None
+        for w in reversed(full):
+            o = w.get("outcome")
+            if last is None:
+                last, streak = o, 1
+            elif o == last:
+                streak += 1
+            else:
+                break
+        return {"windows": rows,
+                "n": len(full),
+                "up_rate": (round(ups / len(full), 3) if full else None),
+                "current_streak": ((last or "") + "x" + str(streak)) if last else None}
 
     def _tv_signal_gate(self, tv_feature: "dict | None", side: "str | None") -> "str | None":
         """Restrict-only TradingView indication gate. Returns None if the trade is permitted, else
@@ -1842,6 +1873,7 @@ class PulseEngine:
                               "grok_news": (self.grok_news.to_state()
                                             if self.grok_news is not None else {}),
                               "grok_pending": self._grok_pending[-2000:],
+                              "recent_windows": self._recent_windows[-40:],
                               "edge_model": (self.edge_model.to_state()
                                              if self.edge_model is not None else {}),
                               "selectivity_evidence": self.selectivity_evidence.to_state(),

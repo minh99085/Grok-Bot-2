@@ -339,6 +339,20 @@ def test_engine_bundle_is_fully_structured(tmp_path):
     assert "breakeven_win_rate" in (b["payoff"]["up"] or {})        # binary payoff bar present
     assert "fair_minus_poly" in b["polymarket"]                     # fair-vs-market divergence present
     assert "win_rate" in b["account_state"]
+    # recent resolved 5-min windows + momentum summary are present for Grok to reason over
+    rw = b["recent_windows"]
+    assert "windows" in rw and "up_rate" in rw and "current_streak" in rw
+    assert isinstance(rw["windows"], list)
+
+
+def test_recent_windows_view_summary():
+    # the recent-windows momentum summary computes up-rate + current streak from resolved windows
+    from engine.pulse.engine import PulseEngine
+    eng = PulseEngine.__new__(PulseEngine)             # bypass __init__ for a pure-method unit test
+    eng._recent_windows = [{"outcome": "down"}, {"outcome": "up"}, {"outcome": "up"},
+                           {"outcome": "up"}]
+    v = eng._recent_windows_view(10)
+    assert v["n"] == 4 and v["up_rate"] == 0.75 and v["current_streak"] == "upx3"
 
 
 def test_engine_follow_fraction_zero_uses_baseline(tmp_path):
