@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import time
 
-from engine.pulse.grok_decider import (normalize_decision, make_decider_fn, GrokDecider)
+from engine.pulse.grok_decider import (normalize_decision, make_decider_fn, GrokDecider,
+                                        AggressionController)
 from engine.pulse.grok_intel import GrokBudget
 from engine.pulse.markets import OrderBook, PulseWindow
 from engine.pulse.price import PulsePriceFeed
@@ -144,6 +145,7 @@ class _FakeDecider:
         self._decision = decision
         self._follow_ok = follow_ok
         self._policy_mode = policy_mode
+        self.aggr = AggressionController()             # real controller (modulates explore/size)
         self.graded = []
         self.requested = 0
         self.follow_results = []
@@ -361,6 +363,29 @@ def test_recent_windows_view_summary():
                            {"outcome": "up"}]
     v = eng._recent_windows_view(10)
     assert v["n"] == 4 and v["up_rate"] == 0.75 and v["current_streak"] == "upx3"
+
+
+def test_aggression_loosens_on_profit_tightens_on_loss():
+    c = AggressionController(start=0.2, step_up=0.05, step_down=0.1, eval_window=12, max_aggr=1.0)
+    base = c.aggression
+    for _ in range(12):                            # consistent profits -> loosen
+        c.record(2.0)
+    assert c.aggression > base
+    assert c.effective_explore_rate(0.3) > 0.3     # explores more
+    assert c.size_scale() > 1.0                    # sizes up
+    assert c.exploit_margin(0.0) < 0.0             # looser exploit bar
+    hi = c.aggression
+    for _ in range(12):                            # then losses -> tighten (faster, step_down>up)
+        c.record(-5.0)
+    assert c.aggression < hi
+    # bounded
+    for _ in range(50):
+        c.record(-5.0)
+    assert c.aggression >= 0.0
+    # state round-trip
+    c2 = AggressionController()
+    c2.load_state(c.to_state())
+    assert abs(c2.aggression - c.aggression) < 1e-9
 
 
 def test_context_policy_exploit_avoid_explore():

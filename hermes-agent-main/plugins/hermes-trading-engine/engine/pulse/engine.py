@@ -925,10 +925,13 @@ class PulseEngine:
                                                or grok_dec.get("p_up") is None or actionable)
                        else self.grok_decider.context_policy(grok_dec.get("context") or {}))
                 exploit = (pol["mode"] == "exploit")           # proven-edge context -> act on view
+                # self-tuning: aggression raises the exploration rate as acted trades turn profitable
+                eff_explore_rate = self.grok_decider.aggr.effective_explore_rate(
+                    self.cfg.grok_decider_explore_rate)
                 explore = (not actionable and not exploit and grok_dec is not None
                            and grok_dec.get("p_up") is not None and pol["mode"] != "avoid"
-                           and self.cfg.grok_decider_explore_rate > 0.0
-                           and self._grok_rng.random() < self.cfg.grok_decider_explore_rate)
+                           and eff_explore_rate > 0.0
+                           and self._grok_rng.random() < eff_explore_rate)
                 if not actionable and not exploit and not explore:
                     if pol["mode"] == "avoid":
                         self._grok_policy_counts["avoid"] += 1
@@ -953,7 +956,8 @@ class PulseEngine:
                     side = "up" if pu >= 0.5 else "down"
                     entry_mode = "grok_adaptive"
                     grok_oprob = pu if side == "up" else (1.0 - pu)
-                    grok_size_frac = max(0.0, min(1.0, 0.5 * float(pol.get("size_mult") or 1.0)))
+                    grok_size_frac = max(0.0, min(1.0, 0.5 * float(pol.get("size_mult") or 1.0)
+                                                  * self.grok_decider.aggr.size_scale()))
                     self._grok_policy_counts["exploit"] += 1
                 else:                              # exploration trade on Grok's directional view
                     pu = float(grok_dec.get("p_up"))
@@ -961,7 +965,8 @@ class PulseEngine:
                     entry_mode = "grok_explore"
                     grok_oprob = pu if side == "up" else (1.0 - pu)
                     grok_size_frac = max(0.0, min(1.0,
-                                                  float(self.cfg.grok_decider_explore_size_fraction)))
+                                                  float(self.cfg.grok_decider_explore_size_fraction)
+                                                  * self.grok_decider.aggr.size_scale()))
                     self._grok_policy_counts["explore"] += 1
                 book = w.up_book if side == "up" else w.down_book
                 ask = book.best_ask if book else None

@@ -62,6 +62,65 @@ def _wilson_upper(correct: int, n: int, z: float = 1.64) -> Optional[float]:
     return min(1.0, center + margin)
 
 
+class AggressionController:
+    """Self-tuning aggression for the adaptive loop: LOOSEN as acted trades turn profitable, TIGHTEN
+    when they lose — and repeat. ``aggression`` in [min,max] scales exploration rate, the exploit
+    confidence bar (looser when winning), and position size. Asymmetric (steps down faster than up)
+    so it backs off losses quickly. The hard circuit breaker remains the floor under this."""
+
+    def __init__(self, *, min_aggr: float = 0.0, max_aggr: float = 1.0, start: float = 0.0,
+                 step_up: float = 0.05, step_down: float = 0.1, eval_window: int = 12):
+        self.min = float(min_aggr)
+        self.max = float(max_aggr)
+        self.aggression = float(start)
+        self.step_up = float(step_up)
+        self.step_down = float(step_down)
+        self._recent: deque = deque(maxlen=int(eval_window))
+        self.updates = 0
+
+    def record(self, pnl: float) -> None:
+        """Feed one settled ACTED-trade PnL; ratchet aggression on the recent realized net."""
+        self._recent.append(float(pnl or 0.0))
+        self.updates += 1
+        if len(self._recent) < max(3, self._recent.maxlen // 2):
+            return                                  # need a little data before adjusting
+        net = sum(self._recent)
+        if net > 0:
+            self.aggression = min(self.max, self.aggression + self.step_up)   # winning -> loosen
+        elif net < 0:
+            self.aggression = max(self.min, self.aggression - self.step_down)  # losing -> tighten
+
+    def effective_explore_rate(self, base: float) -> float:
+        """More exploration when winning (up to ~0.95), never below the configured base."""
+        return max(float(base), min(0.95, float(base) + self.aggression * (0.95 - float(base))))
+
+    def exploit_margin(self, base: float) -> float:
+        """Lower the exploit confidence bar as aggression rises (looser, bounded so it can dip a
+        little below 0.5 only when consistently winning)."""
+        return max(-0.05, float(base) - self.aggression * 0.10)
+
+    def size_scale(self) -> float:
+        """Scale position size up to 2x with aggression."""
+        return 1.0 + self.aggression
+
+    def status(self) -> dict:
+        return {"aggression": round(self.aggression, 4), "min": self.min, "max": self.max,
+                "step_up": self.step_up, "step_down": self.step_down,
+                "recent_net_pnl": round(sum(self._recent), 4), "updates": self.updates,
+                "note": "loosens (more explore/looser exploit/larger size) as acted trades profit; "
+                        "tightens on losses; circuit breaker is the hard floor."}
+
+    def to_state(self) -> dict:
+        return {"aggression": self.aggression, "updates": self.updates, "recent": list(self._recent)}
+
+    def load_state(self, data: dict) -> None:
+        if not data:
+            return
+        self.aggression = max(self.min, min(self.max, float(data.get("aggression", self.aggression))))
+        self.updates = int(data.get("updates", 0) or 0)
+        self._recent = deque((data.get("recent") or []), maxlen=self._recent.maxlen)
+
+
 def _clamp01(v, default: Optional[float] = None) -> Optional[float]:
     try:
         return max(0.0, min(1.0, float(v)))
@@ -270,6 +329,7 @@ class GrokDecider:
         self.view_promote_min_samples = int(view_promote_min_samples)
         self.adaptive_min_samples = int(adaptive_min_samples)
         self.adaptive_margin = float(adaptive_margin)
+        self.aggr = AggressionController()          # self-tuning loosen-on-profit / tighten-on-loss
         self._fn = decider_fn if decider_fn is not None else make_decider_fn()
         self._budget = budget
         self.mode = mode if mode in ("off", "shadow", "follow") else "off"
@@ -378,6 +438,8 @@ class GrokDecider:
             self._consec_losses = 0 if won else (self._consec_losses + 1)
             if self.max_consecutive_losses > 0 and self._consec_losses >= self.max_consecutive_losses:
                 self._trip(now, "consecutive_losses")
+        # self-tuning: loosen on profit / tighten on loss (outside the breaker lock)
+        self.aggr.record(pnl)
 
     def _breaker_status_locked(self, now: float) -> dict:
         tripped = now < self._tripped_until
@@ -523,7 +585,8 @@ class GrokDecider:
         ``explore`` (uncertain/cold -> sample). This concentrates trading where edge is proven and
         stops wasting trades where it isn't — active learning, not blind exploration."""
         ms = self.adaptive_min_samples if min_samples is None else int(min_samples)
-        mg = self.adaptive_margin if margin is None else float(margin)
+        # exploit bar loosens as aggression rises (winning) and tightens on losses
+        mg = self.aggr.exploit_margin(self.adaptive_margin) if margin is None else float(margin)
         best = None       # (dim, bucket, n, lower)
         worst_upper = None
         with self._lock:
@@ -570,6 +633,7 @@ class GrokDecider:
                 "graded_directional": self.graded, "direction_accuracy": acc, "brier": brier,
                 "views_graded": self.view_graded, "view_accuracy": v_acc, "view_brier": v_brier,
                 "view_edge_candidates": self._view_edge_candidates_locked(),
+                "aggression": self.aggr.status(),
                 "abstains": self.abstains, "by_action": by_action,
                 "accuracy_by_context": {
                     dim: {b: {"n": s["n"],
@@ -591,6 +655,7 @@ class GrokDecider:
                     "brier_sum": round(self.brier_sum, 6), "abstains": self.abstains,
                     "view_graded": self.view_graded, "view_correct": self.view_correct,
                     "view_brier_sum": round(self.view_brier_sum, 6),
+                    "aggression": self.aggr.to_state(),
                     "by_action": {a: dict(s) for a, s in self.by_action.items()},
                     "trips": self.trips, "consec_losses": self._consec_losses,
                     "daily_loss": round(self._daily_loss, 4), "daily_key": self._daily_key,
@@ -615,6 +680,7 @@ class GrokDecider:
             self.view_graded = int(data.get("view_graded", 0) or 0)
             self.view_correct = int(data.get("view_correct", 0) or 0)
             self.view_brier_sum = float(data.get("view_brier_sum", 0.0) or 0.0)
+            self.aggr.load_state(data.get("aggression") or {})
             self.by_action = {a: {"n": int(s.get("n", 0) or 0), "wins": int(s.get("wins", 0) or 0),
                                   "pnl": float(s.get("pnl", 0.0) or 0.0)}
                               for a, s in (data.get("by_action") or {}).items()}
