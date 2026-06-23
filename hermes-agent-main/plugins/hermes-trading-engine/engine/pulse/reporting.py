@@ -284,6 +284,21 @@ def build_full_report_md(light: dict, status: Optional[dict] = None,
     h("12. Edge signal & readiness")
     out.append("edge_signal `%s`" % json.dumps({k: es.get(k) for k in list(es)[:8]},
                                                default=str)[:700])
+    cl = light.get("cex_lead_edge", {}) or {}
+    if cl.get("enabled"):
+        out.append("\n**CEX-lead latency edge** (grades CEX-implied P(up) vs the MARKET price): "
+                   "mode `%s` · affects_trading %s · signals_seen %s · graded %s · drove %s · "
+                   "any_proven (beats market) **%s**"
+                   % (cl.get("mode"), cl.get("affects_trading"), cl.get("signals_seen"),
+                      cl.get("graded"), cl.get("drove_entries"), cl.get("any_proven")))
+        rows = cl.get("buckets") or []
+        if rows:
+            table([[b.get("bucket"), b.get("n"), b.get("accuracy"), b.get("brier_cex"),
+                    b.get("brier_market"), b.get("beats_market"), b.get("avg_pnl_per_trade"),
+                    b.get("proven")] for b in rows[:6]],
+                  header=["divergence", "n", "acc", "brier_cex", "brier_mkt", "beats_mkt",
+                          "avg_pnl/u", "proven"])
+        out.append("_promotion: %s_" % cl.get("promotion_rule"))
     out.append("\nreadiness `%s`" % (light.get("readiness", {})))
 
     h("13. Recent paper positions")
