@@ -27,6 +27,8 @@ import math
 from collections import deque
 from typing import Optional
 
+from engine.pulse.edge_signal import ttc_bucket_edge
+
 
 def _wilson_lower(correct: int, n: int, z: float = 1.64) -> Optional[float]:
     """One-sided lower bound of the Wilson score interval for a binomial proportion."""
@@ -62,7 +64,8 @@ class CexLeadEdge:
 
     def __init__(self, *, enabled: bool = True, mode: str = "shadow", min_samples: int = 60,
                  min_divergence: float = 0.04, confidence_z: float = 1.64,
-                 min_edge_vs_market: float = 0.0, ev_margin: float = 0.0):
+                 min_edge_vs_market: float = 0.0, ev_margin: float = 0.0,
+                 agreement_thr: float = 0.66):
         self.enabled = bool(enabled)
         self.mode = mode if mode in self.MODES else "shadow"
         self.min_samples = int(min_samples)
@@ -71,7 +74,8 @@ class CexLeadEdge:
         # require CEX Brier to be at least this much BELOW market Brier to count as a real edge
         self.min_edge_vs_market = float(min_edge_vs_market)
         self.ev_margin = float(ev_margin)
-        self.buckets: dict = {}                 # div_bucket -> stat
+        self.agreement_thr = float(agreement_thr)   # cross-exchange agreement to call a signal "confirmed"
+        self.buckets: dict = {}                 # context_key -> stat (div + composite microstructure)
         self.graded = 0
         self.signals_seen = 0                   # windows with an actionable signal
         self.drove = 0                          # times it actually proposed a driven entry
@@ -79,20 +83,45 @@ class CexLeadEdge:
 
     # ---------------------------------- signal --------------------------------------------- #
     def signal(self, *, cex_p_up: Optional[float], poly_yes: Optional[float],
-               fair: Optional[float] = None, ttc_s: Optional[float] = None) -> dict:
-        """Build the (observe-only) CEX-lead signal for one window snapshot."""
+               fair: Optional[float] = None, ttc_s: Optional[float] = None,
+               basket_direction: Optional[str] = None, exchange_agreement: Optional[float] = None,
+               ob_imbalance: Optional[float] = None) -> dict:
+        """Build the (observe-only) CEX-lead signal + ORDERFLOW microstructure context for one window.
+
+        The base signal is the price divergence (CEX-implied vs market). v2 adds confirmation from the
+        short-horizon CEX move (``basket_direction``), cross-exchange agreement, and orderbook pressure
+        — then emits composite ``context_keys`` (divergence alone, divergence×confirmed/unconfirmed,
+        divergence×ttc) so grading can discover WHICH combination actually beats the market."""
         if cex_p_up is None or poly_yes is None:
-            return {"has_signal": False, "reason": "missing_inputs",
+            return {"has_signal": False, "reason": "missing_inputs", "context_keys": [],
                     "cex_p_up": cex_p_up, "poly_yes": poly_yes}
         div = float(cex_p_up) - float(poly_yes)
         ab = abs(div)
         b = div_bucket(ab, min_divergence=self.min_divergence)
         side = "up" if div > 0 else "down"
         has = ab >= self.min_divergence
+        # microstructure confirmation: does the fresh CEX move + breadth + book pressure back the side?
+        mom_confirms = (basket_direction == side) if basket_direction in ("up", "down") else None
+        agree_strong = (exchange_agreement is not None and float(exchange_agreement) >= self.agreement_thr)
+        ob_confirms = (ob_imbalance is not None and ((side == "up" and float(ob_imbalance) > 0)
+                                                     or (side == "down" and float(ob_imbalance) < 0)))
+        confirmed = bool(mom_confirms and agree_strong)
+        ttcb = ttc_bucket_edge(ttc_s)
+        keys = []
         if has:
             self.signals_seen += 1
+            keys = [b,                                                  # divergence alone (back-compat)
+                    "conf=%s|%s" % (b, "confirmed" if confirmed else "unconfirmed"),
+                    "ttc=%s|%s" % (b, ttcb)]
+            if confirmed:
+                keys.append("conf_ttc=%s|%s" % (b, ttcb))               # the strongest composite
         return {"has_signal": has, "side": side, "divergence": round(div, 4),
-                "abs_divergence": round(ab, 4), "bucket": b,
+                "abs_divergence": round(ab, 4), "bucket": b, "ttc_bucket": ttcb,
+                "confirmed": confirmed, "momentum_confirms": mom_confirms,
+                "ob_confirms": (bool(ob_confirms) if ob_imbalance is not None else None),
+                "exchange_agreement": (round(float(exchange_agreement), 4)
+                                       if exchange_agreement is not None else None),
+                "basket_direction": basket_direction, "context_keys": keys,
                 "cex_p_up": round(float(cex_p_up), 4), "poly_yes": round(float(poly_yes), 4),
                 "fair": (round(float(fair), 4) if fair is not None else None),
                 "vs_fair": (round(float(cex_p_up) - float(fair), 4) if fair is not None else None)}
@@ -103,31 +132,45 @@ class CexLeadEdge:
         return {"n": 0, "correct": 0, "brier_cex": 0.0, "brier_mkt": 0.0, "brier_fair": 0.0,
                 "pnl": 0.0, "breakeven_sum": 0.0, "wins": 0}
 
-    def record(self, *, bucket: str, side: str, cex_p_up: float, poly_yes: float,
-               fair: Optional[float], outcome_up: bool) -> None:
-        """Grade one signalled window at close. ``side`` is the signalled side; ``outcome_up`` is the
-        realized window result (close >= open). Hypothetical PnL assumes a unit stake taken at the
-        market price for ``side`` (win -> 1-price, loss -> -price)."""
-        if bucket in (None, "na", "no_signal"):
+    def record(self, *, side: str, cex_p_up: float, poly_yes: float, fair: Optional[float],
+               outcome_up: bool, bucket: Optional[str] = None,
+               context_keys: Optional[list] = None) -> None:
+        """Grade one signalled window at close across ALL its context keys (divergence + composite
+        microstructure). ``side`` is the signalled side; ``outcome_up`` is the realized result
+        (close >= open). Hypothetical PnL is a unit stake at the market price for ``side``."""
+        keys = list(context_keys) if context_keys else ([bucket] if bucket else [])
+        keys = [k for k in keys if k not in (None, "na", "no_signal")]
+        if not keys:
             return
         self.graded += 1
         o = 1.0 if outcome_up else 0.0
         won = (outcome_up and side == "up") or ((not outcome_up) and side == "down")
         price = float(poly_yes) if side == "up" else (1.0 - float(poly_yes))   # price paid for side
         pnl = (1.0 - price) if won else (-price)
-        s = self.buckets.setdefault(str(bucket), self._stat())
-        s["n"] += 1
-        s["correct"] += int(won)
-        s["wins"] += int(won)
-        s["brier_cex"] = round(s["brier_cex"] + (float(cex_p_up) - o) ** 2, 6)
-        s["brier_mkt"] = round(s["brier_mkt"] + (float(poly_yes) - o) ** 2, 6)
-        if fair is not None:
-            s["brier_fair"] = round(s["brier_fair"] + (float(fair) - o) ** 2, 6)
-        s["pnl"] = round(s["pnl"] + pnl, 6)
-        s["breakeven_sum"] = round(s["breakeven_sum"] + price, 6)
-        self._recent.append({"bucket": bucket, "side": side, "won": won,
+        for key in keys:
+            s = self.buckets.setdefault(str(key), self._stat())
+            s["n"] += 1
+            s["correct"] += int(won)
+            s["wins"] += int(won)
+            s["brier_cex"] = round(s["brier_cex"] + (float(cex_p_up) - o) ** 2, 6)
+            s["brier_mkt"] = round(s["brier_mkt"] + (float(poly_yes) - o) ** 2, 6)
+            if fair is not None:
+                s["brier_fair"] = round(s["brier_fair"] + (float(fair) - o) ** 2, 6)
+            s["pnl"] = round(s["pnl"] + pnl, 6)
+            s["breakeven_sum"] = round(s["breakeven_sum"] + price, 6)
+        self._recent.append({"keys": keys, "side": side, "won": won,
                              "cex_p_up": round(float(cex_p_up), 4),
                              "poly_yes": round(float(poly_yes), 4), "pnl": round(pnl, 4)})
+
+    def is_proven_any(self, context_keys) -> bool:
+        """True if ANY of the signal's context keys is a Wilson-proven, market-beating bucket."""
+        return any(self.is_proven(k) for k in (context_keys or []))
+
+    def best_proven(self, context_keys):
+        """The proven context key with the most samples (for reporting / which rule fired)."""
+        proven = [self._assess(k) for k in (context_keys or []) if self.is_proven(k)]
+        proven.sort(key=lambda a: -(a.get("n") or 0))
+        return proven[0]["bucket"] if proven else None
 
     def _assess(self, b: str) -> dict:
         s = self.buckets.get(b)
@@ -158,19 +201,28 @@ class CexLeadEdge:
 
     # ---------------------------------- driving (gated) ------------------------------------ #
     def decide(self, *, cex_p_up: Optional[float], poly_yes: Optional[float],
-               fair: Optional[float] = None, ttc_s: Optional[float] = None) -> Optional[dict]:
-        """Return a driven-entry proposal ONLY in gated mode on a proven bucket; else None.
-        The proposal is advisory: the safety floor + execution gate still decide the trade."""
+               fair: Optional[float] = None, ttc_s: Optional[float] = None,
+               basket_direction: Optional[str] = None, exchange_agreement: Optional[float] = None,
+               ob_imbalance: Optional[float] = None) -> Optional[dict]:
+        """Return a driven-entry proposal ONLY in gated mode when ANY of the signal's context keys is
+        a proven, market-beating bucket; else None. Advisory: the safety floor + execution gate still
+        decide the trade."""
         if not self.enabled or self.mode != "gated":
             return None
-        sig = self.signal(cex_p_up=cex_p_up, poly_yes=poly_yes, fair=fair, ttc_s=ttc_s)
-        if not sig.get("has_signal") or not self.is_proven(sig.get("bucket")):
+        sig = self.signal(cex_p_up=cex_p_up, poly_yes=poly_yes, fair=fair, ttc_s=ttc_s,
+                          basket_direction=basket_direction, exchange_agreement=exchange_agreement,
+                          ob_imbalance=ob_imbalance)
+        if not sig.get("has_signal"):
+            return None
+        fired = self.best_proven(sig.get("context_keys"))
+        if fired is None:
             return None
         side = sig["side"]
         p_side = float(cex_p_up) if side == "up" else (1.0 - float(cex_p_up))
         self.drove += 1
         return {"side": side, "p_up": round(float(cex_p_up), 4), "outcome_prob": round(p_side, 4),
-                "bucket": sig["bucket"], "divergence": sig["divergence"], "proven": True}
+                "bucket": sig["bucket"], "fired_context": fired, "confirmed": sig.get("confirmed"),
+                "divergence": sig["divergence"], "proven": True}
 
     # ---------------------------------- report / state ------------------------------------- #
     def report(self) -> dict:

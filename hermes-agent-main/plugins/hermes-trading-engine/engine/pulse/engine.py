@@ -1011,13 +1011,21 @@ class PulseEngine:
                     "binance_btcusdt", (None,))[0]
                 cex_p_up = (digital_p_up(cex_px_l, snap.price, sigma * ov_vol_mult, ttc)
                             if cex_px_l else None)
+                # ORDERFLOW microstructure from the observe-only edge snapshot (short-horizon CEX
+                # momentum direction, cross-exchange agreement, orderbook pressure) -> confirmation.
+                _mom = (esnap.cex_momentum if esnap else {}) or {}
+                _basket_dir = _mom.get("basket_direction")
+                _agreement = _mom.get("exchange_agreement")
+                _ob_imb = ((esnap.orderbook_pressure if esnap else {}) or {}).get("imbalance")
                 cl_sig = self.cex_lead.signal(cex_p_up=cex_p_up, poly_yes=mc.poly_yes,
-                                              fair=fair_used, ttc_s=ttc)
+                                              fair=fair_used, ttc_s=ttc, basket_direction=_basket_dir,
+                                              exchange_agreement=_agreement, ob_imbalance=_ob_imb)
                 dr.cex_lead = cl_sig
                 if cl_sig.get("has_signal"):
                     self._schedule_cex_lead_grade(mc.decision_id, snap.price, w.close_ts, cl_sig)
-                cex_lead_drive = self.cex_lead.decide(cex_p_up=cex_p_up, poly_yes=mc.poly_yes,
-                                                      fair=fair_used, ttc_s=ttc)
+                cex_lead_drive = self.cex_lead.decide(
+                    cex_p_up=cex_p_up, poly_yes=mc.poly_yes, fair=fair_used, ttc_s=ttc,
+                    basket_direction=_basket_dir, exchange_agreement=_agreement, ob_imbalance=_ob_imb)
             # ---- GROK DECISION ENGINE ("Grok decides, bot executes"; PAPER ONLY) ----
             # Request one decision per window (async, off the tick loop), record it observe-only, and
             # schedule a grade vs the realized close (traded or not). In SHADOW mode this is the only
@@ -1809,9 +1817,9 @@ class PulseEngine:
                 return
         self._cex_lead_pending.append({
             "decision_id": decision_id, "price0": float(price0), "close_ts": float(close_ts),
-            "bucket": sig.get("bucket"), "side": sig.get("side"),
-            "cex_p_up": sig.get("cex_p_up"), "poly_yes": sig.get("poly_yes"),
-            "fair": sig.get("fair")})
+            "bucket": sig.get("bucket"), "context_keys": sig.get("context_keys") or [],
+            "side": sig.get("side"), "cex_p_up": sig.get("cex_p_up"),
+            "poly_yes": sig.get("poly_yes"), "fair": sig.get("fair")})
 
     def _grade_cex_lead(self, now: float) -> None:
         """Grade due CEX-lead signals vs the realized 5-min outcome (UP if close >= open), traded or
@@ -1829,8 +1837,9 @@ class PulseEngine:
                 outcome_up = float(px) >= float(p["price0"])
                 if p.get("cex_p_up") is not None and p.get("poly_yes") is not None:
                     self.cex_lead.record(
-                        bucket=p.get("bucket"), side=p.get("side"), cex_p_up=p["cex_p_up"],
-                        poly_yes=p["poly_yes"], fair=p.get("fair"), outcome_up=outcome_up)
+                        bucket=p.get("bucket"), context_keys=p.get("context_keys"),
+                        side=p.get("side"), cex_p_up=p["cex_p_up"], poly_yes=p["poly_yes"],
+                        fair=p.get("fair"), outcome_up=outcome_up)
             elif now <= p["close_ts"] + 600:
                 still.append(p)
         self._cex_lead_pending = still[-2000:]

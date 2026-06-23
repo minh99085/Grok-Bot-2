@@ -28,6 +28,48 @@ def test_div_bucket_and_signal():
     assert edge.signal(cex_p_up=None, poly_yes=0.5)["has_signal"] is False
 
 
+def test_signal_emits_microstructure_confirmation_and_context_keys():
+    edge = CexLeadEdge(min_divergence=0.04, agreement_thr=0.66)
+    # CEX says UP (div 0.20) AND the short-horizon basket move is UP with strong agreement -> confirmed
+    sig = edge.signal(cex_p_up=0.70, poly_yes=0.50, fair=0.6, ttc_s=270,
+                      basket_direction="up", exchange_agreement=0.8, ob_imbalance=0.3)
+    assert sig["side"] == "up" and sig["confirmed"] is True and sig["ob_confirms"] is True
+    keys = sig["context_keys"]
+    assert "0.15-0.30" in keys                                  # divergence alone (back-compat)
+    assert "conf=0.15-0.30|confirmed" in keys
+    assert any(k.startswith("ttc=0.15-0.30|") for k in keys)
+    assert "conf_ttc=0.15-0.30|240_300s" in keys               # strongest composite when confirmed
+    # divergence up but basket moving DOWN / weak agreement -> NOT confirmed
+    s2 = edge.signal(cex_p_up=0.70, poly_yes=0.50, basket_direction="down", exchange_agreement=0.5)
+    assert s2["confirmed"] is False and "conf=0.15-0.30|unconfirmed" in s2["context_keys"]
+    assert not any(k.startswith("conf_ttc=") for k in s2["context_keys"])
+
+
+def test_record_grades_all_context_keys_and_decide_fires_on_confirmed():
+    edge = CexLeadEdge(mode="gated", min_samples=20, min_divergence=0.04)
+    # only the CONFIRMED composite is a real edge; the bare divergence bucket is a coin flip
+    for i in range(40):
+        edge.record(side="up", cex_p_up=0.72, poly_yes=0.52, fair=0.6, outcome_up=(i < 30),
+                    context_keys=["0.08-0.15", "conf=0.08-0.15|confirmed",
+                                  "conf_ttc=0.08-0.15|240_300s"])
+    for i in range(40):                                          # unconfirmed same divergence: losing
+        edge.record(side="up", cex_p_up=0.60, poly_yes=0.52, fair=0.55, outcome_up=(i < 10),
+                    context_keys=["0.08-0.15", "conf=0.08-0.15|unconfirmed"])
+    assert edge.is_proven("conf=0.08-0.15|confirmed") is True
+    assert edge.is_proven("conf=0.08-0.15|unconfirmed") is False
+    assert edge.is_proven("0.08-0.15") is False                  # bare divergence is a coin flip (0.5)
+    # decide fires when the confirmed composite is proven (even if the bare bucket is mixed)
+    drive = edge.decide(cex_p_up=0.65, poly_yes=0.55, ttc_s=270, basket_direction="up",
+                        exchange_agreement=0.9)
+    assert drive is not None and drive["confirmed"] is True
+    assert drive["fired_context"] in ("conf=0.08-0.15|confirmed", "conf_ttc=0.08-0.15|240_300s",
+                                      "0.08-0.15")
+    # an UNCONFIRMED signal in the same divergence bucket does NOT fire (no proven context)
+    nodrive = edge.decide(cex_p_up=0.65, poly_yes=0.55, ttc_s=270, basket_direction="down",
+                          exchange_agreement=0.5)
+    assert nodrive is None
+
+
 def test_proven_only_when_beats_market_and_wilson_confident():
     edge = CexLeadEdge(min_samples=40, min_divergence=0.04, confidence_z=1.64)
     # bucket where CEX is RIGHT and CONFIDENT and well-calibrated (beats the market price).
