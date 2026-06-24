@@ -98,16 +98,56 @@ def _grok_responses(prompt: str, *, model: str, timeout_s: float, box: dict,
 
 
 def _parse_json(content: Optional[str]) -> Optional[dict]:
+    """Robustly extract a JSON object from an LLM reply: handles ```json fences, leading labels,
+    and prose wrapped around the object (falls back to the first balanced {...} block)."""
     if not content:
         return None
-    s = content.strip().strip("`")
+    s = content.strip()
+    # strip ```json ... ``` (or bare ```) fences
+    if "```" in s:
+        import re as _re
+        m = _re.search(r"```(?:json)?\s*(.*?)```", s, _re.DOTALL | _re.IGNORECASE)
+        if m:
+            s = m.group(1).strip()
+    s = s.strip().strip("`").strip()
     if s.lower().startswith("json"):
         s = s[4:].strip()
     try:
         d = json.loads(s)
-        return d if isinstance(d, dict) else None
+        if isinstance(d, dict):
+            return d
     except Exception:  # noqa: BLE001
+        pass
+    # fallback: scan for the first balanced top-level {...} object (ignores surrounding prose)
+    start = s.find("{")
+    if start < 0:
         return None
+    depth = 0
+    in_str = False
+    esc = False
+    for i in range(start, len(s)):
+        ch = s[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    d = json.loads(s[start:i + 1])
+                    return d if isinstance(d, dict) else None
+                except Exception:  # noqa: BLE001
+                    return None
+    return None
 
 
 # --------------------------------- shared budget guard ------------------------------------- #

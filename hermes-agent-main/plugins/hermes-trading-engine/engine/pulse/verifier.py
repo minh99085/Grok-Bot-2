@@ -43,10 +43,15 @@ def make_verifier_fn(*, model: Optional[str] = None, timeout_s: float = 20.0, ch
     box: dict = {}
     system = ("You are an INDEPENDENT risk verifier (maker-checker) for a PAPER BTC 5-minute "
               "up/down prediction-market bot. A SEPARATE model proposed a trade; you did not see its "
-              "reasoning. Your only job is to APPROVE or VETO and optionally cap size. Veto when: the "
-              "payoff/breakeven is poor, the entry context is proven-losing or matches a LESSON to "
-              "avoid, the directional view is weak/uncalibrated, or risk is elevated. You can ONLY "
-              "veto or shrink — never enlarge or force a trade. Be skeptical; when unsure, veto.")
+              "reasoning. The trade should only fire to EXPLOIT A MISPRICING — i.e. the proposed side "
+              "is underpriced vs a fresher estimate. Your only job is to APPROVE or VETO and "
+              "optionally cap size. VETO when: the edge over the MARKET price is not real — "
+              "'fair_minus_poly'/'cex_lead_mispricing.divergence' is small or points the OTHER way, "
+              "or 'model_vs_market' shows the bot's model is WORSE than the market (so a model-only "
+              "'edge' is illusory); the payoff/breakeven is poor (P(win) below the ask price); the "
+              "context is proven-losing or matches a LESSON to avoid; or the view is weak/uncalibrated. "
+              "You can ONLY veto or shrink — never enlarge or force a trade. Be skeptical; when "
+              "unsure, veto.")
 
     def _verify(payload: dict) -> Optional[dict]:
         prompt = ("Review this proposed PAPER trade and respond with STRICT JSON ONLY: "

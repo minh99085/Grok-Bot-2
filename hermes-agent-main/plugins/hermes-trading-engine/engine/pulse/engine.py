@@ -106,6 +106,9 @@ class PulseConfig:
     # ---- #1 maker-checker VERIFIER (independent Claude model) + #4 research meta-loop ----
     verifier_enabled: bool = False
     verifier_fail_open: bool = True          # no verdict in time -> approve (don't freeze) but log
+    # FOLLOW trades wait for the actual Claude verdict (fail-CLOSED on pending) so the maker-checker
+    # genuinely gates them rather than fail-opening before the async worker finishes.
+    verifier_follow_require_verdict: bool = True
     verifier_max_calls_per_hour: int = 120
     research_loop_enabled: bool = False
     research_interval_s: float = 1800.0      # idle FLOOR; the loop is mainly EVENT-triggered
@@ -295,6 +298,8 @@ class PulseConfig:
             verifier_enabled=str(os.getenv("PULSE_VERIFIER_ENABLED", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
             verifier_fail_open=str(os.getenv("PULSE_VERIFIER_FAIL_OPEN", "1"))
+            .strip().lower() in ("1", "true", "yes", "on"),
+            verifier_follow_require_verdict=str(os.getenv("PULSE_VERIFIER_FOLLOW_REQUIRE_VERDICT", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
             verifier_max_calls_per_hour=int(_envf("PULSE_VERIFIER_MAX_CALLS_PER_HOUR", 120)),
             research_loop_enabled=str(os.getenv("PULSE_RESEARCH_LOOP_ENABLED", "0"))
@@ -1126,6 +1131,15 @@ class PulseEngine:
                                        "down_ask": (w.down_book.best_ask if w.down_book else None),
                                        "min_reward_risk": self.cfg.min_reward_risk},
                             "digital_fair_p_up": fair_used, "poly_yes": mc.poly_yes,
+                            # mispricing context for the checker: divergence + the CEX-lead signal +
+                            # the proof the bot's model is worse than the market (veto if edge<costs)
+                            "fair_minus_poly": (round(float(fair_used) - float(mc.poly_yes), 4)
+                                                if (fair_used is not None and mc.poly_yes is not None)
+                                                else None),
+                            "cex_lead_mispricing": {k: (dr.cex_lead or {}).get(k) for k in
+                                                    ("divergence", "side", "confirmed",
+                                                     "tv_confirms", "late_decisive")},
+                            "model_vs_market": self._market_benchmark(),
                             "recent_windows": self._recent_windows_view(6),
                             "lessons": self.lessons.recent(10),
                             "view_accuracy": self.grok_decider.report().get("view_accuracy")})
@@ -1174,7 +1188,13 @@ class PulseEngine:
                 if actionable:
                     side = grok_dec["action"]
                     entry_mode = "grok_follow"
-                    grok_oprob = float(grok_dec.get("confidence") or 0.5)
+                    # EV uses the side-aligned P(win) = p_up (up) / 1-p_up (down), NOT raw confidence
+                    # (confidence is 'how sure', not the win probability the EV gate needs).
+                    _pu = grok_dec.get("p_up")
+                    if _pu is not None:
+                        grok_oprob = float(_pu) if side == "up" else (1.0 - float(_pu))
+                    else:
+                        grok_oprob = float(grok_dec.get("confidence") or 0.5)
                     grok_size_frac = max(0.0, min(1.0, float(grok_dec.get("size_fraction") or 1.0)))
                 elif exploit:                      # proven-edge context: act on Grok's view, sized up
                     pu = float(grok_dec.get("p_up"))
@@ -1196,7 +1216,13 @@ class PulseEngine:
                 # #1 MAKER-CHECKER: an independent Claude verdict can VETO or shrink (never enlarge)
                 grok_verdict = None
                 if self.verifier is not None:
-                    grok_verdict = self.verifier.verdict_or_failopen(mc.decision_id)
+                    if self.cfg.verifier_follow_require_verdict:
+                        # fail-CLOSED on a pending verdict: WAIT for the real maker-checker (it's
+                        # cached per decision_id, so a later tick on this same window proceeds).
+                        grok_verdict = self.verifier.get(mc.decision_id) or {
+                            "approve": False, "pending": True, "reason": "verifier_pending"}
+                    else:
+                        grok_verdict = self.verifier.verdict_or_failopen(mc.decision_id)
                     if not grok_verdict.get("approve"):
                         vr = "verifier_pending" if grok_verdict.get("pending") else "verifier_veto"
                         dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
@@ -1822,6 +1848,14 @@ class PulseEngine:
             "edge_signal": {k: (dr.edge or {}).get(k) for k in
                             ("pulse_edge_score", "stale_divergence_class", "cex_agreement_bucket",
                              "orderbook_pressure")},
+            # PRIMARY mispricing signal: fresh CEX-implied P(up) vs the market price (lead-lag), with
+            # orderflow + TradingView + late-window confirmation. This is the credible edge to exploit.
+            "cex_lead_mispricing": {k: (dr.cex_lead or {}).get(k) for k in
+                                    ("divergence", "side", "confirmed", "tv_confirms",
+                                     "late_decisive", "news_state", "cex_p_up", "poly_yes")},
+            # the bot's directional model is graded WORSE than the market price out-of-sample; trust
+            # the market price + divergence-based mispricing over the model's raw opinion.
+            "model_vs_market": self._market_benchmark(),
             "edge_model_p_up": self._r((dr.model or {}).get("p_up")),
             "grok_per_signal_p_up": (tv_feature or {}).get("grok_p_up"),
             "account_state": {"open_positions": ls.get("open_positions"),
