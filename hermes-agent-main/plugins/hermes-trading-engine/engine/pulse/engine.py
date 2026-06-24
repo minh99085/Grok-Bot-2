@@ -176,7 +176,7 @@ class PulseConfig:
     #                                             fees+slippage; Polymarket BTC taker fee ~0 so 0.02
     #                                             still leaves a safety buffer for non-atomic fills)
     arb_min_profit_usd: float = 0.0
-    arb_size_usd: float = 50.0                  # arb is RISK-FREE -> size bigger than directional
+    arb_size_usd: float = 100.0                 # arb is RISK-FREE -> size bigger than directional
     #                                             (still hard-capped at max_depth_consume_frac of the
     #                                             thinner leg + full-fill required, so never over-consumes)
     # ---- directional de-risk (separate strategy; arb can run standalone) ----
@@ -189,7 +189,7 @@ class PulseConfig:
     # bucket is Wilson-proven-winning, but proving needs trades -> deadlock (bot looks frozen).
     # Allow this capped fraction of otherwise-eligible candidates through as exploration so the bot
     # keeps learning and can DISCOVER winning buckets. 0 = strict block-all; 1 = effectively off.
-    directional_explore_rate: float = 0.15
+    directional_explore_rate: float = 0.05
     # ---- Learned Selectivity Gate v1 (between decision and execution; PAPER ONLY) ----
     # Uses live settled-trade bucket evidence to REJECT proven-losing buckets. Can only make the
     # bot MORE selective; never trades/resizes/bypasses the execution gate.

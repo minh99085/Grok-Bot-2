@@ -204,7 +204,7 @@ services:
       # ~0 Polymarket BTC taker fees. arb is risk-free so size it bigger than directional (depth-capped).
       PULSE_ARB_EPSILON: "${PULSE_ARB_EPSILON:-0.02}"
       PULSE_ARB_MIN_PROFIT_USD: "${PULSE_ARB_MIN_PROFIT_USD:-0.0}"
-      PULSE_ARB_SIZE_USD: "${PULSE_ARB_SIZE_USD:-50.0}"
+      PULSE_ARB_SIZE_USD: "${PULSE_ARB_SIZE_USD:-100.0}"
       # Directional de-risk: the directional model is structurally negative-EV in a near-efficient
       # market. Keep it enabled but, when REQUIRE_WINNING=1, only take a directional trade in a
       # Wilson-PROVEN-winning bucket (pre-execution block, never advisory). Arb runs standalone.
@@ -217,7 +217,7 @@ services:
       # cold-start carve-out so the allowlist does NOT freeze the bot: without proven-winning
       # buckets it would block every directional trade forever (no trades => nothing to prove).
       # This lets a small capped fraction through as exploration to keep learning. 0=block-all.
-      PULSE_DIRECTIONAL_EXPLORE_RATE: "${PULSE_DIRECTIONAL_EXPLORE_RATE:-0.15}"
+      PULSE_DIRECTIONAL_EXPLORE_RATE: "${PULSE_DIRECTIONAL_EXPLORE_RATE:-0.05}"
       # Learned Selectivity Gate v1: reject proven-losing buckets (live evidence) between decision
       # and execution. Only makes the bot MORE selective; never trades/resizes/bypasses the gate.
       PULSE_SELECTIVITY_GATE_ENABLED: "${PULSE_SELECTIVITY_GATE_ENABLED:-1}"
