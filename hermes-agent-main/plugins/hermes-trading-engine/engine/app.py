@@ -141,6 +141,8 @@ async function tick(){
    `<div class="sub" style="font-size:14px">$${(onhand||0).toFixed(2)} − $${(start0||0).toFixed(2)} = `+
    `<b style="color:${col}">${money(diff)} (${f(cap.return_pct,1)}%)</b>`+
    ` &nbsp;<span style="color:${col}">${up?'▲ winning':'▼ losing'}</span></div>`+
+   `<div class="sub">Directional. <span style="color:var(--grn)">Risk-free arbitrage: ${money(cap.arb_realized_pnl_usd)}</span>`+
+   ` &nbsp;·&nbsp; <b>Total alpha: ${money(cap.total_realized_pnl_usd)}</b> (${f(cap.total_return_pct,1)}%)</div>`+
    `<div class="sub">Practice money — no real funds at risk.</div></div>`));
  // 2) Is it working?
  const trading=(L.open_positions>0)?'Placing a trade right now':'Waiting for a setup it likes';

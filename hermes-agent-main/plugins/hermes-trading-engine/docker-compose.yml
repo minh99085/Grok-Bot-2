@@ -200,16 +200,19 @@ services:
       # blended into directional win-rate/profit-factor. PAPER ONLY.
       PULSE_ARB_ENABLED: "${PULSE_ARB_ENABLED:-1}"
       PULSE_ARB_FEES: "${PULSE_ARB_FEES:-0.0}"
-      PULSE_ARB_EPSILON: "${PULSE_ARB_EPSILON:-0.05}"
+      # 0.02 risk-free edge below $1 (was 0.05) captures more dutch books; still a safety buffer over
+      # ~0 Polymarket BTC taker fees. arb is risk-free so size it bigger than directional (depth-capped).
+      PULSE_ARB_EPSILON: "${PULSE_ARB_EPSILON:-0.02}"
       PULSE_ARB_MIN_PROFIT_USD: "${PULSE_ARB_MIN_PROFIT_USD:-0.0}"
+      PULSE_ARB_SIZE_USD: "${PULSE_ARB_SIZE_USD:-50.0}"
       # Directional de-risk: the directional model is structurally negative-EV in a near-efficient
       # market. Keep it enabled but, when REQUIRE_WINNING=1, only take a directional trade in a
       # Wilson-PROVEN-winning bucket (pre-execution block, never advisory). Arb runs standalone.
       PULSE_DIRECTIONAL_ENABLED: "${PULSE_DIRECTIONAL_ENABLED:-1}"
-      # OFF by default: the hard Wilson-winning allowlist deadlocks/freezes the directional engine
-      # (no proven-winning bucket => block all => never trade => never prove one). Opt in with =1
-      # ONLY together with a non-zero PULSE_DIRECTIONAL_EXPLORE_RATE so it keeps learning.
-      PULSE_DIRECTIONAL_REQUIRE_WINNING: "${PULSE_DIRECTIONAL_REQUIRE_WINNING:-0}"
+      # ON: the directional model is negative-EV, so only trade Wilson-proven-winning buckets +
+      # a small exploration fraction (below) to keep learning. This STOPS the directional bleed
+      # without freezing (the carve-out guarantees EXPLORE_RATE of eligible candidates still flow).
+      PULSE_DIRECTIONAL_REQUIRE_WINNING: "${PULSE_DIRECTIONAL_REQUIRE_WINNING:-1}"
       PULSE_DIRECTIONAL_WINNING_MIN_SAMPLES: "${PULSE_DIRECTIONAL_WINNING_MIN_SAMPLES:-30}"
       # cold-start carve-out so the allowlist does NOT freeze the bot: without proven-winning
       # buckets it would block every directional trade forever (no trades => nothing to prove).

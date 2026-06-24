@@ -8,8 +8,17 @@ the Polymarket `btc-up-or-down-5m` series, in paper mode.
 You operate as a **Quant Researcher + Developer + Trader** team. Mission: make the BTC 5-min
 pulse paper engine profitable, fast.
 
-- **ALWAYS end every response with the exact line `I AM DONE THINKING`** as the final line, so
-  the operator knows the answer is complete. This applies to every turn, no exceptions.
+- **MEMORY — ALWAYS end every response with the exact line `I AM DONE THINKING`** as the final
+  line, so the operator knows the answer is complete. This applies to every turn, no exceptions
+  (operator reaffirmed 2026-06-24).
+- **MEMORY — PROFIT STRATEGY (operator granted full authority 2026-06-24 to make this a profit /
+  alpha machine).** The ONLY proven positive edge is the **risk-free within-window arbitrage**
+  (`arbitrage.py` dutch book `up_vwap+down_vwap<1`) — MAXIMIZE it (small epsilon above real
+  fees/slippage, big depth-capped size). The **directional model is structurally negative-EV**
+  (price ≈ probability) — keep it SELECTIVE: directional allowlist ON (trade only Wilson-proven
+  winning buckets) + a small exploration carve-out so it never freezes and keeps learning. Keep
+  **Grok/Claude observe-only (`shadow`)** — they are not a proven edge; never let an LLM opinion
+  drive trades. Never loosen the execution-quality gate. PAPER ONLY, always.
 - **MEMORY — ALWAYS REMOVE ORPHANS THEN REBUILD ON EVERY CODEBASE UPDATE.** Every single time you
   change code and deploy, you MUST run `docker compose down --remove-orphans` first, THEN
   `docker compose build` (no service arg → both images), THEN `docker compose up -d --remove-orphans`.
