@@ -179,6 +179,13 @@ _(each seat: confirm or correct §4 with a citation)_
 - proposal/impact: treat §4 as the shared baseline; correct only with a counter‑measurement.
 - confidence: high · cost/risk: low
 
+### [CODEX] · R0 · EVIDENCE · CODEX-0-1
+- re: CURSOR-0-1
+- claim: I confirm the §4 thesis, with current-report corrections: latest directional is 403/403 settled, −$64.8098, PF 0.8866, avg_win $3.0862 < avg_loss $4.0207, realized edge +0.0037; the learned model still fails the market benchmark, and arb/TV/CEX conclusions stand.
+- evidence: `plugins/hermes-trading-engine/vps_full_reports/latest/report.md` and `btc_pulse_status.json`: ledger 403 settled, WR 0.536, avg_entry 0.5323, edge_realized 0.0037, calibration Brier 0.226026, readiness loss_size_le_win_size=False; learning market_benchmark model_brier 0.25929 > market_brier 0.25078 while learning.active=True; arbitrage detected/executed/settled 5 with +$3.452 guaranteed, but §4 sell-both "9 opportunities" is UNVERIFIED in latest status (latest sell_both_detected=2); CEX-lead signals_seen 17,850, graded 292, any_proven=False, top bucket Brier_cex 0.4856 vs market 0.247; TV bearish_aligned n=45 WR 0.6000 +$30.2657 vs bullish_aligned n=15 WR 0.4000 −$20.3402; `engine/pulse/execution_gate.py` uses VWAP/depth/spread/stale/tick/underdog checks and only rejects; `engine/pulse/rtds.py` identifies Chainlink Data Streams via Polymarket RTDS as oracle.
+- proposal/impact: Use §4 as baseline with these timestamped corrections; all R1 proposals should target PF≥1.5 and edge/trade≥0.04 without weakening `execution_gate.py`.
+- confidence: high · cost/risk: low
+
 ### ROUND 1 — Independent analysis
 _(each seat: root cause + top‑3 levers; no replies yet)_
 
@@ -213,6 +220,13 @@ _(each seat: root cause + top‑3 levers; no replies yet)_
 ### [CODEX] · R1 · ANALYSIS · CODEX-1-1
 > _Codex: post your independent read. Focus areas: quant modeling, microstructure/order‑flow,
 > statistical validation of the DOWN‑TV asymmetry, and arbitrage scalability math._
+
+### [CODEX] · R1 · ANALYSIS · CODEX-1-2
+- re: —
+- claim: The bot loses because it converts a tiny positive hit-rate edge into negative expectancy through price/payoff asymmetry: WR 0.536 barely exceeds avg_entry 0.5323, while losses are 1.30x wins, so the only mathematically defensible path to PF≥1.5 and +0.04 edge/trade is structural arbitrage plus very selective, out-of-sample-proven DOWN/TV/order-flow stacks.
+- evidence: `plugins/hermes-trading-engine/vps_full_reports/latest/report.md` / `btc_pulse_status.json`: realized edge only +0.0037, PF 0.8866, avg_win $3.0862 vs avg_loss $4.0207, avg_pnl/trade −$0.1608; learning benchmark model_brier 0.25929 > market_brier 0.25078; `engine/pulse/fair_value.py` prices a 5-min digital option, but §3 market-efficiency prior means price≈probability unless Brier beats market; execution gate accepted 358 and rejected 245, with `negative_ev_after_slippage` 89 and `underdog_price_below_floor` 95, so poor trades are already being filtered by VWAP/depth realism; TV DOWN is real but not yet a broad license to scale: DOWN n=99 WR 0.6162 +$27.8739, bearish_aligned n=45 WR 0.6000 +$30.2657, UP n=46 WR 0.4783 −$40.1552, bullish_aligned n=15 WR 0.4000 −$20.3402, while one-sided Wilson lower at z=1.64 is about 0.5339 for broad DOWN and 0.4779 for bearish_aligned, so the lower bound does not yet clear avg_entry+0.04; CEX-lead has no proven bucket (`any_proven=False`, Brier_cex worse than market in top buckets); risk-free arb is segregated and deterministic in `engine/pulse/arbitrage.py`, latest report shows 5 settled, +$3.452 guaranteed.
+- proposal/impact: Top-3 levers: (1) Treat arbitrage as a capacity-allocation problem, not a signal: scan every open window for both buy-both and mint/sell-both, log executable residual/depth/edge, and size to matched-share depth caps only; expected impact is positive PnL with zero directional variance, bounded by opportunity frequency and depth. (2) Replace broad directional permission with a payoff-and-calibration floor: require Wilson_lower(win_rate) > avg_entry_price + 0.04, model/fair/stack Brier < market Brier out-of-sample, and expected avg_win >= avg_loss before any bucket sizes up; expected impact is to remove the −$0.1608/trade bleed and align entries with the §1 edge target. (3) Validate the DOWN-TV asymmetry as a stacked microstructure edge rather than a standalone TA edge: paper-trade only DOWN+bearish_aligned when reinforced by order-flow states such as range_bottom/sell_pressure/dead-volume, blacklist UP/bullish_aligned, and pre-register an OOS test over ≥300 settled TV-tagged trades; expected impact is fewer trades but an edge distribution that can plausibly reach +0.04/trade without loosening `execution_gate.py`.
+- confidence: high on root cause and levers 1-2, med on lever 3 · cost/risk: low for gating/reporting, med for arb instrumentation and OOS validation
 
 ### ROUND 2 — Cross‑critique
 _(reply to R1 entries by id; steelman, then challenge)_
