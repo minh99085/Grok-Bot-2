@@ -218,6 +218,8 @@ class PulseConfig:
     # ---- TradingView DOWN-bias gate (Townhall P3; restrict-only) ----
     tv_down_bias_gate_enabled: bool = False
     tv_down_bias_exploration_rate: float = 0.02
+    tv_mtf_conflict_gate_enabled: bool = True
+    tv_mtf_conflict_exploration_rate: float = 0.02
     # ---- verifiable stop conditions (agent-independent kill switches; Loop Eng #6) ----
     stop_enabled: bool = True
     stop_rolling_n: int = 50
@@ -441,6 +443,9 @@ class PulseConfig:
             tv_down_bias_gate_enabled=str(os.getenv("PULSE_TV_DOWN_BIAS_GATE", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
             tv_down_bias_exploration_rate=_envf("PULSE_TV_DOWN_BIAS_EXPLORE_RATE", 0.02),
+            tv_mtf_conflict_gate_enabled=str(os.getenv("PULSE_TV_MTF_CONFLICT_GATE", "1"))
+            .strip().lower() in ("1", "true", "yes", "on"),
+            tv_mtf_conflict_exploration_rate=_envf("PULSE_TV_MTF_CONFLICT_EXPLORE_RATE", 0.02),
             stop_enabled=str(os.getenv("PULSE_STOP_ENABLED", "1")).strip().lower()
             in ("1", "true", "yes", "on"),
             stop_rolling_n=int(_envf("PULSE_STOP_ROLLING_N", 50)),
@@ -586,6 +591,10 @@ class PulseEngine:
         self.tv_down_bias_gate = TradingViewDownBiasGate(
             enabled=bool(self.cfg.tv_down_bias_gate_enabled),
             exploration_rate=self.cfg.tv_down_bias_exploration_rate)
+        from engine.pulse.tv_mtf_gate import TradingViewMtfConflictGate
+        self.tv_mtf_gate = TradingViewMtfConflictGate(
+            enabled=bool(self.cfg.tv_mtf_conflict_gate_enabled),
+            exploration_rate=self.cfg.tv_mtf_conflict_exploration_rate)
         from engine.pulse.down_stack import DownStackGrader
         self.down_stack = DownStackGrader()
         from engine.pulse.stop_conditions import StrategyStopMonitor, StopConfig
@@ -948,6 +957,7 @@ class PulseEngine:
         self.selectivity_gate.load_state(acct.get("selectivity_gate") or {})
         self.tv_context_gate.load_state(acct.get("tv_context_gate") or {})
         self.tv_down_bias_gate.load_state(acct.get("tv_down_bias_gate") or {})
+        self.tv_mtf_gate.load_state(acct.get("tv_mtf_gate") or {})
         self.down_stack.load_state(acct.get("down_stack") or {})
         self.late_window_gate.load_state(acct.get("late_window_gate") or {})
         self.late_window_edge.load_state(acct.get("late_window_edge") or {})
@@ -1558,6 +1568,18 @@ class PulseEngine:
                     if self.markov is not None:
                         self.markov.record_terminal(state=cand_state, accepted=False)
                     _finalize(dr, "rejected", reason=db_res["reasons"][0], stage="down_bias_gate")
+                    continue
+                mtf_res = self.tv_mtf_gate.evaluate(
+                    tf_confirm=(tv_feature or {}).get("tf_confirm"))
+                dr.mtf_gate = {"decision": mtf_res["decision"], "reasons": mtf_res["reasons"],
+                               "tf_confirm": (tv_feature or {}).get("tf_confirm"),
+                               "tf_1m_dir": (tv_feature or {}).get("tf_1m_dir"),
+                               "tf_5m_dir": (tv_feature or {}).get("tf_5m_dir")}
+                if mtf_res["decision"] == "block":
+                    dr.action = RejectAction(stage="mtf_gate", reason=mtf_res["reasons"][0])
+                    if self.markov is not None:
+                        self.markov.record_terminal(state=cand_state, accepted=False)
+                    _finalize(dr, "rejected", reason=mtf_res["reasons"][0], stage="mtf_gate")
                     continue
                 lw_res = self.late_window_gate.evaluate(ttc_s=ttc, p_up=fair_used)
                 dr.late_window = {"decision": lw_res["decision"], "reason": lw_res["reason"],
@@ -2855,6 +2877,7 @@ class PulseEngine:
                      "with the side; it can only PREVENT trades, never force or bypass them.")}
         rep["context_gate"] = self.tv_context_gate.report()
         rep["down_bias_gate"] = self.tv_down_bias_gate.report()
+        rep["mtf_gate"] = self.tv_mtf_gate.report()
         return rep
 
     def _tier_report(self) -> dict:
@@ -2998,6 +3021,7 @@ class PulseEngine:
                               "selectivity_gate": self.selectivity_gate.to_state(),
                               "tv_context_gate": self.tv_context_gate.to_state(),
                               "tv_down_bias_gate": self.tv_down_bias_gate.to_state(),
+                              "tv_mtf_gate": self.tv_mtf_gate.to_state(),
                               "down_stack": self.down_stack.to_state(),
                               "late_window_gate": self.late_window_gate.to_state(),
                               "late_window_edge": self.late_window_edge.to_state(),
