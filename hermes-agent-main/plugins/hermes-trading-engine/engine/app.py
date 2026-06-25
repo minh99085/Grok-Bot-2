@@ -238,7 +238,7 @@ async function tick(){
  // divider into technical detail
  cards.appendChild($(`<div style="grid-column:1/-1;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;font-size:11px;padding:6px 2px;border-top:1px solid var(--bd)">Technical details below &darr;</div>`));
  cards.appendChild(card('Ledger',[['trades',L.trades],['settled',L.settled],['wins',L.wins],['win-rate',f((L.win_rate||0)*100,1)+'%'],['avg entry',f(L.avg_entry_price,3)],['edge realized',f(L.edge_realized,3)],['avg pnl/trade',money(L.avg_pnl_per_trade)],['open',L.open_positions]]));
- cards.appendChild(card('Oracle (reference model)',[['feed type',o.oracle_feed_type||'—'],['symbol',o.oracle_symbol||'—'],['price source',p.source||'—'],['Chainlink btc/usd',f(rt.latest&&rt.latest['crypto_prices_chainlink:btc/usd'])],['RTDS connected',rt.connected?'yes':'no',rt.connected?'ok':'bad'],['open/close snap',o.open_snapshot_source||'—'],['σ/sec',f(p.sigma_per_sec,6)],['sampler',p.sampler_running?(p.sampler_interval_s+'s'):'off']]));
+ cards.appendChild(card('Oracle (reference model)',[['feed type',o.oracle_feed_type||'—'],['settlement symbol',(o.oracle_symbol||'—')+' (not TV)','muted'],['price source',p.source||'—'],['Chainlink btc/usd',f(rt.latest&&rt.latest['crypto_prices_chainlink:btc/usd'])],['RTDS connected',rt.connected?'yes':'no',rt.connected?'ok':'bad'],['open/close snap',o.open_snapshot_source||'—'],['σ/sec',f(p.sigma_per_sec,6)],['sampler',p.sampler_running?(p.sampler_interval_s+'s'):'off']]));
  cards.appendChild(card('Lead feeds (features only)',[['binance btcusdt',f(lf.binance_btcusdt&&lf.binance_btcusdt.price)],['coinbase btcusd',f(lf.coinbase_btcusd&&lf.coinbase_btcusd.price)],['settlement eligible','no','muted']]));
  cards.appendChild(card('Execution gate',[['candidates',eg.candidates],['accepted (fills)',eg.accepted,'ok'],['rejected',eg.rejected_total,'bad'],...Object.entries(eg.rejected||{}).filter(([,v])=>v>0).map(([k,v])=>['· '+k,v,'bad']),['reconciled',eg.reconciled?'yes':'NO',eg.reconciled?'ok':'bad']]));
  cards.appendChild(card('Settlement & calibration',[['sources',JSON.stringify(L.settle_sources||{})],['proxy vs official','both '+(rec.both||0)+' · agree '+(rec.agree||0)+' · disagree '+(rec.disagree||0)],['Brier',f(c.brier,3)+' (base 0.25)'],['log-loss',f(c.log_loss,3)],['samples',c.samples],['base-rate up',f(c.base_rate_up,2)]]));
@@ -261,8 +261,11 @@ if(ver.enabled){cards.appendChild(card('Verifier (Claude maker-checker)',[['veri
  // TradingView TA intake (observe-only)
  const tv=s.tradingview||{};
  if(tv.enabled){
+   const fsym=tv.tradingview_feature_symbol||'BTCUSDT';
    const vbs=tv.tradingview_valid_by_symbol||{};
-   cards.appendChild(card('TradingView signals (observe-only)',[['received',tv.tradingview_alerts_received],['valid',tv.tradingview_alerts_valid,'ok'],['rejected',tv.tradingview_alerts_rejected,'bad'],...Object.entries(vbs).map(([k,v])=>['· valid '+k,v]),...Object.entries(tv.tradingview_reject_reasons||{}).filter(([,v])=>v>0).map(([k,v])=>['· rej '+k,v,'bad']),['observe-only',tv.tradingview_observe_only?'yes':'no','muted']]));
+   const vbsRows=Object.entries(vbs).filter(([k])=>k===fsym).map(([k,v])=>['· valid '+k,v]);
+   if(!vbsRows.length&&vbs[fsym]!=null) vbsRows.push(['· valid '+fsym,vbs[fsym]]);
+   cards.appendChild(card('TradingView signals (observe-only)',[['feature symbol',fsym,'ok'],['received',tv.tradingview_alerts_received],['valid',tv.tradingview_alerts_valid,'ok'],['rejected',tv.tradingview_alerts_rejected,'bad'],...vbsRows,...Object.entries(tv.tradingview_reject_reasons||{}).filter(([,v])=>v>0).map(([k,v])=>['· rej '+k,v,'bad']),['observe-only',tv.tradingview_observe_only?'yes':'no','muted']]));
    const mtf=tv.tradingview_mtf_confirmation||{};
    const mtfOk=mtf.confirm==='confirmed_up'||mtf.confirm==='confirmed_down';
    cards.appendChild(card('TV 1m+5m cross-confirm (BTCUSDT)',[
@@ -274,16 +277,17 @@ if(ver.enabled){cards.appendChild(card('Verifier (Claude maker-checker)',[['veri
      ['5m age',mtf.tf_5m_age_s==null?'—':mtf.tf_5m_age_s+'s'],
      ['window',(tv.tradingview_mtf_confirmation&&'6min fresh window')||'—','muted']]));
    const tfb=tv.tradingview_latest_by_timeframe||{};
-   const tfRows=Object.entries(tfb).filter(([k])=>k.startsWith('BTCUSDT@')).map(([k,e])=>[k.replace('BTCUSDT@',''),(e.direction||'—')+' · str '+(e.strength==null?'—':e.strength)]);
-   if(tfRows.length) cards.appendChild(card('TradingView by timeframe (BTCUSDT)',tfRows));
+   const tfPrefix=fsym+'@';
+   const tfRows=Object.entries(tfb).filter(([k])=>k.startsWith(tfPrefix)).map(([k,e])=>[k.replace(tfPrefix,''),(e.direction||'—')+' · str '+(e.strength==null?'—':e.strength)]);
+   if(tfRows.length) cards.appendChild(card('TradingView by timeframe ('+fsym+')',tfRows));
    const lbs=tv.tradingview_latest_by_symbol||{};
-   const latestRows=Object.entries(lbs).map(([sym,e])=>[sym,(e.direction||'—')+' · '+(e.timeframe||'?')+'m · '+(e.indicator_name||'')]);
-   if(latestRows.length) cards.appendChild(card('TradingView latest signal',latestRows));
+   const latestRows=Object.entries(lbs).filter(([sym])=>sym===fsym).map(([sym,e])=>[sym,(e.direction||'—')+' · '+(e.timeframe||'?')+'m · '+(e.indicator_name||'')]);
+   if(latestRows.length) cards.appendChild(card('TradingView latest signal ('+fsym+')',latestRows));
    // RSI alert-history trend + next-5min prediction
    const rs=tv.rsi_trend||{},ct=rs.current_trend||{},np=rs.next_window_prediction||{};
    const rrows=[];
-   Object.entries(ct).forEach(([sym,t])=>rrows.push(['trend '+sym,(t.last_direction||'—')+' · streak '+(t.streak||0)]));
-   Object.entries(np).forEach(([sym,pr])=>rrows.push(['next '+sym, pr&&pr.prediction?(pr.prediction+' '+f((pr.prob_up||0)*100,0)+'%'):((pr&&pr.reason)||'—'), pr&&pr.prediction?(pr.prediction==='UP'?'ok':'bad'):'muted']));
+   Object.entries(ct).filter(([sym])=>sym===fsym).forEach(([sym,t])=>rrows.push(['trend '+sym,(t.last_direction||'—')+' · streak '+(t.streak||0)]));
+   Object.entries(np).filter(([sym])=>sym===fsym).forEach(([sym,pr])=>rrows.push(['next '+sym, pr&&pr.prediction?(pr.prediction+' '+f((pr.prob_up||0)*100,0)+'%'):((pr&&pr.reason)||'—'), pr&&pr.prediction?(pr.prediction==='UP'?'ok':'bad'):'muted']));
    rrows.push(['pred accuracy', rs.prediction_accuracy==null?'—':f(rs.prediction_accuracy*100,1)+'%']);
    rrows.push(['scored', rs.predictions_scored||0]);
    cards.appendChild(card('RSI trend → next 5-min',rrows));

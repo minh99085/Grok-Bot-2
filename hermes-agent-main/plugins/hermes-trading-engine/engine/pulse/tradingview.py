@@ -51,6 +51,19 @@ def normalize_direction(raw) -> Optional[str]:
     return _DIRECTION_MAP.get(str(raw).strip().lower())
 
 
+# BTC ticker aliases collapsed to ``feature_symbol`` (default BTCUSDT) for storage/dashboard.
+_BTC_SYMBOL_ALIASES = frozenset({"BTC/USD", "BTC", "XBTUSD", "BTCUSD", "BTCUSDT", "BTCUSDT.P"})
+
+
+def canonical_storage_symbol(symbol: Optional[str], feature_symbol: str = "BTCUSDT") -> str:
+    """Map BTC-family tickers to the configured chart symbol for counters/history keys."""
+    sym = normalize_symbol(symbol)
+    feat = normalize_symbol(feature_symbol) or "BTCUSDT"
+    if sym in _BTC_SYMBOL_ALIASES:
+        return feat
+    return sym or feat
+
+
 def normalize_symbol(raw) -> str:
     """Uppercase + strip a leading ``EXCHANGE:`` prefix so TradingView ``{{ticker}}`` values like
     ``COINBASE:BTCUSD`` / ``BINANCE:BTCUSDT`` match the allow-list (``BTCUSD`` / ``BTCUSDT``)."""
@@ -670,6 +683,39 @@ class RSITrendModel:
                 "sig_n": self.sig_n, "sig_correct": self.sig_correct,
                 "sig_by_direction": {k: dict(v) for k, v in self.sig_by_direction.items()}}
 
+    def canonicalize_storage(self, feature_symbol: str = "BTCUSDT") -> None:
+        """Merge legacy per-ticker RSI history (e.g. BTCUSD test alerts) into feature_symbol."""
+        feat = canonical_storage_symbol(feature_symbol, feature_symbol)
+
+        def _canon(sym: Optional[str]) -> str:
+            return canonical_storage_symbol(sym, feat)
+
+        merged_hist: dict = {}
+        for sym, dq in self.hist.items():
+            canon = _canon(sym)
+            seq = list(merged_hist.get(canon, [])) + list(dq)
+            seq.sort(key=lambda x: float(x[0] or 0.0))
+            merged_hist[canon] = deque(seq[-self.HIST:], maxlen=self.HIST)
+        self.hist = merged_hist
+
+        merged_sc: dict = {}
+        for sym, states in self.state_counts.items():
+            canon = _canon(sym)
+            dst = merged_sc.setdefault(canon, {})
+            for state, c in states.items():
+                b = dst.setdefault(state, {"up": 0, "n": 0})
+                b["up"] += int(c.get("up", 0) or 0)
+                b["n"] += int(c.get("n", 0) or 0)
+        self.state_counts = merged_sc
+
+        merged_pred: dict = {}
+        for sym, v in self.pred_by_symbol.items():
+            canon = _canon(sym)
+            b = merged_pred.setdefault(canon, {"n": 0, "correct": 0})
+            b["n"] += int(v.get("n", 0) or 0)
+            b["correct"] += int(v.get("correct", 0) or 0)
+        self.pred_by_symbol = merged_pred
+
     def load_state(self, data: dict) -> None:
         if not data:
             return
@@ -781,16 +827,48 @@ class TradingViewIntake:
         self._path = (Path(data_dir) / "btc_pulse_tradingview.json") if data_dir else None
         self._load_state()
 
+    def _storage_symbol(self, symbol: Optional[str]) -> str:
+        """Canonical key for counters/latest maps — all BTC-family tickers -> feature_symbol."""
+        return canonical_storage_symbol(symbol, self.feature_symbol)
+
     def _mtf_symbol(self, symbol: Optional[str] = None) -> Optional[str]:
         """Resolve which TV symbol key to use for 1m+5m confirmation lookups."""
         if symbol:
-            sym = normalize_symbol(symbol)
-            if sym in self.latest_by_symbol or (sym, "1") in self.latest_by_tf or (sym, "5") in self.latest_by_tf:
-                return sym
-            if sym in ("BTC/USD", "BTC", "XBTUSD", "BTCUSD"):
-                return self.feature_symbol
-            return sym
+            return self._storage_symbol(symbol)
         return self.feature_symbol or (self.latest.symbol if self.latest else None)
+
+    def _canonicalize_storage(self) -> None:
+        """Merge legacy per-ticker keys (e.g. BTCUSD test alerts) into feature_symbol."""
+        if not self.latest_by_symbol and not self.valid_by_symbol and not self.latest_by_tf:
+            return
+        merged_latest: dict = {}
+        for sym, ev in self.latest_by_symbol.items():
+            canon = self._storage_symbol(sym)
+            prev = merged_latest.get(canon)
+            if prev is None or float(ev.received_at or 0) >= float(prev.received_at or 0):
+                merged_latest[canon] = ev
+        self.latest_by_symbol = merged_latest
+
+        merged_valid: dict = {}
+        for sym, n in self.valid_by_symbol.items():
+            canon = self._storage_symbol(sym)
+            merged_valid[canon] = merged_valid.get(canon, 0) + int(n or 0)
+        self.valid_by_symbol = merged_valid
+
+        merged_tf: dict = {}
+        for (sym, tf), pair in self.latest_by_tf.items():
+            canon = self._storage_symbol(sym)
+            key = (canon, tf)
+            prev = merged_tf.get(key)
+            if prev is None or float(pair[1]) >= float(prev[1]):
+                merged_tf[key] = pair
+        self.latest_by_tf = merged_tf
+
+        if self.latest is not None:
+            canon = self._storage_symbol(self.latest.symbol)
+            cur = self.latest_by_symbol.get(canon)
+            if cur is None or float(self.latest.received_at or 0) >= float(cur.received_at or 0):
+                self.latest_by_symbol[canon] = self.latest
 
     # -- validation (pure given inputs) ------------------------------------- #
     def _check_secret(self, payload: dict, provided_header: Optional[str]) -> Optional[str]:
@@ -930,9 +1008,10 @@ class TradingViewIntake:
                 self._seen_set = set(self._seen)
             self.valid += 1
             self.latest = ev
-            self.latest_by_symbol[ev.symbol] = ev
-            self.latest_by_tf[(ev.symbol, str(ev.timeframe or "?"))] = (ev, float(now))
-            self.valid_by_symbol[ev.symbol] = self.valid_by_symbol.get(ev.symbol, 0) + 1
+            store_sym = self._storage_symbol(ev.symbol)
+            self.latest_by_symbol[store_sym] = ev
+            self.latest_by_tf[(store_sym, str(ev.timeframe or "?"))] = (ev, float(now))
+            self.valid_by_symbol[store_sym] = self.valid_by_symbol.get(store_sym, 0) + 1
             self._pending.append(ev)
             self._persist_locked()
             logger.info("tradingview alert ACCEPTED (observe-only): %s %s tf=%s strength=%s id=%s "
@@ -1079,3 +1158,6 @@ class TradingViewIntake:
             ev = _event_from_dict(row.get("ev"))
             if ev is not None:
                 self.latest_by_tf[(row.get("symbol"), str(row.get("tf")))] = (ev, float(row.get("ts") or 0.0))
+        self._canonicalize_storage()
+        if self.latest_by_symbol or self.valid_by_symbol:
+            self._persist_locked()

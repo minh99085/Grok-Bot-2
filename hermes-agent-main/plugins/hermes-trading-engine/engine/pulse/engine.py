@@ -941,8 +941,14 @@ class PulseEngine:
         self.gate_obs.load_state(acct.get("gate_observations") or {})
         self._tv_edge.load_state(acct.get("tv_edge") or {})
         self._rsi_model.load_state(acct.get("rsi_trend") or {})
+        self._rsi_model.canonicalize_storage(self.cfg.tradingview_feature_symbol)
         self._tv_learner.load_state(acct.get("tv_learner") or {})
-        self._tv_pending = list(acct.get("tv_pending") or [])
+        from engine.pulse.tradingview import canonical_storage_symbol
+        feat_sym = self.cfg.tradingview_feature_symbol
+        self._tv_pending = [
+            {**row, "symbol": canonical_storage_symbol(row.get("symbol"), feat_sym)}
+            for row in (acct.get("tv_pending") or [])
+        ]
         if self.edge_signal is not None:
             self.edge_signal.load_state(acct.get("edge_signal") or {})
         if self.cex_lead is not None:
@@ -1063,7 +1069,8 @@ class PulseEngine:
         if self.tradingview is not None:
             px_now = self.price.current()
             for ev in self.tradingview.drain_pending():   # build the per-symbol RSI alert history
-                self._rsi_model.observe(symbol=ev.symbol, direction=ev.direction,
+                store_sym = self.tradingview._storage_symbol(ev.symbol)
+                self._rsi_model.observe(symbol=store_sym, direction=ev.direction,
                                         ts=(ev.bar_time or ev.received_at))
                 # B: ask Grok (async, off hot path) for P(up) given this signal + BTC context
                 if self.grok_predictor is not None:
@@ -1080,9 +1087,9 @@ class PulseEngine:
                 # is built from the full signal history, not only windows the bot traded.
                 if px_now is not None:
                     self._tv_pending.append({
-                        "symbol": ev.symbol, "direction": ev.direction, "event_id": ev.event_id,
-                        "state": self._rsi_model.trend(ev.symbol).get("state"),
-                        "model_pred": self._rsi_model.predict(ev.symbol).get("prediction"),
+                        "symbol": store_sym, "direction": ev.direction, "event_id": ev.event_id,
+                        "state": self._rsi_model.trend(store_sym).get("state"),
+                        "model_pred": self._rsi_model.predict(store_sym).get("prediction"),
                         "price0": float(px_now),
                         "due_ts": float(ev.bar_time or ev.received_at)
                         + self.cfg.tradingview_signal_horizon_s})

@@ -70,10 +70,9 @@ def test_symbol_normalization_strips_exchange_prefix():
     assert normalize_symbol("btcusd") == "BTCUSD" and normalize_symbol("BTC/USD") == "BTC/USD"
 
 
-def test_two_sources_coinbase_and_binance_tracked_separately():
-    """Coinbase BTCUSD + Binance BTCUSDT used together: both accepted (exchange-prefix tolerant),
-    de-duped independently, and tracked per-symbol in the report."""
-    intake = _intake()
+def test_btc_aliases_collapse_to_feature_symbol():
+    """BTCUSD + BTCUSDT both accepted but stored under feature_symbol (default BTCUSDT)."""
+    intake = _intake(feature_symbol="BTCUSDT")
     now = 1_000_000.0
     cb = json.dumps({"secret": SECRET, "bot_name": "hermes", "symbol": "COINBASE:BTCUSD",
                      "direction": "UP", "strength": 0.7, "indicator_name": "RSI Divergence",
@@ -85,25 +84,58 @@ def test_two_sources_coinbase_and_binance_tracked_separately():
     assert intake.ingest(bn, now=now + 1)[1]["accepted"] is True
     rep = intake.report()
     assert rep["tradingview_alerts_valid"] == 2
-    assert rep["tradingview_valid_by_symbol"] == {"BTCUSD": 1, "BTCUSDT": 1}
+    assert rep["tradingview_valid_by_symbol"] == {"BTCUSDT": 2}
     bysym = rep["tradingview_latest_by_symbol"]
-    assert bysym["BTCUSD"]["direction"] == "UP" and bysym["BTCUSD"]["symbol"] == "BTCUSD"
-    assert bysym["BTCUSDT"]["direction"] == "DOWN"
-    # a duplicate Coinbase event is still caught, Binance unaffected
+    assert set(bysym) == {"BTCUSDT"}
+    assert bysym["BTCUSDT"]["direction"] == "DOWN" and bysym["BTCUSDT"]["symbol"] == "BTCUSDT"
     assert intake.ingest(cb, now=now + 2)[1].get("duplicate") is True
-    assert intake.report()["tradingview_valid_by_symbol"] == {"BTCUSD": 1, "BTCUSDT": 1}
+    assert intake.report()["tradingview_valid_by_symbol"] == {"BTCUSDT": 2}
 
 
 def test_per_symbol_state_persists(tmp_path):
-    intake = _intake(tmp_path)
+    intake = _intake(tmp_path, feature_symbol="BTCUSDT")
     intake.ingest(json.dumps({"secret": SECRET, "bot_name": "hermes", "symbol": "BTCUSD",
                               "direction": "UP", "event_id": "cb-x"}).encode(), now=1_000_000.0)
     intake.ingest(json.dumps({"secret": SECRET, "bot_name": "hermes", "symbol": "BTCUSDT",
                               "direction": "DOWN", "event_id": "bn-x"}).encode(), now=1_000_001.0)
-    restored = _intake(tmp_path)
+    restored = _intake(tmp_path, feature_symbol="BTCUSDT")
     rep = restored.report()
-    assert rep["tradingview_valid_by_symbol"] == {"BTCUSD": 1, "BTCUSDT": 1}
-    assert set(rep["tradingview_latest_by_symbol"]) == {"BTCUSD", "BTCUSDT"}
+    assert rep["tradingview_valid_by_symbol"] == {"BTCUSDT": 2}
+    assert set(rep["tradingview_latest_by_symbol"]) == {"BTCUSDT"}
+
+
+def test_legacy_btcusd_storage_merged_on_load(tmp_path):
+    """Stale BTCUSD test webhook rows collapse into BTCUSDT after restart."""
+    state_path = tmp_path / "btc_pulse_tradingview.json"
+    state_path.write_text(json.dumps({
+        "received": 2, "valid": 2, "rejected": 0, "consumed": 0, "reject_reasons": {},
+        "seen_ids": ["tv-test-1", "bn-1"],
+        "latest": {"event_id": "bn-1", "bot_name": "hermes", "symbol": "BTCUSDT",
+                   "direction": "DOWN", "received_at": 2.0, "raw_payload_hash": "a" * 64},
+        "latest_by_symbol": {
+            "BTCUSD": {"event_id": "tv-test-1", "bot_name": "hermes", "symbol": "BTCUSD",
+                       "direction": "UP", "received_at": 1.0, "raw_payload_hash": "b" * 64},
+            "BTCUSDT": {"event_id": "bn-1", "bot_name": "hermes", "symbol": "BTCUSDT",
+                        "direction": "DOWN", "received_at": 2.0, "raw_payload_hash": "a" * 64},
+        },
+        "valid_by_symbol": {"BTCUSD": 1, "BTCUSDT": 1},
+        "latest_by_tf": [],
+    }), encoding="utf-8")
+    intake = _intake(tmp_path, feature_symbol="BTCUSDT")
+    rep = intake.report()
+    assert rep["tradingview_valid_by_symbol"] == {"BTCUSDT": 2}
+    assert set(rep["tradingview_latest_by_symbol"]) == {"BTCUSDT"}
+    assert rep["tradingview_latest_by_symbol"]["BTCUSDT"]["direction"] == "DOWN"
+
+
+def test_rsi_trend_canonicalize_merges_btcusd(tmp_path):
+    m = RSITrendModel()
+    m.observe(symbol="BTCUSD", direction="DOWN", ts=1.0)
+    m.observe(symbol="BTCUSDT", direction="UP", ts=2.0)
+    m.canonicalize_storage("BTCUSDT")
+    assert set(m.hist) == {"BTCUSDT"}
+    assert len(m.hist["BTCUSDT"]) == 2
+    assert m.trend("BTCUSDT")["last_direction"] == "UP"
 
 
 def test_secret_via_header_only():
