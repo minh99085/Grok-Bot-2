@@ -9,12 +9,16 @@ separate ``scripts/run_btc_pulse.py`` process.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, JSONResponse
+import httpx
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, JSONResponse, Response
+
+logger = logging.getLogger("hte.app")
 
 app = FastAPI(title="Hermes BTC 5-min Pulse (paper)", version="2.0")
 
@@ -71,7 +75,52 @@ def btc_pulse_ledger() -> dict:
 def api_index() -> JSONResponse:
     return JSONResponse({"engine": "btc-5min-pulse", "paper_only": True,
                          "endpoints": ["/api/health", "/api/polymarket/training/btc_pulse",
-                                       "/api/polymarket/training/btc_pulse/ledger"]})
+                                       "/api/polymarket/training/btc_pulse/ledger",
+                                       _tv_webhook_path()]})
+
+
+def _tv_webhook_path() -> str:
+    return (os.getenv("TRADINGVIEW_WEBHOOK_PATH", "/webhooks/tradingview")
+            or "/webhooks/tradingview").strip()
+
+
+def _tv_webhook_upstream() -> str:
+    return (os.getenv("TRADINGVIEW_WEBHOOK_UPSTREAM", "http://hermes-training:8787")
+            or "http://hermes-training:8787").rstrip("/")
+
+
+@app.post(_tv_webhook_path())
+async def tradingview_webhook_proxy(request: Request) -> Response:
+    """Proxy TradingView alerts to the pulse loop webhook on port 80.
+
+    TradingView only allows HTTP on port 80. The real listener runs inside ``hermes-training``;
+    this endpoint forwards POST bodies unchanged (observe-only intake).
+    """
+    body = await request.body()
+    headers: dict[str, str] = {}
+    for name in ("Content-Type", "X-Tradingview-Secret"):
+        val = request.headers.get(name)
+        if val:
+            headers[name] = val
+    url = f"{_tv_webhook_upstream()}{_tv_webhook_path()}"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            upstream = await client.post(url, content=body, headers=headers)
+    except httpx.ConnectError:
+        logger.warning("tradingview webhook upstream unavailable url=%s", url)
+        return JSONResponse(
+            {"ok": False, "reason": "webhook_upstream_unavailable", "observe_only": True,
+             "hint": "set TRADINGVIEW_WEBHOOK_SECRET on hermes-training and redeploy"},
+            status_code=503,
+        )
+    except httpx.HTTPError as exc:
+        logger.warning("tradingview webhook proxy error url=%s err=%s", url, exc)
+        return JSONResponse(
+            {"ok": False, "reason": "webhook_proxy_error", "observe_only": True},
+            status_code=502,
+        )
+    media = upstream.headers.get("content-type", "application/json")
+    return Response(content=upstream.content, status_code=upstream.status_code, media_type=media)
 
 
 @app.get("/", response_class=HTMLResponse)
