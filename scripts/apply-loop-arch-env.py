@@ -23,6 +23,8 @@ UPDATES = {
     "PULSE_TV_DOWN_BIAS_EXPLORE_RATE": "0.05",
     "PULSE_DIRECTIONAL_EXPLORE_RATE": "0.15",
     "PULSE_MIN_REWARD_RISK": "0.35",
+    # Gamma windows often appear >20s after open_ts; min_seconds_since_open=30 already delays entry.
+    "PULSE_MAX_OPEN_LAG_S": "45",
 }
 
 text = ENV_PATH.read_text(encoding="utf-8") if ENV_PATH.exists() else ""
