@@ -9,7 +9,9 @@ UPDATES = {
     "PULSE_GROK_DECIDER_MODE": "follow",
     "PULSE_GROK_DECIDER_FOLLOW_FRACTION": "1.0",
     "PULSE_GROK_DECIDER_EXPLORE_RATE": "0.15",
-    "PULSE_VERIFIER_FOLLOW_REQUIRE_VERDICT": "0",
+    "PULSE_VERIFIER_ENABLED": "1",
+    "PULSE_VERIFIER_FAIL_OPEN": "0",
+    "PULSE_VERIFIER_FOLLOW_REQUIRE_VERDICT": "1",
     # TV observe-only — conflict veto only, not trade authority.
     "PULSE_TRADINGVIEW_SIGNAL_GATE": "0",
     "PULSE_TV_MIN_SIGNAL_STRENGTH": "0",
@@ -25,6 +27,8 @@ UPDATES = {
     "PULSE_MIN_REWARD_RISK": "0.35",
     # Gamma windows often appear >20s after open_ts; min_seconds_since_open=30 already delays entry.
     "PULSE_MAX_OPEN_LAG_S": "45",
+    # Stop halt needs >30 settled before Wilson test (avoids freeze at exactly min_samples).
+    "PULSE_STOP_MIN_SAMPLES": "40",
 }
 
 text = ENV_PATH.read_text(encoding="utf-8") if ENV_PATH.exists() else ""

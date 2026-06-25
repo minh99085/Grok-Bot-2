@@ -63,6 +63,34 @@ def main() -> int:
 
     issues: list[dict] = []
 
+    gd = data.get("grok_decider") or {}
+    ver = data.get("verifier") or {}
+    stop = data.get("stop_conditions") or {}
+    loops = (data.get("loops") or {}).get("loops") or {}
+
+    if gd.get("mode") != "follow" or not gd.get("affects_trading"):
+        issues.append(_issue("grok_not_follow", "P0",
+                             f"mode={gd.get('mode')} affects={gd.get('affects_trading')}",
+                             "PULSE_GROK_DECIDER_MODE=follow on VPS"))
+    if not ver.get("enabled"):
+        issues.append(_issue("verifier_disabled", "P0", "verifier.enabled is false",
+                             "ANTHROPIC_API_KEY + PULSE_VERIFIER_ENABLED=1; recreate container"))
+    if stop.get("any_halted"):
+        dir_h = (stop.get("strategies") or {}).get("directional") or {}
+        issues.append(_issue("strategy_halted", "P0",
+                             f"directional halted reasons={dir_h.get('reasons')}",
+                             "inspect stop_conditions or raise PULSE_STOP_MIN_SAMPLES"))
+    for loop in ("tradingview", "signal_generation", "verifier", "execution"):
+        if loop not in loops:
+            issues.append(_issue("loop_missing", "P1", f"missing loop {loop}",
+                                 "redeploy engine 202d40c+ and restart"))
+    if sg.get("enabled"):
+        issues.append(_issue("tv_signal_gate_on", "P1", "TV signal gate enabled",
+                             "PULSE_TRADINGVIEW_SIGNAL_GATE=0"))
+    if mtf.get("require_confirm"):
+        issues.append(_issue("mtf_require_confirm_on", "P1", "MTF require_confirm on",
+                             "PULSE_TV_MTF_REQUIRE_CONFIRM=0"))
+
     if not reconciled:
         issues.append(_issue("reconciliation_broken", "P0", "global_reconciled is false",
                              "fix accounting before tuning gates"))

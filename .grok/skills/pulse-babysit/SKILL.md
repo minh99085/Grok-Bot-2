@@ -44,8 +44,9 @@ DEPLOY → SOAK (4h default) → PULL → EVALUATE → (issues?) → FIX → COM
 
 1. Read `scripts/pulse-babysit/state.json`.
 2. If `phase` is `soak` and `now < soak_until`: run `status`, exit (do not fix).
-3. Run `.\scripts\pulse-babysit\pull-vps-artifacts.ps1`.
-4. Run `python scripts/pulse-babysit/evaluate-cycle.py` — parse JSON stdout.
+3. Run `python scripts/pulse-babysit/scan-health.py` — full runtime checklist (Grok/verifier/loops/stop).
+4. Run `.\scripts\pulse-babysit\pull-vps-artifacts.ps1`.
+5. Run `python scripts/pulse-babysit/evaluate-cycle.py` — parse JSON stdout.
 5. If `verdict` is `healthy`: append history, set `phase=soak`, `soak_until=now+soak_hours`, done.
 6. If `verdict` is `issues`: pick **at most 2** highest-severity issues; fix in plugin code only.
 7. Run targeted tests under `hermes-agent-main/plugins/hermes-trading-engine/tests/`.
@@ -61,6 +62,8 @@ The script flags issues. You may fix only what the report supports:
 - `up_side_bleed` → down_bias_gate, context_gate, block weak UP
 - `mtf_starved` → TV alert health (observe-only note in report; do not disable MTF without data)
 - `reconciliation_broken` → bug fix immediately (P0)
+- `verifier_disabled` / `grok_not_follow` → run `validate-vps-env.py` on VPS; fix `.env`; recreate `hermes-training`
+- `strategy_halted` → stop_conditions (Wilson/PF/DD); adjust `PULSE_STOP_MIN_SAMPLES` or performance
 - `tv_feed_unhealthy` → webhook/secret/symbol (ops)
 - `learning_hurts` → learning weight / bench veto
 
