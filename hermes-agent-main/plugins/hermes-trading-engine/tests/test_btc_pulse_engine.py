@@ -213,7 +213,9 @@ def test_engine_full_cycle_trade_and_settle(tmp_path):
     eng = PulseEngine(PulseConfig(tick_seconds=1.0, size_usd=10.0, min_edge=0.02,
                                   edge_buffer=0.01, basis_buffer=0.0,
                                   min_seconds_since_open=0.0, sigma_trust_floor=0.0,
-                                  min_vol_samples=2, data_dir=str(tmp_path)),
+                                  min_vol_samples=2,
+                                  tv_mtf_conflict_gate_enabled=False,
+                                  data_dir=str(tmp_path)),
                       market_feed=_FakeMarket(win, resolution=True), price_feed=feed)
     for i in range(12):                      # warm vol BEFORE the window opens
         eng.tick(now=t0 - 12 + i)

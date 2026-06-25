@@ -133,7 +133,7 @@ services:
       PULSE_MAX_PRICE: "${PULSE_MAX_PRICE:-0.97}"
       # Min reward-to-risk for an entry: (1-price)/price. 0=off. e.g. 0.25 skips entries above ~0.80
       # (which win < ~$1.25 per $5 risked) so one loss can't wipe ~10 tiny wins.
-      PULSE_MIN_REWARD_RISK: "${PULSE_MIN_REWARD_RISK:-0.25}"
+      PULSE_MIN_REWARD_RISK: "${PULSE_MIN_REWARD_RISK:-0.35}"
       PULSE_MAX_OPEN_LAG_S: "${PULSE_MAX_OPEN_LAG_S:-20}"
       PULSE_VOL_WINDOW_S: "${PULSE_VOL_WINDOW_S:-900}"
       PULSE_SETTLE_GRACE_S: "${PULSE_SETTLE_GRACE_S:-180}"
@@ -225,7 +225,7 @@ services:
       # cold-start carve-out so the allowlist does NOT freeze the bot: without proven-winning
       # buckets it would block every directional trade forever (no trades => nothing to prove).
       # This lets a small capped fraction through as exploration to keep learning. 0=block-all.
-      PULSE_DIRECTIONAL_EXPLORE_RATE: "${PULSE_DIRECTIONAL_EXPLORE_RATE:-0.05}"
+      PULSE_DIRECTIONAL_EXPLORE_RATE: "${PULSE_DIRECTIONAL_EXPLORE_RATE:-0}"
       # SURGICAL capital reset: set to a NEW unique token to zero P&L/ledger/arbitrage/reconciliation
       # back to a fresh $500 while KEEPING all learning (models, selectivity evidence, lessons,
       # gradings). Applies exactly once per new token (idempotent). Empty = no reset.
@@ -289,10 +289,16 @@ services:
       PULSE_TV_CONTEXT_BLOCK_VOLUME: "${PULSE_TV_CONTEXT_BLOCK_VOLUME:-spike}"
       PULSE_TV_CONTEXT_BLOCK_HURST: "${PULSE_TV_CONTEXT_BLOCK_HURST:-noise}"
       PULSE_TV_CONTEXT_MAX_TTC_S: "${PULSE_TV_CONTEXT_MAX_TTC_S:-240}"
-      PULSE_TV_CONTEXT_EXPLORATION_RATE: "${PULSE_TV_CONTEXT_EXPLORATION_RATE:-0.05}"
+      PULSE_TV_CONTEXT_EXPLORATION_RATE: "${PULSE_TV_CONTEXT_EXPLORATION_RATE:-0}"
       # DOWN-bias gate (Townhall P3): block proven-losing UP / bullish_aligned stacks
       PULSE_TV_DOWN_BIAS_GATE: "${PULSE_TV_DOWN_BIAS_GATE:-1}"
-      PULSE_TV_DOWN_BIAS_EXPLORE_RATE: "${PULSE_TV_DOWN_BIAS_EXPLORE_RATE:-0.02}"
+      PULSE_TV_DOWN_BIAS_EXPLORE_RATE: "${PULSE_TV_DOWN_BIAS_EXPLORE_RATE:-0}"
+      PULSE_TV_DOWN_BIAS_BLOCK_UP_AGAINST_CONFIRMED_DOWN: "${PULSE_TV_DOWN_BIAS_BLOCK_UP_AGAINST_CONFIRMED_DOWN:-1}"
+      # MTF gate: block 1m/5m conflict; require confirmed_up/down + side alignment
+      PULSE_TV_MTF_CONFLICT_GATE: "${PULSE_TV_MTF_CONFLICT_GATE:-1}"
+      PULSE_TV_MTF_REQUIRE_CONFIRM: "${PULSE_TV_MTF_REQUIRE_CONFIRM:-1}"
+      PULSE_TV_MTF_REQUIRE_SIDE_ALIGN: "${PULSE_TV_MTF_REQUIRE_SIDE_ALIGN:-1}"
+      PULSE_TV_MTF_CONFLICT_EXPLORE_RATE: "${PULSE_TV_MTF_CONFLICT_EXPLORE_RATE:-0}"
       # Late-window high-conviction entry mode (time-decay edge). Restrict-only; edge always measured
       # observe-only. Can only PREVENT trades; never forces/sizes/bypasses the execution gate.
       PULSE_LATE_WINDOW_ENTRY: "${PULSE_LATE_WINDOW_ENTRY:-0}"

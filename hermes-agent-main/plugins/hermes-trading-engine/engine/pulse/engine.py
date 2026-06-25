@@ -214,14 +214,15 @@ class PulseConfig:
     tv_context_block_liquidation_spike: bool = True
     tv_context_block_event_blackout: bool = True
     tv_context_block_grok_event_risk_high: bool = True
-    tv_context_exploration_rate: float = 0.05
+    tv_context_exploration_rate: float = 0.0
     # ---- TradingView DOWN-bias gate (Townhall P3; restrict-only) ----
     tv_down_bias_gate_enabled: bool = False
-    tv_down_bias_exploration_rate: float = 0.02
+    tv_down_bias_exploration_rate: float = 0.0
+    tv_down_bias_block_up_against_confirmed_down: bool = True
     tv_mtf_conflict_gate_enabled: bool = True
     tv_mtf_require_confirm: bool = True
     tv_mtf_require_side_align: bool = True
-    tv_mtf_conflict_exploration_rate: float = 0.02
+    tv_mtf_conflict_exploration_rate: float = 0.0
     # ---- verifiable stop conditions (agent-independent kill switches; Loop Eng #6) ----
     stop_enabled: bool = True
     stop_rolling_n: int = 50
@@ -414,7 +415,7 @@ class PulseConfig:
             directional_require_winning_bucket=str(os.getenv("PULSE_DIRECTIONAL_REQUIRE_WINNING", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
             directional_winning_min_samples=int(_envf("PULSE_DIRECTIONAL_WINNING_MIN_SAMPLES", 30)),
-            directional_explore_rate=_envf("PULSE_DIRECTIONAL_EXPLORE_RATE", 0.15),
+            directional_explore_rate=_envf("PULSE_DIRECTIONAL_EXPLORE_RATE", 0.05),
             selectivity_gate_enabled=str(os.getenv("PULSE_SELECTIVITY_GATE_ENABLED", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
             selectivity_min_samples=int(_envf("PULSE_SELECTIVITY_MIN_SAMPLES", 30)),
@@ -441,17 +442,20 @@ class PulseConfig:
             tv_context_block_grok_event_risk_high=str(
                 os.getenv("PULSE_TV_CONTEXT_BLOCK_GROK_EVENT_RISK", "1")).strip().lower()
             in ("1", "true", "yes", "on"),
-            tv_context_exploration_rate=_envf("PULSE_TV_CONTEXT_EXPLORATION_RATE", 0.05),
+            tv_context_exploration_rate=_envf("PULSE_TV_CONTEXT_EXPLORATION_RATE", 0.0),
             tv_down_bias_gate_enabled=str(os.getenv("PULSE_TV_DOWN_BIAS_GATE", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
-            tv_down_bias_exploration_rate=_envf("PULSE_TV_DOWN_BIAS_EXPLORE_RATE", 0.02),
+            tv_down_bias_exploration_rate=_envf("PULSE_TV_DOWN_BIAS_EXPLORE_RATE", 0.0),
+            tv_down_bias_block_up_against_confirmed_down=str(
+                os.getenv("PULSE_TV_DOWN_BIAS_BLOCK_UP_AGAINST_CONFIRMED_DOWN", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
             tv_mtf_conflict_gate_enabled=str(os.getenv("PULSE_TV_MTF_CONFLICT_GATE", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
             tv_mtf_require_confirm=str(os.getenv("PULSE_TV_MTF_REQUIRE_CONFIRM", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
             tv_mtf_require_side_align=str(os.getenv("PULSE_TV_MTF_REQUIRE_SIDE_ALIGN", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
-            tv_mtf_conflict_exploration_rate=_envf("PULSE_TV_MTF_CONFLICT_EXPLORE_RATE", 0.02),
+            tv_mtf_conflict_exploration_rate=_envf("PULSE_TV_MTF_CONFLICT_EXPLORE_RATE", 0.0),
             stop_enabled=str(os.getenv("PULSE_STOP_ENABLED", "1")).strip().lower()
             in ("1", "true", "yes", "on"),
             stop_rolling_n=int(_envf("PULSE_STOP_ROLLING_N", 50)),
@@ -596,6 +600,8 @@ class PulseEngine:
         from engine.pulse.tv_down_bias_gate import TradingViewDownBiasGate
         self.tv_down_bias_gate = TradingViewDownBiasGate(
             enabled=bool(self.cfg.tv_down_bias_gate_enabled),
+            block_up_against_confirmed_down=bool(
+                self.cfg.tv_down_bias_block_up_against_confirmed_down),
             exploration_rate=self.cfg.tv_down_bias_exploration_rate)
         from engine.pulse.tv_mtf_gate import TradingViewMtfConflictGate
         self.tv_mtf_gate = TradingViewMtfConflictGate(
@@ -1569,6 +1575,7 @@ class PulseEngine:
                     side=d.side,
                     mtf_alignment=(tv_feature or {}).get("mtf_alignment"),
                     tv_direction=(tv_feature or {}).get("direction"),
+                    tf_confirm=(tv_feature or {}).get("tf_confirm"),
                 )
                 dr.down_bias_gate = {"decision": db_res["decision"], "reasons": db_res["reasons"]}
                 if db_res["decision"] == "block":

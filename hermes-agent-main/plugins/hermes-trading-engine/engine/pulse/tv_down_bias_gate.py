@@ -20,12 +20,14 @@ class TradingViewDownBiasGate:
         enabled: bool = True,
         block_bullish_aligned_up: bool = True,
         block_up_without_bearish: bool = True,
-        exploration_rate: float = 0.02,
+        block_up_against_confirmed_down: bool = True,
+        exploration_rate: float = 0.0,
         seed: Optional[int] = None,
     ):
         self.enabled = bool(enabled)
         self.block_bullish_aligned_up = bool(block_bullish_aligned_up)
         self.block_up_without_bearish = bool(block_up_without_bearish)
+        self.block_up_against_confirmed_down = bool(block_up_against_confirmed_down)
         self.exploration_rate = max(0.0, min(0.05, float(exploration_rate)))
         self.passed = 0
         self.blocked = 0
@@ -40,16 +42,20 @@ class TradingViewDownBiasGate:
         side: Optional[str],
         mtf_alignment=None,
         tv_direction=None,
+        tf_confirm=None,
     ) -> list[str]:
         if not side or str(side).lower() != "up":
             return []
         reasons = []
         ma = str(mtf_alignment or "").strip().lower()
         td = str(tv_direction or "").strip().upper()
+        tc = str(tf_confirm or "").strip().lower()
         if self.block_bullish_aligned_up and ma == "bullish_aligned":
             reasons.append("tv_down_bias_bullish_aligned_up")
         if self.block_up_without_bearish and td == "UP" and ma != "bearish_aligned":
             reasons.append("tv_down_bias_up_without_bearish")
+        if self.block_up_against_confirmed_down and tc == "confirmed_down":
+            reasons.append("tv_down_bias_up_against_confirmed_down")
         return reasons
 
     def evaluate(
@@ -58,10 +64,12 @@ class TradingViewDownBiasGate:
         side: Optional[str],
         mtf_alignment=None,
         tv_direction=None,
+        tf_confirm=None,
     ) -> dict:
         if not self.enabled:
             return {"decision": "pass", "reasons": [], "active": False}
-        reasons = self.violations(side=side, mtf_alignment=mtf_alignment, tv_direction=tv_direction)
+        reasons = self.violations(side=side, mtf_alignment=mtf_alignment,
+                                  tv_direction=tv_direction, tf_confirm=tf_confirm)
         if not reasons:
             self.passed += 1
             return {"decision": "pass", "reasons": [], "active": True}
@@ -80,6 +88,7 @@ class TradingViewDownBiasGate:
             "enabled": self.enabled,
             "block_bullish_aligned_up": self.block_bullish_aligned_up,
             "block_up_without_bearish": self.block_up_without_bearish,
+            "block_up_against_confirmed_down": self.block_up_against_confirmed_down,
             "exploration_rate": self.exploration_rate,
             "passed": self.passed,
             "blocked": self.blocked,
@@ -94,6 +103,7 @@ class TradingViewDownBiasGate:
             "enabled": self.enabled,
             "block_bullish_aligned_up": self.block_bullish_aligned_up,
             "block_up_without_bearish": self.block_up_without_bearish,
+            "block_up_against_confirmed_down": self.block_up_against_confirmed_down,
             "exploration_rate": self.exploration_rate,
             "passed": self.passed,
             "blocked": self.blocked,
@@ -110,6 +120,8 @@ class TradingViewDownBiasGate:
             data.get("block_bullish_aligned_up", self.block_bullish_aligned_up))
         self.block_up_without_bearish = bool(
             data.get("block_up_without_bearish", self.block_up_without_bearish))
+        self.block_up_against_confirmed_down = bool(
+            data.get("block_up_against_confirmed_down", self.block_up_against_confirmed_down))
         self.exploration_rate = max(0.0, min(0.05, float(data.get("exploration_rate", self.exploration_rate))))
         self.passed = int(data.get("passed", 0) or 0)
         self.blocked = int(data.get("blocked", 0) or 0)

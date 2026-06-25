@@ -25,6 +25,20 @@ def test_allows_down_and_bearish_up_explore_path():
     assert g.evaluate(side="up", mtf_alignment="bearish_aligned", tv_direction="DOWN")["decision"] == "pass"
 
 
+def test_blocks_up_against_confirmed_down():
+    g = TradingViewDownBiasGate(enabled=True, exploration_rate=0.0)
+    r = g.evaluate(side="up", tf_confirm="confirmed_down", tv_direction="DOWN",
+                   mtf_alignment="bearish_aligned")
+    assert r["decision"] == "block"
+    assert "tv_down_bias_up_against_confirmed_down" in r["reasons"]
+
+
+def test_allows_up_when_confirmed_up():
+    g = TradingViewDownBiasGate(enabled=True, exploration_rate=0.0,
+                                block_up_without_bearish=False)
+    assert g.evaluate(side="up", tf_confirm="confirmed_up")["decision"] == "pass"
+
+
 def test_disabled_passes():
     g = TradingViewDownBiasGate(enabled=False)
     assert g.evaluate(side="up", mtf_alignment="bullish_aligned")["decision"] == "pass"
