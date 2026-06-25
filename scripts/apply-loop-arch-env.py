@@ -31,7 +31,7 @@ UPDATES = {
     "PULSE_MIN_REWARD_RISK_UP_PREMIUM": "0.15",
     "PULSE_GROK_UP_MIN_P_WIN": "0.58",
     # Gamma windows often appear >20s after open_ts; min_seconds_since_open=30 already delays entry.
-    "PULSE_MAX_OPEN_LAG_S": "90",
+    "PULSE_MAX_OPEN_LAG_S": "120",
     # Stop halt needs >30 settled before Wilson test (avoids freeze at exactly min_samples).
     "PULSE_STOP_MIN_SAMPLES": "40",
     # Mispricing stack: CEX-lead alignment + edge/TTC + executable margin on Grok follow.
