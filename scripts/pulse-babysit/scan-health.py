@@ -92,6 +92,8 @@ def main() -> int:
     record("config_reward_risk", float(cfg.get("min_reward_risk") or 0) <= 0.40)
 
     L = status.get("ledger") or {}
+    trades = int(L.get("trades") or 0)
+    ticks = int(status.get("ticks") or 0)
     record("ledger_reconciled", (status.get("decision_lifecycle") or {}).get("reconciled") is True)
     eg = status.get("execution_gate") or {}
     record("exec_gate_reconciled", eg.get("reconciled") is True)
@@ -121,8 +123,6 @@ def main() -> int:
         issues.append(_issue("window_skip_storm", "P1", f"recent={recent_reasons[:5]}",
                              "raise PULSE_MAX_OPEN_LAG_S or fix price sampler"))
 
-    trades = int(L.get("trades") or 0)
-    ticks = int(status.get("ticks") or 0)
     if ticks > 60 and trades <= 30 and int(rbs.get("directional") or 0) > 5000:
         if gd.get("mode") != "follow":
             issues.append(_issue("trade_freeze", "P1", f"trades={trades} ticks={ticks}",
