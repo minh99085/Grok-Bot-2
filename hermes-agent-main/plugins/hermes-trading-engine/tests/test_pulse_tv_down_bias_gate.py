@@ -19,8 +19,16 @@ def test_blocks_up_without_bearish():
     assert "tv_down_bias_up_without_bearish" in r["reasons"]
 
 
-def test_allows_down_and_bearish_up_explore_path():
+def test_blocks_up_on_bearish_down_stack():
     g = TradingViewDownBiasGate(enabled=True, exploration_rate=0.0)
+    r = g.evaluate(side="up", mtf_alignment="bearish_aligned", tv_direction="DOWN")
+    assert r["decision"] == "block"
+    assert "tv_down_bias_up_on_bearish_down_stack" in r["reasons"]
+
+
+def test_allows_down_and_bearish_up_when_stack_rule_off():
+    g = TradingViewDownBiasGate(enabled=True, exploration_rate=0.0,
+                                block_up_on_bearish_down_stack=False)
     assert g.evaluate(side="down", mtf_alignment="bearish_aligned")["decision"] == "pass"
     assert g.evaluate(side="up", mtf_alignment="bearish_aligned", tv_direction="DOWN")["decision"] == "pass"
 

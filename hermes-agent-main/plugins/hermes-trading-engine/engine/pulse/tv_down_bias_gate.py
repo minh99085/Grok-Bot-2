@@ -20,6 +20,7 @@ class TradingViewDownBiasGate:
         enabled: bool = True,
         block_bullish_aligned_up: bool = True,
         block_up_without_bearish: bool = True,
+        block_up_on_bearish_down_stack: bool = True,
         block_up_against_confirmed_down: bool = True,
         exploration_rate: float = 0.0,
         seed: Optional[int] = None,
@@ -27,6 +28,7 @@ class TradingViewDownBiasGate:
         self.enabled = bool(enabled)
         self.block_bullish_aligned_up = bool(block_bullish_aligned_up)
         self.block_up_without_bearish = bool(block_up_without_bearish)
+        self.block_up_on_bearish_down_stack = bool(block_up_on_bearish_down_stack)
         self.block_up_against_confirmed_down = bool(block_up_against_confirmed_down)
         self.exploration_rate = max(0.0, min(0.05, float(exploration_rate)))
         self.passed = 0
@@ -54,6 +56,8 @@ class TradingViewDownBiasGate:
             reasons.append("tv_down_bias_bullish_aligned_up")
         if self.block_up_without_bearish and td == "UP" and ma != "bearish_aligned":
             reasons.append("tv_down_bias_up_without_bearish")
+        if self.block_up_on_bearish_down_stack and ma == "bearish_aligned" and td == "DOWN":
+            reasons.append("tv_down_bias_up_on_bearish_down_stack")
         if self.block_up_against_confirmed_down and tc == "confirmed_down":
             reasons.append("tv_down_bias_up_against_confirmed_down")
         return reasons
@@ -88,6 +92,7 @@ class TradingViewDownBiasGate:
             "enabled": self.enabled,
             "block_bullish_aligned_up": self.block_bullish_aligned_up,
             "block_up_without_bearish": self.block_up_without_bearish,
+            "block_up_on_bearish_down_stack": self.block_up_on_bearish_down_stack,
             "block_up_against_confirmed_down": self.block_up_against_confirmed_down,
             "exploration_rate": self.exploration_rate,
             "passed": self.passed,
