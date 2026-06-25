@@ -1528,17 +1528,16 @@ class PulseEngine:
                                                   float(self.cfg.grok_decider_explore_size_fraction)
                                                   * self.grok_decider.aggr.size_scale()))
                     self._grok_policy_counts["explore"] += 1
-                if side == "up" and grok_oprob is not None:
-                    if float(grok_oprob) < float(self.cfg.grok_up_min_p_win):
-                        dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
-                                                         outcome_prob=None, model_edge=0.0,
-                                                         tradeable=False,
-                                                         reason="grok_up_p_win_too_low")
-                        if self.markov is not None:
-                            self.markov.record_terminal(state=cand_state, accepted=False)
-                        _finalize(dr, "rejected", reason="grok_up_p_win_too_low",
-                                  stage="grok_decider")
-                        continue
+                if (entry_mode != "mispricing_follow" and side == "up" and grok_oprob is not None
+                        and float(grok_oprob) < float(self.cfg.grok_up_min_p_win)):
+                    dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
+                                                     outcome_prob=None, model_edge=0.0,
+                                                     tradeable=False,
+                                                     reason="grok_up_p_win_too_low")
+                    if self.markov is not None:
+                        self.markov.record_terminal(state=cand_state, accepted=False)
+                    _finalize(dr, "rejected", reason="grok_up_p_win_too_low", stage="grok_decider")
+                    continue
                 mp_ok, mp_reason = self._mispricing_gate_ok(
                     side=side, cex_sig=dr.cex_lead, ttc_s=ttc, esnap=esnap)
                 if not mp_ok:
@@ -1562,7 +1561,8 @@ class PulseEngine:
                         self.markov.record_terminal(state=cand_state, accepted=False)
                     _finalize(dr, "rejected", reason=et_reason, stage="mispricing_gate")
                     continue
-                if side == "up" and not self._grok_up_side_allowed():
+                if (entry_mode != "mispricing_follow" and side == "up"
+                        and not self._grok_up_side_allowed()):
                     dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
                                                      outcome_prob=None, model_edge=0.0,
                                                      tradeable=False, reason="grok_no_edge_up")
@@ -1571,7 +1571,7 @@ class PulseEngine:
                     _finalize(dr, "rejected", reason="grok_no_edge_up", stage="grok_decider")
                     continue
                 # Restrict-only DOWN/TV asymmetry gate still applies to Grok-owned UP trades.
-                if side == "up":
+                if side == "up" and entry_mode != "mispricing_follow":
                     db_res = self.tv_down_bias_gate.evaluate(
                         side=side,
                         mtf_alignment=(tv_feature or {}).get("mtf_alignment"),
