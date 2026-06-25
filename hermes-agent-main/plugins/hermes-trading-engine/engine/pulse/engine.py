@@ -1640,7 +1640,8 @@ class PulseEngine:
                         self.markov.record_terminal(state=cand_state, accepted=False)
                     _finalize(dr, "rejected", reason=ex_reason, stage="mispricing_gate")
                     continue
-                if not self._ask_reward_risk_ok(side, float(ask)):
+                if (entry_mode != "mispricing_follow"
+                        and not self._ask_reward_risk_ok(side, float(ask))):
                     dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
                                                      outcome_prob=None, model_edge=0.0,
                                                      tradeable=False, reason="reward_risk_too_low")
