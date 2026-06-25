@@ -92,6 +92,7 @@ services:
       PULSE_GROK_DECIDER_COOLDOWN_S: "${PULSE_GROK_DECIDER_COOLDOWN_S:-1800}"
       # FOLLOW exploration: when Grok abstains, trade its view at this rate (paper data-gathering).
       PULSE_GROK_DECIDER_EXPLORE_RATE: "${PULSE_GROK_DECIDER_EXPLORE_RATE:-0}"
+      PULSE_GROK_DECIDER_EXPLORE_MIN_VIEW_MARGIN: "${PULSE_GROK_DECIDER_EXPLORE_MIN_VIEW_MARGIN:-0.08}"
       PULSE_GROK_DECIDER_EXPLORE_SIZE_FRACTION: "${PULSE_GROK_DECIDER_EXPLORE_SIZE_FRACTION:-0.5}"
       # adaptive self-improvement loop: exploit proven-edge contexts, avoid proven-losing ones.
       PULSE_GROK_DECIDER_ADAPTIVE: "${PULSE_GROK_DECIDER_ADAPTIVE:-1}"
@@ -199,6 +200,14 @@ services:
       PULSE_CEX_LEAD_LATE_TTC_S: "${PULSE_CEX_LEAD_LATE_TTC_S:-90}"
       PULSE_CEX_LEAD_KELLY_SCALE: "${PULSE_CEX_LEAD_KELLY_SCALE:-0.5}"
       PULSE_CEX_LEAD_MAX_SIZE_FRAC: "${PULSE_CEX_LEAD_MAX_SIZE_FRAC:-2.0}"
+      # Grok-follow mispricing stack: CEX-lead alignment + edge/TTC + executable margin
+      PULSE_MISPRICING_GATE_ENABLED: "${PULSE_MISPRICING_GATE_ENABLED:-0}"
+      PULSE_MISPRICING_TTC_MIN_S: "${PULSE_MISPRICING_TTC_MIN_S:-180}"
+      PULSE_MISPRICING_TTC_MAX_S: "${PULSE_MISPRICING_TTC_MAX_S:-240}"
+      PULSE_MISPRICING_REQUIRE_CONFIRMED: "${PULSE_MISPRICING_REQUIRE_CONFIRMED:-1}"
+      PULSE_MISPRICING_REQUIRE_STALE_DOWN: "${PULSE_MISPRICING_REQUIRE_STALE_DOWN:-1}"
+      PULSE_MISPRICING_MIN_EXECUTABLE_MARGIN: "${PULSE_MISPRICING_MIN_EXECUTABLE_MARGIN:-0.03}"
+      PULSE_EDGE_TTC_GATE_ENABLED: "${PULSE_EDGE_TTC_GATE_ENABLED:-0}"
       # Within-window RISK-FREE arbitrage (Roan dutch book): buy 1 up + 1 down for < $1 and collect
       # $1 at settlement. Runs BEFORE the directional path, bypasses view gates (it's risk-free, not a
       # view) but uses the same VWAP/depth realism. Booked in a SEPARATE ledger so its P&L is NEVER
@@ -294,6 +303,7 @@ services:
       # DOWN-bias gate (Townhall P3): block proven-losing UP / bullish_aligned stacks
       PULSE_TV_DOWN_BIAS_GATE: "${PULSE_TV_DOWN_BIAS_GATE:-1}"
       PULSE_TV_DOWN_BIAS_EXPLORE_RATE: "${PULSE_TV_DOWN_BIAS_EXPLORE_RATE:-0}"
+      PULSE_TV_DOWN_BIAS_BLOCK_UP_ON_BEARISH_DOWN_STACK: "${PULSE_TV_DOWN_BIAS_BLOCK_UP_ON_BEARISH_DOWN_STACK:-1}"
       PULSE_TV_DOWN_BIAS_BLOCK_UP_AGAINST_CONFIRMED_DOWN: "${PULSE_TV_DOWN_BIAS_BLOCK_UP_AGAINST_CONFIRMED_DOWN:-1}"
       # MTF gate: block 1m/5m conflict; require confirmed_up/down + side alignment
       PULSE_TV_MTF_CONFLICT_GATE: "${PULSE_TV_MTF_CONFLICT_GATE:-1}"
