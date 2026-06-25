@@ -1,19 +1,24 @@
 # Reconciliation Report
 
-_Generated 2026-06-23 03:53 UTC (PAPER ONLY)._
+_Generated 2026-06-25 05:32 UTC (PAPER ONLY). Fresh ledger after Phase 3 redeploy._
 
 **global_reconciled: true**
 
 - global_reconciled: True
 - scope_note: lifecycle counts are cumulative since canonical accounting began; baseline counts are legacy ledger totals that predate it; ledger/gate totals == baseline + accounted.
-- rejected_before_execution: 16677
+- rejected_before_execution: 765
 
 ## Lifecycle terminals
-`{'accepted': 154, 'rejected': 24094, 'skipped': 1025, 'expired': 0, 'missing_data': 32}`
+`{'accepted': 0, 'rejected': 745, 'skipped': 263, 'expired': 0, 'missing_data': 7}`
 
 ## rejected_by_stage
-`{'directional': 15620, 'execution_gate': 0, 'selectivity_gate': 837, 'context_gate': 217, 'grok_decider': 7420}`
+`{'directional': 495, 'execution_gate': 0, 'context_gate': 62, 'directional_allowlist': 188}`
 
-## Ledger
-trades 305 · settled 304 · win_rate 0.523 · realized $-87.245 · profit_factor 0.8068
+## Ledger (directional)
+trades 0 · settled 0 · realized $0.0
 
+## Ledger (arbitrage)
+executed 2 · settled 2 · realized_profit $16.52 · guaranteed_booked $16.52
+
+## Total capital
+starting $500.0 · on-hand $516.52 · total return 3.3%

@@ -95,28 +95,31 @@
  },
  "accounting_state": {
   "lifecycle": {
-   "created": 11,
-   "feature_scored": 8,
+   "created": 1015,
+   "feature_scored": 745,
    "execution_costed": 0,
    "ledgered": 0,
-   "reported": 11,
+   "reported": 1015,
    "terminals": {
     "accepted": 0,
-    "rejected": 8,
-    "skipped": 1,
+    "rejected": 745,
+    "skipped": 263,
     "expired": 0,
-    "missing_data": 2
+    "missing_data": 7
    },
    "rejected_by_stage": {
-    "directional": 6,
+    "directional": 495,
     "execution_gate": 0,
-    "context_gate": 2
+    "context_gate": 62,
+    "directional_allowlist": 188
    },
    "skipped_by_reason": {
-    "untrusted_vol": 1
+    "untrusted_vol": 1,
+    "open_snapshot_late": 166,
+    "arbitrage_taken": 96
    },
    "missing_by_reason": {
-    "no_open_snapshot": 1,
+    "no_open_snapshot": 6,
     "no_price_or_vol": 1
    }
   },
@@ -198,19 +201,100 @@
     },
     "settled": 0
    },
-   "snapshots": 8
+   "snapshots": 745
   },
   "cex_lead": {
-   "buckets": {},
-   "graded": 0,
-   "signals_seen": 8,
+   "buckets": {
+    ">=0.30": {
+     "n": 13,
+     "correct": 8,
+     "brier_cex": 4.053292,
+     "brier_mkt": 3.409125,
+     "brier_fair": 3.286104,
+     "pnl": 1.835,
+     "breakeven_sum": 6.165,
+     "wins": 8
+    },
+    "conf=>=0.30|unconfirmed": {
+     "n": 5,
+     "correct": 2,
+     "brier_cex": 2.380966,
+     "brier_mkt": 1.288125,
+     "brier_fair": 1.285404,
+     "pnl": -0.415,
+     "breakeven_sum": 2.415,
+     "wins": 2
+    },
+    "ttc=>=0.30|240_300s": {
+     "n": 13,
+     "correct": 8,
+     "brier_cex": 4.053292,
+     "brier_mkt": 3.409125,
+     "brier_fair": 3.286104,
+     "pnl": 1.835,
+     "breakeven_sum": 6.165,
+     "wins": 8
+    },
+    "tv=>=0.30|unconfirmed": {
+     "n": 13,
+     "correct": 8,
+     "brier_cex": 4.053292,
+     "brier_mkt": 3.409125,
+     "brier_fair": 3.286104,
+     "pnl": 1.835,
+     "breakeven_sum": 6.165,
+     "wins": 8
+    },
+    "news=>=0.30|neutral": {
+     "n": 13,
+     "correct": 8,
+     "brier_cex": 4.053292,
+     "brier_mkt": 3.409125,
+     "brier_fair": 3.286104,
+     "pnl": 1.835,
+     "breakeven_sum": 6.165,
+     "wins": 8
+    },
+    "late=>=0.30|indecisive": {
+     "n": 13,
+     "correct": 8,
+     "brier_cex": 4.053292,
+     "brier_mkt": 3.409125,
+     "brier_fair": 3.286104,
+     "pnl": 1.835,
+     "breakeven_sum": 6.165,
+     "wins": 8
+    },
+    "conf=>=0.30|confirmed": {
+     "n": 8,
+     "correct": 6,
+     "brier_cex": 1.672326,
+     "brier_mkt": 2.121,
+     "brier_fair": 2.0007,
+     "pnl": 2.25,
+     "breakeven_sum": 3.75,
+     "wins": 6
+    },
+    "conf_ttc=>=0.30|240_300s": {
+     "n": 8,
+     "correct": 6,
+     "brier_cex": 1.672326,
+     "brier_mkt": 2.121,
+     "brier_fair": 2.0007,
+     "pnl": 2.25,
+     "breakeven_sum": 3.75,
+     "wins": 6
+    }
+   },
+   "graded": 13,
+   "signals_seen": 649,
    "drove": 0
   },
   "cex_lead_pending": [
    {
-    "decision_id": "628269",
-    "price0": 60802.61876057189,
-    "close_ts": 1782361800.0,
+    "decision_id": "628428",
+    "price0": 61510.02258005852,
+    "close_ts": 1782365700.0,
     "bucket": ">=0.30",
     "context_keys": [
      ">=0.30",
@@ -221,26 +305,56 @@
      "late=>=0.30|indecisive"
     ],
     "side": "up",
-    "cex_p_up": 1.0,
-    "poly_yes": 0.505,
-    "fair": 0.5347
+    "cex_p_up": 0.9038,
+    "poly_yes": 0.47,
+    "fair": 0.4997
    }
   ],
   "mkt_bench_pending": [],
   "mkt_bench_recent": [],
   "arb_ledger": {
-   "positions": {},
-   "detected": 0,
-   "sell_both_detected": 4,
-   "executed": 0,
-   "executed_buy": 0,
-   "executed_sell": 0,
-   "settled": 0,
-   "realized_profit_usd": 0.0,
-   "guaranteed_booked_usd": 0.0
+   "positions": {
+    "628375": {
+     "window_key": "628375",
+     "kind": "buy_both",
+     "shares": 535.7142857142857,
+     "cost_usd": 523.7279135916697,
+     "guaranteed_profit_usd": 11.986372122616034,
+     "up_vwap": 0.41762543870444996,
+     "down_vwap": 0.56,
+     "entry_ts": 1782363676.433775,
+     "close_ts": 1782363900.0,
+     "status": "settled",
+     "entry_mode": "arbitrage"
+    },
+    "628382": {
+     "window_key": "628382",
+     "kind": "sell_both",
+     "shares": 375.0,
+     "cost_usd": 375.0,
+     "guaranteed_profit_usd": 4.5315101052458004,
+     "up_vwap": 0.8,
+     "down_vwap": 0.21208402694732204,
+     "entry_ts": 1782364040.4402025,
+     "close_ts": 1782364200.0,
+     "status": "settled",
+     "entry_mode": "arbitrage"
+    }
+   },
+   "detected": 2,
+   "sell_both_detected": 352,
+   "executed": 2,
+   "executed_buy": 1,
+   "executed_sell": 1,
+   "settled": 2,
+   "realized_profit_usd": 16.517882,
+   "guaranteed_booked_usd": 16.517882,
+   "scans": 190,
+   "near_miss": 44,
+   "min_vwap_residual": 0.000562
   },
   "allowlist_explored": 0,
-  "allowlist_blocked": 0,
+  "allowlist_blocked": 188,
   "research_avoid": [],
   "research_exploit": [],
   "grok_predictor": {
@@ -253,58 +367,412 @@
    "brier_sum": 0.0
   },
   "grok_analyst": {
-   "calls": 0,
+   "calls": 6,
    "errors": 0,
    "skipped_budget": 0,
-   "note": null,
-   "note_ts": 0.0,
-   "history": []
+   "note": {
+    "summary": "After five analyses the bot remains at zero settled trades, signals, and evaluations across every source, so no bucket, regime, or signal meets the n>=8 or min_samples=30 thresholds required for confirmation or rejection. All learned metrics stay at baseline null values with context_gate continuing to block solely on ttc_too_far and hurst_noise. The system is still in its initial observe-only state with no observable patterns.",
+    "working": [],
+    "failing": [],
+    "warnings": [
+     "all evidence buckets empty (n=0)",
+     "no win-rate or EV estimates possible",
+     "observe-only mode prevents any trading authority"
+    ],
+    "changes_since_last": [
+     "no new settled trades, signals, or evaluations since prior analysis; all metrics unchanged at baseline null"
+    ],
+    "focus_next": [
+     "accumulate settled trades until n>=30 in any regime/z-score/conviction bucket",
+     "monitor context_gate blocks for ttc distribution",
+     "wait for signal_learning and edge_vs_5min_outcome to reach min_evidence"
+    ]
+   },
+   "note_ts": 1782364708.5743382,
+   "history": [
+    {
+     "ts": 1782361569.6,
+     "summary": "Zero settled trades and zero signal evaluations mean every bucket, selectivity rule, edge model, and late-window cohort has n=0, so no patterns meet the n>=8 or min_samples=30 thresholds. Context gate blocked 6 candidates solely on ttc_too_far; all other gates and learned metrics remain at baseline null/insufficient_evidence. This is the initial analysis with no prior.",
+     "changes_since_last": [
+      "first analysis; no prior data or changes to report"
+     ]
+    },
+    {
+     "ts": 1782361805.4,
+     "summary": "Zero settled trades persist across all sources; every bucket, cohort, and learned metric remains at n=0, so no regime, z-score, conviction, or signal pattern meets the n>=8 or min_samples=30 thresholds for confirmation or rejection. Context gate continues to block solely on ttc_too_far with no selectivity or edge-model updates possible. This remains the initial state with no observable patterns.",
+     "changes_since_last": [
+      "no new settled trades, signals, or evaluations since prior analysis; all metrics unchanged at baseline null"
+     ]
+    },
+    {
+     "ts": 1782362001.6,
+     "summary": "Zero settled trades persist across all sources with every bucket, cohort, and learned metric at n=0, so no regime, z-score, conviction, or signal pattern meets n>=8 or min_samples=30 thresholds for confirmation or rejection. Context gate continues blocking solely on ttc_too_far with no selectivity, edge-model, or signal-learning updates possible. This remains the initial state with no observable patterns after three analyses.",
+     "changes_since_last": [
+      "no new settled trades, signals, or evaluations since prior analysis; all metrics unchanged at baseline null"
+     ]
+    },
+    {
+     "ts": 1782362277.5,
+     "summary": "Zero settled trades persist across all sources with every bucket, cohort, and learned metric remaining at n=0, so no regime, z-score, conviction, or signal pattern meets n>=8 or min_samples=30 thresholds for confirmation or rejection. Context gate continues blocking solely on ttc_too_far with no selectivity, edge-model, or signal-learning updates possible. This remains the initial state with no observable patterns after four analyses.",
+     "changes_since_last": [
+      "no new settled trades, signals, or evaluations since prior analysis; all metrics unchanged at baseline null"
+     ]
+    },
+    {
+     "ts": 1782363562.2,
+     "summary": "Zero settled trades persist across all sources with every bucket, cohort, and learned metric remaining at n=0, so no regime, z-score, conviction, or signal pattern meets n>=8 or min_samples=30 thresholds for confirmation or rejection. Context gate continues blocking solely on ttc_too_far with no selectivity, edge-model, or signal-learning updates possible. This remains the initial state with no observable patterns after four analyses.",
+     "changes_since_last": [
+      "no new settled trades, signals, or evaluations since prior analysis; all metrics unchanged at baseline null"
+     ]
+    },
+    {
+     "ts": 1782364708.6,
+     "summary": "After five analyses the bot remains at zero settled trades, signals, and evaluations across every source, so no bucket, regime, or signal meets the n>=8 or min_samples=30 thresholds required for confirmation or rejection. All learned metrics stay at baseline null values with context_gate continuing to block solely on ttc_too_far and hurst_noise. The system is still in its initial observe-only state with no observable patterns.",
+     "changes_since_last": [
+      "no new settled trades, signals, or evaluations since prior analysis; all metrics unchanged at baseline null"
+     ]
+    }
+   ]
   },
   "grok_decider": {
-   "requested": 1,
-   "decided": 1,
-   "errors": 0,
+   "requested": 14,
+   "decided": 13,
+   "errors": 1,
    "skipped_budget": 0,
-   "latency_sum": 8.501,
-   "graded": 0,
-   "correct": 0,
-   "brier_sum": 0.0,
-   "abstains": 0,
-   "view_graded": 0,
-   "view_correct": 0,
-   "view_brier_sum": 0.0,
+   "latency_sum": 104.282,
+   "graded": 7,
+   "correct": 6,
+   "brier_sum": 0.9265,
+   "abstains": 5,
+   "view_graded": 12,
+   "view_correct": 8,
+   "view_brier_sum": 2.299325,
    "aggression": {
     "aggression": 0.0,
     "updates": 0,
     "recent": []
    },
-   "by_action": {},
+   "by_action": {
+    "no_trade": {
+     "n": 5,
+     "wins": 0,
+     "pnl": 0.0
+    },
+    "up": {
+     "n": 7,
+     "wins": 6,
+     "pnl": 0.0
+    }
+   },
    "trips": 0,
    "consec_losses": 0,
    "daily_loss": 0.0,
    "daily_key": null,
    "tripped_until": 0.0,
    "trip_reason": null,
-   "by_context": {},
-   "recent": []
+   "by_context": {
+    "hurst_regime": {
+     "insufficient_data": {
+      "n": 5,
+      "correct": 4
+     },
+     "trending": {
+      "n": 6,
+      "correct": 3
+     },
+     "noise": {
+      "n": 1,
+      "correct": 1
+     }
+    },
+    "markov_state": {
+     "stale_polymarket_up": {
+      "n": 8,
+      "correct": 6
+     },
+     "stale_polymarket_down": {
+      "n": 2,
+      "correct": 2
+     },
+     "chop_noise": {
+      "n": 2,
+      "correct": 0
+     }
+    },
+    "ttc_bucket": {
+     ">=240s": {
+      "n": 12,
+      "correct": 8
+     }
+    },
+    "conviction_bucket": {
+     "coinflip": {
+      "n": 12,
+      "correct": 8
+     }
+    }
+   },
+   "recent": [
+    {
+     "action": "no_trade",
+     "p_up": 0.53,
+     "confidence": 0.0,
+     "outcome_up": false,
+     "view_correct": false,
+     "context": {
+      "hurst_regime": "insufficient_data",
+      "markov_state": "stale_polymarket_up",
+      "ttc_bucket": ">=240s",
+      "conviction_bucket": "coinflip"
+     }
+    },
+    {
+     "action": "up",
+     "p_up": 0.72,
+     "confidence": 0.0,
+     "outcome_up": true,
+     "view_correct": true,
+     "context": {
+      "hurst_regime": "insufficient_data",
+      "markov_state": "stale_polymarket_up",
+      "ttc_bucket": ">=240s",
+      "conviction_bucket": "coinflip"
+     }
+    },
+    {
+     "action": "up",
+     "p_up": 0.78,
+     "confidence": 0.0,
+     "outcome_up": true,
+     "view_correct": true,
+     "context": {
+      "hurst_regime": "insufficient_data",
+      "markov_state": "stale_polymarket_up",
+      "ttc_bucket": ">=240s",
+      "conviction_bucket": "coinflip"
+     }
+    },
+    {
+     "action": "up",
+     "p_up": 0.78,
+     "confidence": 0.0,
+     "outcome_up": true,
+     "view_correct": true,
+     "context": {
+      "hurst_regime": "trending",
+      "markov_state": "stale_polymarket_up",
+      "ttc_bucket": ">=240s",
+      "conviction_bucket": "coinflip"
+     }
+    },
+    {
+     "action": "up",
+     "p_up": 0.68,
+     "confidence": 0.0,
+     "outcome_up": true,
+     "view_correct": true,
+     "context": {
+      "hurst_regime": "noise",
+      "markov_state": "stale_polymarket_up",
+      "ttc_bucket": ">=240s",
+      "conviction_bucket": "coinflip"
+     }
+    },
+    {
+     "action": "up",
+     "p_up": 0.68,
+     "confidence": 0.0,
+     "outcome_up": true,
+     "view_correct": true,
+     "context": {
+      "hurst_regime": "trending",
+      "markov_state": "stale_polymarket_up",
+      "ttc_bucket": ">=240s",
+      "conviction_bucket": "coinflip"
+     }
+    },
+    {
+     "action": "no_trade",
+     "p_up": 0.51,
+     "confidence": 0.0,
+     "outcome_up": true,
+     "view_correct": true,
+     "context": {
+      "hurst_regime": "insufficient_data",
+      "markov_state": "stale_polymarket_down",
+      "ttc_bucket": ">=240s",
+      "conviction_bucket": "coinflip"
+     }
+    },
+    {
+     "action": "up",
+     "p_up": 0.71,
+     "confidence": 0.0,
+     "outcome_up": true,
+     "view_correct": true,
+     "context": {
+      "hurst_regime": "trending",
+      "markov_state": "stale_polymarket_up",
+      "ttc_bucket": ">=240s",
+      "conviction_bucket": "coinflip"
+     }
+    },
+    {
+     "action": "no_trade",
+     "p_up": 0.58,
+     "confidence": 0.0,
+     "outcome_up": false,
+     "view_correct": false,
+     "context": {
+      "hurst_regime": "trending",
+      "markov_state": "stale_polymarket_up",
+      "ttc_bucket": ">=240s",
+      "conviction_bucket": "coinflip"
+     }
+    },
+    {
+     "action": "up",
+     "p_up": 0.68,
+     "confidence": 0.0,
+     "outcome_up": false,
+     "view_correct": false,
+     "context": {
+      "hurst_regime": "trending",
+      "markov_state": "chop_noise",
+      "ttc_bucket": ">=240s",
+      "conviction_bucket": "coinflip"
+     }
+    },
+    {
+     "action": "no_trade",
+     "p_up": 0.505,
+     "confidence": 0.0,
+     "outcome_up": true,
+     "view_correct": true,
+     "context": {
+      "hurst_regime": "insufficient_data",
+      "markov_state": "stale_polymarket_down",
+      "ttc_bucket": ">=240s",
+      "conviction_bucket": "coinflip"
+     }
+    },
+    {
+     "action": "no_trade",
+     "p_up": 0.52,
+     "confidence": 0.0,
+     "outcome_up": false,
+     "view_correct": false,
+     "context": {
+      "hurst_regime": "trending",
+      "markov_state": "chop_noise",
+      "ttc_bucket": ">=240s",
+      "conviction_bucket": "coinflip"
+     }
+    }
+   ]
   },
   "grok_news": {},
   "grok_pending": [
    {
-    "decision_id": "628269",
-    "price0": 60802.61876057189,
-    "close_ts": 1782361800.0,
+    "decision_id": "628428",
+    "price0": 61510.02258005852,
+    "close_ts": 1782365700.0,
     "action": "no_trade",
-    "p_up": 0.53,
+    "p_up": 0.52,
     "context": {
-     "hurst_regime": "insufficient_data",
-     "markov_state": "stale_polymarket_up",
+     "hurst_regime": "trending",
+     "markov_state": "chop_noise",
      "ttc_bucket": ">=240s",
      "conviction_bucket": "coinflip"
     }
    }
   ],
-  "recent_windows": [],
+  "recent_windows": [
+   {
+    "close_ts": 1782361800.0,
+    "s_open": 60802.62,
+    "s_close": 60800.33,
+    "outcome": "down",
+    "move_pct": -0.0038
+   },
+   {
+    "close_ts": 1782362400.0,
+    "s_open": 60750.23,
+    "s_close": 60853.04,
+    "outcome": "up",
+    "move_pct": 0.1692
+   },
+   {
+    "close_ts": 1782362700.0,
+    "s_open": 60853.04,
+    "s_close": 60874.74,
+    "outcome": "up",
+    "move_pct": 0.0357
+   },
+   {
+    "close_ts": 1782363000.0,
+    "s_open": 60874.74,
+    "s_close": 60967.25,
+    "outcome": "up",
+    "move_pct": 0.152
+   },
+   {
+    "close_ts": 1782363300.0,
+    "s_open": 60967.25,
+    "s_close": 61104.7,
+    "outcome": "up",
+    "move_pct": 0.2254
+   },
+   {
+    "close_ts": 1782363600.0,
+    "s_open": 61104.7,
+    "s_close": 61255.73,
+    "outcome": "up",
+    "move_pct": 0.2472
+   },
+   {
+    "close_ts": 1782363900.0,
+    "s_open": 61255.73,
+    "s_close": 61410.67,
+    "outcome": "up",
+    "move_pct": 0.2529
+   },
+   {
+    "close_ts": 1782364200.0,
+    "s_open": 61410.67,
+    "s_close": 61571.77,
+    "outcome": "up",
+    "move_pct": 0.2623
+   },
+   {
+    "close_ts": 1782364500.0,
+    "s_open": 61571.77,
+    "s_close": 61540.46,
+    "outcome": "down",
+    "move_pct": -0.0509
+   },
+   {
+    "close_ts": 1782364800.0,
+    "s_open": 61540.46,
+    "s_close": 61534.33,
+    "outcome": "down",
+    "move_pct": -0.01
+   },
+   {
+    "close_ts": 1782365100.0,
+    "s_open": 61534.33,
+    "s_close": 61591.1,
+    "outcome": "up",
+    "move_pct": 0.0923
+   },
+   {
+    "close_ts": 1782365400.0,
+    "s_open": 61591.1,
+    "s_close": 61510.02,
+    "outcome": "down",
+    "move_pct": -0.1316
+   }
+  ],
   "verifier": {},
   "research_loop": {},
   "lessons": {
@@ -360,13 +828,34 @@
    "by_decision": {}
   },
   "tv_context_gate": {
-   "passed": 0,
-   "blocked": 2,
-   "explored": 0,
+   "passed": 187,
+   "blocked": 62,
+   "explored": 1,
    "block_reasons": {
-    "tv_context_ttc_too_far": 2
+    "tv_context_ttc_too_far": 40,
+    "tv_context_hurst_noise": 22
    },
+   "explore_reasons": {
+    "tv_context_hurst_noise": 1,
+    "tv_context_ttc_too_far": 1
+   }
+  },
+  "tv_down_bias_gate": {
+   "enabled": true,
+   "block_bullish_aligned_up": true,
+   "block_up_without_bearish": true,
+   "exploration_rate": 0.02,
+   "passed": 34,
+   "blocked": 0,
+   "explored": 0,
+   "block_reasons": {},
    "explore_reasons": {}
+  },
+  "down_stack": {
+   "buckets": {},
+   "min_samples": 30,
+   "edge_margin": 0.04,
+   "confidence_z": 1.64
   },
   "late_window_gate": {
    "passed": 0,

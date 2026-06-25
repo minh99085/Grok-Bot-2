@@ -2,8 +2,8 @@
  "schema": "btc_pulse/1.0",
  "paper_only": true,
  "live_trading_enabled": false,
- "ts": 1782361541.6879654,
- "ticks": 11,
+ "ts": 1782365556.1088333,
+ "ticks": 229,
  "config": {
   "tick_seconds": 4.0,
   "size_usd": 5.0,
@@ -16,16 +16,16 @@
  },
  "price": {
   "source": "rtds_chainlink",
-  "last_price": 60788.04443834532,
-  "last_ts": 1782361541.6879654,
-  "age_s": 0.39133334159851074,
+  "last_price": 61533.449235,
+  "last_ts": 1782365556.1088333,
+  "age_s": 0.38916730880737305,
   "last_fetch_ok": true,
-  "polls": 49,
+  "polls": 1139,
   "errors": 3,
   "sampler_interval_s": 1.0,
   "sampler_running": true,
-  "vol_samples": 49,
-  "sigma_per_sec": 1.4229352154189256e-05,
+  "vol_samples": 1139,
+  "sigma_per_sec": 7.143040559068883e-05,
   "tracked_opens": 1
  },
  "capital": {
@@ -34,10 +34,10 @@
   "realized_pnl_usd": 0.0,
   "on_hand_capital_usd": 500.0,
   "return_pct": 0.0,
-  "arb_realized_pnl_usd": 0.0,
-  "total_realized_pnl_usd": 0.0,
-  "total_on_hand_usd": 500.0,
-  "total_return_pct": 0.0,
+  "arb_realized_pnl_usd": 16.52,
+  "total_realized_pnl_usd": 16.52,
+  "total_on_hand_usd": 516.52,
+  "total_return_pct": 3.3,
   "open_exposure_usd": 0.0,
   "open_positions": 0
  },
@@ -90,28 +90,31 @@
   "open_positions": 0
  },
  "decision_lifecycle": {
-  "created": 11,
-  "feature_scored": 8,
+  "created": 1015,
+  "feature_scored": 745,
   "execution_costed": 0,
   "ledgered": 0,
-  "reported": 11,
+  "reported": 1015,
   "terminals": {
    "accepted": 0,
-   "rejected": 8,
-   "skipped": 1,
+   "rejected": 745,
+   "skipped": 263,
    "expired": 0,
-   "missing_data": 2
+   "missing_data": 7
   },
   "rejected_by_stage": {
-   "directional": 6,
+   "directional": 495,
    "execution_gate": 0,
-   "context_gate": 2
+   "context_gate": 62,
+   "directional_allowlist": 188
   },
   "skipped_by_reason": {
-   "untrusted_vol": 1
+   "untrusted_vol": 1,
+   "open_snapshot_late": 166,
+   "arbitrage_taken": 96
   },
   "missing_by_reason": {
-   "no_open_snapshot": 1,
+   "no_open_snapshot": 6,
    "no_price_or_vol": 1
   },
   "no_candidate_disappeared": true,
@@ -120,8 +123,8 @@
  "reconciliation": {
   "global_reconciled": true,
   "counts": {
-   "raw_candidates_created": 11,
-   "rejected_before_execution": 9,
+   "raw_candidates_created": 1015,
+   "rejected_before_execution": 765,
    "sent_to_execution_gate": 0,
    "execution_gate_accepted": 0,
    "execution_gate_rejected": 0,
@@ -135,7 +138,7 @@
   "checks": {
    "lifecycle_internal": {
     "pass": true,
-    "detail": "created(11) == sum(terminals)(11) and reported(11) == created(11)"
+    "detail": "created(1015) == sum(terminals)(1015) and reported(1015) == created(1015)"
    },
    "accepted_equals_fills": {
     "pass": true,
@@ -170,7 +173,7 @@
    "note": "no legacy ledger \u2014 accounting started clean"
   },
   "scope_note": "lifecycle counts are cumulative since canonical accounting began; baseline counts are legacy ledger totals that predate it; ledger/gate totals == baseline + accounted.",
-  "rejected_before_execution": 9
+  "rejected_before_execution": 765
  },
  "signal_engine": {
   "enabled": true,
@@ -183,22 +186,28 @@
    180
   ],
   "tv_direction_available": false,
-  "snapshots": 8,
+  "snapshots": 190,
   "by_family": {
-   "momentum": 8
+   "momentum": 93,
+   "mean_reversion": 70,
+   "noise": 22,
+   "microstructure": 5
   },
   "by_direction": {
-   "up": 4,
-   "down": 4
+   "down": 85,
+   "neutral": 74,
+   "up": 31
   }
  },
  "factor_model": {
   "enabled": true,
   "observe_only": true,
   "affects_trading": false,
-  "snapshots": 8,
+  "snapshots": 190,
   "by_edge_quality_bucket": {
-   "high": 8
+   "high": 145,
+   "medium": 31,
+   "low": 14
   },
   "pnl_by_edge_quality_bucket": {}
  },
@@ -208,29 +217,91 @@
   "affects_trading": false,
   "min_samples": 20,
   "state_coverage": {
-   "trend_up": 0,
-   "trend_down": 0,
+   "trend_up": 6,
+   "trend_down": 6,
    "mean_reverting_up": 0,
    "mean_reverting_down": 0,
-   "chop_noise": 0,
-   "stale_polymarket_up": 4,
-   "stale_polymarket_down": 4,
-   "liquidity_danger": 0,
-   "resolution_danger": 0
+   "chop_noise": 70,
+   "stale_polymarket_up": 16,
+   "stale_polymarket_down": 77,
+   "liquidity_danger": 9,
+   "resolution_danger": 6
   },
   "transition_probs": {
-   "stale_polymarket_up": {
-    "stale_polymarket_up": 0.75,
-    "stale_polymarket_down": 0.25
-   },
    "stale_polymarket_down": {
-    "stale_polymarket_down": 1.0
+    "stale_polymarket_down": 0.8831,
+    "trend_down": 0.026,
+    "chop_noise": 0.0779,
+    "resolution_danger": 0.013
+   },
+   "trend_down": {
+    "stale_polymarket_down": 0.3333,
+    "trend_down": 0.5,
+    "chop_noise": 0.1667
+   },
+   "chop_noise": {
+    "chop_noise": 0.8143,
+    "stale_polymarket_down": 0.0857,
+    "trend_down": 0.0143,
+    "stale_polymarket_up": 0.0857
+   },
+   "stale_polymarket_up": {
+    "stale_polymarket_up": 0.6,
+    "liquidity_danger": 0.0667,
+    "trend_up": 0.0667,
+    "chop_noise": 0.2667
+   },
+   "liquidity_danger": {
+    "stale_polymarket_up": 0.1111,
+    "liquidity_danger": 0.7778,
+    "resolution_danger": 0.1111
+   },
+   "trend_up": {
+    "trend_up": 0.8333,
+    "liquidity_danger": 0.1667
+   },
+   "resolution_danger": {
+    "resolution_danger": 0.6667,
+    "chop_noise": 0.3333
    }
   },
   "state_outputs": {
+   "trend_up": {
+    "state": "trend_up",
+    "samples": 6,
+    "resolved_samples": 0,
+    "observe_only": true,
+    "reason": "insufficient_samples",
+    "p_resolve_up": null,
+    "p_resolve_down": null,
+    "p_edge_survives_execution": null,
+    "p_no_trade_best": null
+   },
+   "trend_down": {
+    "state": "trend_down",
+    "samples": 6,
+    "resolved_samples": 0,
+    "observe_only": true,
+    "reason": "insufficient_samples",
+    "p_resolve_up": null,
+    "p_resolve_down": null,
+    "p_edge_survives_execution": null,
+    "p_no_trade_best": null
+   },
+   "chop_noise": {
+    "state": "chop_noise",
+    "samples": 70,
+    "resolved_samples": 0,
+    "observe_only": true,
+    "reason": "ok",
+    "p_resolve_up": null,
+    "p_resolve_down": null,
+    "p_edge_survives_execution": 0.0,
+    "p_no_trade_best": 1.0
+   },
    "stale_polymarket_up": {
     "state": "stale_polymarket_up",
-    "samples": 4,
+    "samples": 16,
     "resolved_samples": 0,
     "observe_only": true,
     "reason": "insufficient_samples",
@@ -241,7 +312,29 @@
    },
    "stale_polymarket_down": {
     "state": "stale_polymarket_down",
-    "samples": 4,
+    "samples": 77,
+    "resolved_samples": 0,
+    "observe_only": true,
+    "reason": "ok",
+    "p_resolve_up": null,
+    "p_resolve_down": null,
+    "p_edge_survives_execution": 0.0,
+    "p_no_trade_best": 1.0
+   },
+   "liquidity_danger": {
+    "state": "liquidity_danger",
+    "samples": 9,
+    "resolved_samples": 0,
+    "observe_only": true,
+    "reason": "insufficient_samples",
+    "p_resolve_up": null,
+    "p_resolve_down": null,
+    "p_edge_survives_execution": null,
+    "p_no_trade_best": null
+   },
+   "resolution_danger": {
+    "state": "resolution_danger",
+    "samples": 6,
     "resolved_samples": 0,
     "observe_only": true,
     "reason": "insufficient_samples",
@@ -418,20 +511,20 @@
   "observe_only": true,
   "affects_trading": false,
   "coverage": {
-   "candidates": 8,
-   "hurst_present": 0,
-   "half_life_present": 0,
-   "zscore_present": 0,
-   "kalman_present": 1
+   "candidates": 190,
+   "hurst_present": 164,
+   "half_life_present": 171,
+   "zscore_present": 171,
+   "kalman_present": 183
   },
   "missing_data_reasons": {
-   "hurst:insufficient_returns": 8,
-   "half_life:insufficient_samples": 8,
-   "zscore:insufficient_divergence_samples": 8,
+   "hurst:insufficient_returns": 26,
+   "half_life:insufficient_samples": 19,
+   "zscore:insufficient_divergence_samples": 19,
    "kalman:insufficient_samples": 7
   },
-  "divergence_samples": 8,
-  "return_samples": 10,
+  "divergence_samples": 190,
+  "return_samples": 227,
   "pnl_by_regime": {},
   "pnl_by_zscore_bucket": {},
   "pnl_by_half_life_bucket": {},
@@ -470,13 +563,13 @@
   "rtds": {
    "url": "wss://ws-live-data.polymarket.com",
    "connected": true,
-   "messages": 77,
+   "messages": 1801,
    "reconnects": 0,
    "latest": {
-    "crypto_prices_chainlink:btc/usd": 60788.04,
-    "crypto_prices:btcusdt": 60884.6
+    "crypto_prices_chainlink:btc/usd": 61533.45,
+    "crypto_prices:btcusdt": 61634.01
    },
-   "oracle_age_s": 0.79,
+   "oracle_age_s": 1.14,
    "oracle_fresh": true,
    "max_age_s": 45.0,
    "running": true
@@ -485,13 +578,13 @@
    "lead_only": true,
    "feeds": {
     "binance_btcusdt": {
-     "price": 60884.6,
-     "vol_per_sec": 1.9491272880539444e-05,
+     "price": 61634.01,
+     "vol_per_sec": 0.00010869757030750427,
      "settlement_eligible": false
     },
     "coinbase_btcusd": {
-     "price": 60797.89,
-     "vol_per_sec": 1.6249953942820478e-05,
+     "price": 61523.11,
+     "vol_per_sec": 0.00011626872397410256,
      "settlement_eligible": false
     }
    }
@@ -501,14 +594,14 @@
   "enabled": true,
   "interval_s": 180.0,
   "running": true,
-  "calls": 1,
+  "calls": 5,
   "errors": 0,
   "state": {
    "regime": "calm",
    "vol_multiplier": 1.0,
    "blackout": false,
-   "reason": "no imminent high-impact events",
-   "ts": 1782361501.675013
+   "reason": "no realtime data",
+   "ts": 1782365376.7041514
   }
  },
  "grok_signal_intel": {
@@ -518,8 +611,8 @@
   "budget": {
    "daily_usd_cap": 5.0,
    "est_usd_per_call": 0.02,
-   "spent_today_usd": 0.04,
-   "calls_today": 2,
+   "spent_today_usd": 0.18,
+   "calls_today": 9,
    "per_feature_hourly": {
     "predictor": 30,
     "analyst": 4,
@@ -533,13 +626,73 @@
    "observe_only": true,
    "affects_trading": false,
    "interval_s": 1800.0,
-   "calls": 0,
+   "calls": 6,
    "errors": 0,
    "skipped_budget": 0,
-   "last_note": null,
-   "last_note_ts": 0.0,
+   "last_note": {
+    "summary": "After five analyses the bot remains at zero settled trades, signals, and evaluations across every source, so no bucket, regime, or signal meets the n>=8 or min_samples=30 thresholds required for confirmation or rejection. All learned metrics stay at baseline null values with context_gate continuing to block solely on ttc_too_far and hurst_noise. The system is still in its initial observe-only state with no observable patterns.",
+    "working": [],
+    "failing": [],
+    "warnings": [
+     "all evidence buckets empty (n=0)",
+     "no win-rate or EV estimates possible",
+     "observe-only mode prevents any trading authority"
+    ],
+    "changes_since_last": [
+     "no new settled trades, signals, or evaluations since prior analysis; all metrics unchanged at baseline null"
+    ],
+    "focus_next": [
+     "accumulate settled trades until n>=30 in any regime/z-score/conviction bucket",
+     "monitor context_gate blocks for ttc distribution",
+     "wait for signal_learning and edge_vs_5min_outcome to reach min_evidence"
+    ]
+   },
+   "last_note_ts": 1782364708.5743382,
    "learns_from": "bot_growing_evidence_with_continuity",
-   "history": [],
+   "history": [
+    {
+     "ts": 1782361569.6,
+     "summary": "Zero settled trades and zero signal evaluations mean every bucket, selectivity rule, edge model, and late-window cohort has n=0, so no patterns meet the n>=8 or min_samples=30 thresholds. Context gate blocked 6 candidates solely on ttc_too_far; all other gates and learned metrics remain at baseline null/insufficient_evidence. This is the initial analysis with no prior.",
+     "changes_since_last": [
+      "first analysis; no prior data or changes to report"
+     ]
+    },
+    {
+     "ts": 1782361805.4,
+     "summary": "Zero settled trades persist across all sources; every bucket, cohort, and learned metric remains at n=0, so no regime, z-score, conviction, or signal pattern meets the n>=8 or min_samples=30 thresholds for confirmation or rejection. Context gate continues to block solely on ttc_too_far with no selectivity or edge-model updates possible. This remains the initial state with no observable patterns.",
+     "changes_since_last": [
+      "no new settled trades, signals, or evaluations since prior analysis; all metrics unchanged at baseline null"
+     ]
+    },
+    {
+     "ts": 1782362001.6,
+     "summary": "Zero settled trades persist across all sources with every bucket, cohort, and learned metric at n=0, so no regime, z-score, conviction, or signal pattern meets n>=8 or min_samples=30 thresholds for confirmation or rejection. Context gate continues blocking solely on ttc_too_far with no selectivity, edge-model, or signal-learning updates possible. This remains the initial state with no observable patterns after three analyses.",
+     "changes_since_last": [
+      "no new settled trades, signals, or evaluations since prior analysis; all metrics unchanged at baseline null"
+     ]
+    },
+    {
+     "ts": 1782362277.5,
+     "summary": "Zero settled trades persist across all sources with every bucket, cohort, and learned metric remaining at n=0, so no regime, z-score, conviction, or signal pattern meets n>=8 or min_samples=30 thresholds for confirmation or rejection. Context gate continues blocking solely on ttc_too_far with no selectivity, edge-model, or signal-learning updates possible. This remains the initial state with no observable patterns after four analyses.",
+     "changes_since_last": [
+      "no new settled trades, signals, or evaluations since prior analysis; all metrics unchanged at baseline null"
+     ]
+    },
+    {
+     "ts": 1782363562.2,
+     "summary": "Zero settled trades persist across all sources with every bucket, cohort, and learned metric remaining at n=0, so no regime, z-score, conviction, or signal pattern meets n>=8 or min_samples=30 thresholds for confirmation or rejection. Context gate continues blocking solely on ttc_too_far with no selectivity, edge-model, or signal-learning updates possible. This remains the initial state with no observable patterns after four analyses.",
+     "changes_since_last": [
+      "no new settled trades, signals, or evaluations since prior analysis; all metrics unchanged at baseline null"
+     ]
+    },
+    {
+     "ts": 1782364708.6,
+     "summary": "After five analyses the bot remains at zero settled trades, signals, and evaluations across every source, so no bucket, regime, or signal meets the n>=8 or min_samples=30 thresholds required for confirmation or rejection. All learned metrics stay at baseline null values with context_gate continuing to block solely on ttc_too_far and hurst_noise. The system is still in its initial observe-only state with no observable patterns.",
+     "changes_since_last": [
+      "no new settled trades, signals, or evaluations since prior analysis; all metrics unchanged at baseline null"
+     ]
+    }
+   ],
    "note": "observe-only Grok research analyst that LEARNS the bot's trading patterns from its growing settled-trade/selectivity/late-window evidence and refines across cycles (continuity). Diagnostics only \u2014 never trades."
   },
   "predictor_B": {
@@ -567,18 +720,18 @@
   "fail_closed": true,
   "min_confidence": 0.55,
   "ttl_s": 240.0,
-  "requested": 1,
-  "decided": 1,
-  "errors": 0,
+  "requested": 14,
+  "decided": 13,
+  "errors": 1,
   "skipped_budget": 0,
   "pending": 0,
-  "avg_latency_s": 8.501,
-  "graded_directional": 0,
-  "direction_accuracy": null,
-  "brier": null,
-  "views_graded": 0,
-  "view_accuracy": null,
-  "view_brier": null,
+  "avg_latency_s": 8.022,
+  "graded_directional": 7,
+  "direction_accuracy": 0.8571,
+  "brier": 0.1324,
+  "views_graded": 12,
+  "view_accuracy": 0.6667,
+  "view_brier": 0.1916,
   "view_edge_candidates": [],
   "aggression": {
    "aggression": 0.0,
@@ -590,10 +743,219 @@
    "updates": 0,
    "note": "loosens (more explore/looser exploit/larger size) as acted trades profit; tightens on losses; circuit breaker is the hard floor."
   },
-  "abstains": 0,
-  "by_action": {},
-  "accuracy_by_context": {},
-  "recent_decisions": [],
+  "abstains": 5,
+  "by_action": {
+   "no_trade": {
+    "n": 5,
+    "direction_accuracy": null,
+    "pnl_usd": 0.0
+   },
+   "up": {
+    "n": 7,
+    "direction_accuracy": 0.8571,
+    "pnl_usd": 0.0
+   }
+  },
+  "accuracy_by_context": {
+   "hurst_regime": {
+    "insufficient_data": {
+     "n": 5,
+     "accuracy": 0.8
+    },
+    "trending": {
+     "n": 6,
+     "accuracy": 0.5
+    },
+    "noise": {
+     "n": 1,
+     "accuracy": 1.0
+    }
+   },
+   "markov_state": {
+    "stale_polymarket_up": {
+     "n": 8,
+     "accuracy": 0.75
+    },
+    "stale_polymarket_down": {
+     "n": 2,
+     "accuracy": 1.0
+    },
+    "chop_noise": {
+     "n": 2,
+     "accuracy": 0.0
+    }
+   },
+   "ttc_bucket": {
+    ">=240s": {
+     "n": 12,
+     "accuracy": 0.6667
+    }
+   },
+   "conviction_bucket": {
+    "coinflip": {
+     "n": 12,
+     "accuracy": 0.6667
+    }
+   }
+  },
+  "recent_decisions": [
+   {
+    "action": "no_trade",
+    "p_up": 0.53,
+    "confidence": 0.0,
+    "outcome_up": false,
+    "view_correct": false,
+    "context": {
+     "hurst_regime": "insufficient_data",
+     "markov_state": "stale_polymarket_up",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   },
+   {
+    "action": "up",
+    "p_up": 0.72,
+    "confidence": 0.0,
+    "outcome_up": true,
+    "view_correct": true,
+    "context": {
+     "hurst_regime": "insufficient_data",
+     "markov_state": "stale_polymarket_up",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   },
+   {
+    "action": "up",
+    "p_up": 0.78,
+    "confidence": 0.0,
+    "outcome_up": true,
+    "view_correct": true,
+    "context": {
+     "hurst_regime": "insufficient_data",
+     "markov_state": "stale_polymarket_up",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   },
+   {
+    "action": "up",
+    "p_up": 0.78,
+    "confidence": 0.0,
+    "outcome_up": true,
+    "view_correct": true,
+    "context": {
+     "hurst_regime": "trending",
+     "markov_state": "stale_polymarket_up",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   },
+   {
+    "action": "up",
+    "p_up": 0.68,
+    "confidence": 0.0,
+    "outcome_up": true,
+    "view_correct": true,
+    "context": {
+     "hurst_regime": "noise",
+     "markov_state": "stale_polymarket_up",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   },
+   {
+    "action": "up",
+    "p_up": 0.68,
+    "confidence": 0.0,
+    "outcome_up": true,
+    "view_correct": true,
+    "context": {
+     "hurst_regime": "trending",
+     "markov_state": "stale_polymarket_up",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   },
+   {
+    "action": "no_trade",
+    "p_up": 0.51,
+    "confidence": 0.0,
+    "outcome_up": true,
+    "view_correct": true,
+    "context": {
+     "hurst_regime": "insufficient_data",
+     "markov_state": "stale_polymarket_down",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   },
+   {
+    "action": "up",
+    "p_up": 0.71,
+    "confidence": 0.0,
+    "outcome_up": true,
+    "view_correct": true,
+    "context": {
+     "hurst_regime": "trending",
+     "markov_state": "stale_polymarket_up",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   },
+   {
+    "action": "no_trade",
+    "p_up": 0.58,
+    "confidence": 0.0,
+    "outcome_up": false,
+    "view_correct": false,
+    "context": {
+     "hurst_regime": "trending",
+     "markov_state": "stale_polymarket_up",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   },
+   {
+    "action": "up",
+    "p_up": 0.68,
+    "confidence": 0.0,
+    "outcome_up": false,
+    "view_correct": false,
+    "context": {
+     "hurst_regime": "trending",
+     "markov_state": "chop_noise",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   },
+   {
+    "action": "no_trade",
+    "p_up": 0.505,
+    "confidence": 0.0,
+    "outcome_up": true,
+    "view_correct": true,
+    "context": {
+     "hurst_regime": "insufficient_data",
+     "markov_state": "stale_polymarket_down",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   },
+   {
+    "action": "no_trade",
+    "p_up": 0.52,
+    "confidence": 0.0,
+    "outcome_up": false,
+    "view_correct": false,
+    "context": {
+     "hurst_regime": "trending",
+     "markov_state": "chop_noise",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   }
+  ],
   "circuit_breaker": {
    "tripped": false,
    "reason": null,
@@ -678,9 +1040,9 @@
     "status": {
      "enabled": true,
      "mode": "shadow",
-     "decided": 1,
-     "errors": 0,
-     "requested": 1
+     "decided": 13,
+     "errors": 1,
+     "requested": 14
     },
     "last_beat_age_s": 0.4
    },
@@ -733,7 +1095,7 @@
    "research_meta": {
     "role": "research(/goal)",
     "trigger": "interval",
-    "interval_s": 3600.0,
+    "interval_s": 1800.0,
     "skill": null,
     "verifier": "claude",
     "stop_condition": "verifiable metric improvement"
@@ -788,10 +1150,10 @@
     "verifiable": true,
     "reasons": [],
     "metrics": {
-     "executed": 0,
-     "settled": 0,
-     "realized_profit_usd": 0.0,
-     "guaranteed_booked_usd": 0.0
+     "executed": 2,
+     "settled": 2,
+     "realized_profit_usd": 16.5179,
+     "guaranteed_booked_usd": 16.5179
     },
     "note": "arb halt only on anomaly (guaranteed_profit<=0); risk-free P&L is segregated"
    }
@@ -821,7 +1183,7 @@
    "any_eligible": false,
    "note": "observe-only diagnostic; eligible buckets are NOT auto-promoted to trading authority unless promotion_allowed_by_config is true AND explicitly wired. The execution gate remains the sole trade authority."
   },
-  "snapshots": 8,
+  "snapshots": 745,
   "cex_basket_coverage": {
    "members": [
     "binance_btcusdt",
@@ -848,12 +1210,125 @@
   "late_ttc_s": 90.0,
   "kelly_scale": 0.5,
   "max_size_frac": 2.0,
-  "graded": 0,
-  "signals_seen": 8,
+  "graded": 13,
+  "signals_seen": 649,
   "drove_entries": 0,
   "promotion_rule": "n>=min AND wilson_lower(win_rate)>breakeven AND Brier_cex<Brier_market AND avg_pnl>0",
   "any_proven": false,
-  "buckets": [],
+  "buckets": [
+   {
+    "bucket": ">=0.30",
+    "n": 13,
+    "accuracy": 0.6154,
+    "win_rate_lower_ci": 0.3932,
+    "breakeven": 0.4742,
+    "brier_cex": 0.3118,
+    "brier_market": 0.2622,
+    "brier_fair": 0.2528,
+    "beats_market": false,
+    "avg_pnl_per_trade": 0.1412,
+    "total_pnl_usd_unit": 1.835,
+    "proven": false
+   },
+   {
+    "bucket": "ttc=>=0.30|240_300s",
+    "n": 13,
+    "accuracy": 0.6154,
+    "win_rate_lower_ci": 0.3932,
+    "breakeven": 0.4742,
+    "brier_cex": 0.3118,
+    "brier_market": 0.2622,
+    "brier_fair": 0.2528,
+    "beats_market": false,
+    "avg_pnl_per_trade": 0.1412,
+    "total_pnl_usd_unit": 1.835,
+    "proven": false
+   },
+   {
+    "bucket": "tv=>=0.30|unconfirmed",
+    "n": 13,
+    "accuracy": 0.6154,
+    "win_rate_lower_ci": 0.3932,
+    "breakeven": 0.4742,
+    "brier_cex": 0.3118,
+    "brier_market": 0.2622,
+    "brier_fair": 0.2528,
+    "beats_market": false,
+    "avg_pnl_per_trade": 0.1412,
+    "total_pnl_usd_unit": 1.835,
+    "proven": false
+   },
+   {
+    "bucket": "news=>=0.30|neutral",
+    "n": 13,
+    "accuracy": 0.6154,
+    "win_rate_lower_ci": 0.3932,
+    "breakeven": 0.4742,
+    "brier_cex": 0.3118,
+    "brier_market": 0.2622,
+    "brier_fair": 0.2528,
+    "beats_market": false,
+    "avg_pnl_per_trade": 0.1412,
+    "total_pnl_usd_unit": 1.835,
+    "proven": false
+   },
+   {
+    "bucket": "late=>=0.30|indecisive",
+    "n": 13,
+    "accuracy": 0.6154,
+    "win_rate_lower_ci": 0.3932,
+    "breakeven": 0.4742,
+    "brier_cex": 0.3118,
+    "brier_market": 0.2622,
+    "brier_fair": 0.2528,
+    "beats_market": false,
+    "avg_pnl_per_trade": 0.1412,
+    "total_pnl_usd_unit": 1.835,
+    "proven": false
+   },
+   {
+    "bucket": "conf=>=0.30|confirmed",
+    "n": 8,
+    "accuracy": 0.75,
+    "win_rate_lower_ci": 0.461,
+    "breakeven": 0.4688,
+    "brier_cex": 0.209,
+    "brier_market": 0.2651,
+    "brier_fair": 0.2501,
+    "beats_market": true,
+    "avg_pnl_per_trade": 0.2812,
+    "total_pnl_usd_unit": 2.25,
+    "proven": false
+   },
+   {
+    "bucket": "conf_ttc=>=0.30|240_300s",
+    "n": 8,
+    "accuracy": 0.75,
+    "win_rate_lower_ci": 0.461,
+    "breakeven": 0.4688,
+    "brier_cex": 0.209,
+    "brier_market": 0.2651,
+    "brier_fair": 0.2501,
+    "beats_market": true,
+    "avg_pnl_per_trade": 0.2812,
+    "total_pnl_usd_unit": 2.25,
+    "proven": false
+   },
+   {
+    "bucket": "conf=>=0.30|unconfirmed",
+    "n": 5,
+    "accuracy": 0.4,
+    "win_rate_lower_ci": 0.1431,
+    "breakeven": 0.483,
+    "brier_cex": 0.4762,
+    "brier_market": 0.2576,
+    "brier_fair": 0.2571,
+    "beats_market": false,
+    "avg_pnl_per_trade": -0.083,
+    "total_pnl_usd_unit": -0.415,
+    "proven": false
+   }
+  ],
   "note": "CEX-lead latency edge; benchmark is the MARKET price (already ~0.21 Brier). SHADOW grades only; GATED can PROPOSE a side on a proven bucket but the execution-quality gate + safety floor remain authoritative. PAPER ONLY."
  },
  "arbitrage": {
@@ -861,22 +1336,25 @@
   "paper_only": true,
   "risk_free": true,
   "segregated_from_directional": true,
-  "detected_actionable": 0,
-  "sell_both_detected": 4,
-  "executed": 0,
-  "executed_buy": 0,
-  "executed_sell": 0,
-  "settled": 0,
+  "detected_actionable": 2,
+  "sell_both_detected": 352,
+  "executed": 2,
+  "executed_buy": 1,
+  "executed_sell": 1,
+  "settled": 2,
   "open": 0,
-  "realized_profit_usd": 0.0,
-  "guaranteed_booked_usd": 0.0,
+  "realized_profit_usd": 16.5179,
+  "guaranteed_booked_usd": 16.5179,
+  "scans": 190,
+  "near_miss_within_eps": 44,
+  "min_vwap_ask_residual": 0.000562,
   "note": "risk-free dutch book: BUY-both (asks<$1) + SELL-both (mint $1 set, sell bids>$1); deterministic P&L; NEVER blended into directional. PAPER ONLY."
  },
  "directional_allowlist": {
   "enabled": true,
   "explore_rate": 0.05,
   "explored": 0,
-  "blocked": 0
+  "blocked": 188
  },
  "learned_selectivity_gate": {
   "enabled": true,
@@ -1082,520 +1560,117 @@
    "block_event_blackout": true,
    "block_grok_event_risk_high": true,
    "exploration_rate": 0.05,
-   "passed": 0,
-   "blocked": 2,
-   "explored": 0,
+   "passed": 187,
+   "blocked": 62,
+   "explored": 1,
    "block_reasons": {
-    "tv_context_ttc_too_far": 2
+    "tv_context_ttc_too_far": 40,
+    "tv_context_hurst_noise": 22
    },
-   "explore_reasons": {},
+   "explore_reasons": {
+    "tv_context_hurst_noise": 1,
+    "tv_context_ttc_too_far": 1
+   },
    "note": "hard prior gate: blocks proven-losing entry contexts (volume spikes, noise regime, far-from-resolution) before enough samples exist for the learned selectivity gate. Can only PREVENT trades \u2014 never forces, sizes, or bypasses the execution gate, which remains the sole trade authority."
+  },
+  "down_bias_gate": {
+   "enabled": true,
+   "block_bullish_aligned_up": true,
+   "block_up_without_bearish": true,
+   "exploration_rate": 0.02,
+   "passed": 34,
+   "blocked": 0,
+   "explored": 0,
+   "block_reasons": {},
+   "explore_reasons": {},
+   "note": "restrict-only: harvest DOWN/TV asymmetry by blocking proven-losing UP stacks"
   }
  },
  "tick_reasons": {
-  "rejected:tv_context_ttc_too_far": 1,
+  "rejected:edge_below_min": 1,
   "not_open_yet": 1
  },
  "recent_evaluations": [
   {
-   "decision_id": "628269",
+   "decision_id": "628428",
    "market_context": {
-    "decision_id": "628269",
-    "event_id": "628269",
-    "market_id": "2663385",
-    "title": "Bitcoin Up or Down - June 25, 12:25AM-12:30AM ET",
+    "decision_id": "628428",
+    "event_id": "628428",
+    "market_id": "2664511",
+    "title": "Bitcoin Up or Down - June 25, 1:30AM-1:35AM ET",
     "asset": "BTC",
-    "ttc_s": 298.3,
-    "ttc_bucket": ">=240s",
+    "ttc_s": 187.9,
+    "ttc_bucket": "120-240s",
     "oracle_source": "rtds_chainlink",
-    "s_open": null,
-    "s_now": null,
-    "sigma_per_sec": null,
-    "poly_yes": null,
-    "best_bid": null,
-    "best_ask": null,
-    "spread": null,
-    "ask_depth_usd": null,
-    "lead_prices": {
-     "coinbase_btcusd": 60801.285
-    }
-   },
-   "candidate": {
-    "side": null,
-    "fair_p_up": null,
-    "outcome_prob": null,
-    "model_edge": 0.0,
-    "tradeable": false,
-    "reason": "pending"
-   },
-   "features": null,
-   "signals": null,
-   "factors": null,
-   "regime": null,
-   "model": null,
-   "learning": null,
-   "edge": null,
-   "selectivity": null,
-   "context_gate": null,
-   "late_window": null,
-   "grok_decision": null,
-   "cex_lead": null,
-   "arbitrage": null,
-   "calibration": null,
-   "external": null,
-   "sizing": null,
-   "cost": null,
-   "action": null,
-   "fill": null,
-   "status": "rejected",
-   "terminal": "missing_data",
-   "reject_stage": null,
-   "terminal_reason": "no_open_snapshot",
-   "lifecycle": [
-    "created",
-    "missing_data",
-    "reported"
-   ]
-  },
-  {
-   "decision_id": "628269",
-   "market_context": {
-    "decision_id": "628269",
-    "event_id": "628269",
-    "market_id": "2663385",
-    "title": "Bitcoin Up or Down - June 25, 12:25AM-12:30AM ET",
-    "asset": "BTC",
-    "ttc_s": 294.3,
-    "ttc_bucket": ">=240s",
-    "oracle_source": "rtds_chainlink",
-    "s_open": 60802.61876057189,
-    "s_now": 60802.61876057189,
-    "sigma_per_sec": null,
-    "poly_yes": null,
-    "best_bid": null,
-    "best_ask": null,
-    "spread": null,
-    "ask_depth_usd": null,
-    "lead_prices": {
-     "coinbase_btcusd": 60801.285,
-     "binance_btcusdt": 60900.03
-    }
-   },
-   "candidate": {
-    "side": null,
-    "fair_p_up": null,
-    "outcome_prob": null,
-    "model_edge": 0.0,
-    "tradeable": false,
-    "reason": "pending"
-   },
-   "features": null,
-   "signals": null,
-   "factors": null,
-   "regime": null,
-   "model": null,
-   "learning": null,
-   "edge": null,
-   "selectivity": null,
-   "context_gate": null,
-   "late_window": null,
-   "grok_decision": null,
-   "cex_lead": null,
-   "arbitrage": null,
-   "calibration": null,
-   "external": null,
-   "sizing": null,
-   "cost": null,
-   "action": null,
-   "fill": null,
-   "status": "rejected",
-   "terminal": "missing_data",
-   "reject_stage": null,
-   "terminal_reason": "no_price_or_vol",
-   "lifecycle": [
-    "created",
-    "missing_data",
-    "reported"
-   ]
-  },
-  {
-   "decision_id": "628269",
-   "market_context": {
-    "decision_id": "628269",
-    "event_id": "628269",
-    "market_id": "2663385",
-    "title": "Bitcoin Up or Down - June 25, 12:25AM-12:30AM ET",
-    "asset": "BTC",
-    "ttc_s": 290.3,
-    "ttc_bucket": ">=240s",
-    "oracle_source": "rtds_chainlink",
-    "s_open": 60802.61876057189,
-    "s_now": 60802.2822972016,
-    "sigma_per_sec": 5.5198996979995255e-06,
-    "poly_yes": null,
-    "best_bid": null,
-    "best_ask": null,
-    "spread": null,
-    "ask_depth_usd": null,
-    "lead_prices": {
-     "coinbase_btcusd": 60801.285,
-     "binance_btcusdt": 60900.03
-    }
-   },
-   "candidate": {
-    "side": null,
-    "fair_p_up": null,
-    "outcome_prob": null,
-    "model_edge": 0.0,
-    "tradeable": false,
-    "reason": "pending"
-   },
-   "features": null,
-   "signals": null,
-   "factors": null,
-   "regime": null,
-   "model": null,
-   "learning": null,
-   "edge": null,
-   "selectivity": null,
-   "context_gate": null,
-   "late_window": null,
-   "grok_decision": null,
-   "cex_lead": null,
-   "arbitrage": null,
-   "calibration": null,
-   "external": null,
-   "sizing": null,
-   "cost": null,
-   "action": null,
-   "fill": null,
-   "status": "rejected",
-   "terminal": "skipped",
-   "reject_stage": null,
-   "terminal_reason": "untrusted_vol",
-   "lifecycle": [
-    "created",
-    "skipped",
-    "reported"
-   ]
-  },
-  {
-   "decision_id": "628269",
-   "market_context": {
-    "decision_id": "628269",
-    "event_id": "628269",
-    "market_id": "2663385",
-    "title": "Bitcoin Up or Down - June 25, 12:25AM-12:30AM ET",
-    "asset": "BTC",
-    "ttc_s": 286.3,
-    "ttc_bucket": ">=240s",
-    "oracle_source": "rtds_chainlink",
-    "s_open": 60802.61876057189,
-    "s_now": 60803.11780724154,
-    "sigma_per_sec": 5.563927931956561e-06,
-    "poly_yes": 0.505,
-    "best_bid": 0.5,
-    "best_ask": 0.51,
+    "s_open": 61510.02258005852,
+    "s_now": 61508.01633376144,
+    "sigma_per_sec": 7.178672644668234e-05,
+    "poly_yes": 0.525,
+    "best_bid": 0.52,
+    "best_ask": 0.53,
     "spread": 0.01,
-    "ask_depth_usd": 15573.91,
+    "ask_depth_usd": 27725.08,
     "lead_prices": {
-     "coinbase_btcusd": 60797.895,
-     "binance_btcusdt": 60900.04
+     "coinbase_btcusd": 61509.19,
+     "binance_btcusdt": 61612.35
     }
    },
    "candidate": {
-    "side": null,
-    "fair_p_up": 0.5347,
-    "outcome_prob": 0.4653,
-    "model_edge": 0.0,
-    "tradeable": false,
-    "reason": "too_early_in_window"
+    "side": "down",
+    "fair_p_up": 0.4866,
+    "outcome_prob": 0.5134,
+    "model_edge": 0.0634,
+    "tradeable": true,
+    "reason": "trade"
    },
    "features": {
     "observe_only": true,
-    "hurst": null,
-    "hurst_regime": "insufficient_data",
-    "autocorr_lag1": null,
-    "realized_vol": null,
-    "half_life_s": null,
-    "adf_tstat": null,
-    "half_life_reason": "insufficient_samples",
-    "divergence": -0.495,
-    "zscore": null,
-    "zscore_bucket": "na",
-    "kalman_fair_prob": null,
-    "kalman_reason": "insufficient_samples",
-    "diagnostics": {
-     "hurst": "insufficient_returns",
-     "half_life": "insufficient_samples",
-     "zscore": "insufficient_divergence_samples",
-     "kalman": "insufficient_samples"
-    }
+    "hurst": 0.7116,
+    "hurst_regime": "trending",
+    "autocorr_lag1": 0.1732,
+    "realized_vol": 0.00018427,
+    "half_life_s": 8.79,
+    "adf_tstat": -2.6482,
+    "half_life_reason": "ok",
+    "divergence": -0.429364,
+    "zscore": -0.267,
+    "zscore_bucket": "-1..1",
+    "kalman_fair_prob": 0.9201,
+    "kalman_reason": "ok",
+    "diagnostics": {}
    },
    "signals": {
     "observe_only": true,
     "returns": {
-     "15s": 8.21e-06,
-     "30s": 8.21e-06,
-     "60s": 8.21e-06,
-     "180s": 8.21e-06
+     "15s": -4.343e-05,
+     "30s": -0.00013588,
+     "60s": 0.00053389,
+     "180s": -0.00021737
     },
-    "realized_vol": null,
-    "autocorr_lag1": null,
+    "realized_vol": 0.00018427,
+    "autocorr_lag1": 0.1732,
     "tv_direction": null,
-    "poly_move": null,
-    "spread_change": null,
-    "depth_change": null,
-    "ttc_s": 286.3,
-    "direction": "up",
-    "strength": 0.7723,
-    "confidence": 1.0,
-    "family": "momentum"
-   },
-   "factors": {
-    "observe_only": true,
-    "cex_momentum": 0.7723,
-    "cex_volatility": null,
-    "polymarket_stale_factor": 1.0,
-    "orderbook_imbalance": -0.6276,
-    "spread_liquidity_factor": 0.9167,
-    "time_to_resolution_factor": 0.9544,
-    "crowded_side_factor": 0.0,
-    "settlement_boundary_risk": 0.0,
-    "grok_context": "calm",
-    "edge_quality_score": 0.957,
-    "edge_quality_bucket": "high",
-    "reason_codes": [
-     "good_liquidity",
-     "polymarket_stale_divergence"
-    ]
-   },
-   "regime": {
-    "state": "stale_polymarket_up",
-    "probs": {
-     "state": "stale_polymarket_up",
-     "samples": 0,
-     "resolved_samples": 0,
-     "observe_only": true,
-     "reason": "insufficient_samples",
-     "p_resolve_up": null,
-     "p_resolve_down": null,
-     "p_edge_survives_execution": null,
-     "p_no_trade_best": null
-    },
-    "observe_only": true
-   },
-   "model": {
-    "observe_only": true,
-    "trained": false,
-    "reason": "insufficient_labeled_samples",
-    "n_labeled": 0,
-    "p_up": null,
-    "p_down": null,
-    "p_no_trade": null,
-    "model_confidence": null,
-    "calibration_bucket": "na"
-   },
-   "learning": null,
-   "edge": {
-    "observe_only": true,
-    "cex_momentum": {
-     "returns": {
-      "r15s": -2.7795598516400233e-05,
-      "r30s": null,
-      "r60s": null,
-      "r180s": null
-     },
-     "velocity": null,
-     "acceleration": null,
-     "exchange_agreement": null,
-     "basket_direction": null,
-     "coverage": {
-      "members": [
-       "binance_btcusdt",
-       "coinbase_btcusd"
-      ],
-      "present": [
-       "binance_btcusdt",
-       "coinbase_btcusd"
-      ],
-      "missing": {},
-      "n_present": 2
-     }
-    },
-    "stale_divergence_class": "insufficient_data",
-    "ttc_bucket": "240_300s",
-    "orderbook_pressure": {
-     "spread": 0.01,
-     "ask_depth_usd": 15573.91,
-     "bid_depth_usd": 3563.88,
-     "vwap": 0.51,
-     "imbalance": -0.6276,
-     "depth_pull_add": "na",
-     "bucket": "ask_heavy"
-    },
-    "pulse_edge_score": 0.4823,
-    "pulse_edge_score_bucket": "medium",
-    "cex_agreement_bucket": "na",
-    "direction": null,
-    "affects_trading": false
-   },
-   "selectivity": null,
-   "context_gate": null,
-   "late_window": null,
-   "grok_decision": null,
-   "cex_lead": {
-    "has_signal": true,
-    "side": "up",
-    "divergence": 0.495,
-    "abs_divergence": 0.495,
-    "bucket": ">=0.30",
-    "ttc_bucket": "240_300s",
-    "confirmed": false,
-    "momentum_confirms": null,
-    "ob_confirms": false,
-    "tv_confirms": false,
-    "tv_direction": null,
-    "news_state": "neutral",
-    "news_sentiment": null,
-    "late_decisive": false,
-    "decisive": true,
-    "late": false,
-    "exchange_agreement": null,
-    "basket_direction": null,
-    "context_keys": [
-     ">=0.30",
-     "conf=>=0.30|unconfirmed",
-     "ttc=>=0.30|240_300s",
-     "tv=>=0.30|unconfirmed",
-     "news=>=0.30|neutral",
-     "late=>=0.30|indecisive"
-    ],
-    "cex_p_up": 1.0,
-    "poly_yes": 0.505,
-    "fair": 0.5347,
-    "vs_fair": 0.4653
-   },
-   "arbitrage": {
-    "kind": "sell_both",
-    "up_vwap": 0.487616,
-    "down_vwap": 0.49,
-    "shares": 612.2449,
-    "cost_usd": 612.2449,
-    "guaranteed_profit_usd": -13.7046,
-    "ask_sum": 0.977616,
-    "tob_residual": -0.01,
-    "vwap_residual": -0.022384,
-    "depth_capped": false,
-    "actionable": false,
-    "reason": "below_epsilon"
-   },
-   "calibration": null,
-   "external": null,
-   "sizing": null,
-   "cost": null,
-   "action": {
-    "kind": "reject",
-    "stage": "directional",
-    "reason": "too_early_in_window"
-   },
-   "fill": null,
-   "status": "rejected",
-   "terminal": "rejected",
-   "reject_stage": "directional",
-   "terminal_reason": "too_early_in_window",
-   "lifecycle": [
-    "created",
-    "feature_scored",
-    "rejected",
-    "reported"
-   ]
-  },
-  {
-   "decision_id": "628269",
-   "market_context": {
-    "decision_id": "628269",
-    "event_id": "628269",
-    "market_id": "2663385",
-    "title": "Bitcoin Up or Down - June 25, 12:25AM-12:30AM ET",
-    "asset": "BTC",
-    "ttc_s": 282.3,
-    "ttc_bucket": ">=240s",
-    "oracle_source": "rtds_chainlink",
-    "s_open": 60802.61876057189,
-    "s_now": 60803.546056967534,
-    "sigma_per_sec": 4.964774049349834e-06,
-    "poly_yes": 0.505,
-    "best_bid": 0.5,
-    "best_ask": 0.51,
-    "spread": 0.01,
-    "ask_depth_usd": 16031.43,
-    "lead_prices": {
-     "coinbase_btcusd": 60797.895,
-     "binance_btcusdt": 60900.03
-    }
-   },
-   "candidate": {
-    "side": null,
-    "fair_p_up": 0.5725,
-    "outcome_prob": 0.4275,
-    "model_edge": 0.0,
-    "tradeable": false,
-    "reason": "too_early_in_window"
-   },
-   "features": {
-    "observe_only": true,
-    "hurst": null,
-    "hurst_regime": "insufficient_data",
-    "autocorr_lag1": null,
-    "realized_vol": null,
-    "half_life_s": null,
-    "adf_tstat": null,
-    "half_life_reason": "insufficient_samples",
-    "divergence": -0.495,
-    "zscore": null,
-    "zscore_bucket": "na",
-    "kalman_fair_prob": null,
-    "kalman_reason": "insufficient_samples",
-    "diagnostics": {
-     "hurst": "insufficient_returns",
-     "half_life": "insufficient_samples",
-     "zscore": "insufficient_divergence_samples",
-     "kalman": "insufficient_samples"
-    }
-   },
-   "signals": {
-    "observe_only": true,
-    "returns": {
-     "15s": 1.525e-05,
-     "30s": 1.525e-05,
-     "60s": 1.525e-05,
-     "180s": 1.525e-05
-    },
-    "realized_vol": null,
-    "autocorr_lag1": null,
-    "tv_direction": null,
-    "poly_move": 0.0,
+    "poly_move": 0.14,
     "spread_change": 0.0,
-    "depth_change": 457.52000000000044,
-    "ttc_s": 282.3,
-    "direction": "up",
-    "strength": 0.9568,
-    "confidence": 1.0,
-    "family": "momentum"
+    "depth_change": 6046.5,
+    "ttc_s": 187.9,
+    "direction": "neutral",
+    "strength": 0.0198,
+    "confidence": 0.25,
+    "family": "noise"
    },
    "factors": {
     "observe_only": true,
-    "cex_momentum": 0.9568,
-    "cex_volatility": null,
+    "cex_momentum": null,
+    "cex_volatility": 0.0002,
     "polymarket_stale_factor": 1.0,
-    "orderbook_imbalance": -0.6257,
+    "orderbook_imbalance": -0.687,
     "spread_liquidity_factor": 0.9167,
-    "time_to_resolution_factor": 0.941,
+    "time_to_resolution_factor": 0.6263,
     "crowded_side_factor": 0.0,
     "settlement_boundary_risk": 0.0,
     "grok_context": "calm",
-    "edge_quality_score": 0.9526,
+    "edge_quality_score": 0.8477,
     "edge_quality_bucket": "high",
     "reason_codes": [
      "good_liquidity",
@@ -1603,17 +1678,17 @@
     ]
    },
    "regime": {
-    "state": "stale_polymarket_up",
+    "state": "chop_noise",
     "probs": {
-     "state": "stale_polymarket_up",
-     "samples": 1,
+     "state": "chop_noise",
+     "samples": 62,
      "resolved_samples": 0,
      "observe_only": true,
-     "reason": "insufficient_samples",
+     "reason": "ok",
      "p_resolve_up": null,
      "p_resolve_down": null,
-     "p_edge_survives_execution": null,
-     "p_no_trade_best": null
+     "p_edge_survives_execution": 0.0,
+     "p_no_trade_best": 1.0
     },
     "observe_only": true
    },
@@ -1633,477 +1708,13 @@
     "observe_only": true,
     "cex_momentum": {
      "returns": {
-      "r15s": -2.7877700282230577e-05,
-      "r30s": -5.5755400564461155e-05,
-      "r60s": null,
-      "r180s": null
+      "r15s": -9.293478212907269e-05,
+      "r30s": 0.00010896280945305037,
+      "r60s": 0.0005048280158613805,
+      "r180s": -0.00018911261504522825
      },
-     "velocity": -5.5755400564461155e-05,
-     "acceleration": 0.0,
-     "exchange_agreement": 1.0,
-     "basket_direction": "down",
-     "coverage": {
-      "members": [
-       "binance_btcusdt",
-       "coinbase_btcusd"
-      ],
-      "present": [
-       "binance_btcusdt",
-       "coinbase_btcusd"
-      ],
-      "missing": {},
-      "n_present": 2
-     }
-    },
-    "stale_divergence_class": "not_stale",
-    "ttc_bucket": "240_300s",
-    "orderbook_pressure": {
-     "spread": 0.01,
-     "ask_depth_usd": 16031.43,
-     "bid_depth_usd": 3691.24,
-     "vwap": 0.51,
-     "imbalance": -0.6257,
-     "depth_pull_add": "na",
-     "bucket": "ask_heavy"
-    },
-    "pulse_edge_score": 0.5565,
-    "pulse_edge_score_bucket": "medium",
-    "cex_agreement_bucket": "strong",
-    "direction": "down",
-    "affects_trading": false
-   },
-   "selectivity": null,
-   "context_gate": null,
-   "late_window": null,
-   "grok_decision": null,
-   "cex_lead": {
-    "has_signal": true,
-    "side": "up",
-    "divergence": 0.495,
-    "abs_divergence": 0.495,
-    "bucket": ">=0.30",
-    "ttc_bucket": "240_300s",
-    "confirmed": false,
-    "momentum_confirms": false,
-    "ob_confirms": false,
-    "tv_confirms": false,
-    "tv_direction": null,
-    "news_state": "neutral",
-    "news_sentiment": null,
-    "late_decisive": false,
-    "decisive": true,
-    "late": false,
-    "exchange_agreement": 1.0,
-    "basket_direction": "down",
-    "context_keys": [
-     ">=0.30",
-     "conf=>=0.30|unconfirmed",
-     "ttc=>=0.30|240_300s",
-     "tv=>=0.30|unconfirmed",
-     "news=>=0.30|neutral",
-     "late=>=0.30|indecisive"
-    ],
-    "cex_p_up": 1.0,
-    "poly_yes": 0.505,
-    "fair": 0.5725,
-    "vs_fair": 0.4275
-   },
-   "arbitrage": {
-    "kind": "buy_both",
-    "up_vwap": 0.51,
-    "down_vwap": 0.516123,
-    "shares": 581.2565,
-    "cost_usd": 596.4408,
-    "guaranteed_profit_usd": -15.1843,
-    "ask_sum": 1.026123,
-    "tob_residual": 0.01,
-    "vwap_residual": 0.026123,
-    "depth_capped": false,
-    "actionable": false,
-    "reason": "below_epsilon"
-   },
-   "calibration": null,
-   "external": null,
-   "sizing": null,
-   "cost": null,
-   "action": {
-    "kind": "reject",
-    "stage": "directional",
-    "reason": "too_early_in_window"
-   },
-   "fill": null,
-   "status": "rejected",
-   "terminal": "rejected",
-   "reject_stage": "directional",
-   "terminal_reason": "too_early_in_window",
-   "lifecycle": [
-    "created",
-    "feature_scored",
-    "rejected",
-    "reported"
-   ]
-  },
-  {
-   "decision_id": "628269",
-   "market_context": {
-    "decision_id": "628269",
-    "event_id": "628269",
-    "market_id": "2663385",
-    "title": "Bitcoin Up or Down - June 25, 12:25AM-12:30AM ET",
-    "asset": "BTC",
-    "ttc_s": 278.3,
-    "ttc_bucket": ">=240s",
-    "oracle_source": "rtds_chainlink",
-    "s_open": 60802.61876057189,
-    "s_now": 60803.42820664544,
-    "sigma_per_sec": 4.386134587072143e-06,
-    "poly_yes": 0.475,
-    "best_bid": 0.47,
-    "best_ask": 0.48,
-    "spread": 0.01,
-    "ask_depth_usd": 17588.94,
-    "lead_prices": {
-     "coinbase_btcusd": 60797.895,
-     "binance_btcusdt": 60900.03
-    }
-   },
-   "candidate": {
-    "side": null,
-    "fair_p_up": 0.5722,
-    "outcome_prob": 0.4278,
-    "model_edge": 0.0,
-    "tradeable": false,
-    "reason": "too_early_in_window"
-   },
-   "features": {
-    "observe_only": true,
-    "hurst": null,
-    "hurst_regime": "insufficient_data",
-    "autocorr_lag1": null,
-    "realized_vol": null,
-    "half_life_s": null,
-    "adf_tstat": null,
-    "half_life_reason": "insufficient_samples",
-    "divergence": -0.525,
-    "zscore": null,
-    "zscore_bucket": "na",
-    "kalman_fair_prob": null,
-    "kalman_reason": "insufficient_samples",
-    "diagnostics": {
-     "hurst": "insufficient_returns",
-     "half_life": "insufficient_samples",
-     "zscore": "insufficient_divergence_samples",
-     "kalman": "insufficient_samples"
-    }
-   },
-   "signals": {
-    "observe_only": true,
-    "returns": {
-     "15s": 1.885e-05,
-     "30s": 1.331e-05,
-     "60s": 1.331e-05,
-     "180s": 1.331e-05
-    },
-    "realized_vol": null,
-    "autocorr_lag1": null,
-    "tv_direction": null,
-    "poly_move": -0.030000000000000027,
-    "spread_change": 0.0,
-    "depth_change": 2015.0299999999988,
-    "ttc_s": 278.3,
-    "direction": "up",
-    "strength": 0.9436,
-    "confidence": 1.0,
-    "family": "momentum"
-   },
-   "factors": {
-    "observe_only": true,
-    "cex_momentum": 0.9436,
-    "cex_volatility": null,
-    "polymarket_stale_factor": 1.0,
-    "orderbook_imbalance": -0.6975,
-    "spread_liquidity_factor": 0.9167,
-    "time_to_resolution_factor": 0.9277,
-    "crowded_side_factor": 0.0,
-    "settlement_boundary_risk": 0.0,
-    "grok_context": "calm",
-    "edge_quality_score": 0.9481,
-    "edge_quality_bucket": "high",
-    "reason_codes": [
-     "good_liquidity",
-     "polymarket_stale_divergence"
-    ]
-   },
-   "regime": {
-    "state": "stale_polymarket_up",
-    "probs": {
-     "state": "stale_polymarket_up",
-     "samples": 2,
-     "resolved_samples": 0,
-     "observe_only": true,
-     "reason": "insufficient_samples",
-     "p_resolve_up": null,
-     "p_resolve_down": null,
-     "p_edge_survives_execution": null,
-     "p_no_trade_best": null
-    },
-    "observe_only": true
-   },
-   "model": {
-    "observe_only": true,
-    "trained": false,
-    "reason": "insufficient_labeled_samples",
-    "n_labeled": 0,
-    "p_up": null,
-    "p_down": null,
-    "p_no_trade": null,
-    "model_confidence": null,
-    "calibration_bucket": "na"
-   },
-   "learning": null,
-   "edge": {
-    "observe_only": true,
-    "cex_momentum": {
-     "returns": {
-      "r15s": -2.7877700282230577e-05,
-      "r30s": -2.7877700282230577e-05,
-      "r60s": null,
-      "r180s": null
-     },
-     "velocity": -2.7877700282230577e-05,
-     "acceleration": -2.7877700282230577e-05,
-     "exchange_agreement": 1.0,
-     "basket_direction": "down",
-     "coverage": {
-      "members": [
-       "binance_btcusdt",
-       "coinbase_btcusd"
-      ],
-      "present": [
-       "binance_btcusdt",
-       "coinbase_btcusd"
-      ],
-      "missing": {},
-      "n_present": 2
-     }
-    },
-    "stale_divergence_class": "not_stale",
-    "ttc_bucket": "240_300s",
-    "orderbook_pressure": {
-     "spread": 0.01,
-     "ask_depth_usd": 17588.94,
-     "bid_depth_usd": 3134.47,
-     "vwap": 0.48,
-     "imbalance": -0.6975,
-     "depth_pull_add": "na",
-     "bucket": "ask_heavy"
-    },
-    "pulse_edge_score": 0.5638,
-    "pulse_edge_score_bucket": "medium",
-    "cex_agreement_bucket": "strong",
-    "direction": "down",
-    "affects_trading": false
-   },
-   "selectivity": null,
-   "context_gate": null,
-   "late_window": null,
-   "grok_decision": null,
-   "cex_lead": {
-    "has_signal": true,
-    "side": "up",
-    "divergence": 0.525,
-    "abs_divergence": 0.525,
-    "bucket": ">=0.30",
-    "ttc_bucket": "240_300s",
-    "confirmed": false,
-    "momentum_confirms": false,
-    "ob_confirms": false,
-    "tv_confirms": false,
-    "tv_direction": null,
-    "news_state": "neutral",
-    "news_sentiment": null,
-    "late_decisive": false,
-    "decisive": true,
-    "late": false,
-    "exchange_agreement": 1.0,
-    "basket_direction": "down",
-    "context_keys": [
-     ">=0.30",
-     "conf=>=0.30|unconfirmed",
-     "ttc=>=0.30|240_300s",
-     "tv=>=0.30|unconfirmed",
-     "news=>=0.30|neutral",
-     "late=>=0.30|indecisive"
-    ],
-    "cex_p_up": 1.0,
-    "poly_yes": 0.475,
-    "fair": 0.5722,
-    "vs_fair": 0.4278
-   },
-   "arbitrage": {
-    "kind": "buy_both",
-    "up_vwap": 0.48,
-    "down_vwap": 0.547624,
-    "shares": 547.8214,
-    "cost_usd": 562.9543,
-    "guaranteed_profit_usd": -15.1329,
-    "ask_sum": 1.027624,
-    "tob_residual": 0.01,
-    "vwap_residual": 0.027624,
-    "depth_capped": false,
-    "actionable": false,
-    "reason": "below_epsilon"
-   },
-   "calibration": null,
-   "external": null,
-   "sizing": null,
-   "cost": null,
-   "action": {
-    "kind": "reject",
-    "stage": "directional",
-    "reason": "too_early_in_window"
-   },
-   "fill": null,
-   "status": "rejected",
-   "terminal": "rejected",
-   "reject_stage": "directional",
-   "terminal_reason": "too_early_in_window",
-   "lifecycle": [
-    "created",
-    "feature_scored",
-    "rejected",
-    "reported"
-   ]
-  },
-  {
-   "decision_id": "628269",
-   "market_context": {
-    "decision_id": "628269",
-    "event_id": "628269",
-    "market_id": "2663385",
-    "title": "Bitcoin Up or Down - June 25, 12:25AM-12:30AM ET",
-    "asset": "BTC",
-    "ttc_s": 274.3,
-    "ttc_bucket": ">=240s",
-    "oracle_source": "rtds_chainlink",
-    "s_open": 60802.61876057189,
-    "s_now": 60803.125725,
-    "sigma_per_sec": 4.016848445859727e-06,
-    "poly_yes": 0.425,
-    "best_bid": 0.42,
-    "best_ask": 0.43,
-    "spread": 0.01,
-    "ask_depth_usd": 18313.57,
-    "lead_prices": {
-     "coinbase_btcusd": 60801.595,
-     "binance_btcusdt": 60900.04
-    }
-   },
-   "candidate": {
-    "side": null,
-    "fair_p_up": 0.5499,
-    "outcome_prob": 0.4501,
-    "model_edge": 0.0,
-    "tradeable": false,
-    "reason": "too_early_in_window"
-   },
-   "features": {
-    "observe_only": true,
-    "hurst": null,
-    "hurst_regime": "insufficient_data",
-    "autocorr_lag1": null,
-    "realized_vol": null,
-    "half_life_s": null,
-    "adf_tstat": null,
-    "half_life_reason": "insufficient_samples",
-    "divergence": -0.575,
-    "zscore": null,
-    "zscore_bucket": "na",
-    "kalman_fair_prob": null,
-    "kalman_reason": "insufficient_samples",
-    "diagnostics": {
-     "hurst": "insufficient_returns",
-     "half_life": "insufficient_samples",
-     "zscore": "insufficient_divergence_samples",
-     "kalman": "insufficient_samples"
-    }
-   },
-   "signals": {
-    "observe_only": true,
-    "returns": {
-     "15s": 1.3e-07,
-     "30s": 8.34e-06,
-     "60s": 8.34e-06,
-     "180s": 8.34e-06
-    },
-    "realized_vol": null,
-    "autocorr_lag1": null,
-    "tv_direction": null,
-    "poly_move": -0.08000000000000002,
-    "spread_change": 0.0,
-    "depth_change": 2739.66,
-    "ttc_s": 274.3,
-    "direction": "up",
-    "strength": 0.5881,
-    "confidence": 1.0,
-    "family": "momentum"
-   },
-   "factors": {
-    "observe_only": true,
-    "cex_momentum": 0.5881,
-    "cex_volatility": null,
-    "polymarket_stale_factor": 1.0,
-    "orderbook_imbalance": -0.7414,
-    "spread_liquidity_factor": 0.9167,
-    "time_to_resolution_factor": 0.9144,
-    "crowded_side_factor": 0.0,
-    "settlement_boundary_risk": 0.0,
-    "grok_context": "calm",
-    "edge_quality_score": 0.9437,
-    "edge_quality_bucket": "high",
-    "reason_codes": [
-     "good_liquidity",
-     "polymarket_stale_divergence"
-    ]
-   },
-   "regime": {
-    "state": "stale_polymarket_up",
-    "probs": {
-     "state": "stale_polymarket_up",
-     "samples": 3,
-     "resolved_samples": 0,
-     "observe_only": true,
-     "reason": "insufficient_samples",
-     "p_resolve_up": null,
-     "p_resolve_down": null,
-     "p_edge_survives_execution": null,
-     "p_no_trade_best": null
-    },
-    "observe_only": true
-   },
-   "model": {
-    "observe_only": true,
-    "trained": false,
-    "reason": "insufficient_labeled_samples",
-    "n_labeled": 0,
-    "p_up": null,
-    "p_down": null,
-    "p_no_trade": null,
-    "model_confidence": null,
-    "calibration_bucket": "na"
-   },
-   "learning": null,
-   "edge": {
-    "observe_only": true,
-    "cex_momentum": {
-     "returns": {
-      "r15s": 2.6313899922358885e-06,
-      "r30s": 2.6313899922358885e-06,
-      "r60s": null,
-      "r180s": null
-     },
-     "velocity": 2.6313899922358885e-06,
-     "acceleration": 2.6313899922358885e-06,
+     "velocity": 0.00010896280945305037,
+     "acceleration": -0.00029483237371119575,
      "exchange_agreement": 1.0,
      "basket_direction": "up",
      "coverage": {
@@ -2120,45 +1731,53 @@
      }
     },
     "stale_divergence_class": "not_stale",
-    "ttc_bucket": "240_300s",
+    "ttc_bucket": "180_240s",
     "orderbook_pressure": {
      "spread": 0.01,
-     "ask_depth_usd": 18313.57,
-     "bid_depth_usd": 2719.42,
-     "vwap": 0.43,
-     "imbalance": -0.7414,
+     "ask_depth_usd": 27725.08,
+     "bid_depth_usd": 5143.77,
+     "vwap": 0.53,
+     "imbalance": -0.687,
      "depth_pull_add": "na",
      "bucket": "ask_heavy"
     },
-    "pulse_edge_score": 0.3902,
-    "pulse_edge_score_bucket": "low",
+    "pulse_edge_score": 0.4779,
+    "pulse_edge_score_bucket": "medium",
     "cex_agreement_bucket": "strong",
     "direction": "up",
     "affects_trading": false
    },
    "selectivity": null,
-   "context_gate": null,
-   "late_window": null,
+   "context_gate": {
+    "decision": "pass",
+    "reasons": []
+   },
+   "late_window": {
+    "decision": "pass",
+    "reason": null,
+    "conviction": 0.0268,
+    "late": false,
+    "high_conviction": false
+   },
    "grok_decision": {
     "action": "no_trade",
-    "confidence": 0.42,
-    "p_up": 0.53,
+    "confidence": 0.45,
+    "p_up": 0.52,
     "size_fraction": 0.0,
     "max_price": null,
     "ttl_s": 120.0,
     "key_risks": [
      "unconfirmed cex divergence",
-     "ask-heavy book",
-     "no recent window data",
-     "stale regime"
+     "ask-heavy orderbook",
+     "recent mixed streak"
     ],
-    "rationale": "mispricing present but unconfirmed and orderbook opposes; insufficient evidence to clear breakeven after costs",
+    "rationale": "mispricing present but unconfirmed + tv false; fair ~50% and track record favors selectivity",
     "schema_version": "1",
-    "ts": 1782361523.184353,
-    "latency_s": 8.501,
+    "ts": 1782365406.7369041,
+    "latency_s": 5.652,
     "context": {
-     "hurst_regime": "insufficient_data",
-     "markov_state": "stale_polymarket_up",
+     "hurst_regime": "trending",
+     "markov_state": "chop_noise",
      "ttc_bucket": ">=240s",
      "conviction_bucket": "coinflip"
     }
@@ -2166,10 +1785,10 @@
    "cex_lead": {
     "has_signal": true,
     "side": "up",
-    "divergence": 0.575,
-    "abs_divergence": 0.575,
+    "divergence": 0.4294,
+    "abs_divergence": 0.4294,
     "bucket": ">=0.30",
-    "ttc_bucket": "240_300s",
+    "ttc_bucket": "180_240s",
     "confirmed": true,
     "momentum_confirms": true,
     "ob_confirms": false,
@@ -2185,45 +1804,52 @@
     "context_keys": [
      ">=0.30",
      "conf=>=0.30|confirmed",
-     "ttc=>=0.30|240_300s",
+     "ttc=>=0.30|180_240s",
      "tv=>=0.30|unconfirmed",
      "news=>=0.30|neutral",
      "late=>=0.30|indecisive",
-     "conf_ttc=>=0.30|240_300s"
+     "conf_ttc=>=0.30|180_240s"
     ],
-    "cex_p_up": 1.0,
-    "poly_yes": 0.425,
-    "fair": 0.5499,
-    "vs_fair": 0.4501
+    "cex_p_up": 0.9544,
+    "poly_yes": 0.525,
+    "fair": 0.4866,
+    "vs_fair": 0.4678
    },
    "arbitrage": {
     "kind": "buy_both",
-    "up_vwap": 0.430713,
-    "down_vwap": 0.584563,
-    "shares": 513.2037,
-    "cost_usd": 521.0433,
-    "guaranteed_profit_usd": -7.8396,
-    "ask_sum": 1.015276,
-    "tob_residual": 0.01,
-    "vwap_residual": 0.015276,
+    "up_vwap": 0.595302,
+    "down_vwap": 0.441073,
+    "shares": 503.9457,
+    "cost_usd": 522.2769,
+    "guaranteed_profit_usd": -18.3312,
+    "ask_sum": 1.036375,
+    "tob_residual": -0.05,
+    "vwap_residual": 0.036375,
     "depth_capped": false,
     "actionable": false,
     "reason": "below_epsilon"
    },
-   "calibration": null,
+   "calibration": {
+    "raw_fair_p_up": 0.4865824174060801,
+    "calibrated_fair_p_up": 0.4866,
+    "diag": null,
+    "raw_outcome_prob": 0.5134,
+    "calibrated_outcome_prob": 0.5134,
+    "outcome_prob_diag": null
+   },
    "external": null,
    "sizing": null,
    "cost": null,
    "action": {
     "kind": "reject",
-    "stage": "directional",
-    "reason": "too_early_in_window"
+    "stage": "directional_allowlist",
+    "reason": "no_proven_winning_bucket"
    },
    "fill": null,
    "status": "rejected",
    "terminal": "rejected",
-   "reject_stage": "directional",
-   "terminal_reason": "too_early_in_window",
+   "reject_stage": "directional_allowlist",
+   "terminal_reason": "no_proven_winning_bucket",
    "lifecycle": [
     "created",
     "feature_scored",
@@ -2232,345 +1858,85 @@
    ]
   },
   {
-   "decision_id": "628269",
+   "decision_id": "628428",
    "market_context": {
-    "decision_id": "628269",
-    "event_id": "628269",
-    "market_id": "2663385",
-    "title": "Bitcoin Up or Down - June 25, 12:25AM-12:30AM ET",
+    "decision_id": "628428",
+    "event_id": "628428",
+    "market_id": "2664511",
+    "title": "Bitcoin Up or Down - June 25, 1:30AM-1:35AM ET",
     "asset": "BTC",
-    "ttc_s": 270.3,
-    "ttc_bucket": ">=240s",
+    "ttc_s": 183.9,
+    "ttc_bucket": "120-240s",
     "oracle_source": "rtds_chainlink",
-    "s_open": 60802.61876057189,
-    "s_now": 60800.690425,
-    "sigma_per_sec": 5.495138160302666e-06,
-    "poly_yes": 0.395,
-    "best_bid": 0.39,
-    "best_ask": 0.4,
+    "s_open": 61510.02258005852,
+    "s_now": 61529.78304642701,
+    "sigma_per_sec": 7.2040357152697e-05,
+    "poly_yes": 0.675,
+    "best_bid": 0.67,
+    "best_ask": 0.68,
     "spread": 0.01,
-    "ask_depth_usd": 17471.99,
+    "ask_depth_usd": 28430.82,
     "lead_prices": {
-     "coinbase_btcusd": 60801.205,
-     "binance_btcusdt": 60895.17
-    }
-   },
-   "candidate": {
-    "side": null,
-    "fair_p_up": 0.3628,
-    "outcome_prob": 0.6372,
-    "model_edge": 0.0,
-    "tradeable": false,
-    "reason": "too_early_in_window"
-   },
-   "features": {
-    "observe_only": true,
-    "hurst": null,
-    "hurst_regime": "insufficient_data",
-    "autocorr_lag1": null,
-    "realized_vol": null,
-    "half_life_s": null,
-    "adf_tstat": null,
-    "half_life_reason": "insufficient_samples",
-    "divergence": -0.605,
-    "zscore": null,
-    "zscore_bucket": "na",
-    "kalman_fair_prob": null,
-    "kalman_reason": "insufficient_samples",
-    "diagnostics": {
-     "hurst": "insufficient_returns",
-     "half_life": "insufficient_samples",
-     "zscore": "insufficient_divergence_samples",
-     "kalman": "insufficient_samples"
-    }
-   },
-   "signals": {
-    "observe_only": true,
-    "returns": {
-     "15s": -4.697e-05,
-     "30s": -3.172e-05,
-     "60s": -3.172e-05,
-     "180s": -3.172e-05
-    },
-    "realized_vol": null,
-    "autocorr_lag1": null,
-    "tv_direction": null,
-    "poly_move": -0.10999999999999999,
-    "spread_change": 0.0,
-    "depth_change": 1898.0800000000017,
-    "ttc_s": 270.3,
-    "direction": "down",
-    "strength": 0.9995,
-    "confidence": 1.0,
-    "family": "momentum"
-   },
-   "factors": {
-    "observe_only": true,
-    "cex_momentum": -0.9995,
-    "cex_volatility": null,
-    "polymarket_stale_factor": 1.0,
-    "orderbook_imbalance": -0.7115,
-    "spread_liquidity_factor": 0.9167,
-    "time_to_resolution_factor": 0.901,
-    "crowded_side_factor": 0.0,
-    "settlement_boundary_risk": 0.0,
-    "grok_context": "calm",
-    "edge_quality_score": 0.9392,
-    "edge_quality_bucket": "high",
-    "reason_codes": [
-     "good_liquidity",
-     "polymarket_stale_divergence"
-    ]
-   },
-   "regime": {
-    "state": "stale_polymarket_down",
-    "probs": {
-     "state": "stale_polymarket_down",
-     "samples": 0,
-     "resolved_samples": 0,
-     "observe_only": true,
-     "reason": "insufficient_samples",
-     "p_resolve_up": null,
-     "p_resolve_down": null,
-     "p_edge_survives_execution": null,
-     "p_no_trade_best": null
-    },
-    "observe_only": true
-   },
-   "model": {
-    "observe_only": true,
-    "trained": false,
-    "reason": "insufficient_labeled_samples",
-    "n_labeled": 0,
-    "p_up": null,
-    "p_down": null,
-    "p_no_trade": null,
-    "model_confidence": null,
-    "calibration_bucket": "na"
-   },
-   "learning": null,
-   "edge": {
-    "observe_only": true,
-    "cex_momentum": {
-     "returns": {
-      "r15s": -1.2762216190842501e-05,
-      "r30s": -4.0559339009260675e-05,
-      "r60s": null,
-      "r180s": null
-     },
-     "velocity": -4.0559339009260675e-05,
-     "acceleration": 1.5034906627575673e-05,
-     "exchange_agreement": 1.0,
-     "basket_direction": "down",
-     "coverage": {
-      "members": [
-       "binance_btcusdt",
-       "coinbase_btcusd"
-      ],
-      "present": [
-       "binance_btcusdt",
-       "coinbase_btcusd"
-      ],
-      "missing": {},
-      "n_present": 2
-     }
-    },
-    "stale_divergence_class": "not_stale",
-    "ttc_bucket": "240_300s",
-    "orderbook_pressure": {
-     "spread": 0.01,
-     "ask_depth_usd": 17471.99,
-     "bid_depth_usd": 2945.65,
-     "vwap": 0.40959,
-     "imbalance": -0.7115,
-     "depth_pull_add": "na",
-     "bucket": "ask_heavy"
-    },
-    "pulse_edge_score": 0.5629,
-    "pulse_edge_score_bucket": "medium",
-    "cex_agreement_bucket": "strong",
-    "direction": "down",
-    "affects_trading": false
-   },
-   "selectivity": null,
-   "context_gate": null,
-   "late_window": null,
-   "grok_decision": {
-    "action": "no_trade",
-    "confidence": 0.42,
-    "p_up": 0.53,
-    "size_fraction": 0.0,
-    "max_price": null,
-    "ttl_s": 120.0,
-    "key_risks": [
-     "unconfirmed cex divergence",
-     "ask-heavy book",
-     "no recent window data",
-     "stale regime"
-    ],
-    "rationale": "mispricing present but unconfirmed and orderbook opposes; insufficient evidence to clear breakeven after costs",
-    "schema_version": "1",
-    "ts": 1782361523.184353,
-    "latency_s": 8.501,
-    "context": {
-     "hurst_regime": "insufficient_data",
-     "markov_state": "stale_polymarket_up",
-     "ttc_bucket": ">=240s",
-     "conviction_bucket": "coinflip"
-    }
-   },
-   "cex_lead": {
-    "has_signal": true,
-    "side": "up",
-    "divergence": 0.605,
-    "abs_divergence": 0.605,
-    "bucket": ">=0.30",
-    "ttc_bucket": "240_300s",
-    "confirmed": false,
-    "momentum_confirms": false,
-    "ob_confirms": false,
-    "tv_confirms": false,
-    "tv_direction": null,
-    "news_state": "neutral",
-    "news_sentiment": null,
-    "late_decisive": false,
-    "decisive": true,
-    "late": false,
-    "exchange_agreement": 1.0,
-    "basket_direction": "down",
-    "context_keys": [
-     ">=0.30",
-     "conf=>=0.30|unconfirmed",
-     "ttc=>=0.30|240_300s",
-     "tv=>=0.30|unconfirmed",
-     "news=>=0.30|neutral",
-     "late=>=0.30|indecisive"
-    ],
-    "cex_p_up": 1.0,
-    "poly_yes": 0.395,
-    "fair": 0.3628,
-    "vs_fair": 0.6372
-   },
-   "arbitrage": {
-    "kind": "sell_both",
-    "up_vwap": 0.38948,
-    "down_vwap": 0.572228,
-    "shares": 524.267,
-    "cost_usd": 524.267,
-    "guaranteed_profit_usd": -20.0757,
-    "ask_sum": 0.961707,
-    "tob_residual": -0.01,
-    "vwap_residual": -0.038293,
-    "depth_capped": false,
-    "actionable": false,
-    "reason": "below_epsilon"
-   },
-   "calibration": null,
-   "external": null,
-   "sizing": null,
-   "cost": null,
-   "action": {
-    "kind": "reject",
-    "stage": "directional",
-    "reason": "too_early_in_window"
-   },
-   "fill": null,
-   "status": "rejected",
-   "terminal": "rejected",
-   "reject_stage": "directional",
-   "terminal_reason": "too_early_in_window",
-   "lifecycle": [
-    "created",
-    "feature_scored",
-    "rejected",
-    "reported"
-   ]
-  },
-  {
-   "decision_id": "628269",
-   "market_context": {
-    "decision_id": "628269",
-    "event_id": "628269",
-    "market_id": "2663385",
-    "title": "Bitcoin Up or Down - June 25, 12:25AM-12:30AM ET",
-    "asset": "BTC",
-    "ttc_s": 266.3,
-    "ttc_bucket": ">=240s",
-    "oracle_source": "rtds_chainlink",
-    "s_open": 60802.61876057189,
-    "s_now": 60799.728625,
-    "sigma_per_sec": 5.595865374049862e-06,
-    "poly_yes": 0.355,
-    "best_bid": 0.35,
-    "best_ask": 0.36,
-    "spread": 0.01,
-    "ask_depth_usd": 16960.59,
-    "lead_prices": {
-     "coinbase_btcusd": 60801.205,
-     "binance_btcusdt": 60889.07
+     "coinbase_btcusd": 61509.19,
+     "binance_btcusdt": 61633.99
     }
    },
    "candidate": {
     "side": "down",
-    "fair_p_up": 0.3013,
-    "outcome_prob": 0.6987,
-    "model_edge": 0.0187,
+    "fair_p_up": 0.6287,
+    "outcome_prob": 0.3713,
+    "model_edge": 0.0113,
     "tradeable": false,
     "reason": "edge_below_min"
    },
    "features": {
     "observe_only": true,
-    "hurst": null,
-    "hurst_regime": "insufficient_data",
-    "autocorr_lag1": null,
-    "realized_vol": null,
-    "half_life_s": null,
-    "adf_tstat": null,
-    "half_life_reason": "insufficient_samples",
-    "divergence": -0.645,
-    "zscore": null,
-    "zscore_bucket": "na",
-    "kalman_fair_prob": null,
-    "kalman_reason": "insufficient_samples",
-    "diagnostics": {
-     "hurst": "insufficient_returns",
-     "half_life": "insufficient_samples",
-     "zscore": "insufficient_divergence_samples",
-     "kalman": "insufficient_samples"
-    }
+    "hurst": 0.7116,
+    "hurst_regime": "trending",
+    "autocorr_lag1": 0.1677,
+    "realized_vol": 0.00018546,
+    "half_life_s": 8.7,
+    "adf_tstat": -2.6696,
+    "half_life_reason": "ok",
+    "divergence": -0.305323,
+    "zscore": 0.309,
+    "zscore_bucket": "-1..1",
+    "kalman_fair_prob": 0.9259,
+    "kalman_reason": "ok",
+    "diagnostics": {}
    },
    "signals": {
     "observe_only": true,
     "returns": {
-     "15s": -6.085e-05,
-     "30s": -4.753e-05,
-     "60s": -4.753e-05,
-     "180s": -4.753e-05
+     "15s": 0.00032654,
+     "30s": 0.00020136,
+     "60s": 0.00086172,
+     "180s": 0.00013844
     },
-    "realized_vol": null,
-    "autocorr_lag1": null,
+    "realized_vol": 0.00018546,
+    "autocorr_lag1": 0.1677,
     "tv_direction": null,
-    "poly_move": -0.15000000000000002,
+    "poly_move": 0.31000000000000005,
     "spread_change": 0.0,
-    "depth_change": 1386.6800000000003,
-    "ttc_s": 266.3,
-    "direction": "down",
-    "strength": 1.0,
+    "depth_change": -1461.420000000002,
+    "ttc_s": 183.9,
+    "direction": "up",
+    "strength": 0.2419,
     "confidence": 1.0,
     "family": "momentum"
    },
    "factors": {
     "observe_only": true,
-    "cex_momentum": -1.0,
-    "cex_volatility": null,
+    "cex_momentum": 0.2419,
+    "cex_volatility": 0.0002,
     "polymarket_stale_factor": 1.0,
-    "orderbook_imbalance": -0.7611,
+    "orderbook_imbalance": -0.5829,
     "spread_liquidity_factor": 0.9167,
-    "time_to_resolution_factor": 0.8877,
+    "time_to_resolution_factor": 0.613,
     "crowded_side_factor": 0.0,
     "settlement_boundary_risk": 0.0,
     "grok_context": "calm",
-    "edge_quality_score": 0.9348,
+    "edge_quality_score": 0.8432,
     "edge_quality_bucket": "high",
     "reason_codes": [
      "good_liquidity",
@@ -2578,10 +1944,10 @@
     ]
    },
    "regime": {
-    "state": "stale_polymarket_down",
+    "state": "stale_polymarket_up",
     "probs": {
-     "state": "stale_polymarket_down",
-     "samples": 1,
+     "state": "stale_polymarket_up",
+     "samples": 12,
      "resolved_samples": 0,
      "observe_only": true,
      "reason": "insufficient_samples",
@@ -2608,15 +1974,15 @@
     "observe_only": true,
     "cex_momentum": {
      "returns": {
-      "r15s": -6.276219812573203e-05,
-      "r30s": -9.064141614451016e-05,
-      "r60s": -1.3157616652881288e-06,
-      "r180s": null
+      "r15s": 8.275012861913567e-05,
+      "r30s": 9.977647335185358e-05,
+      "r60s": 0.0006804719640706169,
+      "r180s": -1.3607101069956773e-05
      },
-     "velocity": -9.064141614451016e-05,
-     "acceleration": -3.48829801069539e-05,
-     "exchange_agreement": 1.0,
-     "basket_direction": "down",
+     "velocity": 9.977647335185358e-05,
+     "acceleration": 6.572378388641775e-05,
+     "exchange_agreement": null,
+     "basket_direction": "flat",
      "coverage": {
       "members": [
        "binance_btcusdt",
@@ -2631,20 +1997,20 @@
      }
     },
     "stale_divergence_class": "not_stale",
-    "ttc_bucket": "240_300s",
+    "ttc_bucket": "180_240s",
     "orderbook_pressure": {
      "spread": 0.01,
-     "ask_depth_usd": 16960.59,
-     "bid_depth_usd": 2301.14,
-     "vwap": 0.36,
-     "imbalance": -0.7611,
+     "ask_depth_usd": 28430.82,
+     "bid_depth_usd": 7491.32,
+     "vwap": 0.68,
+     "imbalance": -0.5829,
      "depth_pull_add": "na",
      "bucket": "ask_heavy"
     },
-    "pulse_edge_score": 0.5675,
+    "pulse_edge_score": 0.4422,
     "pulse_edge_score_bucket": "medium",
-    "cex_agreement_bucket": "strong",
-    "direction": "down",
+    "cex_agreement_bucket": "na",
+    "direction": "flat",
     "affects_trading": false
    },
    "selectivity": null,
@@ -2652,24 +2018,23 @@
    "late_window": null,
    "grok_decision": {
     "action": "no_trade",
-    "confidence": 0.42,
-    "p_up": 0.53,
+    "confidence": 0.45,
+    "p_up": 0.52,
     "size_fraction": 0.0,
     "max_price": null,
     "ttl_s": 120.0,
     "key_risks": [
      "unconfirmed cex divergence",
-     "ask-heavy book",
-     "no recent window data",
-     "stale regime"
+     "ask-heavy orderbook",
+     "recent mixed streak"
     ],
-    "rationale": "mispricing present but unconfirmed and orderbook opposes; insufficient evidence to clear breakeven after costs",
+    "rationale": "mispricing present but unconfirmed + tv false; fair ~50% and track record favors selectivity",
     "schema_version": "1",
-    "ts": 1782361523.184353,
-    "latency_s": 8.501,
+    "ts": 1782365406.7369041,
+    "latency_s": 5.652,
     "context": {
-     "hurst_regime": "insufficient_data",
-     "markov_state": "stale_polymarket_up",
+     "hurst_regime": "trending",
+     "markov_state": "chop_noise",
      "ttc_bucket": ">=240s",
      "conviction_bucket": "coinflip"
     }
@@ -2677,12 +2042,12 @@
    "cex_lead": {
     "has_signal": true,
     "side": "up",
-    "divergence": 0.645,
-    "abs_divergence": 0.645,
+    "divergence": 0.3053,
+    "abs_divergence": 0.3053,
     "bucket": ">=0.30",
-    "ttc_bucket": "240_300s",
+    "ttc_bucket": "180_240s",
     "confirmed": false,
-    "momentum_confirms": false,
+    "momentum_confirms": null,
     "ob_confirms": false,
     "tv_confirms": false,
     "tv_direction": null,
@@ -2691,31 +2056,31 @@
     "late_decisive": false,
     "decisive": true,
     "late": false,
-    "exchange_agreement": 1.0,
-    "basket_direction": "down",
+    "exchange_agreement": null,
+    "basket_direction": "flat",
     "context_keys": [
      ">=0.30",
      "conf=>=0.30|unconfirmed",
-     "ttc=>=0.30|240_300s",
+     "ttc=>=0.30|180_240s",
      "tv=>=0.30|unconfirmed",
      "news=>=0.30|neutral",
      "late=>=0.30|indecisive"
     ],
-    "cex_p_up": 1.0,
-    "poly_yes": 0.355,
-    "fair": 0.3013,
-    "vs_fair": 0.6987
+    "cex_p_up": 0.9803,
+    "poly_yes": 0.675,
+    "fair": 0.6287,
+    "vs_fair": 0.3517
    },
    "arbitrage": {
     "kind": "sell_both",
-    "up_vwap": 0.34236,
-    "down_vwap": 0.64,
-    "shares": 468.75,
-    "cost_usd": 468.75,
-    "guaranteed_profit_usd": -8.2689,
-    "ask_sum": 0.98236,
+    "up_vwap": 0.66126,
+    "down_vwap": 0.318206,
+    "shares": 453.6794,
+    "cost_usd": 453.6794,
+    "guaranteed_profit_usd": -9.316,
+    "ask_sum": 0.979466,
     "tob_residual": -0.01,
-    "vwap_residual": -0.01764,
+    "vwap_residual": -0.020534,
     "depth_capped": false,
     "actionable": false,
     "reason": "below_epsilon"
@@ -2742,90 +2107,85 @@
    ]
   },
   {
-   "decision_id": "628269",
+   "decision_id": "628428",
    "market_context": {
-    "decision_id": "628269",
-    "event_id": "628269",
-    "market_id": "2663385",
-    "title": "Bitcoin Up or Down - June 25, 12:25AM-12:30AM ET",
+    "decision_id": "628428",
+    "event_id": "628428",
+    "market_id": "2664511",
+    "title": "Bitcoin Up or Down - June 25, 1:30AM-1:35AM ET",
     "asset": "BTC",
-    "ttc_s": 262.3,
-    "ttc_bucket": ">=240s",
+    "ttc_s": 179.9,
+    "ttc_bucket": "120-240s",
     "oracle_source": "rtds_chainlink",
-    "s_open": 60802.61876057189,
-    "s_now": 60792.57645,
-    "sigma_per_sec": 1.3760395922407108e-05,
-    "poly_yes": 0.325,
-    "best_bid": 0.32,
-    "best_ask": 0.33,
+    "s_open": 61510.02258005852,
+    "s_now": 61532.615987142024,
+    "sigma_per_sec": 7.188303331723699e-05,
+    "poly_yes": 0.615,
+    "best_bid": 0.61,
+    "best_ask": 0.62,
     "spread": 0.01,
-    "ask_depth_usd": 17617.24,
+    "ask_depth_usd": 28630.25,
     "lead_prices": {
-     "coinbase_btcusd": 60797.895,
-     "binance_btcusdt": 60886.28
+     "coinbase_btcusd": 61507.995,
+     "binance_btcusdt": 61633.99
     }
    },
    "candidate": {
-    "side": "down",
-    "fair_p_up": 0.2293,
-    "outcome_prob": 0.7707,
-    "model_edge": 0.0607,
-    "tradeable": true,
-    "reason": "trade"
+    "side": "up",
+    "fair_p_up": 0.6482,
+    "outcome_prob": 0.6482,
+    "model_edge": -0.0018,
+    "tradeable": false,
+    "reason": "edge_below_min"
    },
    "features": {
     "observe_only": true,
-    "hurst": null,
-    "hurst_regime": "insufficient_data",
-    "autocorr_lag1": null,
-    "realized_vol": null,
-    "half_life_s": null,
-    "adf_tstat": null,
-    "half_life_reason": "insufficient_samples",
-    "divergence": -0.675,
-    "zscore": null,
-    "zscore_bucket": "na",
-    "kalman_fair_prob": null,
-    "kalman_reason": "insufficient_samples",
-    "diagnostics": {
-     "hurst": "insufficient_returns",
-     "half_life": "insufficient_samples",
-     "zscore": "insufficient_divergence_samples",
-     "kalman": "insufficient_samples"
-    }
+    "hurst": 0.7116,
+    "hurst_regime": "trending",
+    "autocorr_lag1": 0.1701,
+    "realized_vol": 0.00018506,
+    "half_life_s": 8.64,
+    "adf_tstat": -2.6903,
+    "half_life_reason": "ok",
+    "divergence": -0.366593,
+    "zscore": 0.0232,
+    "zscore_bucket": "-1..1",
+    "kalman_fair_prob": 0.9312,
+    "kalman_reason": "ok",
+    "diagnostics": {}
    },
    "signals": {
     "observe_only": true,
     "returns": {
-     "15s": -0.00017351,
-     "30s": -0.00015964,
-     "60s": -0.00016518,
-     "180s": -0.00016518
+     "15s": 0.00034203,
+     "30s": 0.00032839,
+     "60s": 0.00094982,
+     "180s": 7.355e-05
     },
-    "realized_vol": null,
-    "autocorr_lag1": null,
+    "realized_vol": 0.00018506,
+    "autocorr_lag1": 0.1701,
     "tv_direction": null,
-    "poly_move": -0.18,
-    "spread_change": 0.0,
-    "depth_change": 2043.3300000000017,
-    "ttc_s": 262.3,
-    "direction": "down",
-    "strength": 1.0,
+    "poly_move": 0.14999999999999997,
+    "spread_change": -0.019999999999999997,
+    "depth_change": 555.6100000000006,
+    "ttc_s": 179.9,
+    "direction": "up",
+    "strength": 0.2652,
     "confidence": 1.0,
     "family": "momentum"
    },
    "factors": {
     "observe_only": true,
-    "cex_momentum": -1.0,
-    "cex_volatility": null,
+    "cex_momentum": 0.2652,
+    "cex_volatility": 0.0002,
     "polymarket_stale_factor": 1.0,
-    "orderbook_imbalance": -0.8071,
+    "orderbook_imbalance": -0.6027,
     "spread_liquidity_factor": 0.9167,
-    "time_to_resolution_factor": 0.8744,
+    "time_to_resolution_factor": 0.5996,
     "crowded_side_factor": 0.0,
     "settlement_boundary_risk": 0.0,
     "grok_context": "calm",
-    "edge_quality_score": 0.9304,
+    "edge_quality_score": 0.8388,
     "edge_quality_bucket": "high",
     "reason_codes": [
      "good_liquidity",
@@ -2833,10 +2193,10 @@
     ]
    },
    "regime": {
-    "state": "stale_polymarket_down",
+    "state": "stale_polymarket_up",
     "probs": {
-     "state": "stale_polymarket_down",
-     "samples": 2,
+     "state": "stale_polymarket_up",
+     "samples": 13,
      "resolved_samples": 0,
      "observe_only": true,
      "reason": "insufficient_samples",
@@ -2863,15 +2223,15 @@
     "observe_only": true,
     "cex_momentum": {
      "returns": {
-      "r15s": -0.0001128899279688178,
-      "r30s": -0.00014076762825104838,
-      "r60s": -0.00014076762825104838,
-      "r180s": null
+      "r15s": 0.00012216790181879267,
+      "r30s": 7.295619167585476e-05,
+      "r60s": 0.0006708355893466633,
+      "r180s": -8.82350268028298e-05
      },
-     "velocity": -0.00014076762825104838,
-     "acceleration": -8.501222768658723e-05,
-     "exchange_agreement": 1.0,
-     "basket_direction": "down",
+     "velocity": 7.295619167585476e-05,
+     "acceleration": 0.00017137961196173057,
+     "exchange_agreement": null,
+     "basket_direction": "flat",
      "coverage": {
       "members": [
        "binance_btcusdt",
@@ -2886,50 +2246,44 @@
      }
     },
     "stale_divergence_class": "not_stale",
-    "ttc_bucket": "240_300s",
+    "ttc_bucket": "90_180s",
     "orderbook_pressure": {
      "spread": 0.01,
-     "ask_depth_usd": 17617.24,
-     "bid_depth_usd": 1880.08,
-     "vwap": 0.33,
-     "imbalance": -0.8071,
+     "ask_depth_usd": 28630.25,
+     "bid_depth_usd": 7098.14,
+     "vwap": 0.627653,
+     "imbalance": -0.6027,
      "depth_pull_add": "na",
      "bucket": "ask_heavy"
     },
-    "pulse_edge_score": 0.5716,
+    "pulse_edge_score": 0.4414,
     "pulse_edge_score_bucket": "medium",
-    "cex_agreement_bucket": "strong",
-    "direction": "down",
+    "cex_agreement_bucket": "na",
+    "direction": "flat",
     "affects_trading": false
    },
    "selectivity": null,
-   "context_gate": {
-    "decision": "block",
-    "reasons": [
-     "tv_context_ttc_too_far"
-    ]
-   },
+   "context_gate": null,
    "late_window": null,
    "grok_decision": {
     "action": "no_trade",
-    "confidence": 0.42,
-    "p_up": 0.53,
+    "confidence": 0.45,
+    "p_up": 0.52,
     "size_fraction": 0.0,
     "max_price": null,
     "ttl_s": 120.0,
     "key_risks": [
      "unconfirmed cex divergence",
-     "ask-heavy book",
-     "no recent window data",
-     "stale regime"
+     "ask-heavy orderbook",
+     "recent mixed streak"
     ],
-    "rationale": "mispricing present but unconfirmed and orderbook opposes; insufficient evidence to clear breakeven after costs",
+    "rationale": "mispricing present but unconfirmed + tv false; fair ~50% and track record favors selectivity",
     "schema_version": "1",
-    "ts": 1782361523.184353,
-    "latency_s": 8.501,
+    "ts": 1782365406.7369041,
+    "latency_s": 5.652,
     "context": {
-     "hurst_regime": "insufficient_data",
-     "markov_state": "stale_polymarket_up",
+     "hurst_regime": "trending",
+     "markov_state": "chop_noise",
      "ttc_bucket": ">=240s",
      "conviction_bucket": "coinflip"
     }
@@ -2937,12 +2291,12 @@
    "cex_lead": {
     "has_signal": true,
     "side": "up",
-    "divergence": 0.675,
-    "abs_divergence": 0.675,
+    "divergence": 0.3666,
+    "abs_divergence": 0.3666,
     "bucket": ">=0.30",
-    "ttc_bucket": "240_300s",
+    "ttc_bucket": "90_180s",
     "confirmed": false,
-    "momentum_confirms": false,
+    "momentum_confirms": null,
     "ob_confirms": false,
     "tv_confirms": false,
     "tv_direction": null,
@@ -2951,31 +2305,31 @@
     "late_decisive": false,
     "decisive": true,
     "late": false,
-    "exchange_agreement": 1.0,
-    "basket_direction": "down",
+    "exchange_agreement": null,
+    "basket_direction": "flat",
     "context_keys": [
      ">=0.30",
      "conf=>=0.30|unconfirmed",
-     "ttc=>=0.30|240_300s",
+     "ttc=>=0.30|90_180s",
      "tv=>=0.30|unconfirmed",
      "news=>=0.30|neutral",
      "late=>=0.30|indecisive"
     ],
-    "cex_p_up": 1.0,
-    "poly_yes": 0.325,
-    "fair": 0.2293,
-    "vs_fair": 0.7707
+    "cex_p_up": 0.9816,
+    "poly_yes": 0.615,
+    "fair": 0.6482,
+    "vs_fair": 0.3334
    },
    "arbitrage": {
     "kind": "buy_both",
-    "up_vwap": 0.33,
-    "down_vwap": 0.700311,
-    "shares": 428.381,
-    "cost_usd": 441.3657,
-    "guaranteed_profit_usd": -12.9847,
-    "ask_sum": 1.030311,
+    "up_vwap": 0.64398,
+    "down_vwap": 0.390887,
+    "shares": 465.8528,
+    "cost_usd": 482.0958,
+    "guaranteed_profit_usd": -16.243,
+    "ask_sum": 1.034867,
     "tob_residual": 0.01,
-    "vwap_residual": 0.030311,
+    "vwap_residual": 0.034867,
     "depth_capped": false,
     "actionable": false,
     "reason": "below_epsilon"
@@ -2986,14 +2340,14 @@
    "cost": null,
    "action": {
     "kind": "reject",
-    "stage": "context_gate",
-    "reason": "tv_context_ttc_too_far"
+    "stage": "directional",
+    "reason": "edge_below_min"
    },
    "fill": null,
    "status": "rejected",
    "terminal": "rejected",
-   "reject_stage": "context_gate",
-   "terminal_reason": "tv_context_ttc_too_far",
+   "reject_stage": "directional",
+   "terminal_reason": "edge_below_min",
    "lifecycle": [
     "created",
     "feature_scored",
@@ -3002,89 +2356,85 @@
    ]
   },
   {
-   "decision_id": "628269",
+   "decision_id": "628428",
    "market_context": {
-    "decision_id": "628269",
-    "event_id": "628269",
-    "market_id": "2663385",
-    "title": "Bitcoin Up or Down - June 25, 12:25AM-12:30AM ET",
+    "decision_id": "628428",
+    "event_id": "628428",
+    "market_id": "2664511",
+    "title": "Bitcoin Up or Down - June 25, 1:30AM-1:35AM ET",
     "asset": "BTC",
-    "ttc_s": 258.3,
-    "ttc_bucket": ">=240s",
+    "ttc_s": 175.9,
+    "ttc_bucket": "120-240s",
     "oracle_source": "rtds_chainlink",
-    "s_open": 60802.61876057189,
-    "s_now": 60788.04443834532,
-    "sigma_per_sec": 1.4229352154189256e-05,
-    "poly_yes": 0.335,
-    "best_bid": 0.33,
-    "best_ask": 0.34,
+    "s_open": 61510.02258005852,
+    "s_now": 61531.04834219159,
+    "sigma_per_sec": 7.172879761331656e-05,
+    "poly_yes": 0.625,
+    "best_bid": 0.62,
+    "best_ask": 0.63,
     "spread": 0.01,
-    "ask_depth_usd": 16845.52,
+    "ask_depth_usd": 28980.76,
     "lead_prices": {
-     "coinbase_btcusd": 60797.895,
-     "binance_btcusdt": 60884.6
+     "coinbase_btcusd": 61507.995,
+     "binance_btcusdt": 61633.99
     }
    },
    "candidate": {
-    "side": "down",
-    "fair_p_up": 0.1472,
-    "outcome_prob": 0.8528,
-    "model_edge": 0.1528,
-    "tradeable": true,
-    "reason": "trade"
+    "side": "up",
+    "fair_p_up": 0.6401,
+    "outcome_prob": 0.6401,
+    "model_edge": -0.0199,
+    "tradeable": false,
+    "reason": "edge_below_min"
    },
    "features": {
     "observe_only": true,
-    "hurst": null,
-    "hurst_regime": "insufficient_data",
-    "autocorr_lag1": null,
-    "realized_vol": null,
-    "half_life_s": null,
-    "adf_tstat": null,
-    "half_life_reason": "insufficient_samples",
-    "divergence": -0.665,
-    "zscore": null,
-    "zscore_bucket": "na",
-    "kalman_fair_prob": 1.0,
+    "hurst": 0.7116,
+    "hurst_regime": "trending",
+    "autocorr_lag1": 0.1699,
+    "realized_vol": 0.00018464,
+    "half_life_s": 8.64,
+    "adf_tstat": -2.6976,
+    "half_life_reason": "ok",
+    "divergence": -0.357827,
+    "zscore": 0.064,
+    "zscore_bucket": "-1..1",
+    "kalman_fair_prob": 0.9361,
     "kalman_reason": "ok",
-    "diagnostics": {
-     "hurst": "insufficient_returns",
-     "half_life": "insufficient_samples",
-     "zscore": "insufficient_divergence_samples"
-    }
+    "diagnostics": {}
    },
    "signals": {
     "observe_only": true,
     "returns": {
-     "15s": -0.00020801,
-     "30s": -0.00024794,
-     "60s": -0.00023973,
-     "180s": -0.00023973
+     "15s": 0.00037439,
+     "30s": 0.00033808,
+     "60s": 0.00052777,
+     "180s": 7.577e-05
     },
-    "realized_vol": null,
-    "autocorr_lag1": null,
+    "realized_vol": 0.00018464,
+    "autocorr_lag1": 0.1699,
     "tv_direction": null,
-    "poly_move": -0.16999999999999998,
+    "poly_move": 0.09999999999999998,
     "spread_change": 0.0,
-    "depth_change": 1271.6100000000006,
-    "ttc_s": 258.3,
-    "direction": "down",
-    "strength": 1.0,
+    "depth_change": 859.5,
+    "ttc_s": 175.9,
+    "direction": "up",
+    "strength": 0.2168,
     "confidence": 1.0,
     "family": "momentum"
    },
    "factors": {
     "observe_only": true,
-    "cex_momentum": -1.0,
-    "cex_volatility": null,
+    "cex_momentum": 0.2168,
+    "cex_volatility": 0.0002,
     "polymarket_stale_factor": 1.0,
-    "orderbook_imbalance": -0.7593,
+    "orderbook_imbalance": -0.6866,
     "spread_liquidity_factor": 0.9167,
-    "time_to_resolution_factor": 0.861,
+    "time_to_resolution_factor": 0.5863,
     "crowded_side_factor": 0.0,
     "settlement_boundary_risk": 0.0,
     "grok_context": "calm",
-    "edge_quality_score": 0.9259,
+    "edge_quality_score": 0.8343,
     "edge_quality_bucket": "high",
     "reason_codes": [
      "good_liquidity",
@@ -3092,10 +2442,10 @@
     ]
    },
    "regime": {
-    "state": "stale_polymarket_down",
+    "state": "stale_polymarket_up",
     "probs": {
-     "state": "stale_polymarket_down",
-     "samples": 3,
+     "state": "stale_polymarket_up",
+     "samples": 14,
      "resolved_samples": 0,
      "observe_only": true,
      "reason": "insufficient_samples",
@@ -3122,15 +2472,15 @@
     "observe_only": true,
     "cex_momentum": {
      "returns": {
-      "r15s": -0.00015719193894808692,
-      "r30s": -0.00015456072490471762,
-      "r60s": -0.00015456072490471762,
-      "r180s": null
+      "r15s": 0.0001658189656600917,
+      "r30s": 7.295619167585476e-05,
+      "r60s": 0.000646953593201216,
+      "r180s": -8.815389221711323e-05
      },
-     "velocity": -0.00015456072490471762,
-     "acceleration": -0.00015982315299145622,
-     "exchange_agreement": 1.0,
-     "basket_direction": "down",
+     "velocity": 7.295619167585476e-05,
+     "acceleration": 0.0002586817396443286,
+     "exchange_agreement": null,
+     "basket_direction": "flat",
      "coverage": {
       "members": [
        "binance_btcusdt",
@@ -3145,50 +2495,44 @@
      }
     },
     "stale_divergence_class": "not_stale",
-    "ttc_bucket": "240_300s",
+    "ttc_bucket": "90_180s",
     "orderbook_pressure": {
      "spread": 0.01,
-     "ask_depth_usd": 16845.52,
-     "bid_depth_usd": 2304.94,
-     "vwap": 0.34,
-     "imbalance": -0.7593,
+     "ask_depth_usd": 28980.76,
+     "bid_depth_usd": 5385.24,
+     "vwap": 0.63,
+     "imbalance": -0.6866,
      "depth_pull_add": "na",
      "bucket": "ask_heavy"
     },
-    "pulse_edge_score": 0.5646,
+    "pulse_edge_score": 0.4406,
     "pulse_edge_score_bucket": "medium",
-    "cex_agreement_bucket": "strong",
-    "direction": "down",
+    "cex_agreement_bucket": "na",
+    "direction": "flat",
     "affects_trading": false
    },
    "selectivity": null,
-   "context_gate": {
-    "decision": "block",
-    "reasons": [
-     "tv_context_ttc_too_far"
-    ]
-   },
+   "context_gate": null,
    "late_window": null,
    "grok_decision": {
     "action": "no_trade",
-    "confidence": 0.42,
-    "p_up": 0.53,
+    "confidence": 0.45,
+    "p_up": 0.52,
     "size_fraction": 0.0,
     "max_price": null,
     "ttl_s": 120.0,
     "key_risks": [
      "unconfirmed cex divergence",
-     "ask-heavy book",
-     "no recent window data",
-     "stale regime"
+     "ask-heavy orderbook",
+     "recent mixed streak"
     ],
-    "rationale": "mispricing present but unconfirmed and orderbook opposes; insufficient evidence to clear breakeven after costs",
+    "rationale": "mispricing present but unconfirmed + tv false; fair ~50% and track record favors selectivity",
     "schema_version": "1",
-    "ts": 1782361523.184353,
-    "latency_s": 8.501,
+    "ts": 1782365406.7369041,
+    "latency_s": 5.652,
     "context": {
-     "hurst_regime": "insufficient_data",
-     "markov_state": "stale_polymarket_up",
+     "hurst_regime": "trending",
+     "markov_state": "chop_noise",
      "ttc_bucket": ">=240s",
      "conviction_bucket": "coinflip"
     }
@@ -3196,12 +2540,12 @@
    "cex_lead": {
     "has_signal": true,
     "side": "up",
-    "divergence": 0.665,
-    "abs_divergence": 0.665,
+    "divergence": 0.3578,
+    "abs_divergence": 0.3578,
     "bucket": ">=0.30",
-    "ttc_bucket": "240_300s",
+    "ttc_bucket": "90_180s",
     "confirmed": false,
-    "momentum_confirms": false,
+    "momentum_confirms": null,
     "ob_confirms": false,
     "tv_confirms": false,
     "tv_direction": null,
@@ -3210,31 +2554,31 @@
     "late_decisive": false,
     "decisive": true,
     "late": false,
-    "exchange_agreement": 1.0,
-    "basket_direction": "down",
+    "exchange_agreement": null,
+    "basket_direction": "flat",
     "context_keys": [
      ">=0.30",
      "conf=>=0.30|unconfirmed",
-     "ttc=>=0.30|240_300s",
+     "ttc=>=0.30|90_180s",
      "tv=>=0.30|unconfirmed",
      "news=>=0.30|neutral",
      "late=>=0.30|indecisive"
     ],
-    "cex_p_up": 1.0,
-    "poly_yes": 0.335,
-    "fair": 0.1472,
-    "vs_fair": 0.8528
+    "cex_p_up": 0.9828,
+    "poly_yes": 0.625,
+    "fair": 0.6401,
+    "vs_fair": 0.3427
    },
    "arbitrage": {
     "kind": "sell_both",
-    "up_vwap": 0.329447,
-    "down_vwap": 0.642324,
-    "shares": 467.0538,
-    "cost_usd": 467.0538,
-    "guaranteed_profit_usd": -13.1841,
-    "ask_sum": 0.971772,
-    "tob_residual": -0.01,
-    "vwap_residual": -0.028228,
+    "up_vwap": 0.585459,
+    "down_vwap": 0.401003,
+    "shares": 512.4182,
+    "cost_usd": 512.4182,
+    "guaranteed_profit_usd": -6.9372,
+    "ask_sum": 0.986462,
+    "tob_residual": 0.03,
+    "vwap_residual": -0.013538,
     "depth_capped": false,
     "actionable": false,
     "reason": "below_epsilon"
@@ -3245,14 +2589,2045 @@
    "cost": null,
    "action": {
     "kind": "reject",
-    "stage": "context_gate",
-    "reason": "tv_context_ttc_too_far"
+    "stage": "directional",
+    "reason": "edge_below_min"
    },
    "fill": null,
    "status": "rejected",
    "terminal": "rejected",
-   "reject_stage": "context_gate",
-   "terminal_reason": "tv_context_ttc_too_far",
+   "reject_stage": "directional",
+   "terminal_reason": "edge_below_min",
+   "lifecycle": [
+    "created",
+    "feature_scored",
+    "rejected",
+    "reported"
+   ]
+  },
+  {
+   "decision_id": "628428",
+   "market_context": {
+    "decision_id": "628428",
+    "event_id": "628428",
+    "market_id": "2664511",
+    "title": "Bitcoin Up or Down - June 25, 1:30AM-1:35AM ET",
+    "asset": "BTC",
+    "ttc_s": 171.9,
+    "ttc_bucket": "120-240s",
+    "oracle_source": "rtds_chainlink",
+    "s_open": 61510.02258005852,
+    "s_now": 61526.780397932474,
+    "sigma_per_sec": 7.158559572676914e-05,
+    "poly_yes": 0.585,
+    "best_bid": 0.58,
+    "best_ask": 0.59,
+    "spread": 0.01,
+    "ask_depth_usd": 30311.61,
+    "lead_prices": {
+     "coinbase_btcusd": 61507.995,
+     "binance_btcusdt": 61630.91
+    }
+   },
+   "candidate": {
+    "side": "up",
+    "fair_p_up": 0.614,
+    "outcome_prob": 0.614,
+    "model_edge": -0.006,
+    "tradeable": false,
+    "reason": "edge_below_min"
+   },
+   "features": {
+    "observe_only": true,
+    "hurst": 0.7116,
+    "hurst_regime": "trending",
+    "autocorr_lag1": 0.17,
+    "realized_vol": 0.00018427,
+    "half_life_s": 8.63,
+    "adf_tstat": -2.7057,
+    "half_life_reason": "ok",
+    "divergence": -0.396758,
+    "zscore": -0.1182,
+    "zscore_bucket": "-1..1",
+    "kalman_fair_prob": 0.9404,
+    "kalman_reason": "ok",
+    "diagnostics": {}
+   },
+   "signals": {
+    "observe_only": true,
+    "returns": {
+     "15s": -4.88e-05,
+     "30s": 0.00026159,
+     "60s": 0.000207,
+     "180s": 0.00027677
+    },
+    "realized_vol": 0.00018427,
+    "autocorr_lag1": 0.17,
+    "tv_direction": null,
+    "poly_move": 0.04999999999999993,
+    "spread_change": 0.0,
+    "depth_change": 1321.6599999999999,
+    "ttc_s": 171.9,
+    "direction": "neutral",
+    "strength": 0.1169,
+    "confidence": 0.75,
+    "family": "mean_reversion"
+   },
+   "factors": {
+    "observe_only": true,
+    "cex_momentum": null,
+    "cex_volatility": 0.0002,
+    "polymarket_stale_factor": 1.0,
+    "orderbook_imbalance": -0.6409,
+    "spread_liquidity_factor": 0.9167,
+    "time_to_resolution_factor": 0.573,
+    "crowded_side_factor": 0.0,
+    "settlement_boundary_risk": 0.0,
+    "grok_context": "calm",
+    "edge_quality_score": 0.8299,
+    "edge_quality_bucket": "high",
+    "reason_codes": [
+     "good_liquidity",
+     "polymarket_stale_divergence"
+    ]
+   },
+   "regime": {
+    "state": "chop_noise",
+    "probs": {
+     "state": "chop_noise",
+     "samples": 63,
+     "resolved_samples": 0,
+     "observe_only": true,
+     "reason": "ok",
+     "p_resolve_up": null,
+     "p_resolve_down": null,
+     "p_edge_survives_execution": 0.0,
+     "p_no_trade_best": 1.0
+    },
+    "observe_only": true
+   },
+   "model": {
+    "observe_only": true,
+    "trained": false,
+    "reason": "insufficient_labeled_samples",
+    "n_labeled": 0,
+    "p_up": null,
+    "p_down": null,
+    "p_no_trade": null,
+    "model_confidence": null,
+    "calibration_bucket": "na"
+   },
+   "learning": null,
+   "edge": {
+    "observe_only": true,
+    "cex_momentum": {
+     "returns": {
+      "r15s": 0.0001409051578818432,
+      "r30s": 4.796268349610555e-05,
+      "r60s": 0.0003013347135689681,
+      "r180s": -8.076854378596954e-05
+     },
+     "velocity": 4.796268349610555e-05,
+     "acceleration": 0.00023384763226758087,
+     "exchange_agreement": null,
+     "basket_direction": "flat",
+     "coverage": {
+      "members": [
+       "binance_btcusdt",
+       "coinbase_btcusd"
+      ],
+      "present": [
+       "binance_btcusdt",
+       "coinbase_btcusd"
+      ],
+      "missing": {},
+      "n_present": 2
+     }
+    },
+    "stale_divergence_class": "not_stale",
+    "ttc_bucket": "90_180s",
+    "orderbook_pressure": {
+     "spread": 0.01,
+     "ask_depth_usd": 30311.61,
+     "bid_depth_usd": 6632.38,
+     "vwap": 0.59,
+     "imbalance": -0.6409,
+     "depth_pull_add": "na",
+     "bucket": "ask_heavy"
+    },
+    "pulse_edge_score": 0.4399,
+    "pulse_edge_score_bucket": "medium",
+    "cex_agreement_bucket": "na",
+    "direction": "flat",
+    "affects_trading": false
+   },
+   "selectivity": null,
+   "context_gate": null,
+   "late_window": null,
+   "grok_decision": {
+    "action": "no_trade",
+    "confidence": 0.45,
+    "p_up": 0.52,
+    "size_fraction": 0.0,
+    "max_price": null,
+    "ttl_s": 120.0,
+    "key_risks": [
+     "unconfirmed cex divergence",
+     "ask-heavy orderbook",
+     "recent mixed streak"
+    ],
+    "rationale": "mispricing present but unconfirmed + tv false; fair ~50% and track record favors selectivity",
+    "schema_version": "1",
+    "ts": 1782365406.7369041,
+    "latency_s": 5.652,
+    "context": {
+     "hurst_regime": "trending",
+     "markov_state": "chop_noise",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   },
+   "cex_lead": {
+    "has_signal": true,
+    "side": "up",
+    "divergence": 0.3968,
+    "abs_divergence": 0.3968,
+    "bucket": ">=0.30",
+    "ttc_bucket": "90_180s",
+    "confirmed": false,
+    "momentum_confirms": null,
+    "ob_confirms": false,
+    "tv_confirms": false,
+    "tv_direction": null,
+    "news_state": "neutral",
+    "news_sentiment": null,
+    "late_decisive": false,
+    "decisive": true,
+    "late": false,
+    "exchange_agreement": null,
+    "basket_direction": "flat",
+    "context_keys": [
+     ">=0.30",
+     "conf=>=0.30|unconfirmed",
+     "ttc=>=0.30|90_180s",
+     "tv=>=0.30|unconfirmed",
+     "news=>=0.30|neutral",
+     "late=>=0.30|indecisive"
+    ],
+    "cex_p_up": 0.9818,
+    "poly_yes": 0.585,
+    "fair": 0.614,
+    "vs_fair": 0.3678
+   },
+   "arbitrage": {
+    "kind": "buy_both",
+    "up_vwap": 0.620819,
+    "down_vwap": 0.412679,
+    "shares": 483.2327,
+    "cost_usd": 499.4197,
+    "guaranteed_profit_usd": -16.1871,
+    "ask_sum": 1.033498,
+    "tob_residual": 0.0,
+    "vwap_residual": 0.033498,
+    "depth_capped": false,
+    "actionable": false,
+    "reason": "below_epsilon"
+   },
+   "calibration": null,
+   "external": null,
+   "sizing": null,
+   "cost": null,
+   "action": {
+    "kind": "reject",
+    "stage": "directional",
+    "reason": "edge_below_min"
+   },
+   "fill": null,
+   "status": "rejected",
+   "terminal": "rejected",
+   "reject_stage": "directional",
+   "terminal_reason": "edge_below_min",
+   "lifecycle": [
+    "created",
+    "feature_scored",
+    "rejected",
+    "reported"
+   ]
+  },
+  {
+   "decision_id": "628428",
+   "market_context": {
+    "decision_id": "628428",
+    "event_id": "628428",
+    "market_id": "2664511",
+    "title": "Bitcoin Up or Down - June 25, 1:30AM-1:35AM ET",
+    "asset": "BTC",
+    "ttc_s": 167.9,
+    "ttc_bucket": "120-240s",
+    "oracle_source": "rtds_chainlink",
+    "s_open": 61510.02258005852,
+    "s_now": 61527.228615,
+    "sigma_per_sec": 7.142434871982951e-05,
+    "poly_yes": 0.615,
+    "best_bid": 0.61,
+    "best_ask": 0.62,
+    "spread": 0.01,
+    "ask_depth_usd": 29243.38,
+    "lead_prices": {
+     "coinbase_btcusd": 61534.915,
+     "binance_btcusdt": 61628.59
+    }
+   },
+   "candidate": {
+    "side": "up",
+    "fair_p_up": 0.6186,
+    "outcome_prob": 0.6186,
+    "model_edge": -0.0314,
+    "tradeable": false,
+    "reason": "edge_below_min"
+   },
+   "features": {
+    "observe_only": true,
+    "hurst": 0.7116,
+    "hurst_regime": "trending",
+    "autocorr_lag1": 0.1699,
+    "realized_vol": 0.00018386,
+    "half_life_s": 8.62,
+    "adf_tstat": -2.7154,
+    "half_life_reason": "ok",
+    "divergence": -0.366255,
+    "zscore": 0.0252,
+    "zscore_bucket": "-1..1",
+    "kalman_fair_prob": 0.9443,
+    "kalman_reason": "ok",
+    "diagnostics": {}
+   },
+   "signals": {
+    "observe_only": true,
+    "returns": {
+     "15s": -8.756e-05,
+     "30s": 0.00028502,
+     "60s": 0.00021379,
+     "180s": 0.00025423
+    },
+    "realized_vol": 0.00018386,
+    "autocorr_lag1": 0.1699,
+    "tv_direction": null,
+    "poly_move": 0.14,
+    "spread_change": 0.0,
+    "depth_change": -570.7000000000007,
+    "ttc_s": 167.9,
+    "direction": "neutral",
+    "strength": 0.1119,
+    "confidence": 0.75,
+    "family": "mean_reversion"
+   },
+   "factors": {
+    "observe_only": true,
+    "cex_momentum": null,
+    "cex_volatility": 0.0002,
+    "polymarket_stale_factor": 1.0,
+    "orderbook_imbalance": -0.658,
+    "spread_liquidity_factor": 0.9167,
+    "time_to_resolution_factor": 0.5596,
+    "crowded_side_factor": 0.0,
+    "settlement_boundary_risk": 0.0,
+    "grok_context": "calm",
+    "edge_quality_score": 0.8254,
+    "edge_quality_bucket": "high",
+    "reason_codes": [
+     "good_liquidity",
+     "polymarket_stale_divergence"
+    ]
+   },
+   "regime": {
+    "state": "chop_noise",
+    "probs": {
+     "state": "chop_noise",
+     "samples": 64,
+     "resolved_samples": 0,
+     "observe_only": true,
+     "reason": "ok",
+     "p_resolve_up": null,
+     "p_resolve_down": null,
+     "p_edge_survives_execution": 0.0,
+     "p_no_trade_best": 1.0
+    },
+    "observe_only": true
+   },
+   "model": {
+    "observe_only": true,
+    "trained": false,
+    "reason": "insufficient_labeled_samples",
+    "n_labeled": 0,
+    "p_up": null,
+    "p_down": null,
+    "p_no_trade": null,
+    "model_confidence": null,
+    "calibration_bucket": "na"
+   },
+   "learning": null,
+   "edge": {
+    "observe_only": true,
+    "cex_momentum": {
+     "returns": {
+      "r15s": 0.00016530809645182165,
+      "r30s": 0.0002480189470465133,
+      "r60s": 0.0005516008347042911,
+      "r180s": 0.00015147001801807392
+     },
+     "velocity": 0.0002480189470465133,
+     "acceleration": 8.259724585713002e-05,
+     "exchange_agreement": 1.0,
+     "basket_direction": "up",
+     "coverage": {
+      "members": [
+       "binance_btcusdt",
+       "coinbase_btcusd"
+      ],
+      "present": [
+       "binance_btcusdt",
+       "coinbase_btcusd"
+      ],
+      "missing": {},
+      "n_present": 2
+     }
+    },
+    "stale_divergence_class": "not_stale",
+    "ttc_bucket": "90_180s",
+    "orderbook_pressure": {
+     "spread": 0.01,
+     "ask_depth_usd": 29243.38,
+     "bid_depth_usd": 6032.79,
+     "vwap": 0.62,
+     "imbalance": -0.658,
+     "depth_pull_add": "na",
+     "bucket": "ask_heavy"
+    },
+    "pulse_edge_score": 0.4766,
+    "pulse_edge_score_bucket": "medium",
+    "cex_agreement_bucket": "strong",
+    "direction": "up",
+    "affects_trading": false
+   },
+   "selectivity": null,
+   "context_gate": null,
+   "late_window": null,
+   "grok_decision": {
+    "action": "no_trade",
+    "confidence": 0.45,
+    "p_up": 0.52,
+    "size_fraction": 0.0,
+    "max_price": null,
+    "ttl_s": 120.0,
+    "key_risks": [
+     "unconfirmed cex divergence",
+     "ask-heavy orderbook",
+     "recent mixed streak"
+    ],
+    "rationale": "mispricing present but unconfirmed + tv false; fair ~50% and track record favors selectivity",
+    "schema_version": "1",
+    "ts": 1782365406.7369041,
+    "latency_s": 5.652,
+    "context": {
+     "hurst_regime": "trending",
+     "markov_state": "chop_noise",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   },
+   "cex_lead": {
+    "has_signal": true,
+    "side": "up",
+    "divergence": 0.3663,
+    "abs_divergence": 0.3663,
+    "bucket": ">=0.30",
+    "ttc_bucket": "90_180s",
+    "confirmed": true,
+    "momentum_confirms": true,
+    "ob_confirms": false,
+    "tv_confirms": false,
+    "tv_direction": null,
+    "news_state": "neutral",
+    "news_sentiment": null,
+    "late_decisive": false,
+    "decisive": true,
+    "late": false,
+    "exchange_agreement": 1.0,
+    "basket_direction": "up",
+    "context_keys": [
+     ">=0.30",
+     "conf=>=0.30|confirmed",
+     "ttc=>=0.30|90_180s",
+     "tv=>=0.30|unconfirmed",
+     "news=>=0.30|neutral",
+     "late=>=0.30|indecisive",
+     "conf_ttc=>=0.30|90_180s"
+    ],
+    "cex_p_up": 0.9813,
+    "poly_yes": 0.615,
+    "fair": 0.6186,
+    "vs_fair": 0.3627
+   },
+   "arbitrage": {
+    "kind": "sell_both",
+    "up_vwap": 0.602631,
+    "down_vwap": 0.38,
+    "shares": 497.8175,
+    "cost_usd": 497.8175,
+    "guaranteed_profit_usd": -8.6468,
+    "ask_sum": 0.982631,
+    "tob_residual": -0.01,
+    "vwap_residual": -0.017369,
+    "depth_capped": false,
+    "actionable": false,
+    "reason": "below_epsilon"
+   },
+   "calibration": null,
+   "external": null,
+   "sizing": null,
+   "cost": null,
+   "action": {
+    "kind": "reject",
+    "stage": "directional",
+    "reason": "edge_below_min"
+   },
+   "fill": null,
+   "status": "rejected",
+   "terminal": "rejected",
+   "reject_stage": "directional",
+   "terminal_reason": "edge_below_min",
+   "lifecycle": [
+    "created",
+    "feature_scored",
+    "rejected",
+    "reported"
+   ]
+  },
+  {
+   "decision_id": "628428",
+   "market_context": {
+    "decision_id": "628428",
+    "event_id": "628428",
+    "market_id": "2664511",
+    "title": "Bitcoin Up or Down - June 25, 1:30AM-1:35AM ET",
+    "asset": "BTC",
+    "ttc_s": 163.9,
+    "ttc_bucket": "120-240s",
+    "oracle_source": "rtds_chainlink",
+    "s_open": 61510.02258005852,
+    "s_now": 61527.11419737457,
+    "sigma_per_sec": 7.128777828283008e-05,
+    "poly_yes": 0.545,
+    "best_bid": 0.54,
+    "best_ask": 0.55,
+    "spread": 0.01,
+    "ask_depth_usd": 31158.28,
+    "lead_prices": {
+     "coinbase_btcusd": 61534.915,
+     "binance_btcusdt": 61628.01
+    }
+   },
+   "candidate": {
+    "side": "up",
+    "fair_p_up": 0.6194,
+    "outcome_prob": 0.6194,
+    "model_edge": 0.0394,
+    "tradeable": true,
+    "reason": "trade"
+   },
+   "features": {
+    "observe_only": true,
+    "hurst": 0.7116,
+    "hurst_regime": "trending",
+    "autocorr_lag1": 0.1699,
+    "realized_vol": 0.00018344,
+    "half_life_s": 8.62,
+    "adf_tstat": -2.7189,
+    "half_life_reason": "ok",
+    "divergence": -0.437107,
+    "zscore": -0.3079,
+    "zscore_bucket": "-1..1",
+    "kalman_fair_prob": 0.9479,
+    "kalman_reason": "ok",
+    "diagnostics": {}
+   },
+   "signals": {
+    "observe_only": true,
+    "returns": {
+     "15s": -6.394e-05,
+     "30s": 0.00025261,
+     "60s": 0.00033464,
+     "180s": 0.00014046
+    },
+    "realized_vol": 0.00018344,
+    "autocorr_lag1": 0.1699,
+    "tv_direction": null,
+    "poly_move": -0.019999999999999907,
+    "spread_change": 0.0,
+    "depth_change": 453.72999999999956,
+    "ttc_s": 163.9,
+    "direction": "neutral",
+    "strength": 0.1116,
+    "confidence": 0.75,
+    "family": "mean_reversion"
+   },
+   "factors": {
+    "observe_only": true,
+    "cex_momentum": null,
+    "cex_volatility": 0.0002,
+    "polymarket_stale_factor": 1.0,
+    "orderbook_imbalance": -0.8391,
+    "spread_liquidity_factor": 0.9167,
+    "time_to_resolution_factor": 0.5463,
+    "crowded_side_factor": 0.0,
+    "settlement_boundary_risk": 0.0,
+    "grok_context": "calm",
+    "edge_quality_score": 0.821,
+    "edge_quality_bucket": "high",
+    "reason_codes": [
+     "good_liquidity",
+     "polymarket_stale_divergence"
+    ]
+   },
+   "regime": {
+    "state": "chop_noise",
+    "probs": {
+     "state": "chop_noise",
+     "samples": 65,
+     "resolved_samples": 0,
+     "observe_only": true,
+     "reason": "ok",
+     "p_resolve_up": null,
+     "p_resolve_down": null,
+     "p_edge_survives_execution": 0.0,
+     "p_no_trade_best": 1.0
+    },
+    "observe_only": true
+   },
+   "model": {
+    "observe_only": true,
+    "trained": false,
+    "reason": "insufficient_labeled_samples",
+    "n_labeled": 0,
+    "p_up": null,
+    "p_down": null,
+    "p_no_trade": null,
+    "model_confidence": null,
+    "calibration_bucket": "na"
+   },
+   "learning": null,
+   "edge": {
+    "observe_only": true,
+    "cex_momentum": {
+     "returns": {
+      "r15s": 0.0001703211475795885,
+      "r30s": 0.00029246446144526317,
+      "r60s": 0.0005967324462710089,
+      "r180s": 0.00015325690451639673
+     },
+     "velocity": 0.00029246446144526317,
+     "acceleration": 4.817783371391382e-05,
+     "exchange_agreement": 1.0,
+     "basket_direction": "up",
+     "coverage": {
+      "members": [
+       "binance_btcusdt",
+       "coinbase_btcusd"
+      ],
+      "present": [
+       "binance_btcusdt",
+       "coinbase_btcusd"
+      ],
+      "missing": {},
+      "n_present": 2
+     }
+    },
+    "stale_divergence_class": "not_stale",
+    "ttc_bucket": "90_180s",
+    "orderbook_pressure": {
+     "spread": 0.01,
+     "ask_depth_usd": 31158.28,
+     "bid_depth_usd": 2725.49,
+     "vwap": 0.55,
+     "imbalance": -0.8391,
+     "depth_pull_add": "na",
+     "bucket": "ask_heavy"
+    },
+    "pulse_edge_score": 0.4559,
+    "pulse_edge_score_bucket": "medium",
+    "cex_agreement_bucket": "strong",
+    "direction": "up",
+    "affects_trading": false
+   },
+   "selectivity": null,
+   "context_gate": {
+    "decision": "pass",
+    "reasons": []
+   },
+   "late_window": {
+    "decision": "pass",
+    "reason": null,
+    "conviction": 0.2389,
+    "late": false,
+    "high_conviction": false
+   },
+   "grok_decision": {
+    "action": "no_trade",
+    "confidence": 0.45,
+    "p_up": 0.52,
+    "size_fraction": 0.0,
+    "max_price": null,
+    "ttl_s": 120.0,
+    "key_risks": [
+     "unconfirmed cex divergence",
+     "ask-heavy orderbook",
+     "recent mixed streak"
+    ],
+    "rationale": "mispricing present but unconfirmed + tv false; fair ~50% and track record favors selectivity",
+    "schema_version": "1",
+    "ts": 1782365406.7369041,
+    "latency_s": 5.652,
+    "context": {
+     "hurst_regime": "trending",
+     "markov_state": "chop_noise",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   },
+   "cex_lead": {
+    "has_signal": true,
+    "side": "up",
+    "divergence": 0.4371,
+    "abs_divergence": 0.4371,
+    "bucket": ">=0.30",
+    "ttc_bucket": "90_180s",
+    "confirmed": true,
+    "momentum_confirms": true,
+    "ob_confirms": false,
+    "tv_confirms": false,
+    "tv_direction": null,
+    "news_state": "neutral",
+    "news_sentiment": null,
+    "late_decisive": false,
+    "decisive": true,
+    "late": false,
+    "exchange_agreement": 1.0,
+    "basket_direction": "up",
+    "context_keys": [
+     ">=0.30",
+     "conf=>=0.30|confirmed",
+     "ttc=>=0.30|90_180s",
+     "tv=>=0.30|unconfirmed",
+     "news=>=0.30|neutral",
+     "late=>=0.30|indecisive",
+     "conf_ttc=>=0.30|90_180s"
+    ],
+    "cex_p_up": 0.9821,
+    "poly_yes": 0.545,
+    "fair": 0.6194,
+    "vs_fair": 0.3627
+   },
+   "arbitrage": {
+    "kind": "buy_both",
+    "up_vwap": 0.552555,
+    "down_vwap": 0.531992,
+    "shares": 542.9325,
+    "cost_usd": 588.8357,
+    "guaranteed_profit_usd": -45.9032,
+    "ask_sum": 1.084547,
+    "tob_residual": 0.03,
+    "vwap_residual": 0.084547,
+    "depth_capped": false,
+    "actionable": false,
+    "reason": "below_epsilon"
+   },
+   "calibration": {
+    "raw_fair_p_up": 0.6194250193308476,
+    "calibrated_fair_p_up": 0.6194,
+    "diag": null,
+    "raw_outcome_prob": 0.6194,
+    "calibrated_outcome_prob": 0.6194,
+    "outcome_prob_diag": null
+   },
+   "external": null,
+   "sizing": null,
+   "cost": null,
+   "action": {
+    "kind": "reject",
+    "stage": "directional_allowlist",
+    "reason": "no_proven_winning_bucket"
+   },
+   "fill": null,
+   "status": "rejected",
+   "terminal": "rejected",
+   "reject_stage": "directional_allowlist",
+   "terminal_reason": "no_proven_winning_bucket",
+   "lifecycle": [
+    "created",
+    "feature_scored",
+    "rejected",
+    "reported"
+   ]
+  },
+  {
+   "decision_id": "628428",
+   "market_context": {
+    "decision_id": "628428",
+    "event_id": "628428",
+    "market_id": "2664511",
+    "title": "Bitcoin Up or Down - June 25, 1:30AM-1:35AM ET",
+    "asset": "BTC",
+    "ttc_s": 159.9,
+    "ttc_bucket": "120-240s",
+    "oracle_source": "rtds_chainlink",
+    "s_open": 61510.02258005852,
+    "s_now": 61519.59211487241,
+    "sigma_per_sec": 7.117174873392494e-05,
+    "poly_yes": 0.525,
+    "best_bid": 0.52,
+    "best_ask": 0.53,
+    "spread": 0.01,
+    "ask_depth_usd": 31700.52,
+    "lead_prices": {
+     "coinbase_btcusd": 61534.915,
+     "binance_btcusdt": 61620.0
+    }
+   },
+   "candidate": {
+    "side": "up",
+    "fair_p_up": 0.5684,
+    "outcome_prob": 0.5684,
+    "model_edge": 0.0084,
+    "tradeable": false,
+    "reason": "edge_below_min"
+   },
+   "features": {
+    "observe_only": true,
+    "hurst": 0.7116,
+    "hurst_regime": "trending",
+    "autocorr_lag1": 0.1696,
+    "realized_vol": 0.0001832,
+    "half_life_s": 8.64,
+    "adf_tstat": -2.7211,
+    "half_life_reason": "ok",
+    "divergence": -0.4514,
+    "zscore": -0.3743,
+    "zscore_bucket": "-1..1",
+    "kalman_fair_prob": 0.9506,
+    "kalman_reason": "ok",
+    "diagnostics": {}
+   },
+   "signals": {
+    "observe_only": true,
+    "returns": {
+     "15s": -0.00011684,
+     "30s": 0.00018818,
+     "60s": 5.23e-05,
+     "180s": -0.00011417
+    },
+    "realized_vol": 0.0001832,
+    "autocorr_lag1": 0.1696,
+    "tv_direction": null,
+    "poly_move": -0.039999999999999925,
+    "spread_change": 0.0,
+    "depth_change": -911.0,
+    "ttc_s": 159.9,
+    "direction": "neutral",
+    "strength": 0.0015,
+    "confidence": 0.5,
+    "family": "noise"
+   },
+   "factors": {
+    "observe_only": true,
+    "cex_momentum": null,
+    "cex_volatility": 0.0002,
+    "polymarket_stale_factor": 1.0,
+    "orderbook_imbalance": -0.7456,
+    "spread_liquidity_factor": 0.9167,
+    "time_to_resolution_factor": 0.533,
+    "crowded_side_factor": 0.0,
+    "settlement_boundary_risk": 0.0,
+    "grok_context": "calm",
+    "edge_quality_score": 0.8166,
+    "edge_quality_bucket": "high",
+    "reason_codes": [
+     "good_liquidity",
+     "polymarket_stale_divergence"
+    ]
+   },
+   "regime": {
+    "state": "chop_noise",
+    "probs": {
+     "state": "chop_noise",
+     "samples": 66,
+     "resolved_samples": 0,
+     "observe_only": true,
+     "reason": "ok",
+     "p_resolve_up": null,
+     "p_resolve_down": null,
+     "p_edge_survives_execution": 0.0,
+     "p_no_trade_best": 1.0
+    },
+    "observe_only": true
+   },
+   "model": {
+    "observe_only": true,
+    "trained": false,
+    "reason": "insufficient_labeled_samples",
+    "n_labeled": 0,
+    "p_up": null,
+    "p_down": null,
+    "p_no_trade": null,
+    "model_confidence": null,
+    "calibration_bucket": "na"
+   },
+   "learning": null,
+   "edge": {
+    "observe_only": true,
+    "cex_momentum": {
+     "returns": {
+      "r15s": 0.00010534076905793777,
+      "r30s": 0.00027111563985149356,
+      "r60s": 0.0003802011264267824,
+      "r180s": -2.5006475707689546e-05
+     },
+     "velocity": 0.00027111563985149356,
+     "acceleration": -6.043410173561803e-05,
+     "exchange_agreement": 1.0,
+     "basket_direction": "up",
+     "coverage": {
+      "members": [
+       "binance_btcusdt",
+       "coinbase_btcusd"
+      ],
+      "present": [
+       "binance_btcusdt",
+       "coinbase_btcusd"
+      ],
+      "missing": {},
+      "n_present": 2
+     }
+    },
+    "stale_divergence_class": "not_stale",
+    "ttc_bucket": "90_180s",
+    "orderbook_pressure": {
+     "spread": 0.01,
+     "ask_depth_usd": 31700.52,
+     "bid_depth_usd": 4619.16,
+     "vwap": 0.53,
+     "imbalance": -0.7456,
+     "depth_pull_add": "na",
+     "bucket": "ask_heavy"
+    },
+    "pulse_edge_score": 0.4653,
+    "pulse_edge_score_bucket": "medium",
+    "cex_agreement_bucket": "strong",
+    "direction": "up",
+    "affects_trading": false
+   },
+   "selectivity": null,
+   "context_gate": null,
+   "late_window": null,
+   "grok_decision": {
+    "action": "no_trade",
+    "confidence": 0.45,
+    "p_up": 0.52,
+    "size_fraction": 0.0,
+    "max_price": null,
+    "ttl_s": 120.0,
+    "key_risks": [
+     "unconfirmed cex divergence",
+     "ask-heavy orderbook",
+     "recent mixed streak"
+    ],
+    "rationale": "mispricing present but unconfirmed + tv false; fair ~50% and track record favors selectivity",
+    "schema_version": "1",
+    "ts": 1782365406.7369041,
+    "latency_s": 5.652,
+    "context": {
+     "hurst_regime": "trending",
+     "markov_state": "chop_noise",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   },
+   "cex_lead": {
+    "has_signal": true,
+    "side": "up",
+    "divergence": 0.4514,
+    "abs_divergence": 0.4514,
+    "bucket": ">=0.30",
+    "ttc_bucket": "90_180s",
+    "confirmed": true,
+    "momentum_confirms": true,
+    "ob_confirms": false,
+    "tv_confirms": false,
+    "tv_direction": null,
+    "news_state": "neutral",
+    "news_sentiment": null,
+    "late_decisive": false,
+    "decisive": true,
+    "late": false,
+    "exchange_agreement": 1.0,
+    "basket_direction": "up",
+    "context_keys": [
+     ">=0.30",
+     "conf=>=0.30|confirmed",
+     "ttc=>=0.30|90_180s",
+     "tv=>=0.30|unconfirmed",
+     "news=>=0.30|neutral",
+     "late=>=0.30|indecisive",
+     "conf_ttc=>=0.30|90_180s"
+    ],
+    "cex_p_up": 0.9764,
+    "poly_yes": 0.525,
+    "fair": 0.5684,
+    "vs_fair": 0.408
+   },
+   "arbitrage": {
+    "kind": "buy_both",
+    "up_vwap": 0.556328,
+    "down_vwap": 0.48,
+    "shares": 539.2502,
+    "cost_usd": 558.8401,
+    "guaranteed_profit_usd": -19.5899,
+    "ask_sum": 1.036328,
+    "tob_residual": 0.01,
+    "vwap_residual": 0.036328,
+    "depth_capped": false,
+    "actionable": false,
+    "reason": "below_epsilon"
+   },
+   "calibration": null,
+   "external": null,
+   "sizing": null,
+   "cost": null,
+   "action": {
+    "kind": "reject",
+    "stage": "directional",
+    "reason": "edge_below_min"
+   },
+   "fill": null,
+   "status": "rejected",
+   "terminal": "rejected",
+   "reject_stage": "directional",
+   "terminal_reason": "edge_below_min",
+   "lifecycle": [
+    "created",
+    "feature_scored",
+    "rejected",
+    "reported"
+   ]
+  },
+  {
+   "decision_id": "628428",
+   "market_context": {
+    "decision_id": "628428",
+    "event_id": "628428",
+    "market_id": "2664511",
+    "title": "Bitcoin Up or Down - June 25, 1:30AM-1:35AM ET",
+    "asset": "BTC",
+    "ttc_s": 155.9,
+    "ttc_bucket": "120-240s",
+    "oracle_source": "rtds_chainlink",
+    "s_open": 61510.02258005852,
+    "s_now": 61516.67834789672,
+    "sigma_per_sec": 7.102385158748057e-05,
+    "poly_yes": 0.69,
+    "best_bid": 0.68,
+    "best_ask": 0.7,
+    "spread": 0.02,
+    "ask_depth_usd": 28176.73,
+    "lead_prices": {
+     "coinbase_btcusd": 61527.395,
+     "binance_btcusdt": 61642.0
+    }
+   },
+   "candidate": {
+    "side": "down",
+    "fair_p_up": 0.5484,
+    "outcome_prob": 0.4516,
+    "model_edge": 0.0616,
+    "tradeable": true,
+    "reason": "trade"
+   },
+   "features": {
+    "observe_only": true,
+    "hurst": 0.715,
+    "hurst_regime": "trending",
+    "autocorr_lag1": 0.1702,
+    "realized_vol": 0.00018281,
+    "half_life_s": 8.48,
+    "adf_tstat": -2.7551,
+    "half_life_reason": "ok",
+    "divergence": -0.302166,
+    "zscore": 0.3316,
+    "zscore_bucket": "-1..1",
+    "kalman_fair_prob": 0.9546,
+    "kalman_reason": "ok",
+    "diagnostics": {}
+   },
+   "signals": {
+    "observe_only": true,
+    "returns": {
+     "15s": -0.00017149,
+     "30s": -0.000213,
+     "60s": -1.164e-05,
+     "180s": -0.00013989
+    },
+    "realized_vol": 0.00018281,
+    "autocorr_lag1": 0.1702,
+    "tv_direction": null,
+    "poly_move": 0.18499999999999994,
+    "spread_change": 0.01,
+    "depth_change": -3525.470000000001,
+    "ttc_s": 155.9,
+    "direction": "neutral",
+    "strength": 0.0912,
+    "confidence": 1.0,
+    "family": "noise"
+   },
+   "factors": {
+    "observe_only": true,
+    "cex_momentum": null,
+    "cex_volatility": 0.0002,
+    "polymarket_stale_factor": 1.0,
+    "orderbook_imbalance": -0.7036,
+    "spread_liquidity_factor": 0.8333,
+    "time_to_resolution_factor": 0.5196,
+    "crowded_side_factor": 0.0,
+    "settlement_boundary_risk": 0.0,
+    "grok_context": "calm",
+    "edge_quality_score": 0.7843,
+    "edge_quality_bucket": "high",
+    "reason_codes": [
+     "good_liquidity",
+     "polymarket_stale_divergence"
+    ]
+   },
+   "regime": {
+    "state": "chop_noise",
+    "probs": {
+     "state": "chop_noise",
+     "samples": 67,
+     "resolved_samples": 0,
+     "observe_only": true,
+     "reason": "ok",
+     "p_resolve_up": null,
+     "p_resolve_down": null,
+     "p_edge_survives_execution": 0.0,
+     "p_no_trade_best": 1.0
+    },
+    "observe_only": true
+   },
+   "model": {
+    "observe_only": true,
+    "trained": false,
+    "reason": "insufficient_labeled_samples",
+    "n_labeled": 0,
+    "p_up": null,
+    "p_down": null,
+    "p_no_trade": null,
+    "model_confidence": null,
+    "calibration_bucket": "na"
+   },
+   "learning": null,
+   "edge": {
+    "observe_only": true,
+    "cex_momentum": {
+     "returns": {
+      "r15s": 0.0002476741633956614,
+      "r30s": 0.0003886033601615546,
+      "r60s": 0.0003127481641931329,
+      "r180s": 0.00024551184593180064
+     },
+     "velocity": 0.0003886033601615546,
+     "acceleration": 0.00010674496662976818,
+     "exchange_agreement": 1.0,
+     "basket_direction": "up",
+     "coverage": {
+      "members": [
+       "binance_btcusdt",
+       "coinbase_btcusd"
+      ],
+      "present": [
+       "binance_btcusdt",
+       "coinbase_btcusd"
+      ],
+      "missing": {},
+      "n_present": 2
+     }
+    },
+    "stale_divergence_class": "not_stale",
+    "ttc_bucket": "90_180s",
+    "orderbook_pressure": {
+     "spread": 0.02,
+     "ask_depth_usd": 28176.73,
+     "bid_depth_usd": 4902.09,
+     "vwap": 0.7,
+     "imbalance": -0.7036,
+     "depth_pull_add": "na",
+     "bucket": "ask_heavy"
+    },
+    "pulse_edge_score": 0.4579,
+    "pulse_edge_score_bucket": "medium",
+    "cex_agreement_bucket": "strong",
+    "direction": "up",
+    "affects_trading": false
+   },
+   "selectivity": null,
+   "context_gate": {
+    "decision": "pass",
+    "reasons": []
+   },
+   "late_window": {
+    "decision": "pass",
+    "reason": null,
+    "conviction": 0.0968,
+    "late": false,
+    "high_conviction": false
+   },
+   "grok_decision": {
+    "action": "no_trade",
+    "confidence": 0.45,
+    "p_up": 0.52,
+    "size_fraction": 0.0,
+    "max_price": null,
+    "ttl_s": 120.0,
+    "key_risks": [
+     "unconfirmed cex divergence",
+     "ask-heavy orderbook",
+     "recent mixed streak"
+    ],
+    "rationale": "mispricing present but unconfirmed + tv false; fair ~50% and track record favors selectivity",
+    "schema_version": "1",
+    "ts": 1782365406.7369041,
+    "latency_s": 5.652,
+    "context": {
+     "hurst_regime": "trending",
+     "markov_state": "chop_noise",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   },
+   "cex_lead": {
+    "has_signal": true,
+    "side": "up",
+    "divergence": 0.3022,
+    "abs_divergence": 0.3022,
+    "bucket": ">=0.30",
+    "ttc_bucket": "90_180s",
+    "confirmed": true,
+    "momentum_confirms": true,
+    "ob_confirms": false,
+    "tv_confirms": false,
+    "tv_direction": null,
+    "news_state": "neutral",
+    "news_sentiment": null,
+    "late_decisive": false,
+    "decisive": true,
+    "late": false,
+    "exchange_agreement": 1.0,
+    "basket_direction": "up",
+    "context_keys": [
+     ">=0.30",
+     "conf=>=0.30|confirmed",
+     "ttc=>=0.30|90_180s",
+     "tv=>=0.30|unconfirmed",
+     "news=>=0.30|neutral",
+     "late=>=0.30|indecisive",
+     "conf_ttc=>=0.30|90_180s"
+    ],
+    "cex_p_up": 0.9922,
+    "poly_yes": 0.69,
+    "fair": 0.5484,
+    "vs_fair": 0.4438
+   },
+   "arbitrage": {
+    "kind": "sell_both",
+    "up_vwap": 0.656158,
+    "down_vwap": 0.329989,
+    "shares": 457.207,
+    "cost_usd": 457.207,
+    "guaranteed_profit_usd": -6.3338,
+    "ask_sum": 0.986147,
+    "tob_residual": 0.03,
+    "vwap_residual": -0.013853,
+    "depth_capped": false,
+    "actionable": false,
+    "reason": "below_epsilon"
+   },
+   "calibration": {
+    "raw_fair_p_up": 0.5483808865141151,
+    "calibrated_fair_p_up": 0.5484,
+    "diag": null,
+    "raw_outcome_prob": 0.4516,
+    "calibrated_outcome_prob": 0.4516,
+    "outcome_prob_diag": null
+   },
+   "external": null,
+   "sizing": null,
+   "cost": null,
+   "action": {
+    "kind": "reject",
+    "stage": "directional_allowlist",
+    "reason": "no_proven_winning_bucket"
+   },
+   "fill": null,
+   "status": "rejected",
+   "terminal": "rejected",
+   "reject_stage": "directional_allowlist",
+   "terminal_reason": "no_proven_winning_bucket",
+   "lifecycle": [
+    "created",
+    "feature_scored",
+    "rejected",
+    "reported"
+   ]
+  },
+  {
+   "decision_id": "628428",
+   "market_context": {
+    "decision_id": "628428",
+    "event_id": "628428",
+    "market_id": "2664511",
+    "title": "Bitcoin Up or Down - June 25, 1:30AM-1:35AM ET",
+    "asset": "BTC",
+    "ttc_s": 151.9,
+    "ttc_bucket": "120-240s",
+    "oracle_source": "rtds_chainlink",
+    "s_open": 61510.02258005852,
+    "s_now": 61530.045865742286,
+    "sigma_per_sec": 7.181104594396793e-05,
+    "poly_yes": 0.645,
+    "best_bid": 0.64,
+    "best_ask": 0.65,
+    "spread": 0.01,
+    "ask_depth_usd": 28908.69,
+    "lead_prices": {
+     "coinbase_btcusd": 61527.395,
+     "binance_btcusdt": 61636.03
+    }
+   },
+   "candidate": {
+    "side": "down",
+    "fair_p_up": 0.6433,
+    "outcome_prob": 0.3567,
+    "model_edge": -0.0333,
+    "tradeable": false,
+    "reason": "edge_below_min"
+   },
+   "features": {
+    "observe_only": true,
+    "hurst": 0.715,
+    "hurst_regime": "trending",
+    "autocorr_lag1": 0.1678,
+    "realized_vol": 0.000183,
+    "half_life_s": 8.44,
+    "adf_tstat": -2.7731,
+    "half_life_reason": "ok",
+    "divergence": -0.344608,
+    "zscore": 0.1297,
+    "zscore_bucket": "-1..1",
+    "kalman_fair_prob": 0.9579,
+    "kalman_reason": "ok",
+    "diagnostics": {}
+   },
+   "signals": {
+    "observe_only": true,
+    "returns": {
+     "15s": 4.765e-05,
+     "30s": -4.177e-05,
+     "60s": 0.00028662,
+     "180s": 5.762e-05
+    },
+    "realized_vol": 0.000183,
+    "autocorr_lag1": 0.1678,
+    "tv_direction": null,
+    "poly_move": 0.16000000000000003,
+    "spread_change": 0.0,
+    "depth_change": -2558.640000000003,
+    "ttc_s": 151.9,
+    "direction": "neutral",
+    "strength": 0.0592,
+    "confidence": 0.75,
+    "family": "noise"
+   },
+   "factors": {
+    "observe_only": true,
+    "cex_momentum": null,
+    "cex_volatility": 0.0002,
+    "polymarket_stale_factor": 1.0,
+    "orderbook_imbalance": -0.6536,
+    "spread_liquidity_factor": 0.9167,
+    "time_to_resolution_factor": 0.5063,
+    "crowded_side_factor": 0.0,
+    "settlement_boundary_risk": 0.0,
+    "grok_context": "calm",
+    "edge_quality_score": 0.8077,
+    "edge_quality_bucket": "high",
+    "reason_codes": [
+     "good_liquidity",
+     "polymarket_stale_divergence"
+    ]
+   },
+   "regime": {
+    "state": "chop_noise",
+    "probs": {
+     "state": "chop_noise",
+     "samples": 68,
+     "resolved_samples": 0,
+     "observe_only": true,
+     "reason": "ok",
+     "p_resolve_up": null,
+     "p_resolve_down": null,
+     "p_edge_survives_execution": 0.0,
+     "p_no_trade_best": 1.0
+    },
+    "observe_only": true
+   },
+   "model": {
+    "observe_only": true,
+    "trained": false,
+    "reason": "insufficient_labeled_samples",
+    "n_labeled": 0,
+    "p_up": null,
+    "p_down": null,
+    "p_no_trade": null,
+    "model_confidence": null,
+    "calibration_bucket": "na"
+   },
+   "learning": null,
+   "edge": {
+    "observe_only": true,
+    "cex_momentum": {
+     "returns": {
+      "r15s": -7.419263100549855e-07,
+      "r30s": 0.00016453532628413203,
+      "r60s": 0.00024719037561782287,
+      "r180s": 2.7711695069876363e-05
+     },
+     "velocity": 0.00016453532628413203,
+     "acceleration": -0.000166019178904242,
+     "exchange_agreement": 1.0,
+     "basket_direction": "up",
+     "coverage": {
+      "members": [
+       "binance_btcusdt",
+       "coinbase_btcusd"
+      ],
+      "present": [
+       "binance_btcusdt",
+       "coinbase_btcusd"
+      ],
+      "missing": {},
+      "n_present": 2
+     }
+    },
+    "stale_divergence_class": "not_stale",
+    "ttc_bucket": "90_180s",
+    "orderbook_pressure": {
+     "spread": 0.01,
+     "ask_depth_usd": 28908.69,
+     "bid_depth_usd": 6056.5,
+     "vwap": 0.65,
+     "imbalance": -0.6536,
+     "depth_pull_add": "na",
+     "bucket": "ask_heavy"
+    },
+    "pulse_edge_score": 0.4736,
+    "pulse_edge_score_bucket": "medium",
+    "cex_agreement_bucket": "strong",
+    "direction": "up",
+    "affects_trading": false
+   },
+   "selectivity": null,
+   "context_gate": null,
+   "late_window": null,
+   "grok_decision": {
+    "action": "no_trade",
+    "confidence": 0.45,
+    "p_up": 0.52,
+    "size_fraction": 0.0,
+    "max_price": null,
+    "ttl_s": 120.0,
+    "key_risks": [
+     "unconfirmed cex divergence",
+     "ask-heavy orderbook",
+     "recent mixed streak"
+    ],
+    "rationale": "mispricing present but unconfirmed + tv false; fair ~50% and track record favors selectivity",
+    "schema_version": "1",
+    "ts": 1782365406.7369041,
+    "latency_s": 5.652,
+    "context": {
+     "hurst_regime": "trending",
+     "markov_state": "chop_noise",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   },
+   "cex_lead": {
+    "has_signal": true,
+    "side": "up",
+    "divergence": 0.3446,
+    "abs_divergence": 0.3446,
+    "bucket": ">=0.30",
+    "ttc_bucket": "90_180s",
+    "confirmed": true,
+    "momentum_confirms": true,
+    "ob_confirms": false,
+    "tv_confirms": false,
+    "tv_direction": null,
+    "news_state": "neutral",
+    "news_sentiment": null,
+    "late_decisive": false,
+    "decisive": true,
+    "late": false,
+    "exchange_agreement": 1.0,
+    "basket_direction": "up",
+    "context_keys": [
+     ">=0.30",
+     "conf=>=0.30|confirmed",
+     "ttc=>=0.30|90_180s",
+     "tv=>=0.30|unconfirmed",
+     "news=>=0.30|neutral",
+     "late=>=0.30|indecisive",
+     "conf_ttc=>=0.30|90_180s"
+    ],
+    "cex_p_up": 0.9896,
+    "poly_yes": 0.645,
+    "fair": 0.6433,
+    "vs_fair": 0.3463
+   },
+   "arbitrage": {
+    "kind": "buy_both",
+    "up_vwap": 0.662859,
+    "down_vwap": 0.363297,
+    "shares": 452.5848,
+    "cost_usd": 464.4226,
+    "guaranteed_profit_usd": -11.8378,
+    "ask_sum": 1.026156,
+    "tob_residual": 0.01,
+    "vwap_residual": 0.026156,
+    "depth_capped": false,
+    "actionable": false,
+    "reason": "below_epsilon"
+   },
+   "calibration": null,
+   "external": null,
+   "sizing": null,
+   "cost": null,
+   "action": {
+    "kind": "reject",
+    "stage": "directional",
+    "reason": "edge_below_min"
+   },
+   "fill": null,
+   "status": "rejected",
+   "terminal": "rejected",
+   "reject_stage": "directional",
+   "terminal_reason": "edge_below_min",
+   "lifecycle": [
+    "created",
+    "feature_scored",
+    "rejected",
+    "reported"
+   ]
+  },
+  {
+   "decision_id": "628428",
+   "market_context": {
+    "decision_id": "628428",
+    "event_id": "628428",
+    "market_id": "2664511",
+    "title": "Bitcoin Up or Down - June 25, 1:30AM-1:35AM ET",
+    "asset": "BTC",
+    "ttc_s": 147.9,
+    "ttc_bucket": "120-240s",
+    "oracle_source": "rtds_chainlink",
+    "s_open": 61510.02258005852,
+    "s_now": 61530.045865742286,
+    "sigma_per_sec": 7.180266091387077e-05,
+    "poly_yes": 0.665,
+    "best_bid": 0.66,
+    "best_ask": 0.67,
+    "spread": 0.01,
+    "ask_depth_usd": 24132.81,
+    "lead_prices": {
+     "coinbase_btcusd": 61523.105,
+     "binance_btcusdt": 61642.0
+    }
+   },
+   "candidate": {
+    "side": "down",
+    "fair_p_up": 0.6452,
+    "outcome_prob": 0.3548,
+    "model_edge": -0.0152,
+    "tradeable": false,
+    "reason": "edge_below_min"
+   },
+   "features": {
+    "observe_only": true,
+    "hurst": 0.715,
+    "hurst_regime": "trending",
+    "autocorr_lag1": 0.1678,
+    "realized_vol": 0.000183,
+    "half_life_s": 8.45,
+    "adf_tstat": -2.7782,
+    "half_life_reason": "ok",
+    "divergence": -0.327939,
+    "zscore": 0.2085,
+    "zscore_bucket": "-1..1",
+    "kalman_fair_prob": 0.9612,
+    "kalman_reason": "ok",
+    "diagnostics": {}
+   },
+   "signals": {
+    "observe_only": true,
+    "returns": {
+     "15s": 0.00016991,
+     "30s": -1.629e-05,
+     "60s": 0.00032178,
+     "180s": 7.698e-05
+    },
+    "realized_vol": 0.00018259,
+    "autocorr_lag1": 0.168,
+    "tv_direction": null,
+    "poly_move": 0.16000000000000003,
+    "spread_change": 0.0,
+    "depth_change": -6830.259999999998,
+    "ttc_s": 147.9,
+    "direction": "neutral",
+    "strength": 0.0935,
+    "confidence": 0.75,
+    "family": "noise"
+   },
+   "factors": {
+    "observe_only": true,
+    "cex_momentum": null,
+    "cex_volatility": 0.0002,
+    "polymarket_stale_factor": 1.0,
+    "orderbook_imbalance": -0.6637,
+    "spread_liquidity_factor": 0.9167,
+    "time_to_resolution_factor": 0.493,
+    "crowded_side_factor": 0.0,
+    "settlement_boundary_risk": 0.0,
+    "grok_context": "calm",
+    "edge_quality_score": 0.8032,
+    "edge_quality_bucket": "high",
+    "reason_codes": [
+     "good_liquidity",
+     "polymarket_stale_divergence"
+    ]
+   },
+   "regime": {
+    "state": "chop_noise",
+    "probs": {
+     "state": "chop_noise",
+     "samples": 69,
+     "resolved_samples": 0,
+     "observe_only": true,
+     "reason": "ok",
+     "p_resolve_up": null,
+     "p_resolve_down": null,
+     "p_edge_survives_execution": 0.0,
+     "p_no_trade_best": 1.0
+    },
+    "observe_only": true
+   },
+   "model": {
+    "observe_only": true,
+    "trained": false,
+    "reason": "insufficient_labeled_samples",
+    "n_labeled": 0,
+    "p_up": null,
+    "p_down": null,
+    "p_no_trade": null,
+    "model_confidence": null,
+    "calibration_bucket": "na"
+   },
+   "learning": null,
+   "edge": {
+    "observe_only": true,
+    "cex_momentum": {
+     "returns": {
+      "r15s": 1.754180344387679e-05,
+      "r30s": 0.00018780993913403154,
+      "r60s": 0.000260767162960196,
+      "r180s": 8.167051206214859e-05
+     },
+     "velocity": 0.00018780993913403154,
+     "acceleration": -0.00015272633224627796,
+     "exchange_agreement": 1.0,
+     "basket_direction": "up",
+     "coverage": {
+      "members": [
+       "binance_btcusdt",
+       "coinbase_btcusd"
+      ],
+      "present": [
+       "binance_btcusdt",
+       "coinbase_btcusd"
+      ],
+      "missing": {},
+      "n_present": 2
+     }
+    },
+    "stale_divergence_class": "not_stale",
+    "ttc_bucket": "90_180s",
+    "orderbook_pressure": {
+     "spread": 0.01,
+     "ask_depth_usd": 24132.81,
+     "bid_depth_usd": 4878.23,
+     "vwap": 0.67,
+     "imbalance": -0.6637,
+     "depth_pull_add": "na",
+     "bucket": "ask_heavy"
+    },
+    "pulse_edge_score": 0.4716,
+    "pulse_edge_score_bucket": "medium",
+    "cex_agreement_bucket": "strong",
+    "direction": "up",
+    "affects_trading": false
+   },
+   "selectivity": null,
+   "context_gate": null,
+   "late_window": null,
+   "grok_decision": {
+    "action": "no_trade",
+    "confidence": 0.45,
+    "p_up": 0.52,
+    "size_fraction": 0.0,
+    "max_price": null,
+    "ttl_s": 120.0,
+    "key_risks": [
+     "unconfirmed cex divergence",
+     "ask-heavy orderbook",
+     "recent mixed streak"
+    ],
+    "rationale": "mispricing present but unconfirmed + tv false; fair ~50% and track record favors selectivity",
+    "schema_version": "1",
+    "ts": 1782365406.7369041,
+    "latency_s": 5.652,
+    "context": {
+     "hurst_regime": "trending",
+     "markov_state": "chop_noise",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   },
+   "cex_lead": {
+    "has_signal": true,
+    "side": "up",
+    "divergence": 0.3279,
+    "abs_divergence": 0.3279,
+    "bucket": ">=0.30",
+    "ttc_bucket": "90_180s",
+    "confirmed": true,
+    "momentum_confirms": true,
+    "ob_confirms": false,
+    "tv_confirms": false,
+    "tv_direction": null,
+    "news_state": "neutral",
+    "news_sentiment": null,
+    "late_decisive": false,
+    "decisive": true,
+    "late": false,
+    "exchange_agreement": 1.0,
+    "basket_direction": "up",
+    "context_keys": [
+     ">=0.30",
+     "conf=>=0.30|confirmed",
+     "ttc=>=0.30|90_180s",
+     "tv=>=0.30|unconfirmed",
+     "news=>=0.30|neutral",
+     "late=>=0.30|indecisive",
+     "conf_ttc=>=0.30|90_180s"
+    ],
+    "cex_p_up": 0.9929,
+    "poly_yes": 0.665,
+    "fair": 0.6452,
+    "vs_fair": 0.3478
+   },
+   "arbitrage": {
+    "kind": "sell_both",
+    "up_vwap": 0.633023,
+    "down_vwap": 0.33,
+    "shares": 473.9161,
+    "cost_usd": 473.9161,
+    "guaranteed_profit_usd": -17.5238,
+    "ask_sum": 0.963023,
+    "tob_residual": -0.01,
+    "vwap_residual": -0.036977,
+    "depth_capped": false,
+    "actionable": false,
+    "reason": "below_epsilon"
+   },
+   "calibration": null,
+   "external": null,
+   "sizing": null,
+   "cost": null,
+   "action": {
+    "kind": "reject",
+    "stage": "directional",
+    "reason": "edge_below_min"
+   },
+   "fill": null,
+   "status": "rejected",
+   "terminal": "rejected",
+   "reject_stage": "directional",
+   "terminal_reason": "edge_below_min",
+   "lifecycle": [
+    "created",
+    "feature_scored",
+    "rejected",
+    "reported"
+   ]
+  },
+  {
+   "decision_id": "628428",
+   "market_context": {
+    "decision_id": "628428",
+    "event_id": "628428",
+    "market_id": "2664511",
+    "title": "Bitcoin Up or Down - June 25, 1:30AM-1:35AM ET",
+    "asset": "BTC",
+    "ttc_s": 143.9,
+    "ttc_bucket": "120-240s",
+    "oracle_source": "rtds_chainlink",
+    "s_open": 61510.02258005852,
+    "s_now": 61533.449235,
+    "sigma_per_sec": 7.166886421689146e-05,
+    "poly_yes": 0.615,
+    "best_bid": 0.61,
+    "best_ask": 0.62,
+    "spread": 0.01,
+    "ask_depth_usd": 29198.68,
+    "lead_prices": {
+     "coinbase_btcusd": 61523.105,
+     "binance_btcusdt": 61634.01
+    }
+   },
+   "candidate": {
+    "side": "up",
+    "fair_p_up": 0.6709,
+    "outcome_prob": 0.6709,
+    "model_edge": 0.0209,
+    "tradeable": false,
+    "reason": "edge_below_min"
+   },
+   "features": {
+    "observe_only": true,
+    "hurst": 0.715,
+    "hurst_regime": "trending",
+    "autocorr_lag1": 0.1695,
+    "realized_vol": 0.00018264,
+    "half_life_s": 8.42,
+    "adf_tstat": -2.7921,
+    "half_life_reason": "ok",
+    "divergence": -0.375407,
+    "zscore": -0.018,
+    "zscore_bucket": "-1..1",
+    "kalman_fair_prob": 0.964,
+    "kalman_reason": "ok",
+    "diagnostics": {}
+   },
+   "signals": {
+    "observe_only": true,
+    "returns": {
+     "15s": 0.00027259,
+     "30s": 0.00010838,
+     "60s": 0.00036998,
+     "180s": 0.00022907
+    },
+    "realized_vol": 0.00018223,
+    "autocorr_lag1": 0.1679,
+    "tv_direction": null,
+    "poly_move": 0.14,
+    "spread_change": 0.0,
+    "depth_change": -2325.989999999998,
+    "ttc_s": 143.9,
+    "direction": "up",
+    "strength": 0.1658,
+    "confidence": 1.0,
+    "family": "momentum"
+   },
+   "factors": {
+    "observe_only": true,
+    "cex_momentum": 0.1658,
+    "cex_volatility": 0.0002,
+    "polymarket_stale_factor": 1.0,
+    "orderbook_imbalance": -0.7132,
+    "spread_liquidity_factor": 0.9167,
+    "time_to_resolution_factor": 0.4796,
+    "crowded_side_factor": 0.0,
+    "settlement_boundary_risk": 0.0,
+    "grok_context": "calm",
+    "edge_quality_score": 0.7988,
+    "edge_quality_bucket": "high",
+    "reason_codes": [
+     "good_liquidity",
+     "polymarket_stale_divergence"
+    ]
+   },
+   "regime": {
+    "state": "stale_polymarket_up",
+    "probs": {
+     "state": "stale_polymarket_up",
+     "samples": 15,
+     "resolved_samples": 0,
+     "observe_only": true,
+     "reason": "insufficient_samples",
+     "p_resolve_up": null,
+     "p_resolve_down": null,
+     "p_edge_survives_execution": null,
+     "p_no_trade_best": null
+    },
+    "observe_only": true
+   },
+   "model": {
+    "observe_only": true,
+    "trained": false,
+    "reason": "insufficient_labeled_samples",
+    "n_labeled": 0,
+    "p_up": null,
+    "p_down": null,
+    "p_no_trade": null,
+    "model_confidence": null,
+    "calibration_bucket": "na"
+   },
+   "learning": null,
+   "edge": {
+    "observe_only": true,
+    "cex_momentum": {
+     "returns": {
+      "r15s": 1.771884277695923e-05,
+      "r30s": 0.00012299180874852933,
+      "r60s": 0.0001959301076498443,
+      "r180s": 1.6848185273310445e-05
+     },
+     "velocity": 0.00012299180874852933,
+     "acceleration": -8.755412319461087e-05,
+     "exchange_agreement": 1.0,
+     "basket_direction": "up",
+     "coverage": {
+      "members": [
+       "binance_btcusdt",
+       "coinbase_btcusd"
+      ],
+      "present": [
+       "binance_btcusdt",
+       "coinbase_btcusd"
+      ],
+      "missing": {},
+      "n_present": 2
+     }
+    },
+    "stale_divergence_class": "not_stale",
+    "ttc_bucket": "90_180s",
+    "orderbook_pressure": {
+     "spread": 0.01,
+     "ask_depth_usd": 29198.68,
+     "bid_depth_usd": 4888.51,
+     "vwap": 0.62,
+     "imbalance": -0.7132,
+     "depth_pull_add": "na",
+     "bucket": "ask_heavy"
+    },
+    "pulse_edge_score": 0.4654,
+    "pulse_edge_score_bucket": "medium",
+    "cex_agreement_bucket": "strong",
+    "direction": "up",
+    "affects_trading": false
+   },
+   "selectivity": null,
+   "context_gate": null,
+   "late_window": null,
+   "grok_decision": {
+    "action": "no_trade",
+    "confidence": 0.45,
+    "p_up": 0.52,
+    "size_fraction": 0.0,
+    "max_price": null,
+    "ttl_s": 120.0,
+    "key_risks": [
+     "unconfirmed cex divergence",
+     "ask-heavy orderbook",
+     "recent mixed streak"
+    ],
+    "rationale": "mispricing present but unconfirmed + tv false; fair ~50% and track record favors selectivity",
+    "schema_version": "1",
+    "ts": 1782365406.7369041,
+    "latency_s": 5.652,
+    "context": {
+     "hurst_regime": "trending",
+     "markov_state": "chop_noise",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   },
+   "cex_lead": {
+    "has_signal": true,
+    "side": "up",
+    "divergence": 0.3754,
+    "abs_divergence": 0.3754,
+    "bucket": ">=0.30",
+    "ttc_bucket": "90_180s",
+    "confirmed": true,
+    "momentum_confirms": true,
+    "ob_confirms": false,
+    "tv_confirms": false,
+    "tv_direction": null,
+    "news_state": "neutral",
+    "news_sentiment": null,
+    "late_decisive": false,
+    "decisive": true,
+    "late": false,
+    "exchange_agreement": 1.0,
+    "basket_direction": "up",
+    "context_keys": [
+     ">=0.30",
+     "conf=>=0.30|confirmed",
+     "ttc=>=0.30|90_180s",
+     "tv=>=0.30|unconfirmed",
+     "news=>=0.30|neutral",
+     "late=>=0.30|indecisive",
+     "conf_ttc=>=0.30|90_180s"
+    ],
+    "cex_p_up": 0.9904,
+    "poly_yes": 0.615,
+    "fair": 0.6709,
+    "vs_fair": 0.3195
+   },
+   "arbitrage": {
+    "kind": "buy_both",
+    "up_vwap": 0.62386,
+    "down_vwap": 0.398981,
+    "shares": 480.8771,
+    "cost_usd": 491.8611,
+    "guaranteed_profit_usd": -10.9839,
+    "ask_sum": 1.022841,
+    "tob_residual": 0.01,
+    "vwap_residual": 0.022841,
+    "depth_capped": false,
+    "actionable": false,
+    "reason": "below_epsilon"
+   },
+   "calibration": null,
+   "external": null,
+   "sizing": null,
+   "cost": null,
+   "action": {
+    "kind": "reject",
+    "stage": "directional",
+    "reason": "edge_below_min"
+   },
+   "fill": null,
+   "status": "rejected",
+   "terminal": "rejected",
+   "reject_stage": "directional",
+   "terminal_reason": "edge_below_min",
    "lifecycle": [
     "created",
     "feature_scored",

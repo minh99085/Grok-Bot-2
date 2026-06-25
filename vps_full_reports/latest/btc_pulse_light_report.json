@@ -6,8 +6,8 @@
  "reconciliation": {
   "global_reconciled": true,
   "counts": {
-   "raw_candidates_created": 11,
-   "rejected_before_execution": 9,
+   "raw_candidates_created": 1015,
+   "rejected_before_execution": 765,
    "sent_to_execution_gate": 0,
    "execution_gate_accepted": 0,
    "execution_gate_rejected": 0,
@@ -21,7 +21,7 @@
   "checks": {
    "lifecycle_internal": {
     "pass": true,
-    "detail": "created(11) == sum(terminals)(11) and reported(11) == created(11)"
+    "detail": "created(1015) == sum(terminals)(1015) and reported(1015) == created(1015)"
    },
    "accepted_equals_fills": {
     "pass": true,
@@ -56,32 +56,35 @@
    "note": "no legacy ledger \u2014 accounting started clean"
   },
   "scope_note": "lifecycle counts are cumulative since canonical accounting began; baseline counts are legacy ledger totals that predate it; ledger/gate totals == baseline + accounted.",
-  "rejected_before_execution": 9
+  "rejected_before_execution": 765
  },
  "execution_gate_zero_reject_diagnostic": null,
  "candidate_lifecycle": {
-  "created": 11,
-  "feature_scored": 8,
+  "created": 1015,
+  "feature_scored": 745,
   "execution_costed": 0,
   "ledgered": 0,
-  "reported": 11,
+  "reported": 1015,
   "terminals": {
    "accepted": 0,
-   "rejected": 8,
-   "skipped": 1,
+   "rejected": 745,
+   "skipped": 263,
    "expired": 0,
-   "missing_data": 2
+   "missing_data": 7
   },
   "rejected_by_stage": {
-   "directional": 6,
+   "directional": 495,
    "execution_gate": 0,
-   "context_gate": 2
+   "context_gate": 62,
+   "directional_allowlist": 188
   },
   "skipped_by_reason": {
-   "untrusted_vol": 1
+   "untrusted_vol": 1,
+   "open_snapshot_late": 166,
+   "arbitrage_taken": 96
   },
   "missing_by_reason": {
-   "no_open_snapshot": 1,
+   "no_open_snapshot": 6,
    "no_price_or_vol": 1
   },
   "no_candidate_disappeared": true,
@@ -180,13 +183,13 @@
  "sample_sizes": {
   "accepted": 0,
   "settled": 0,
-  "candidates": 11,
+  "candidates": 1015,
   "edge_model_labeled": 0
  },
  "missing_data_reasons": {
-  "hurst:insufficient_returns": 8,
-  "half_life:insufficient_samples": 8,
-  "zscore:insufficient_divergence_samples": 8,
+  "hurst:insufficient_returns": 26,
+  "half_life:insufficient_samples": 19,
+  "zscore:insufficient_divergence_samples": 19,
   "kalman:insufficient_samples": 7
  },
  "confidence_tier_table": {
@@ -361,15 +364,41 @@
    "block_event_blackout": true,
    "block_grok_event_risk_high": true,
    "exploration_rate": 0.05,
-   "passed": 0,
-   "blocked": 2,
-   "explored": 0,
+   "passed": 187,
+   "blocked": 62,
+   "explored": 1,
    "block_reasons": {
-    "tv_context_ttc_too_far": 2
+    "tv_context_ttc_too_far": 40,
+    "tv_context_hurst_noise": 22
    },
-   "explore_reasons": {},
+   "explore_reasons": {
+    "tv_context_hurst_noise": 1,
+    "tv_context_ttc_too_far": 1
+   },
    "note": "hard prior gate: blocks proven-losing entry contexts (volume spikes, noise regime, far-from-resolution) before enough samples exist for the learned selectivity gate. Can only PREVENT trades \u2014 never forces, sizes, or bypasses the execution gate, which remains the sole trade authority."
+  },
+  "down_bias_gate": {
+   "enabled": true,
+   "block_bullish_aligned_up": true,
+   "block_up_without_bearish": true,
+   "exploration_rate": 0.02,
+   "passed": 34,
+   "blocked": 0,
+   "explored": 0,
+   "block_reasons": {},
+   "explore_reasons": {},
+   "note": "restrict-only: harvest DOWN/TV asymmetry by blocking proven-losing UP stacks"
   }
+ },
+ "down_stack": {
+  "observe_only": true,
+  "affects_trading": false,
+  "min_samples": 30,
+  "edge_margin": 0.04,
+  "buckets": [],
+  "any_proven": false,
+  "proven_buckets": [],
+  "promotion_rule": "n>=30 AND wilson_lower>avg_entry+0.04 AND pnl>0"
  },
  "learning": {
   "enabled": false,
@@ -399,10 +428,10 @@
   "realized_pnl_usd": 0.0,
   "on_hand_capital_usd": 500.0,
   "return_pct": 0.0,
-  "arb_realized_pnl_usd": 0.0,
-  "total_realized_pnl_usd": 0.0,
-  "total_on_hand_usd": 500.0,
-  "total_return_pct": 0.0,
+  "arb_realized_pnl_usd": 16.52,
+  "total_realized_pnl_usd": 16.52,
+  "total_on_hand_usd": 516.52,
+  "total_return_pct": 3.3,
   "open_exposure_usd": 0.0,
   "open_positions": 0
  },
@@ -413,8 +442,8 @@
   "budget": {
    "daily_usd_cap": 5.0,
    "est_usd_per_call": 0.02,
-   "spent_today_usd": 0.04,
-   "calls_today": 2,
+   "spent_today_usd": 0.18,
+   "calls_today": 9,
    "per_feature_hourly": {
     "predictor": 30,
     "analyst": 4,
@@ -428,13 +457,73 @@
    "observe_only": true,
    "affects_trading": false,
    "interval_s": 1800.0,
-   "calls": 0,
+   "calls": 6,
    "errors": 0,
    "skipped_budget": 0,
-   "last_note": null,
-   "last_note_ts": 0.0,
+   "last_note": {
+    "summary": "After five analyses the bot remains at zero settled trades, signals, and evaluations across every source, so no bucket, regime, or signal meets the n>=8 or min_samples=30 thresholds required for confirmation or rejection. All learned metrics stay at baseline null values with context_gate continuing to block solely on ttc_too_far and hurst_noise. The system is still in its initial observe-only state with no observable patterns.",
+    "working": [],
+    "failing": [],
+    "warnings": [
+     "all evidence buckets empty (n=0)",
+     "no win-rate or EV estimates possible",
+     "observe-only mode prevents any trading authority"
+    ],
+    "changes_since_last": [
+     "no new settled trades, signals, or evaluations since prior analysis; all metrics unchanged at baseline null"
+    ],
+    "focus_next": [
+     "accumulate settled trades until n>=30 in any regime/z-score/conviction bucket",
+     "monitor context_gate blocks for ttc distribution",
+     "wait for signal_learning and edge_vs_5min_outcome to reach min_evidence"
+    ]
+   },
+   "last_note_ts": 1782364708.5743382,
    "learns_from": "bot_growing_evidence_with_continuity",
-   "history": [],
+   "history": [
+    {
+     "ts": 1782361569.6,
+     "summary": "Zero settled trades and zero signal evaluations mean every bucket, selectivity rule, edge model, and late-window cohort has n=0, so no patterns meet the n>=8 or min_samples=30 thresholds. Context gate blocked 6 candidates solely on ttc_too_far; all other gates and learned metrics remain at baseline null/insufficient_evidence. This is the initial analysis with no prior.",
+     "changes_since_last": [
+      "first analysis; no prior data or changes to report"
+     ]
+    },
+    {
+     "ts": 1782361805.4,
+     "summary": "Zero settled trades persist across all sources; every bucket, cohort, and learned metric remains at n=0, so no regime, z-score, conviction, or signal pattern meets the n>=8 or min_samples=30 thresholds for confirmation or rejection. Context gate continues to block solely on ttc_too_far with no selectivity or edge-model updates possible. This remains the initial state with no observable patterns.",
+     "changes_since_last": [
+      "no new settled trades, signals, or evaluations since prior analysis; all metrics unchanged at baseline null"
+     ]
+    },
+    {
+     "ts": 1782362001.6,
+     "summary": "Zero settled trades persist across all sources with every bucket, cohort, and learned metric at n=0, so no regime, z-score, conviction, or signal pattern meets n>=8 or min_samples=30 thresholds for confirmation or rejection. Context gate continues blocking solely on ttc_too_far with no selectivity, edge-model, or signal-learning updates possible. This remains the initial state with no observable patterns after three analyses.",
+     "changes_since_last": [
+      "no new settled trades, signals, or evaluations since prior analysis; all metrics unchanged at baseline null"
+     ]
+    },
+    {
+     "ts": 1782362277.5,
+     "summary": "Zero settled trades persist across all sources with every bucket, cohort, and learned metric remaining at n=0, so no regime, z-score, conviction, or signal pattern meets n>=8 or min_samples=30 thresholds for confirmation or rejection. Context gate continues blocking solely on ttc_too_far with no selectivity, edge-model, or signal-learning updates possible. This remains the initial state with no observable patterns after four analyses.",
+     "changes_since_last": [
+      "no new settled trades, signals, or evaluations since prior analysis; all metrics unchanged at baseline null"
+     ]
+    },
+    {
+     "ts": 1782363562.2,
+     "summary": "Zero settled trades persist across all sources with every bucket, cohort, and learned metric remaining at n=0, so no regime, z-score, conviction, or signal pattern meets n>=8 or min_samples=30 thresholds for confirmation or rejection. Context gate continues blocking solely on ttc_too_far with no selectivity, edge-model, or signal-learning updates possible. This remains the initial state with no observable patterns after four analyses.",
+     "changes_since_last": [
+      "no new settled trades, signals, or evaluations since prior analysis; all metrics unchanged at baseline null"
+     ]
+    },
+    {
+     "ts": 1782364708.6,
+     "summary": "After five analyses the bot remains at zero settled trades, signals, and evaluations across every source, so no bucket, regime, or signal meets the n>=8 or min_samples=30 thresholds required for confirmation or rejection. All learned metrics stay at baseline null values with context_gate continuing to block solely on ttc_too_far and hurst_noise. The system is still in its initial observe-only state with no observable patterns.",
+     "changes_since_last": [
+      "no new settled trades, signals, or evaluations since prior analysis; all metrics unchanged at baseline null"
+     ]
+    }
+   ],
    "note": "observe-only Grok research analyst that LEARNS the bot's trading patterns from its growing settled-trade/selectivity/late-window evidence and refines across cycles (continuity). Diagnostics only \u2014 never trades."
   },
   "predictor_B": {
@@ -462,18 +551,18 @@
   "fail_closed": true,
   "min_confidence": 0.55,
   "ttl_s": 240.0,
-  "requested": 1,
-  "decided": 1,
-  "errors": 0,
+  "requested": 14,
+  "decided": 13,
+  "errors": 1,
   "skipped_budget": 0,
   "pending": 0,
-  "avg_latency_s": 8.501,
-  "graded_directional": 0,
-  "direction_accuracy": null,
-  "brier": null,
-  "views_graded": 0,
-  "view_accuracy": null,
-  "view_brier": null,
+  "avg_latency_s": 8.022,
+  "graded_directional": 7,
+  "direction_accuracy": 0.8571,
+  "brier": 0.1324,
+  "views_graded": 12,
+  "view_accuracy": 0.6667,
+  "view_brier": 0.1916,
   "view_edge_candidates": [],
   "aggression": {
    "aggression": 0.0,
@@ -485,10 +574,219 @@
    "updates": 0,
    "note": "loosens (more explore/looser exploit/larger size) as acted trades profit; tightens on losses; circuit breaker is the hard floor."
   },
-  "abstains": 0,
-  "by_action": {},
-  "accuracy_by_context": {},
-  "recent_decisions": [],
+  "abstains": 5,
+  "by_action": {
+   "no_trade": {
+    "n": 5,
+    "direction_accuracy": null,
+    "pnl_usd": 0.0
+   },
+   "up": {
+    "n": 7,
+    "direction_accuracy": 0.8571,
+    "pnl_usd": 0.0
+   }
+  },
+  "accuracy_by_context": {
+   "hurst_regime": {
+    "insufficient_data": {
+     "n": 5,
+     "accuracy": 0.8
+    },
+    "trending": {
+     "n": 6,
+     "accuracy": 0.5
+    },
+    "noise": {
+     "n": 1,
+     "accuracy": 1.0
+    }
+   },
+   "markov_state": {
+    "stale_polymarket_up": {
+     "n": 8,
+     "accuracy": 0.75
+    },
+    "stale_polymarket_down": {
+     "n": 2,
+     "accuracy": 1.0
+    },
+    "chop_noise": {
+     "n": 2,
+     "accuracy": 0.0
+    }
+   },
+   "ttc_bucket": {
+    ">=240s": {
+     "n": 12,
+     "accuracy": 0.6667
+    }
+   },
+   "conviction_bucket": {
+    "coinflip": {
+     "n": 12,
+     "accuracy": 0.6667
+    }
+   }
+  },
+  "recent_decisions": [
+   {
+    "action": "no_trade",
+    "p_up": 0.53,
+    "confidence": 0.0,
+    "outcome_up": false,
+    "view_correct": false,
+    "context": {
+     "hurst_regime": "insufficient_data",
+     "markov_state": "stale_polymarket_up",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   },
+   {
+    "action": "up",
+    "p_up": 0.72,
+    "confidence": 0.0,
+    "outcome_up": true,
+    "view_correct": true,
+    "context": {
+     "hurst_regime": "insufficient_data",
+     "markov_state": "stale_polymarket_up",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   },
+   {
+    "action": "up",
+    "p_up": 0.78,
+    "confidence": 0.0,
+    "outcome_up": true,
+    "view_correct": true,
+    "context": {
+     "hurst_regime": "insufficient_data",
+     "markov_state": "stale_polymarket_up",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   },
+   {
+    "action": "up",
+    "p_up": 0.78,
+    "confidence": 0.0,
+    "outcome_up": true,
+    "view_correct": true,
+    "context": {
+     "hurst_regime": "trending",
+     "markov_state": "stale_polymarket_up",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   },
+   {
+    "action": "up",
+    "p_up": 0.68,
+    "confidence": 0.0,
+    "outcome_up": true,
+    "view_correct": true,
+    "context": {
+     "hurst_regime": "noise",
+     "markov_state": "stale_polymarket_up",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   },
+   {
+    "action": "up",
+    "p_up": 0.68,
+    "confidence": 0.0,
+    "outcome_up": true,
+    "view_correct": true,
+    "context": {
+     "hurst_regime": "trending",
+     "markov_state": "stale_polymarket_up",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   },
+   {
+    "action": "no_trade",
+    "p_up": 0.51,
+    "confidence": 0.0,
+    "outcome_up": true,
+    "view_correct": true,
+    "context": {
+     "hurst_regime": "insufficient_data",
+     "markov_state": "stale_polymarket_down",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   },
+   {
+    "action": "up",
+    "p_up": 0.71,
+    "confidence": 0.0,
+    "outcome_up": true,
+    "view_correct": true,
+    "context": {
+     "hurst_regime": "trending",
+     "markov_state": "stale_polymarket_up",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   },
+   {
+    "action": "no_trade",
+    "p_up": 0.58,
+    "confidence": 0.0,
+    "outcome_up": false,
+    "view_correct": false,
+    "context": {
+     "hurst_regime": "trending",
+     "markov_state": "stale_polymarket_up",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   },
+   {
+    "action": "up",
+    "p_up": 0.68,
+    "confidence": 0.0,
+    "outcome_up": false,
+    "view_correct": false,
+    "context": {
+     "hurst_regime": "trending",
+     "markov_state": "chop_noise",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   },
+   {
+    "action": "no_trade",
+    "p_up": 0.505,
+    "confidence": 0.0,
+    "outcome_up": true,
+    "view_correct": true,
+    "context": {
+     "hurst_regime": "insufficient_data",
+     "markov_state": "stale_polymarket_down",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   },
+   {
+    "action": "no_trade",
+    "p_up": 0.52,
+    "confidence": 0.0,
+    "outcome_up": false,
+    "view_correct": false,
+    "context": {
+     "hurst_regime": "trending",
+     "markov_state": "chop_noise",
+     "ttc_bucket": ">=240s",
+     "conviction_bucket": "coinflip"
+    }
+   }
+  ],
   "circuit_breaker": {
    "tripped": false,
    "reason": null,
@@ -575,9 +873,9 @@
     "status": {
      "enabled": true,
      "mode": "shadow",
-     "decided": 1,
-     "errors": 0,
-     "requested": 1
+     "decided": 13,
+     "errors": 1,
+     "requested": 14
     },
     "last_beat_age_s": 0.4
    },
@@ -630,7 +928,7 @@
    "research_meta": {
     "role": "research(/goal)",
     "trigger": "interval",
-    "interval_s": 3600.0,
+    "interval_s": 1800.0,
     "skill": null,
     "verifier": "claude",
     "stop_condition": "verifiable metric improvement"
@@ -675,7 +973,7 @@
    "any_eligible": false,
    "note": "observe-only diagnostic; eligible buckets are NOT auto-promoted to trading authority unless promotion_allowed_by_config is true AND explicitly wired. The execution gate remains the sole trade authority."
   },
-  "snapshots": 8,
+  "snapshots": 745,
   "cex_basket_coverage": {
    "members": [
     "binance_btcusdt",
@@ -702,12 +1000,125 @@
   "late_ttc_s": 90.0,
   "kelly_scale": 0.5,
   "max_size_frac": 2.0,
-  "graded": 0,
-  "signals_seen": 8,
+  "graded": 13,
+  "signals_seen": 649,
   "drove_entries": 0,
   "promotion_rule": "n>=min AND wilson_lower(win_rate)>breakeven AND Brier_cex<Brier_market AND avg_pnl>0",
   "any_proven": false,
-  "buckets": [],
+  "buckets": [
+   {
+    "bucket": ">=0.30",
+    "n": 13,
+    "accuracy": 0.6154,
+    "win_rate_lower_ci": 0.3932,
+    "breakeven": 0.4742,
+    "brier_cex": 0.3118,
+    "brier_market": 0.2622,
+    "brier_fair": 0.2528,
+    "beats_market": false,
+    "avg_pnl_per_trade": 0.1412,
+    "total_pnl_usd_unit": 1.835,
+    "proven": false
+   },
+   {
+    "bucket": "ttc=>=0.30|240_300s",
+    "n": 13,
+    "accuracy": 0.6154,
+    "win_rate_lower_ci": 0.3932,
+    "breakeven": 0.4742,
+    "brier_cex": 0.3118,
+    "brier_market": 0.2622,
+    "brier_fair": 0.2528,
+    "beats_market": false,
+    "avg_pnl_per_trade": 0.1412,
+    "total_pnl_usd_unit": 1.835,
+    "proven": false
+   },
+   {
+    "bucket": "tv=>=0.30|unconfirmed",
+    "n": 13,
+    "accuracy": 0.6154,
+    "win_rate_lower_ci": 0.3932,
+    "breakeven": 0.4742,
+    "brier_cex": 0.3118,
+    "brier_market": 0.2622,
+    "brier_fair": 0.2528,
+    "beats_market": false,
+    "avg_pnl_per_trade": 0.1412,
+    "total_pnl_usd_unit": 1.835,
+    "proven": false
+   },
+   {
+    "bucket": "news=>=0.30|neutral",
+    "n": 13,
+    "accuracy": 0.6154,
+    "win_rate_lower_ci": 0.3932,
+    "breakeven": 0.4742,
+    "brier_cex": 0.3118,
+    "brier_market": 0.2622,
+    "brier_fair": 0.2528,
+    "beats_market": false,
+    "avg_pnl_per_trade": 0.1412,
+    "total_pnl_usd_unit": 1.835,
+    "proven": false
+   },
+   {
+    "bucket": "late=>=0.30|indecisive",
+    "n": 13,
+    "accuracy": 0.6154,
+    "win_rate_lower_ci": 0.3932,
+    "breakeven": 0.4742,
+    "brier_cex": 0.3118,
+    "brier_market": 0.2622,
+    "brier_fair": 0.2528,
+    "beats_market": false,
+    "avg_pnl_per_trade": 0.1412,
+    "total_pnl_usd_unit": 1.835,
+    "proven": false
+   },
+   {
+    "bucket": "conf=>=0.30|confirmed",
+    "n": 8,
+    "accuracy": 0.75,
+    "win_rate_lower_ci": 0.461,
+    "breakeven": 0.4688,
+    "brier_cex": 0.209,
+    "brier_market": 0.2651,
+    "brier_fair": 0.2501,
+    "beats_market": true,
+    "avg_pnl_per_trade": 0.2812,
+    "total_pnl_usd_unit": 2.25,
+    "proven": false
+   },
+   {
+    "bucket": "conf_ttc=>=0.30|240_300s",
+    "n": 8,
+    "accuracy": 0.75,
+    "win_rate_lower_ci": 0.461,
+    "breakeven": 0.4688,
+    "brier_cex": 0.209,
+    "brier_market": 0.2651,
+    "brier_fair": 0.2501,
+    "beats_market": true,
+    "avg_pnl_per_trade": 0.2812,
+    "total_pnl_usd_unit": 2.25,
+    "proven": false
+   },
+   {
+    "bucket": "conf=>=0.30|unconfirmed",
+    "n": 5,
+    "accuracy": 0.4,
+    "win_rate_lower_ci": 0.1431,
+    "breakeven": 0.483,
+    "brier_cex": 0.4762,
+    "brier_market": 0.2576,
+    "brier_fair": 0.2571,
+    "beats_market": false,
+    "avg_pnl_per_trade": -0.083,
+    "total_pnl_usd_unit": -0.415,
+    "proven": false
+   }
+  ],
   "note": "CEX-lead latency edge; benchmark is the MARKET price (already ~0.21 Brier). SHADOW grades only; GATED can PROPOSE a side on a proven bucket but the execution-quality gate + safety floor remain authoritative. PAPER ONLY."
  },
  "arbitrage": {
@@ -715,22 +1126,25 @@
   "paper_only": true,
   "risk_free": true,
   "segregated_from_directional": true,
-  "detected_actionable": 0,
-  "sell_both_detected": 4,
-  "executed": 0,
-  "executed_buy": 0,
-  "executed_sell": 0,
-  "settled": 0,
+  "detected_actionable": 2,
+  "sell_both_detected": 352,
+  "executed": 2,
+  "executed_buy": 1,
+  "executed_sell": 1,
+  "settled": 2,
   "open": 0,
-  "realized_profit_usd": 0.0,
-  "guaranteed_booked_usd": 0.0,
+  "realized_profit_usd": 16.5179,
+  "guaranteed_booked_usd": 16.5179,
+  "scans": 190,
+  "near_miss_within_eps": 44,
+  "min_vwap_ask_residual": 0.000562,
   "note": "risk-free dutch book: BUY-both (asks<$1) + SELL-both (mint $1 set, sell bids>$1); deterministic P&L; NEVER blended into directional. PAPER ONLY."
  },
  "directional_allowlist": {
   "enabled": true,
   "explore_rate": 0.05,
   "explored": 0,
-  "blocked": 0
+  "blocked": 188
  },
  "learned_selectivity_gate": {
   "enabled": true,
@@ -845,14 +1259,37 @@
     "verifiable": true,
     "reasons": [],
     "metrics": {
-     "executed": 0,
-     "settled": 0,
-     "realized_profit_usd": 0.0,
-     "guaranteed_booked_usd": 0.0
+     "executed": 2,
+     "settled": 2,
+     "realized_profit_usd": 16.5179,
+     "guaranteed_booked_usd": 16.5179
     },
     "note": "arb halt only on anomaly (guaranteed_profit<=0); risk-free P&L is segregated"
    }
   },
   "note": "quantitative kill switches checked each tick from settled ledger evidence; NOT the LLM's opinion. Halting blocks NEW entries only."
- }
+ },
+ "execution_realistic_edge": {
+  "observe_only": true,
+  "affects_trading": false,
+  "candidates_scored": 0,
+  "avg_execution_realistic_ev_usd": null,
+  "avg_kl_model_vs_market": null,
+  "kl_model_vs_market": {
+   "observe_only": true,
+   "latest_model_p": null,
+   "latest_market_p": null,
+   "kl": null,
+   "market_benchmark_n": 0,
+   "model_beats_market": null
+  },
+  "payoff_guards": {
+   "rejected_tiny_upside": 35,
+   "rejected_bad_reward_to_risk": 45,
+   "rejected_high_entry_insufficient_margin": 0
+  },
+  "recent_samples": [],
+  "note": "KL divergence is observe-only \u2014 large KL means model disagrees with market; never a buy signal when model Brier > market Brier."
+ },
+ "simplex_diagnostics": {}
 }

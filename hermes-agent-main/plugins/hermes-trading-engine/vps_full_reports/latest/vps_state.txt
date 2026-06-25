@@ -1,23 +1,27 @@
-VPS full report snapshot — 2026-06-25 (Bot-2 / root@45.32.224.147)
+VPS full report snapshot — 2026-06-25 (Grok-Bot-2 / root@45.32.224.147)
 
-host: Bot-2 (45.32.224.147)
+host: 45.32.224.147
 user: root
 repo: /opt/Grok-Bot-2
 plugin: /opt/Grok-Bot-2/hermes-agent-main/plugins/hermes-trading-engine
-git_head: 19182a8371bc3ca6979220e2e2403f2c7602e4eb (origin/main)
-deploy: git bundle clone + docker compose down/build/up --remove-orphans
+git_head: 52615f2d8d17c2ec464aa0d71e7a3d783d0288b0 (origin/main)
+deploy: git bundle sync + docker compose down/build/up --remove-orphans
 
 containers:
-  hermes-training         Up (healthy)  ports 127.0.0.1:8787, 0.0.0.0:80->8787
-  hermes-trading-engine   Up (healthy)  port 8800
+  hermes-training         Up (healthy)  ports 127.0.0.1:8787, 127.0.0.1:18787
+  hermes-trading-engine   Up (healthy)  port 0.0.0.0:80->8800 (dashboard)
 
-pulse_status:
-  ticks: 9 (fresh at export)
+pulse_status (2026-06-25 05:32 UTC):
+  ticks: 229
   grok_decider: mode=shadow affects_trading=false
-  context_gate: enabled=true block_liquidation_spike/event_blackout/grok_event_risk_high=true
-  stop_conditions: any_halted=false (warming up, n<30)
+  context_gate: enabled=true (ttc_too_far, hurst_noise blocks)
+  tv_down_bias_gate: enabled (docker-compose)
+  directional: 0 settled (Wilson allowlist quarantine active)
+  arbitrage: 2 executed/settled, +$16.52 realized
+  stop_conditions: any_halted=false
   global_reconciled: true
-  ledger: fresh start (0 settled)
+  readiness: not_ready (warming up)
 
-artifacts in /data: STATE.md, LESSONS.md, btc_pulse_status.json, btc_pulse_ledger.json,
-btc_pulse_light_report.json, btc_pulse_meta_bundle.json, report.md
+artifacts in /data: STATE.md, LESSONS.md, MANIFEST.txt, validation_*.txt,
+btc_pulse_status.json, btc_pulse_ledger.json, btc_pulse_light_report.json,
+btc_pulse_meta_bundle.json, report.md

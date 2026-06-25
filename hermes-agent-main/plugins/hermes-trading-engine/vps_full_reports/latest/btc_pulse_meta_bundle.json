@@ -3,28 +3,31 @@
  "report_only": true,
  "no_live_trading_decisions": true,
  "candidate_lifecycle": {
-  "created": 11,
-  "feature_scored": 8,
+  "created": 1015,
+  "feature_scored": 745,
   "execution_costed": 0,
   "ledgered": 0,
-  "reported": 11,
+  "reported": 1015,
   "terminals": {
    "accepted": 0,
-   "rejected": 8,
-   "skipped": 1,
+   "rejected": 745,
+   "skipped": 263,
    "expired": 0,
-   "missing_data": 2
+   "missing_data": 7
   },
   "rejected_by_stage": {
-   "directional": 6,
+   "directional": 495,
    "execution_gate": 0,
-   "context_gate": 2
+   "context_gate": 62,
+   "directional_allowlist": 188
   },
   "skipped_by_reason": {
-   "untrusted_vol": 1
+   "untrusted_vol": 1,
+   "open_snapshot_late": 166,
+   "arbitrage_taken": 96
   },
   "missing_by_reason": {
-   "no_open_snapshot": 1,
+   "no_open_snapshot": 6,
    "no_price_or_vol": 1
   },
   "no_candidate_disappeared": true,
@@ -75,13 +78,13 @@
  "sample_sizes": {
   "accepted": 0,
   "settled": 0,
-  "candidates": 11,
+  "candidates": 1015,
   "edge_model_labeled": 0
  },
  "missing_data_reasons": {
-  "hurst:insufficient_returns": 8,
-  "half_life:insufficient_samples": 8,
-  "zscore:insufficient_divergence_samples": 8,
+  "hurst:insufficient_returns": 26,
+  "half_life:insufficient_samples": 19,
+  "zscore:insufficient_divergence_samples": 19,
   "kalman:insufficient_samples": 7
  },
  "tier_census": {
