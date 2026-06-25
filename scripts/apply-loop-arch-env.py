@@ -32,6 +32,16 @@ UPDATES = {
     "PULSE_MAX_OPEN_LAG_S": "45",
     # Stop halt needs >30 settled before Wilson test (avoids freeze at exactly min_samples).
     "PULSE_STOP_MIN_SAMPLES": "40",
+    # Mispricing stack: CEX-lead alignment + edge/TTC + executable margin on Grok follow.
+    "PULSE_MISPRICING_GATE_ENABLED": "1",
+    "PULSE_MISPRICING_TTC_MIN_S": "180",
+    "PULSE_MISPRICING_TTC_MAX_S": "240",
+    "PULSE_MISPRICING_REQUIRE_CONFIRMED": "1",
+    "PULSE_MISPRICING_REQUIRE_STALE_DOWN": "1",
+    "PULSE_MISPRICING_MIN_EXECUTABLE_MARGIN": "0.03",
+    "PULSE_EDGE_TTC_GATE_ENABLED": "1",
+    "PULSE_CEX_LEAD_MIN_EDGE_VS_MARKET": "0.02",
+    "PULSE_CEX_LEAD_TV_STRENGTH_THR": "0.72",
 }
 
 text = ENV_PATH.read_text(encoding="utf-8") if ENV_PATH.exists() else ""

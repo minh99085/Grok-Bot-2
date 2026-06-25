@@ -171,6 +171,14 @@ class PulseConfig:
     cex_lead_late_ttc_s: float = 90.0          # ttc <= this => late-window convergence-lag zone
     cex_lead_kelly_scale: float = 0.5          # fractional-Kelly size for proven edges
     cex_lead_max_size_frac: float = 2.0        # hard cap on the edge-scaled size multiplier
+    # ---- Grok-follow mispricing gate (restrict-only; CEX-lead + edge/TTC alignment) ----
+    mispricing_gate_enabled: bool = False
+    mispricing_ttc_min_s: float = 180.0
+    mispricing_ttc_max_s: float = 240.0
+    mispricing_require_confirmed: bool = True
+    mispricing_require_stale_down: bool = True
+    mispricing_min_executable_margin: float = 0.03
+    edge_ttc_gate_enabled: bool = False
     # ---- within-window RISK-FREE arbitrage (Roan dutch book up_vwap+down_vwap<1; PAPER ONLY) ----
     arbitrage_enabled: bool = True
     arb_fees: float = 0.0                       # modelled taker fee per $ (Polymarket BTC ~0)
@@ -220,6 +228,7 @@ class PulseConfig:
     # ---- TradingView DOWN-bias gate (Townhall P3; restrict-only) ----
     tv_down_bias_gate_enabled: bool = False
     tv_down_bias_exploration_rate: float = 0.0
+    tv_down_bias_block_up_on_bearish_down_stack: bool = True
     tv_down_bias_block_up_against_confirmed_down: bool = False
     tv_mtf_conflict_gate_enabled: bool = True
     tv_mtf_require_confirm: bool = False   # loop arch: conflict veto only, not 1m+5m trade authority
@@ -408,6 +417,20 @@ class PulseConfig:
             cex_lead_late_ttc_s=_envf("PULSE_CEX_LEAD_LATE_TTC_S", 90.0),
             cex_lead_kelly_scale=_envf("PULSE_CEX_LEAD_KELLY_SCALE", 0.5),
             cex_lead_max_size_frac=_envf("PULSE_CEX_LEAD_MAX_SIZE_FRAC", 2.0),
+            mispricing_gate_enabled=str(os.getenv("PULSE_MISPRICING_GATE_ENABLED", "0"))
+            .strip().lower() in ("1", "true", "yes", "on"),
+            mispricing_ttc_min_s=_envf("PULSE_MISPRICING_TTC_MIN_S", 180.0),
+            mispricing_ttc_max_s=_envf("PULSE_MISPRICING_TTC_MAX_S", 240.0),
+            mispricing_require_confirmed=str(
+                os.getenv("PULSE_MISPRICING_REQUIRE_CONFIRMED", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            mispricing_require_stale_down=str(
+                os.getenv("PULSE_MISPRICING_REQUIRE_STALE_DOWN", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            mispricing_min_executable_margin=_envf(
+                "PULSE_MISPRICING_MIN_EXECUTABLE_MARGIN", 0.03),
+            edge_ttc_gate_enabled=str(os.getenv("PULSE_EDGE_TTC_GATE_ENABLED", "0"))
+            .strip().lower() in ("1", "true", "yes", "on"),
             arbitrage_enabled=str(os.getenv("PULSE_ARB_ENABLED", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
             arb_fees=_envf("PULSE_ARB_FEES", 0.0),
@@ -451,6 +474,9 @@ class PulseConfig:
             tv_down_bias_gate_enabled=str(os.getenv("PULSE_TV_DOWN_BIAS_GATE", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
             tv_down_bias_exploration_rate=_envf("PULSE_TV_DOWN_BIAS_EXPLORE_RATE", 0.0),
+            tv_down_bias_block_up_on_bearish_down_stack=str(
+                os.getenv("PULSE_TV_DOWN_BIAS_BLOCK_UP_ON_BEARISH_DOWN_STACK", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
             tv_down_bias_block_up_against_confirmed_down=str(
                 os.getenv("PULSE_TV_DOWN_BIAS_BLOCK_UP_AGAINST_CONFIRMED_DOWN", "0")).strip().lower()
             in ("1", "true", "yes", "on"),
@@ -606,6 +632,8 @@ class PulseEngine:
         from engine.pulse.tv_down_bias_gate import TradingViewDownBiasGate
         self.tv_down_bias_gate = TradingViewDownBiasGate(
             enabled=bool(self.cfg.tv_down_bias_gate_enabled),
+            block_up_on_bearish_down_stack=bool(
+                self.cfg.tv_down_bias_block_up_on_bearish_down_stack),
             block_up_against_confirmed_down=bool(
                 self.cfg.tv_down_bias_block_up_against_confirmed_down),
             exploration_rate=self.cfg.tv_down_bias_exploration_rate)
@@ -715,6 +743,7 @@ class PulseEngine:
         import random as _random
         self._grok_rng = _random.Random()         # exploration sampler (follow-mode data gathering)
         self._grok_policy_counts = {"exploit": 0, "explore": 0, "avoid": 0}   # adaptive-loop tally
+        self._mispricing_gate_counts: dict = {}
         try:
             from engine.pulse.grok_intel import (GrokBudget, GrokSignalAnalyst,
                                                  GrokSignalPredictor, xai_key)
@@ -1389,6 +1418,9 @@ class PulseEngine:
                             "cex_lead_mispricing": {k: (dr.cex_lead or {}).get(k) for k in
                                                     ("divergence", "side", "confirmed",
                                                      "tv_confirms", "late_decisive")},
+                            "edge_signal": {k: (dr.edge or {}).get(k) for k in
+                                            ("stale_divergence_class", "pulse_edge_score_bucket",
+                                             "ttc_bucket", "cex_agreement_bucket")},
                             "model_vs_market": self._market_benchmark(),
                             "recent_windows": self._recent_windows_view(6),
                             "lessons": self.lessons.recent(10),
@@ -1472,6 +1504,37 @@ class PulseEngine:
                                                   float(self.cfg.grok_decider_explore_size_fraction)
                                                   * self.grok_decider.aggr.size_scale()))
                     self._grok_policy_counts["explore"] += 1
+                mp_ok, mp_reason = self._mispricing_gate_ok(
+                    side=side, cex_sig=dr.cex_lead, ttc_s=ttc, esnap=esnap)
+                if not mp_ok:
+                    self._mispricing_gate_counts[mp_reason] = (
+                        self._mispricing_gate_counts.get(mp_reason, 0) + 1)
+                    dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
+                                                     outcome_prob=None, model_edge=0.0,
+                                                     tradeable=False, reason=mp_reason)
+                    if self.markov is not None:
+                        self.markov.record_terminal(state=cand_state, accepted=False)
+                    _finalize(dr, "rejected", reason=mp_reason, stage="mispricing_gate")
+                    continue
+                et_ok, et_reason = self._edge_ttc_gate_ok(esnap=esnap, ttc_s=ttc)
+                if not et_ok:
+                    self._mispricing_gate_counts[et_reason] = (
+                        self._mispricing_gate_counts.get(et_reason, 0) + 1)
+                    dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
+                                                     outcome_prob=None, model_edge=0.0,
+                                                     tradeable=False, reason=et_reason)
+                    if self.markov is not None:
+                        self.markov.record_terminal(state=cand_state, accepted=False)
+                    _finalize(dr, "rejected", reason=et_reason, stage="mispricing_gate")
+                    continue
+                if side == "up" and not self._grok_up_side_allowed():
+                    dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
+                                                     outcome_prob=None, model_edge=0.0,
+                                                     tradeable=False, reason="grok_no_edge_up")
+                    if self.markov is not None:
+                        self.markov.record_terminal(state=cand_state, accepted=False)
+                    _finalize(dr, "rejected", reason="grok_no_edge_up", stage="grok_decider")
+                    continue
                 # Restrict-only DOWN/TV asymmetry gate still applies to Grok-owned UP trades.
                 if side == "up":
                     db_res = self.tv_down_bias_gate.evaluate(
@@ -1480,7 +1543,7 @@ class PulseEngine:
                         tv_direction=(tv_feature or {}).get("direction"),
                         tf_confirm=(tv_feature or {}).get("tf_confirm"),
                     )
-                    if db_res["decision"] == "block":
+                    if db_res["decision"] in ("block", "explore"):
                         dr.down_bias_gate = {"decision": db_res["decision"],
                                              "reasons": db_res["reasons"]}
                         dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
@@ -1528,6 +1591,24 @@ class PulseEngine:
                                                      tradeable=False, reason="grok_max_price")
                     _finalize(dr, "rejected", reason="grok_max_price", stage="grok_decider")
                     continue
+                ex_ok, ex_reason = self._executable_mispricing_ok(p_win=grok_oprob, ask=float(ask))
+                if not ex_ok:
+                    self._mispricing_gate_counts[ex_reason] = (
+                        self._mispricing_gate_counts.get(ex_reason, 0) + 1)
+                    dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
+                                                     outcome_prob=None, model_edge=0.0,
+                                                     tradeable=False, reason=ex_reason)
+                    if self.markov is not None:
+                        self.markov.record_terminal(state=cand_state, accepted=False)
+                    _finalize(dr, "rejected", reason=ex_reason, stage="mispricing_gate")
+                    continue
+                if not self._ask_reward_risk_ok(side, float(ask)):
+                    dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
+                                                     outcome_prob=None, model_edge=0.0,
+                                                     tradeable=False, reason="reward_risk_too_low")
+                    self._payoff_guard_counts["rejected_bad_reward_to_risk"] += 1
+                    _finalize(dr, "rejected", reason="reward_risk_too_low", stage="grok_decider")
+                    continue
                 from engine.pulse.strategy import PulseDecision
                 d = PulseDecision(trade=True, side=side,
                                   token_id=(w.up_token_id if side == "up" else w.down_token_id),
@@ -1564,13 +1645,16 @@ class PulseEngine:
                                   price=float(ask), fair_p_up=fair_used, edge=0.0, reason=entry_mode)
                 context_explored = False
             else:
+                _up_rr = self._reward_risk_floor("up")
                 d = decide(w, fair_used, now, min_edge=self.cfg.min_edge,
                            min_seconds_to_close=self.cfg.min_seconds_to_close,
                            min_depth_usd=self.cfg.min_depth_usd,
                            edge_buffer=self.cfg.edge_buffer, max_price=self.cfg.max_price,
                            min_seconds_since_open=self.cfg.min_seconds_since_open,
                            basis_buffer=self.cfg.basis_buffer,
-                           min_reward_risk=self.cfg.min_reward_risk)
+                           min_reward_risk=self.cfg.min_reward_risk,
+                           min_reward_risk_up=_up_rr if _up_rr > float(self.cfg.min_reward_risk or 0)
+                           else None)
             if grok_follow:
                 outcome_prob = grok_oprob              # Grok's P(chosen side wins) (action or view)
             elif cex_lead_active:
@@ -1624,7 +1708,9 @@ class PulseEngine:
                     tf_confirm=(tv_feature or {}).get("tf_confirm"),
                 )
                 dr.down_bias_gate = {"decision": db_res["decision"], "reasons": db_res["reasons"]}
-                if db_res["decision"] == "block":
+                db_block = (db_res["decision"] == "block"
+                            or (d.side == "up" and db_res["decision"] == "explore"))
+                if db_block:
                     dr.action = RejectAction(stage="down_bias_gate", reason=db_res["reasons"][0])
                     if self.markov is not None:
                         self.markov.record_terminal(state=cand_state, accepted=False)
@@ -2406,6 +2492,84 @@ class PulseEngine:
                 "up_rate": (round(ups / len(full), 3) if full else None),
                 "current_streak": ((last or "") + "x" + str(streak)) if last else None}
 
+    def _reward_risk_floor(self, side: "str | None") -> float:
+        base = float(self.cfg.min_reward_risk or 0.0)
+        if base <= 0.0 or not side or str(side).lower() != "up":
+            return base
+        return base + 0.10
+
+    def _ask_reward_risk_ok(self, side: "str | None", ask: "float | None") -> bool:
+        floor = self._reward_risk_floor(side)
+        if floor <= 0.0 or ask is None or float(ask) <= 0.0:
+            return True
+        return ((1.0 - float(ask)) / float(ask)) >= floor
+
+    def _grok_up_side_allowed(self) -> bool:
+        if self.grok_decider is None:
+            return True
+        rep = self.grok_decider.report()
+        graded = int(rep.get("graded_directional") or 0)
+        acc = rep.get("direction_accuracy")
+        if graded >= 20 and acc is not None and float(acc) < 0.52:
+            return False
+        return True
+
+    def _mispricing_gate_ok(self, *, side: str, cex_sig: "dict | None", ttc_s: "float | None",
+                            esnap=None) -> "tuple[bool, str]":
+        """Restrict-only: Grok-follow trades require aligned CEX-lead mispricing in the TTC window."""
+        if not self.cfg.mispricing_gate_enabled:
+            return True, ""
+        sig = cex_sig or {}
+        if not sig.get("has_signal"):
+            return False, "misprice_no_cex_signal"
+        try:
+            div = abs(float(sig.get("divergence") or 0))
+        except (TypeError, ValueError):
+            return False, "misprice_no_cex_signal"
+        if div < float(self.cfg.cex_lead_min_divergence):
+            return False, "misprice_divergence_too_small"
+        if str(sig.get("side") or "") != str(side):
+            return False, "misprice_side_mismatch"
+        if self.cfg.mispricing_require_confirmed and not sig.get("confirmed"):
+            return False, "misprice_not_confirmed"
+        if ttc_s is None:
+            return False, "misprice_ttc_unknown"
+        ttc_f = float(ttc_s)
+        if ttc_f < float(self.cfg.mispricing_ttc_min_s) or ttc_f > float(self.cfg.mispricing_ttc_max_s):
+            return False, "misprice_ttc_out_of_window"
+        if side == "down" and self.cfg.mispricing_require_stale_down:
+            stale = getattr(esnap, "stale_divergence_class", None) if esnap is not None else None
+            if stale is None and isinstance(esnap, dict):
+                stale = esnap.get("stale_divergence_class")
+            if stale != "stale_polymarket_down":
+                return False, "misprice_stale_down_required"
+        return True, ""
+
+    def _edge_ttc_gate_ok(self, *, esnap=None, ttc_s: "float | None" = None) -> "tuple[bool, str]":
+        """Restrict-only: block 90–180s TTC unless pulse_edge_score is high or very_high."""
+        if not self.cfg.edge_ttc_gate_enabled or ttc_s is None:
+            return True, ""
+        ttc_f = float(ttc_s)
+        if 90.0 <= ttc_f < 180.0:
+            bucket = getattr(esnap, "pulse_edge_score_bucket", None) if esnap is not None else None
+            if bucket is None and isinstance(esnap, dict):
+                bucket = esnap.get("pulse_edge_score_bucket")
+            if bucket not in ("high", "very_high"):
+                return False, "edge_ttc_mid_window_low_score"
+        return True, ""
+
+    def _executable_mispricing_ok(self, *, p_win: "float | None",
+                                  ask: "float | None") -> "tuple[bool, str]":
+        """Restrict-only: require p_win - ask - edge_buffer >= min executable margin."""
+        if not self.cfg.mispricing_gate_enabled:
+            return True, ""
+        if p_win is None or ask is None:
+            return False, "misprice_executable_unknown"
+        margin = float(p_win) - float(ask) - float(self.cfg.edge_buffer)
+        if margin < float(self.cfg.mispricing_min_executable_margin):
+            return False, "misprice_executable_margin_low"
+        return True, ""
+
     def _tv_signal_gate(self, tv_feature: "dict | None", side: "str | None") -> "str | None":
         """Restrict-only TradingView indication gate. Returns None if the trade is permitted, else
         a rejection reason. Only ACTIVE when the intake exists; it can never force a trade."""
@@ -2913,6 +3077,13 @@ class PulseEngine:
         rep["follow_fraction"] = self.cfg.grok_decider_follow_fraction
         rep["adaptive_enabled"] = bool(self.cfg.grok_decider_adaptive)
         rep["adaptive_policy_counts"] = dict(self._grok_policy_counts)
+        rep["mispricing_gate"] = {
+            "enabled": bool(self.cfg.mispricing_gate_enabled),
+            "edge_ttc_gate_enabled": bool(self.cfg.edge_ttc_gate_enabled),
+            "ttc_window_s": [self.cfg.mispricing_ttc_min_s, self.cfg.mispricing_ttc_max_s],
+            "min_executable_margin": self.cfg.mispricing_min_executable_margin,
+            "reject_counts": dict(self._mispricing_gate_counts),
+        }
         rep["explore_rate"] = self.cfg.grok_decider_explore_rate
         rep["news_digest"] = (self.grok_news.report() if self.grok_news is not None
                               else {"enabled": False})
