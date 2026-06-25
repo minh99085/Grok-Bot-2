@@ -1,7 +1,22 @@
 # BTC 5-Minute Pulse — Performance Report
 
-_PAPER ONLY · `global_reconciled=True` · ticks 22_
+_PAPER ONLY · `global_reconciled=True` · ticks 8_
 
+
+## Performance Scorecard
+
+| section | score | grade | weight |
+|---|---|---|---|
+| Overall | 76.5 | C+ | 100% |
+| Trading Performance | 72.1 | C | 50% |
+| Operation | 90.3 | A | 25% |
+| External Signals | 71.4 | C | 25% |
+
+### Score history (recent)
+
+| utc | settled | trading | operation | signals | overall |
+|---|---|---|---|---|---|
+| 2026-06-25 13:31:23 UTC | 29 | 72.1 | 90.3 | 71.4 | 76.5 |
 
 ## 1. Trading Performance
 
@@ -36,7 +51,7 @@ _PAPER ONLY · `global_reconciled=True` · ticks 22_
 
 - **global_reconciled:** True
 - **scope_note:** lifecycle counts are cumulative since canonical accounting began; baseline counts are legacy ledger totals that predate it; ledger/gate totals == baseline + accounted.
-- **rejected_before_execution:** 4622
+- **rejected_before_execution:** 4679
 
 ### Execution gate & calibration
 
@@ -77,20 +92,20 @@ counterfactual `{'replayed': 29, 'trades_rejected': 0, 'losses_avoided': 0, 'pnl
 
 ### Engine health
 
-- **ticks:** 22
+- **ticks:** 8
 - **global_reconciled:** True
 - **paper_only:** True
 - **live_trading_enabled:** False
-- **sample_sizes:** `{"accepted": 29, "settled": 29, "candidates": 7016, "edge_model_labeled": 29}`
+- **sample_sizes:** `{"accepted": 29, "settled": 29, "candidates": 7096, "edge_model_labeled": 29}`
 - **status:** not_ready
 - **reason:** None
 - **checks:** None
 
 ### Candidate lifecycle
 
-created 7016 · terminals `{'accepted': 29, 'rejected': 6380, 'skipped': 590, 'expired': 0, 'missing_data': 17}`
+created 7096 · terminals `{'accepted': 29, 'rejected': 6452, 'skipped': 597, 'expired': 0, 'missing_data': 18}`
 
-rejected_by_stage `{'directional': 4015, 'execution_gate': 14, 'context_gate': 480, 'directional_allowlist': 1324, 'down_bias_gate': 501, 'mtf_gate': 46}`
+rejected_by_stage `{'directional': 4064, 'execution_gate': 14, 'context_gate': 483, 'directional_allowlist': 1324, 'down_bias_gate': 501, 'mtf_gate': 66}`
 
 ### Looping engine (sub-loops)
 
@@ -154,10 +169,10 @@ count 0
 
 - **mode:** shadow
 - **affects_trading:** False
-- **decided:** 87
+- **decided:** 88
 - **errors:** 2
-- **avg_latency_s:** 6.6
-- **abstains:** 60
+- **avg_latency_s:** 6.58
+- **abstains:** 61
 - **circuit_breaker:** `{"tripped": false, "reason": null, "consecutive_losses": 0, "daily_follow_loss_usd": 0.0, "daily_loss_cap_usd": 30.0, "trips": 0, "cooldown_remaining_s": 0, "max_consecutive_losses": 4, "max_latency_s": 20.0}`
 
 ## 3. External Signals
@@ -173,7 +188,7 @@ count 0
 | TV settled w/ signal | 18 |
 | TV edge verdict | insufficient_evidence |
 | Grok direction accuracy | 0.56 |
-| Grok view accuracy | 0.5059 |
+| Grok view accuracy | 0.5116 |
 | CEX-lead proven edge | False |
 
 ### TradingView
@@ -181,7 +196,7 @@ count 0
 - **tradingview_alerts_received:** 235
 - **tradingview_alerts_valid:** 224
 - **tradingview_alerts_rejected:** 11
-- **tradingview_mtf_confirmation:** `{"symbol": "BTCUSDT", "tf_1m_dir": "DOWN", "tf_5m_dir": null, "tf_1m_age_s": 259.5, "tf_5m_age_s": 672.2, "confirm": "single_tf", "direction": "DOWN"}`
+- **tradingview_mtf_confirmation:** `{"symbol": "BTCUSDT", "tf_1m_dir": null, "tf_5m_dir": null, "tf_1m_age_s": 589.4, "tf_5m_age_s": 1002.1, "confirm": "none", "direction": null}`
 
 settled_with_signal 18
 
@@ -189,13 +204,13 @@ best_buckets `[{"dimension": "cvd_state", "bucket": "buy_pressure", "n": 4, "win
 
 worst_buckets `[{"dimension": "htf_bias", "bucket": "bearish", "n": 8, "win_rate": 0.875, "pnl_usd": 13.7167, "avg_ev_after_cost": 0.143338, "all_reconciled": true}, {"dimension": "vwap_state", "bucket": "below", "n": 8, "win_rate": 0.875, "pnl_usd": 13.7167, "avg_ev_after_cost": 0.143338, "all_reconciled": true}, {"dimension": "range_state", "bucket": "range_middle", "n": 5, "win_rate": 0.8, "pnl_usd": 3.9478, "avg_ev_after_cost": 0.1455, "all_reconciled": true}, {"dimension": "mtf_alignment", "bucket": "bearish_aligned", "n": 7, "win_rate": 1.0, "pnl_usd": 18.7167, "avg_ev_after_cost": 0.147686, "all_reconciled": true}, {"dimension": "cvd_state", "bucket": "neutral", "n": 6, "win_rate": 0.5, "pnl_usd": -8.4635, "avg_ev_after_cost": 0.153917, "all_reconciled": true}]`
 
-rsi_trend hit_rate 0.4888 (n 223)
+rsi_trend hit_rate 0.4911 (n 224)
 
-**context_gate:** enabled=True blocked=480 explored=27 `{'tv_context_ttc_too_far': 407, 'tv_context_hurst_noise': 73}`
+**context_gate:** enabled=True blocked=483 explored=27 `{'tv_context_ttc_too_far': 410, 'tv_context_hurst_noise': 73}`
 
 **down_bias_gate:** enabled=True blocked=501 explored=15 `{'tv_down_bias_up_without_bearish': 501, 'tv_down_bias_bullish_aligned_up': 228}`
 
-**mtf_gate:** enabled=True blocked=46 explored=0 `{'tv_mtf_opposes_side': 17, 'tv_mtf_single_tf_only': 29}`
+**mtf_gate:** enabled=True blocked=66 explored=0 `{'tv_mtf_opposes_side': 17, 'tv_mtf_single_tf_only': 31, 'tv_mtf_no_fresh_confirm': 18}`
 
 **signal_gate:** enabled=False blocked=None explored=None `None`
 
@@ -205,18 +220,18 @@ rsi_trend hit_rate 0.4888 (n 223)
 - **affects_trading:** False
 - **direction_accuracy:** 0.56
 - **brier:** 0.2411
-- **view_accuracy:** 0.5059
-- **view_brier:** 0.2499
-- **views_graded:** 85
+- **view_accuracy:** 0.5116
+- **view_brier:** 0.2482
+- **views_graded:** 86
 - **view_edge_candidates:** `[]`
 
-accuracy_by_context `{"hurst_regime": {"insufficient_data": {"n": 9, "accuracy": 0.6667}, "trending": {"n": 73, "accuracy": 0.4795}, "noise": {"n": 3, "accuracy": 0.6667}}, "markov_state": {"stale_polymarket_up": {"n": 25, "accuracy": 0.52}, "stale_polymarket_down": {"n": 26, "accuracy": 0.5385}, "chop_noise": {"n": 34, "accuracy": 0.4706}}, "ttc_bucket": {">=240s": {"n": 85, "accuracy": 0.5059}}, "conviction_bucket": {"coinflip": {"n": 85, "accuracy": 0.5059}}}`
+accuracy_by_context `{"hurst_regime": {"insufficient_data": {"n": 10, "accuracy": 0.7}, "trending": {"n": 73, "accuracy": 0.4795}, "noise": {"n": 3, "accuracy": 0.6667}}, "markov_state": {"stale_polymarket_up": {"n": 25, "accuracy": 0.52}, "stale_polymarket_down": {"n": 27, "accuracy": 0.5556}, "chop_noise": {"n": 34, "accuracy": 0.4706}}, "ttc_bucket": {">=240s": {"n": 86, "accuracy": 0.5116}}, "conviction_bucket": {"coinflip": {"n": 85, "accuracy": 0.5059}, "lean": {"n": 1, "accuracy": 1.0}}}`
 
-recent_decisions `[{"action": "no_trade", "p_up": 0.47, "confidence": 0.0, "outcome_up": false, "view_correct": true, "context": {"hurst_regime": "trending", "markov_state": "stale_polymarket_down", "ttc_bucket": ">=240s", "conviction_bucket": "coinflip"}}, {"action": "no_trade", "p_up": 0.4, "confidence": 0.0, "outcome_up": true, "view_correct": false, "context": {"hurst_regime": "trending", "markov_state": "stale_polymarket_down", "ttc_bucket": ">=240s", "conviction_bucket": "coinflip"}}, {"action": "no_trade", "p_up": 0.47, "confidence": 0.0, "outcome_up": false, "view_correct": true, "context": {"hurst_regime": "trending", "markov_state": "stale_polymarket_down", "ttc_bucket": ">=240s", "conviction_bucket": "coinflip"}}, {"action": "no_trade", "p_up": 0.49, "confidence": 0.0, "outcome_up": false, "view_correct": true, "context": {"hurst_regime": "insufficient_data", "markov_state": "chop_noise", "ttc_`
+recent_decisions `[{"action": "no_trade", "p_up": 0.4, "confidence": 0.0, "outcome_up": true, "view_correct": false, "context": {"hurst_regime": "trending", "markov_state": "stale_polymarket_down", "ttc_bucket": ">=240s", "conviction_bucket": "coinflip"}}, {"action": "no_trade", "p_up": 0.47, "confidence": 0.0, "outcome_up": false, "view_correct": true, "context": {"hurst_regime": "trending", "markov_state": "stale_polymarket_down", "ttc_bucket": ">=240s", "conviction_bucket": "coinflip"}}, {"action": "no_trade", "p_up": 0.49, "confidence": 0.0, "outcome_up": false, "view_correct": true, "context": {"hurst_regime": "insufficient_data", "markov_state": "chop_noise", "ttc_bucket": ">=240s", "conviction_bucket": "coinflip"}}, {"action": "no_trade", "p_up": 0.52, "confidence": 0.0, "outcome_up": false, "view_correct": false, "context": {"hurst_regime": "trending", "markov_state": "stale_polymarket_up", "ttc_b`
 
 ### Grok signal intel (analyst + predictor)
 
-budget `{'daily_usd_cap': 5.0, 'est_usd_per_call': 0.02, 'spent_today_usd': 0.06, 'calls_today': 3, 'per_feature_hourly': {'predictor': 30, 'analyst': 4, 'overlay': 20, 'decider': 60, 'news': 30}}`
+budget `{'daily_usd_cap': 5.0, 'est_usd_per_call': 0.02, 'spent_today_usd': 0.02, 'calls_today': 1, 'per_feature_hourly': {'predictor': 30, 'analyst': 4, 'overlay': 20, 'decider': 60, 'news': 30}}`
 
 predictor_B `{'enabled': True, 'observe_only': True, 'affects_trading': False, 'off_hot_path': True, 'requested': 224, 'predicted': 140, 'errors': 0, 'skipped_budget': 84, 'scored': 131, 'accuracy': 0.4962, 'brier': 0.2518, 'pending': 0, 'note': 'observe-only Grok P(up) per signal; graded vs realized BTC move before it could ever be trusted; never places/sizes/bypasses a trade.'}`
 
@@ -226,18 +241,18 @@ analyst_A last_note `{"summary": "With only 18 settled trades (all DOWN-heavy), 
 
 - **mode:** shadow
 - **affects_trading:** False
-- **signals_seen:** 5942
-- **graded:** 108
+- **signals_seen:** 6014
+- **graded:** 109
 - **drove_entries:** 0
 - **any_proven:** False
 | divergence | n | acc | beats_mkt | avg_pnl/u | proven |
 |---|---|---|---|---|---|
-| >=0.30 | 107 | 0.4673 | False | -0.0256 | False |
-| ttc=>=0.30|240_300s | 107 | 0.4673 | False | -0.0256 | False |
-| news=>=0.30|neutral | 107 | 0.4673 | False | -0.0256 | False |
-| late=>=0.30|indecisive | 107 | 0.4673 | False | -0.0256 | False |
-| tv=>=0.30|unconfirmed | 79 | 0.5063 | False | 0.0101 | False |
-| conf=>=0.30|unconfirmed | 62 | 0.4516 | False | -0.0467 | False |
+| >=0.30 | 108 | 0.463 | False | -0.0277 | False |
+| ttc=>=0.30|240_300s | 108 | 0.463 | False | -0.0277 | False |
+| news=>=0.30|neutral | 108 | 0.463 | False | -0.0277 | False |
+| late=>=0.30|indecisive | 108 | 0.463 | False | -0.0277 | False |
+| tv=>=0.30|unconfirmed | 80 | 0.5 | False | 0.0068 | False |
+| conf=>=0.30|unconfirmed | 63 | 0.4444 | False | -0.05 | False |
 
 ### Pulse edge signal
 

@@ -1,0 +1,23 @@
+{
+ "schema": "btc_pulse_score_history/1.0",
+ "entries": [
+  {
+   "ts": 1782394283.5733743,
+   "utc": "2026-06-25 13:31:23 UTC",
+   "ticks": 1,
+   "settled": 29,
+   "scores": {
+    "trading_performance": 72.1,
+    "operation": 90.3,
+    "external_signals": 71.4,
+    "overall": 76.5,
+    "grades": {
+     "trading_performance": "C",
+     "operation": "A",
+     "external_signals": "C",
+     "overall": "C+"
+    }
+   }
+  }
+ ]
+}

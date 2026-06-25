@@ -2231,33 +2231,33 @@
  },
  "accounting_state": {
   "lifecycle": {
-   "created": 7017,
-   "feature_scored": 6410,
+   "created": 7098,
+   "feature_scored": 6481,
    "execution_costed": 43,
    "ledgered": 29,
-   "reported": 7017,
+   "reported": 7098,
    "terminals": {
     "accepted": 29,
-    "rejected": 6381,
-    "skipped": 590,
+    "rejected": 6452,
+    "skipped": 599,
     "expired": 0,
-    "missing_data": 17
+    "missing_data": 18
    },
    "rejected_by_stage": {
-    "directional": 4016,
+    "directional": 4064,
     "execution_gate": 14,
-    "context_gate": 480,
+    "context_gate": 483,
     "directional_allowlist": 1324,
     "down_bias_gate": 501,
-    "mtf_gate": 46
+    "mtf_gate": 66
    },
    "skipped_by_reason": {
     "untrusted_vol": 2,
-    "open_snapshot_late": 351,
+    "open_snapshot_late": 360,
     "arbitrage_taken": 237
    },
    "missing_by_reason": {
-    "no_open_snapshot": 13,
+    "no_open_snapshot": 14,
     "no_price_or_vol": 4
    }
   },
@@ -2726,7 +2726,7 @@
      },
      "down_streak2": {
       "up": 7,
-      "n": 13
+      "n": 14
      },
      "down_streak3": {
       "up": 39,
@@ -2734,20 +2734,20 @@
      }
     }
    },
-   "pred_n": 165,
+   "pred_n": 166,
    "pred_correct": 83,
    "pred_by_symbol": {
     "BTCUSDT": {
-     "n": 165,
+     "n": 166,
      "correct": 83
     }
    },
-   "sig_n": 223,
-   "sig_correct": 109,
+   "sig_n": 224,
+   "sig_correct": 110,
    "sig_by_direction": {
     "DOWN": {
-     "n": 123,
-     "correct": 68
+     "n": 124,
+     "correct": 69
     },
     "UP": {
      "n": 100,
@@ -3170,27 +3170,17 @@
    },
    "settled": 18,
    "accepted": 18,
-   "rejected": 4596,
+   "rejected": 4605,
    "accepted_by_direction": {
     "UP": 3,
     "DOWN": 15
    },
    "rejected_by_direction": {
-    "DOWN": 2369,
+    "DOWN": 2378,
     "UP": 2227
    }
   },
-  "tv_pending": [
-   {
-    "symbol": "BTCUSDT",
-    "direction": "DOWN",
-    "event_id": "BTCUSDT-1-1782393660000-DOWN_WEAK-v6-profitgate",
-    "state": "down_streak2",
-    "model_pred": "UP",
-    "price0": 61147.91494559948,
-    "due_ts": 1782394020.0
-   }
-  ],
+  "tv_pending": [],
   "edge_signal": {
    "learner": {
     "dims": {
@@ -3291,68 +3281,68 @@
     },
     "settled": 29
    },
-   "snapshots": 6410
+   "snapshots": 6481
   },
   "cex_lead": {
    "buckets": {
     ">=0.30": {
-     "n": 107,
+     "n": 108,
      "correct": 50,
-     "brier_cex": 53.414199,
-     "brier_mkt": 26.56875,
-     "brier_fair": 26.784804,
-     "pnl": -2.74,
-     "breakeven_sum": 52.74,
+     "brier_cex": 53.873747,
+     "brier_mkt": 26.633775,
+     "brier_fair": 26.88246,
+     "pnl": -2.995,
+     "breakeven_sum": 52.995,
      "wins": 50
     },
     "conf=>=0.30|unconfirmed": {
-     "n": 62,
+     "n": 63,
      "correct": 28,
-     "brier_cex": 31.809188,
-     "brier_mkt": 15.175575,
-     "brier_fair": 15.534804,
-     "pnl": -2.895,
-     "breakeven_sum": 30.895,
+     "brier_cex": 32.268736,
+     "brier_mkt": 15.2406,
+     "brier_fair": 15.63246,
+     "pnl": -3.15,
+     "breakeven_sum": 31.15,
      "wins": 28
     },
     "ttc=>=0.30|240_300s": {
-     "n": 107,
+     "n": 108,
      "correct": 50,
-     "brier_cex": 53.414199,
-     "brier_mkt": 26.56875,
-     "brier_fair": 26.784804,
-     "pnl": -2.74,
-     "breakeven_sum": 52.74,
+     "brier_cex": 53.873747,
+     "brier_mkt": 26.633775,
+     "brier_fair": 26.88246,
+     "pnl": -2.995,
+     "breakeven_sum": 52.995,
      "wins": 50
     },
     "tv=>=0.30|unconfirmed": {
-     "n": 79,
+     "n": 80,
      "correct": 40,
-     "brier_cex": 36.433523,
-     "brier_mkt": 19.847375,
-     "brier_fair": 19.786104,
-     "pnl": 0.795,
-     "breakeven_sum": 39.205,
+     "brier_cex": 36.893071,
+     "brier_mkt": 19.9124,
+     "brier_fair": 19.88376,
+     "pnl": 0.54,
+     "breakeven_sum": 39.46,
      "wins": 40
     },
     "news=>=0.30|neutral": {
-     "n": 107,
+     "n": 108,
      "correct": 50,
-     "brier_cex": 53.414199,
-     "brier_mkt": 26.56875,
-     "brier_fair": 26.784804,
-     "pnl": -2.74,
-     "breakeven_sum": 52.74,
+     "brier_cex": 53.873747,
+     "brier_mkt": 26.633775,
+     "brier_fair": 26.88246,
+     "pnl": -2.995,
+     "breakeven_sum": 52.995,
      "wins": 50
     },
     "late=>=0.30|indecisive": {
-     "n": 107,
+     "n": 108,
      "correct": 50,
-     "brier_cex": 53.414199,
-     "brier_mkt": 26.56875,
-     "brier_fair": 26.784804,
-     "pnl": -2.74,
-     "breakeven_sum": 52.74,
+     "brier_cex": 53.873747,
+     "brier_mkt": 26.633775,
+     "brier_fair": 26.88246,
+     "pnl": -2.995,
+     "breakeven_sum": 52.995,
      "wins": 50
     },
     "conf=>=0.30|confirmed": {
@@ -3456,15 +3446,15 @@
      "wins": 1
     }
    },
-   "graded": 108,
-   "signals_seen": 5943,
+   "graded": 109,
+   "signals_seen": 6014,
    "drove": 0
   },
   "cex_lead_pending": [
    {
-    "decision_id": "629568",
-    "price0": 61147.3850168471,
-    "close_ts": 1782394200.0,
+    "decision_id": "629576",
+    "price0": 61136.26143996175,
+    "close_ts": 1782394500.0,
     "bucket": ">=0.30",
     "context_keys": [
      ">=0.30",
@@ -3475,19 +3465,19 @@
      "late=>=0.30|indecisive"
     ],
     "side": "up",
-    "cex_p_up": 0.6779,
-    "poly_yes": 0.255,
-    "fair": 0.3125
+    "cex_p_up": 0.9567,
+    "poly_yes": 0.38,
+    "fair": 0.4998
    }
   ],
   "mkt_bench_pending": [
    {
-    "decision_id": "629568",
-    "price0": 61147.3850168471,
-    "close_ts": 1782394200.0,
-    "model_p_up": 0.3664477546516218,
-    "market_p_up": 0.255,
-    "fair_p_up": 0.3124937701793684
+    "decision_id": "629576",
+    "price0": 61136.26143996175,
+    "close_ts": 1782394500.0,
+    "model_p_up": 0.29421505792811986,
+    "market_p_up": 0.38,
+    "fair_p_up": 0.4998027302603193
    }
   ],
   "mkt_bench_recent": [
@@ -3925,6 +3915,11 @@
     0.09390607938865121,
     0.20702500000000001,
     0.24982763687167725
+   ],
+   [
+    0.13428395688921524,
+    0.065025,
+    0.09765235640091592
    ]
   ],
   "arb_ledger": {
@@ -3983,15 +3978,15 @@
     }
    },
    "detected": 4,
-   "sell_both_detected": 2885,
+   "sell_both_detected": 2909,
    "executed": 4,
    "executed_buy": 2,
    "executed_sell": 2,
    "settled": 4,
    "realized_profit_usd": 34.45644,
    "guaranteed_booked_usd": 34.45644,
-   "scans": 5857,
-   "near_miss": 2160,
+   "scans": 5928,
+   "near_miss": 2193,
    "min_vwap_residual": 0.0
   },
   "allowlist_explored": 43,
@@ -4185,18 +4180,18 @@
    ]
   },
   "grok_decider": {
-   "requested": 110,
-   "decided": 87,
+   "requested": 111,
+   "decided": 88,
    "errors": 2,
    "skipped_budget": 20,
-   "latency_sum": 574.238,
+   "latency_sum": 579.068,
    "graded": 25,
    "correct": 14,
    "brier_sum": 6.0281,
-   "abstains": 60,
-   "view_graded": 85,
-   "view_correct": 43,
-   "view_brier_sum": 21.24,
+   "abstains": 61,
+   "view_graded": 86,
+   "view_correct": 44,
+   "view_brier_sum": 21.3489,
    "aggression": {
     "aggression": 0.0,
     "updates": 0,
@@ -4204,7 +4199,7 @@
    },
    "by_action": {
     "no_trade": {
-     "n": 60,
+     "n": 61,
      "wins": 0,
      "pnl": 0.0
     },
@@ -4223,8 +4218,8 @@
    "by_context": {
     "hurst_regime": {
      "insufficient_data": {
-      "n": 9,
-      "correct": 6
+      "n": 10,
+      "correct": 7
      },
      "trending": {
       "n": 73,
@@ -4241,8 +4236,8 @@
       "correct": 13
      },
      "stale_polymarket_down": {
-      "n": 26,
-      "correct": 14
+      "n": 27,
+      "correct": 15
      },
      "chop_noise": {
       "n": 34,
@@ -4251,31 +4246,22 @@
     },
     "ttc_bucket": {
      ">=240s": {
-      "n": 85,
-      "correct": 43
+      "n": 86,
+      "correct": 44
      }
     },
     "conviction_bucket": {
      "coinflip": {
       "n": 85,
       "correct": 43
+     },
+     "lean": {
+      "n": 1,
+      "correct": 1
      }
     }
    },
    "recent": [
-    {
-     "action": "no_trade",
-     "p_up": 0.47,
-     "confidence": 0.0,
-     "outcome_up": false,
-     "view_correct": true,
-     "context": {
-      "hurst_regime": "trending",
-      "markov_state": "stale_polymarket_down",
-      "ttc_bucket": ">=240s",
-      "conviction_bucket": "coinflip"
-     }
-    },
     {
      "action": "no_trade",
      "p_up": 0.4,
@@ -4418,33 +4404,39 @@
       "ttc_bucket": ">=240s",
       "conviction_bucket": "coinflip"
      }
+    },
+    {
+     "action": "no_trade",
+     "p_up": 0.33,
+     "confidence": 0.0,
+     "outcome_up": false,
+     "view_correct": true,
+     "context": {
+      "hurst_regime": "insufficient_data",
+      "markov_state": "stale_polymarket_down",
+      "ttc_bucket": ">=240s",
+      "conviction_bucket": "lean"
+     }
     }
    ]
   },
   "grok_news": {},
   "grok_pending": [
    {
-    "decision_id": "629568",
-    "price0": 61147.3850168471,
-    "close_ts": 1782394200.0,
+    "decision_id": "629576",
+    "price0": 61136.26143996175,
+    "close_ts": 1782394500.0,
     "action": "no_trade",
-    "p_up": 0.33,
+    "p_up": 0.51,
     "context": {
-     "hurst_regime": "insufficient_data",
-     "markov_state": "stale_polymarket_down",
+     "hurst_regime": "trending",
+     "markov_state": "chop_noise",
      "ttc_bucket": ">=240s",
-     "conviction_bucket": "lean"
+     "conviction_bucket": "coinflip"
     }
    }
   ],
   "recent_windows": [
-   {
-    "close_ts": 1782376200.0,
-    "s_open": 61635.11,
-    "s_close": 61685.94,
-    "outcome": "up",
-    "move_pct": 0.0825
-   },
    {
     "close_ts": 1782376500.0,
     "s_open": 61685.94,
@@ -4717,6 +4709,13 @@
     "s_close": 61147.39,
     "outcome": "down",
     "move_pct": -0.1152
+   },
+   {
+    "close_ts": 1782394200.0,
+    "s_open": 61147.39,
+    "s_close": 61136.26,
+    "outcome": "down",
+    "move_pct": -0.0182
    }
   ],
   "verifier": {},
@@ -5127,11 +5126,11 @@
    }
   },
   "tv_context_gate": {
-   "passed": 1887,
-   "blocked": 480,
+   "passed": 1907,
+   "blocked": 483,
    "explored": 27,
    "block_reasons": {
-    "tv_context_ttc_too_far": 407,
+    "tv_context_ttc_too_far": 410,
     "tv_context_hurst_noise": 73
    },
    "explore_reasons": {
@@ -5140,7 +5139,7 @@
    }
   },
   "tv_down_bias_gate": {
-   "passed": 1244,
+   "passed": 1264,
    "blocked": 501,
    "explored": 15,
    "block_reasons": {
@@ -5154,11 +5153,12 @@
   },
   "tv_mtf_gate": {
    "passed": 0,
-   "blocked": 46,
+   "blocked": 66,
    "explored": 0,
    "block_reasons": {
     "tv_mtf_opposes_side": 17,
-    "tv_mtf_single_tf_only": 29
+    "tv_mtf_single_tf_only": 31,
+    "tv_mtf_no_fresh_confirm": 18
    },
    "explore_reasons": {}
   },

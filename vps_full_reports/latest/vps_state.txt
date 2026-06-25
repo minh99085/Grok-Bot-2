@@ -4,7 +4,7 @@ host: 45.32.224.147
 user: root
 repo: /opt/Grok-Bot-2
 plugin: /opt/Grok-Bot-2/hermes-agent-main/plugins/hermes-trading-engine
-git_head: 56848f1d4ba95e12141970baff35d294b60ca829 (origin/main)
+git_head: c042bd7092415f90bbbf891854cbfdfa5cfbb1c2 (origin/main)
 deploy: git bundle sync + docker compose down/build/up --remove-orphans
 
 containers:
@@ -13,7 +13,9 @@ containers:
 
 pulse_status (pulled 2026-06-25 UTC):
   ticks: 22 (status snapshot; loop restarted after deploy)
-  report schema: btc_pulse_light_report/1.2 (3 sections)
+  report schema: btc_pulse_light_report/1.3 (3 sections + scores)
+  scores: overall 76.5 (C+) | trading 72.1 | operation 90.3 | signals 71.4
+  artifacts: report.docx, btc_pulse_score_history.json
   grok_decider: mode=shadow affects_trading=false
   context_gate: enabled=true
   tv_down_bias_gate: enabled explore=0
