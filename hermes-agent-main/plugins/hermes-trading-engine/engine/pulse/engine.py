@@ -831,6 +831,9 @@ class PulseEngine:
         self._last_eval: list = []
         self._data_dir = Path(self.cfg.data_dir)
         self._ledger_path = self._data_dir / "btc_pulse_ledger.json"
+        from engine.pulse.performance_scoring import PerformanceScoreHistory
+        self._score_history = PerformanceScoreHistory(
+            self._data_dir / "btc_pulse_score_history.json")
         if not self.cfg.fresh_start:
             self._load_state()
         elif self._ledger_path.exists():
@@ -2503,9 +2506,13 @@ class PulseEngine:
         )
         report["simplex_diagnostics"] = self._last_simplex
         from engine.pulse.reporting import build_report_sections
-        report["schema"] = "btc_pulse_light_report/1.2"
         report["sections"] = build_report_sections(
             report, status={"ticks": self.ticks}, ledger=self.ledger.to_dict())
+        from engine.pulse.performance_scoring import compute_report_scores
+        report["scores"] = compute_report_scores(
+            report["sections"], global_reconciled=bool(report.get("global_reconciled")))
+        report["score_history"] = self._score_history.to_dict()
+        report["schema"] = "btc_pulse_light_report/1.3"
         return report
 
     def _late_window_report(self) -> dict:
@@ -3051,13 +3058,24 @@ class PulseEngine:
             (self._data_dir / "btc_pulse_ledger.json").write_text(
                 json.dumps(ledger_doc, default=str, indent=1))
             lr = self.light_report()
+            settled_n = int((lr.get("ledger") or {}).get("settled") or 0)
+            self._score_history.record(lr.get("scores") or {}, ticks=self.ticks,
+                                       settled=settled_n)
+            lr["score_history"] = self._score_history.to_dict()
             (self._data_dir / "btc_pulse_light_report.json").write_text(
                 json.dumps(lr, default=str, indent=1))
+            self._score_history.save()
             # always write the COMPLETE human-readable performance report (for ChatGPT/Grok review)
             try:
                 from engine.pulse.reporting import build_full_report_md
+                from engine.pulse.word_report import build_word_report
+                st = self.status()
+                led = self.ledger.to_dict()
                 (self._data_dir / "report.md").write_text(
-                    build_full_report_md(lr, self.status(), self.ledger.to_dict()), encoding="utf-8")
+                    build_full_report_md(lr, st, led), encoding="utf-8")
+                build_word_report(lr, status=st, ledger=led,
+                                  score_history=lr.get("score_history"),
+                                  output_path=self._data_dir / "report.docx")
                 (self._data_dir / "LESSONS.md").write_text(self.lessons.to_markdown(),
                                                            encoding="utf-8")
                 from engine.pulse.state import build_state_md

@@ -84,6 +84,8 @@ def build_manifest(
         "btc_pulse_light_report.json",
         "btc_pulse_meta_bundle.json",
         "report.md",
+        "report.docx",
+        "btc_pulse_score_history.json",
         "LESSONS.md",
         "STATE.md",
         "MANIFEST.txt",

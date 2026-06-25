@@ -101,7 +101,7 @@ def build_light_report(*, lifecycle: dict, execution_gate: dict, ledger_stats: d
         exec_gate=execution_gate, thresholds=gate_thresholds, observations=gate_observations,
         rejected_before_execution=recon.get("rejected_before_execution", 0))
     return {
-        "schema": "btc_pulse_light_report/1.2", "report_only": True, "live_trading_enabled": False,
+        "schema": "btc_pulse_light_report/1.3", "report_only": True, "live_trading_enabled": False,
         # headline integrity flag — true ONLY when every lifecycle/exec/ledger identity holds
         "global_reconciled": recon["global_reconciled"],
         "reconciliation": recon,
@@ -254,6 +254,11 @@ def build_full_report_md(light: dict, status: Optional[dict] = None,
     status = status or {}
     ledger = ledger or {}
     sec = light.get("sections") or build_report_sections(light, status=status, ledger=ledger)
+    scores = light.get("scores")
+    if scores is None:
+        from engine.pulse.performance_scoring import compute_report_scores
+        scores = compute_report_scores(sec, global_reconciled=bool(light.get("global_reconciled")))
+    hist = light.get("score_history") or {}
     tp = sec.get("trading_performance", {}) or {}
     op = sec.get("operation", {}) or {}
     ex = sec.get("external_signals", {}) or {}
@@ -292,6 +297,28 @@ def build_full_report_md(light: dict, status: Optional[dict] = None,
     out.append("# BTC 5-Minute Pulse — Performance Report\n")
     out.append("_PAPER ONLY · `global_reconciled=%s` · ticks %s_\n"
                % (eng.get("global_reconciled"), eng.get("ticks")))
+
+    h("Performance Scorecard")
+    overall = (scores or {}).get("overall", {}) or {}
+    table([
+        ["Overall", overall.get("score"), overall.get("grade"), "100%"],
+        ["Trading Performance", (scores.get("trading_performance") or {}).get("score"),
+         (scores.get("trading_performance") or {}).get("grade"), "50%"],
+        ["Operation", (scores.get("operation") or {}).get("score"),
+         (scores.get("operation") or {}).get("grade"), "25%"],
+        ["External Signals", (scores.get("external_signals") or {}).get("score"),
+         (scores.get("external_signals") or {}).get("grade"), "25%"],
+    ], ["section", "score", "grade", "weight"])
+    entries = (hist.get("entries") or [])[-15:]
+    if entries:
+        h3("Score history (recent)")
+        table([[e.get("utc"), e.get("settled"),
+                (e.get("scores") or {}).get("trading_performance"),
+                (e.get("scores") or {}).get("operation"),
+                (e.get("scores") or {}).get("external_signals"),
+                (e.get("scores") or {}).get("overall")]
+               for e in entries],
+              ["utc", "settled", "trading", "operation", "signals", "overall"])
 
     h("1. Trading Performance")
     table([

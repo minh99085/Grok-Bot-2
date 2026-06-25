@@ -39,6 +39,15 @@ def main() -> int:
     md = build_full_report_md(light, status, ledger)
     out_md.write_text(md, encoding="utf-8")
     print("wrote %s (%d bytes)" % (out_md, len(md)))
+    try:
+        from engine.pulse.word_report import build_word_report
+        out_docx = data_dir / "report.docx"
+        build_word_report(light, status=status, ledger=ledger,
+                          score_history=light.get("score_history"),
+                          output_path=out_docx)
+        print("wrote %s (%d bytes)" % (out_docx, out_docx.stat().st_size))
+    except Exception as exc:  # noqa: BLE001
+        print("report.docx skipped: %s" % exc)
     return 0
 
 

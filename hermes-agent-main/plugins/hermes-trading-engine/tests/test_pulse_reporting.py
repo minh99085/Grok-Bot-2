@@ -97,8 +97,9 @@ def test_light_report_reconciles_with_ledger(tmp_path):
     # the settled trade is grouped under its entry-time tags (sum of n == settled)
     total_n = sum(b["n"] for b in rep["pnl_by_markov_state"].values())
     assert total_n == eng.ledger.settled
-    assert rep.get("schema") == "btc_pulse_light_report/1.2"
+    assert rep.get("schema") == "btc_pulse_light_report/1.3"
     sec = rep.get("sections") or {}
     assert "trading_performance" in sec and "operation" in sec and "external_signals" in sec
+    assert "scores" in rep and "overall" in (rep.get("scores") or {})
     md = build_full_report_md(rep, eng.status(), eng.ledger.to_dict())
     assert "1. Trading Performance" in md and "2. Operation" in md and "3. External Signals" in md
