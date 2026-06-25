@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Apply loop-engine architecture env on VPS: Grok→verifier→execution owns trades; TV observe-only."""
+"""Apply loop-engine architecture env on VPS: quant baseline owns trades; Grok/TV observe-only."""
 from pathlib import Path
 
 ENV_PATH = Path("/opt/Grok-Bot-2/hermes-agent-main/plugins/hermes-trading-engine/.env")
 
 UPDATES = {
-    # Loop arch: Grok drives direction (not shadow baseline + TV gates).
-    "PULSE_GROK_DECIDER_MODE": "follow",
-    "PULSE_GROK_DECIDER_FOLLOW_FRACTION": "1.0",
+    # Grok observe-only: decide + grade every window, never place/size a trade.
+    "PULSE_GROK_DECIDER_MODE": "shadow",
+    "PULSE_GROK_DECIDER_FOLLOW_FRACTION": "0",
     "PULSE_GROK_DECIDER_EXPLORE_RATE": "0",
     "PULSE_GROK_DECIDER_MIN_CONFIDENCE": "0.62",
     "PULSE_GROK_DECIDER_EXPLORE_MIN_VIEW_MARGIN": "0.08",
@@ -34,14 +34,14 @@ UPDATES = {
     "PULSE_MAX_OPEN_LAG_S": "120",
     # Stop halt needs >30 settled before Wilson test (avoids freeze at exactly min_samples).
     "PULSE_STOP_MIN_SAMPLES": "40",
-    # Mispricing stack: CEX-lead alignment + edge/TTC + executable margin on Grok follow.
+    # Mispricing stack (quant path only; Grok abstain follow disabled).
     "PULSE_MISPRICING_GATE_ENABLED": "1",
     "PULSE_MISPRICING_TTC_MIN_S": "90",
     "PULSE_MISPRICING_TTC_MAX_S": "240",
     "PULSE_MISPRICING_REQUIRE_CONFIRMED": "0",
     "PULSE_MISPRICING_REQUIRE_STALE_DOWN": "1",
     "PULSE_MISPRICING_MIN_EXECUTABLE_MARGIN": "0.02",
-    "PULSE_MISPRICING_FOLLOW_ON_ABSTAIN": "1",
+    "PULSE_MISPRICING_FOLLOW_ON_ABSTAIN": "0",
     "PULSE_MISPRICING_FOLLOW_SIZE_FRACTION": "0.5",
     "PULSE_EDGE_TTC_GATE_ENABLED": "1",
     "PULSE_CEX_LEAD_MIN_EDGE_VS_MARKET": "0.02",
@@ -66,6 +66,6 @@ for ln in lines:
         out.append(ln)
 for key, val in remaining.items():
     out.append(f"{key}={val}")
-out.append("# LOOP ENGINE ARCH (2026-06-25): Grok follow + TV observe-only context")
+out.append("# LOOP ENGINE ARCH (2026-06-25): Grok shadow + quant baseline + TV observe-only")
 ENV_PATH.write_text("\n".join(out) + "\n", encoding="utf-8")
 print(f"Wrote {ENV_PATH} ({len(UPDATES)} loop-arch keys)")

@@ -68,10 +68,13 @@ def main() -> int:
     stop = data.get("stop_conditions") or {}
     loops = (data.get("loops") or {}).get("loops") or {}
 
-    if gd.get("mode") != "follow" or not gd.get("affects_trading"):
-        issues.append(_issue("grok_not_follow", "P0",
+    if gd.get("mode") != "shadow" or gd.get("affects_trading"):
+        issues.append(_issue("grok_not_shadow", "P0",
                              f"mode={gd.get('mode')} affects={gd.get('affects_trading')}",
-                             "PULSE_GROK_DECIDER_MODE=follow on VPS"))
+                             "PULSE_GROK_DECIDER_MODE=shadow (Grok must not trade)"))
+    if gd.get("mode") == "follow":
+        issues.append(_issue("grok_follow_on", "P0", "Grok follow mode is enabled",
+                             "set PULSE_GROK_DECIDER_MODE=shadow"))
     if not ver.get("enabled"):
         issues.append(_issue("verifier_disabled", "P0", "verifier.enabled is false",
                              "ANTHROPIC_API_KEY + PULSE_VERIFIER_ENABLED=1; recreate container"))
@@ -83,10 +86,11 @@ def main() -> int:
         issues.append(_issue("grok_min_conf_low", "P1",
                              f"min_confidence={gd.get('min_confidence')}",
                              "PULSE_GROK_DECIDER_MIN_CONFIDENCE=0.62"))
-    if float(gd.get("direction_accuracy") or 1) < 0.52 and int(gd.get("graded_directional") or 0) >= 20:
+    if (gd.get("mode") == "follow" and float(gd.get("direction_accuracy") or 1) < 0.52
+            and int(gd.get("graded_directional") or 0) >= 20):
         issues.append(_issue("grok_no_edge", "P1",
                              f"direction_accuracy={gd.get('direction_accuracy')}",
-                             "Grok at coin-flip — only trade confident follow + block weak UP"))
+                             "Grok at coin-flip — keep shadow or block weak UP"))
     if stop.get("any_halted"):
         dir_h = (stop.get("strategies") or {}).get("directional") or {}
         issues.append(_issue("strategy_halted", "P0",
