@@ -218,10 +218,10 @@ class PulseConfig:
     # ---- TradingView DOWN-bias gate (Townhall P3; restrict-only) ----
     tv_down_bias_gate_enabled: bool = False
     tv_down_bias_exploration_rate: float = 0.0
-    tv_down_bias_block_up_against_confirmed_down: bool = True
+    tv_down_bias_block_up_against_confirmed_down: bool = False
     tv_mtf_conflict_gate_enabled: bool = True
-    tv_mtf_require_confirm: bool = True
-    tv_mtf_require_side_align: bool = True
+    tv_mtf_require_confirm: bool = False   # loop arch: conflict veto only, not 1m+5m trade authority
+    tv_mtf_require_side_align: bool = False
     tv_mtf_conflict_exploration_rate: float = 0.0
     # ---- verifiable stop conditions (agent-independent kill switches; Loop Eng #6) ----
     stop_enabled: bool = True
@@ -448,13 +448,13 @@ class PulseConfig:
             .strip().lower() in ("1", "true", "yes", "on"),
             tv_down_bias_exploration_rate=_envf("PULSE_TV_DOWN_BIAS_EXPLORE_RATE", 0.0),
             tv_down_bias_block_up_against_confirmed_down=str(
-                os.getenv("PULSE_TV_DOWN_BIAS_BLOCK_UP_AGAINST_CONFIRMED_DOWN", "1")).strip().lower()
+                os.getenv("PULSE_TV_DOWN_BIAS_BLOCK_UP_AGAINST_CONFIRMED_DOWN", "0")).strip().lower()
             in ("1", "true", "yes", "on"),
             tv_mtf_conflict_gate_enabled=str(os.getenv("PULSE_TV_MTF_CONFLICT_GATE", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
-            tv_mtf_require_confirm=str(os.getenv("PULSE_TV_MTF_REQUIRE_CONFIRM", "1"))
+            tv_mtf_require_confirm=str(os.getenv("PULSE_TV_MTF_REQUIRE_CONFIRM", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
-            tv_mtf_require_side_align=str(os.getenv("PULSE_TV_MTF_REQUIRE_SIDE_ALIGN", "1"))
+            tv_mtf_require_side_align=str(os.getenv("PULSE_TV_MTF_REQUIRE_SIDE_ALIGN", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
             tv_mtf_conflict_exploration_rate=_envf("PULSE_TV_MTF_CONFLICT_EXPLORE_RATE", 0.0),
             stop_enabled=str(os.getenv("PULSE_STOP_ENABLED", "1")).strip().lower()
@@ -804,7 +804,6 @@ class PulseEngine:
         except Exception:  # noqa: BLE001 — verifier/research never block startup
             logger.exception("claude verifier/research init failed; continuing")
             self.claude_budget = self.verifier = self.research_loop = None
-        self._register_loops()
         # OBSERVE-ONLY TradingView indicator webhook intake (enabled only when a secret is set).
         # Alerts become candidate signals only; they can never place/resize/bypass a paper trade.
         self.tradingview = None
@@ -827,6 +826,7 @@ class PulseEngine:
                 logger.exception("tradingview webhook init failed; continuing without it")
                 self.tradingview = None
                 self.webhook = None
+        self._register_loops()
         self.ticks = 0
         self.last_tick_ts = 0.0
         self._reasons: dict = {}
@@ -1098,6 +1098,7 @@ class PulseEngine:
             self._evaluate_tv_forward_returns(now)
             feat = self.tradingview.latest_feature(now=now,
                                                    symbol=self.cfg.tradingview_feature_symbol)
+            self.loops.beat("tradingview", now)
             if feat is not None and (feat.get("age_s") is None
                                      or feat["age_s"] <= self.cfg.tradingview_signal_max_feature_age_s):
                 tv_feature = feat
@@ -2803,6 +2804,17 @@ class PulseEngine:
                                       "halted": self.stop_monitor.is_halted("directional")})
         r.register("data_ingestion", role="data", trigger="tick", skill="price/book/CEX/RTDS",
                    status_fn=lambda: {"enabled": True})
+        if self.tradingview is not None:
+            r.register("tradingview", role="context", trigger="webhook",
+                       skill="TV alerts observe-only (feeds Grok/CEX context)",
+                       stop_condition="ingest only — never trade authority",
+                       status_fn=lambda: {
+                           "enabled": True,
+                           "received": self.tradingview.received,
+                           "valid": self.tradingview.valid,
+                           "rejected": self.tradingview.rejected,
+                           "observe_only": True,
+                       })
         r.register("signal_generation", role="signal", trigger="per_window",
                    skill="research/factors/markov/edge_model",
                    status_fn=(lambda: self._grok_decider_report()) if self.grok_decider else None)

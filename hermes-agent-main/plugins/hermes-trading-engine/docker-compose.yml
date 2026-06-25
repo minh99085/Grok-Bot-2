@@ -297,8 +297,8 @@ services:
       PULSE_TV_DOWN_BIAS_BLOCK_UP_AGAINST_CONFIRMED_DOWN: "${PULSE_TV_DOWN_BIAS_BLOCK_UP_AGAINST_CONFIRMED_DOWN:-1}"
       # MTF gate: block 1m/5m conflict; require confirmed_up/down + side alignment
       PULSE_TV_MTF_CONFLICT_GATE: "${PULSE_TV_MTF_CONFLICT_GATE:-1}"
-      PULSE_TV_MTF_REQUIRE_CONFIRM: "${PULSE_TV_MTF_REQUIRE_CONFIRM:-1}"
-      PULSE_TV_MTF_REQUIRE_SIDE_ALIGN: "${PULSE_TV_MTF_REQUIRE_SIDE_ALIGN:-1}"
+      PULSE_TV_MTF_REQUIRE_CONFIRM: "${PULSE_TV_MTF_REQUIRE_CONFIRM:-0}"
+      PULSE_TV_MTF_REQUIRE_SIDE_ALIGN: "${PULSE_TV_MTF_REQUIRE_SIDE_ALIGN:-0}"
       PULSE_TV_MTF_CONFLICT_EXPLORE_RATE: "${PULSE_TV_MTF_CONFLICT_EXPLORE_RATE:-0}"
       # Late-window high-conviction entry mode (time-decay edge). Restrict-only; edge always measured
       # observe-only. Can only PREVENT trades; never forces/sizes/bypasses the execution gate.

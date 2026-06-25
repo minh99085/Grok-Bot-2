@@ -206,12 +206,14 @@ async function tick(){
    gateNote,
    'Trades placed: <b>'+(L.trades||0)+'</b> ('+(L.settled||0)+' finished)',
    'Track record: <b>'+wrtxt+'</b>']));
- // 3) How it decides
+ // 3) How it decides (loop engine pipeline)
  cards.appendChild(info('How the bot decides a trade',[
-   '1) <b>Grok</b> (AI #1) reads the market and picks UP, DOWN, or SKIP',
-   '2) <b>Claude</b> (AI #2) double-checks it and can say NO',
-   '3) Safety brakes can still stop it',
-   '&rarr; Only trades <b>both AIs allow</b> are placed',
+   'Pipeline: <b>data</b> &rarr; <b>Grok signal</b> &rarr; <b>Claude verify</b> &rarr; <b>execution gate</b>',
+   '1) <b>Market data</b> + TradingView context (observe-only, never decides alone)',
+   '2) <b>Grok</b> (AI #1) reads context and picks UP, DOWN, or SKIP',
+   '3) <b>Claude</b> (AI #2) double-checks and can veto',
+   '4) Safety brakes + execution-quality gate (authoritative fill/reject)',
+   '&rarr; Trades need <b>Grok + verifier + execution gate</b> — not 1m+5m TV agreement alone',
    '<span class="muted">Grok decided '+(gd.decided||0)+' times · Claude approved '+(ver.approvals||0)+', blocked '+(ver.vetoes||0)+'</span>']));
  // 4) edge
  const va=gd.view_accuracy, edges=(gd.view_edge_candidates||[]);
@@ -237,7 +239,7 @@ async function tick(){
    lessons.length?lessons.map(l=>'<span class="muted">['+(l.kind||'')+']</span> '+(l.rule||'')):
    ['<span class="muted">No lessons yet — it writes a rule each time something wins or loses.</span>']));
  // 8) helper loops (plain names)
- const friendly={heartbeat:'Heartbeat',data_ingestion:'Market data feed',signal_generation:'Decider (Grok)',verifier:'Double-checker (Claude)',execution:'Order placer',arbitrage:'Arbitrage (risk-free)',risk_monitor:'Risk monitor',news:'News reader',research_meta:'Researcher (Claude)',lessons:'Memory'};
+ const friendly={heartbeat:'Heartbeat',data_ingestion:'Market data feed',tradingview:'TradingView (observe-only)',signal_generation:'Decider (Grok)',verifier:'Double-checker (Claude)',execution:'Order placer',arbitrage:'Arbitrage (risk-free)',risk_monitor:'Risk monitor',news:'News reader',research_meta:'Researcher (Claude)',lessons:'Memory'};
  cards.appendChild(info("The bot's helpers (all running loops)",
    Object.keys(friendly).filter(k=>lp[k]).map(k=>'<span style="color:var(--grn)">&#10003;</span> '+friendly[k])));
  // divider into technical detail
@@ -256,10 +258,11 @@ if(ar&&ar.risk_free){cards.appendChild(card('Risk-free arbitrage (dutch book)',[
 if(ver.enabled){cards.appendChild(card('Verifier (Claude maker-checker)',[['verified',ver.verified],['approved',ver.approvals,'ok'],['vetoed',ver.vetoes,'bad'],['errors',ver.errors,(ver.errors>0?'bad':'')],['approve rate',ver.approve_rate==null?'—':f(ver.approve_rate*100,0)+'%'],['avg latency',ver.avg_latency_s==null?'—':f(ver.avg_latency_s,1)+'s']]));}
  if(rl.enabled){cards.appendChild(card('Research loop (Claude)',[['runs',rl.calls],['lessons added',rl.lessons_added],['auto-apply',rl.auto_apply?'on':'off'],['last summary',((rl.last_note||{}).summary||'—').slice(0,80)]]));}
  // Gating architecture: learned selectivity + entry gates (apply on the baseline arm; bypassed when Grok follows)
- const sg=s.learned_selectivity_gate||{},cgx=(s.tradingview||{}).context_gate||{},lw=s.late_window_entry||{},cfgs=s.config||{};
+ const sg=s.learned_selectivity_gate||{},tvPre=s.tradingview||{},cgx=tvPre.context_gate||{},lw=s.late_window_entry||{},cfgs=s.config||{};
  cards.appendChild(card('Learned selectivity gate',[['rule',sg.decision_rule||'—'],['accepted',sg.accepted],['rejected',sg.rejected,(sg.rejected>0?'bad':'')],['explored',sg.explored],['confidence z',f(sg.confidence_z,2)]]));
- const mg=(s.tradingview||{}).mtf_gate||{};
- cards.appendChild(card('Entry gates',[['context gate',cgx.enabled?'on':'off',cgx.enabled?'ok':'muted'],['· blocked',cgx.blocked||0,(cgx.blocked>0?'bad':'')],...Object.entries(cgx.block_reasons||{}).map(([k,v])=>['· '+k,v,'bad']),['mtf gate',mg.enabled?'on':'off',mg.enabled?'ok':'muted'],['require confirm',mg.require_confirm?'yes':'no','muted'],['side align',mg.require_side_align?'yes':'no','muted'],['· mtf blocked',mg.blocked||0,(mg.blocked>0?'bad':'')],...Object.entries(mg.block_reasons||{}).map(([k,v])=>['· '+k,v,'bad']),['late-window',(lw.gate||{}).enabled?'on':'off',(lw.gate||{}).enabled?'ok':'muted'],['late-window verdict',(lw.edge_measurement||{}).verdict||'—'],['reward/risk floor',f(cfgs.min_reward_risk,2)]]));
+ const mg=tvPre.mtf_gate||{};
+ const mtfMode=mg.mode||'—';
+ cards.appendChild(card('Entry gates (restrict-only; Grok+verifier own direction)',[['context gate',cgx.enabled?'on':'off',cgx.enabled?'ok':'muted'],['· blocked',cgx.blocked||0,(cgx.blocked>0?'bad':'')],...Object.entries(cgx.block_reasons||{}).map(([k,v])=>['· '+k,v,'bad']),['mtf conflict veto',mg.enabled?'on':'off',mg.enabled?'ok':'muted'],['mtf mode',mtfMode,'muted'],['require confirm (opt-in)',mg.require_confirm?'yes':'no',mg.require_confirm?'bad':'ok'],['side align (opt-in)',mg.require_side_align?'yes':'no',mg.require_side_align?'bad':'ok'],['· mtf blocked',mg.blocked||0,(mg.blocked>0?'bad':'')],...Object.entries(mg.block_reasons||{}).map(([k,v])=>['· '+k,v,'bad']),['TV signal gate',(tvPre.signal_gate||{}).enabled?'on':'off',(tvPre.signal_gate||{}).enabled?'bad':'ok'],['late-window',(lw.gate||{}).enabled?'on':'off',(lw.gate||{}).enabled?'ok':'muted'],['late-window verdict',(lw.edge_measurement||{}).verdict||'—'],['reward/risk floor',f(cfgs.min_reward_risk,2)]]));
  // Closed-loop learning (the bot's own experience adjusting its decisions)
  const ln=s.learning||{};
  cards.appendChild(card('Learning (closed loop)',[['enabled',ln.enabled?'yes':'no',ln.enabled?'ok':'muted'],['active (influencing)',ln.active?'YES':'no',ln.active?'ok':'muted'],['weight',ln.weight==null?'—':f(ln.weight,3)],['reason',ln.reason||'—'],['model labels',ln.model_n_labeled],['calibration err',ln.model_calibration_error==null?'—':f(ln.model_calibration_error,3)],['paper-only',ln.paper_only?'yes':'no','muted'],['gate authoritative',ln.execution_gate_still_authoritative?'yes':'no','muted']]));
@@ -273,9 +276,11 @@ if(ver.enabled){cards.appendChild(card('Verifier (Claude maker-checker)',[['veri
    cards.appendChild(card('TradingView signals (observe-only)',[['feature symbol',fsym,'ok'],['received',tv.tradingview_alerts_received],['valid',tv.tradingview_alerts_valid,'ok'],['rejected',tv.tradingview_alerts_rejected,'bad'],...vbsRows,...Object.entries(tv.tradingview_reject_reasons||{}).filter(([,v])=>v>0).map(([k,v])=>['· rej '+k,v,'bad']),['observe-only',tv.tradingview_observe_only?'yes':'no','muted']]));
    const mtf=tv.tradingview_mtf_confirmation||{};
    const mtfOk=mtf.confirm==='confirmed_up'||mtf.confirm==='confirmed_down';
-   cards.appendChild(card('TV 1m+5m cross-confirm (BTCUSDT)',[
+   cards.appendChild(card('TV 1m+5m context (observe-only — conflict veto only)',[
      ['feature symbol',tv.tradingview_feature_symbol||'BTCUSDT'],
      ['confirm',mtf.confirm||'none',mtfOk?'ok':(mtf.confirm==='conflict'?'bad':'muted')],
+     ['trade authority','no — feeds Grok/context only','muted'],
+     ['blocks trades when',(mg.enabled?'1m/5m conflict':'mtf gate off'),(mtf.confirm==='conflict'?'bad':'muted')],
      ['1m direction',mtf.tf_1m_dir||'—'],
      ['5m direction',mtf.tf_5m_dir||'—'],
      ['1m age',mtf.tf_1m_age_s==null?'—':mtf.tf_1m_age_s+'s'],

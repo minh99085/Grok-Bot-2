@@ -58,7 +58,6 @@ def _engine(tmp_path, **over):
         settle_grace_s=0.0, exec_max_depth_consume_frac=0.9,
         tv_context_gate_enabled=False,
         tv_mtf_conflict_gate_enabled=True,
-        tv_mtf_require_confirm=True,
         tv_mtf_conflict_exploration_rate=0.0,
         tradingview_secret="s3cr3t",
         tradingview_webhook_port=0,
@@ -89,8 +88,20 @@ def test_engine_blocks_mtf_conflict(tmp_path):
         eng.webhook.stop()
 
 
-def test_engine_blocks_without_full_confirm(tmp_path):
+def test_default_config_conflict_veto_only(tmp_path):
+    """Loop arch default: require_confirm off — single_tf does not block."""
     eng, t0 = _engine(tmp_path)
+    _ingest(eng, direction="DOWN", tf="1", now=t0 - 5)
+    _drive(eng, t0)
+    mg = eng.status()["tradingview"]["mtf_gate"]
+    assert mg["require_confirm"] is False
+    assert mg["block_reasons"].get("tv_mtf_single_tf_only", 0) == 0
+    if eng.webhook is not None:
+        eng.webhook.stop()
+
+
+def test_engine_blocks_without_full_confirm(tmp_path):
+    eng, t0 = _engine(tmp_path, tv_mtf_require_confirm=True)
     _ingest(eng, direction="DOWN", tf="1", now=t0 - 5)
     _drive(eng, t0)
     mg = eng.status()["tradingview"]["mtf_gate"]

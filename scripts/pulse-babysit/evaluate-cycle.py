@@ -85,11 +85,13 @@ def main() -> int:
         issues.append(_issue("tv_feed_unhealthy", "P2", f"valid_alerts={tv_valid}",
                              "check TradingView webhooks and secret"))
 
-    if mtf.get("enabled") and int(mtf.get("passed") or 0) == 0 and int(mtf.get("blocked") or 0) >= 20:
+    if (mtf.get("enabled") and mtf.get("require_confirm")
+            and int(mtf.get("passed") or 0) == 0 and int(mtf.get("blocked") or 0) >= 20):
         mtf_c = (tv.get("tradingview_mtf_confirmation") or {}).get("confirm")
         issues.append(_issue("mtf_starved", "P2",
                              f"mtf_passed=0 blocked={mtf.get('blocked')} confirm={mtf_c}",
-                             "ensure 1m+5m BINANCE:BTCUSDT alerts active"))
+                             "require_confirm is on — ensure 1m+5m BINANCE:BTCUSDT alerts active "
+                             "or disable PULSE_TV_MTF_REQUIRE_CONFIRM for loop-arch"))
 
     bench = learning.get("market_benchmark") or {}
     if learning.get("active") and bench.get("model_beats_market") is False:
