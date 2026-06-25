@@ -274,6 +274,7 @@ class PulseConfig:
     # only taken if a FRESH TradingView signal exists and its direction matches the trade side. It
     # can only PREVENT trades (never force one or bypass the execution gate). Default OFF.
     tradingview_signal_gate_enabled: bool = False
+    tradingview_min_signal_strength: float = 0.0   # 0=off; e.g. 0.72 blocks WEAK, keeps STRONG
     # forward-return horizon (s): for EVERY TradingView signal, the bot snapshots the oracle BTC
     # price and re-checks it this many seconds later to learn whether the signal predicted the
     # move — building a prediction from the history of ALL signals (traded or not). Observe-only.
@@ -508,6 +509,7 @@ class PulseConfig:
             tradingview_signal_max_feature_age_s=_envf("PULSE_TV_SIGNAL_MAX_FEATURE_AGE_S", 300.0),
             tradingview_signal_gate_enabled=str(os.getenv("PULSE_TRADINGVIEW_SIGNAL_GATE", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
+            tradingview_min_signal_strength=_envf("PULSE_TV_MIN_SIGNAL_STRENGTH", 0.0),
             tradingview_signal_horizon_s=_envf("PULSE_TV_SIGNAL_HORIZON_S", 300.0),
             tradingview_promotion_allowed=str(os.getenv("PULSE_TV_PROMOTION_ALLOWED", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
@@ -2385,6 +2387,14 @@ class PulseEngine:
             return "tv_gate_no_direction"
         if side != want:
             return "tv_gate_opposes_signal"       # bot side disagrees with the TradingView signal
+        min_str = float(self.cfg.tradingview_min_signal_strength or 0.0)
+        if min_str > 0:
+            try:
+                strength = float(tv_feature.get("strength"))
+            except (TypeError, ValueError):
+                strength = None
+            if strength is None or strength < min_str:
+                return "tv_gate_weak_signal"
         return None
 
     def _learning_weight(self) -> "tuple[float, str]":
@@ -2909,6 +2919,8 @@ class PulseEngine:
             "requires_fresh_aligned_signal": True, "can_force_trade": False,
             "execution_gate_still_authoritative": True,
             "max_signal_age_s": self.cfg.tradingview_signal_max_feature_age_s,
+            "min_signal_strength": (self.cfg.tradingview_min_signal_strength
+                                    if self.cfg.tradingview_min_signal_strength > 0 else None),
             "note": ("when active, a paper trade is taken only if a fresh TradingView signal agrees "
                      "with the side; it can only PREVENT trades, never force or bypass them.")}
         rep["context_gate"] = self.tv_context_gate.report()
