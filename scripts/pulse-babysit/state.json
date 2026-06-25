@@ -1,18 +1,22 @@
 {
-  "cycle": 1,
+  "cycle": 2,
   "phase": "soak",
   "soak_hours": 1,
-  "deployed_at": "2026-06-25T19:08:30.000000+00:00",
-  "soak_until": "2026-06-25T20:08:30.000000+00:00",
+  "deployed_at": "2026-06-25T19:56:30.000000+00:00",
+  "soak_until": "2026-06-25T20:56:30.000000+00:00",
   "last_eval_at": "2026-06-25T19:06:42.423656+00:00",
   "last_verdict": "issues",
   "last_fixes": [
-    "PULSE_MIN_REWARD_RISK=0.40",
-    "PULSE_TV_DOWN_BIAS_EXPLORE_RATE=0",
-    "PULSE_TV_CONTEXT_EXPLORATION_RATE=0"
+    "PULSE_MISPRICING_GATE_ENABLED=1",
+    "PULSE_EDGE_TTC_GATE_ENABLED=1",
+    "PULSE_MISPRICING_TTC_MIN_S=180",
+    "PULSE_MISPRICING_TTC_MAX_S=240",
+    "PULSE_MISPRICING_MIN_EXECUTABLE_MARGIN=0.03",
+    "PULSE_CEX_LEAD_MIN_EDGE_VS_MARKET=0.02",
+    "PULSE_CEX_LEAD_TV_STRENGTH_THR=0.72"
   ],
   "last_health_verdict": "healthy",
-  "vps_sha": "696a4a16187b56546a6ff3eaff040a9e4f3131ee",
+  "vps_sha": "3c880792442e4735aea0a93eadca5e02c90556f0",
   "history": [
     {
       "ts": "2026-06-25T19:06:42.423656+00:00",
@@ -37,6 +41,24 @@
         "PULSE_MIN_REWARD_RISK=0.40",
         "PULSE_TV_DOWN_BIAS_EXPLORE_RATE=0",
         "PULSE_TV_CONTEXT_EXPLORATION_RATE=0"
+      ]
+    },
+    {
+      "ts": "2026-06-25T19:56:30.000000+00:00",
+      "verdict": "deploy",
+      "metrics": {
+        "commit": "3c88079",
+        "gates": "mispricing+edge_ttc+executable_margin"
+      },
+      "issue_codes": [],
+      "fixes_applied": [
+        "PULSE_MISPRICING_GATE_ENABLED=1",
+        "PULSE_EDGE_TTC_GATE_ENABLED=1",
+        "PULSE_MISPRICING_TTC_MIN_S=180",
+        "PULSE_MISPRICING_TTC_MAX_S=240",
+        "PULSE_MISPRICING_MIN_EXECUTABLE_MARGIN=0.03",
+        "PULSE_CEX_LEAD_MIN_EDGE_VS_MARKET=0.02",
+        "PULSE_CEX_LEAD_TV_STRENGTH_THR=0.72"
       ]
     }
   ]
