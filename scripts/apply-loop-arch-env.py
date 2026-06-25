@@ -24,10 +24,10 @@ UPDATES = {
     "PULSE_LATE_WINDOW_ENTRY": "0",
     # Unfreeze baseline-path / allowlist cold-start (Grok follow bypasses most of these).
     "PULSE_TV_CONTEXT_MAX_TTC_S": "240",
-    "PULSE_TV_CONTEXT_EXPLORATION_RATE": "0.05",
-    "PULSE_TV_DOWN_BIAS_EXPLORE_RATE": "0.05",
+    "PULSE_TV_CONTEXT_EXPLORATION_RATE": "0",
+    "PULSE_TV_DOWN_BIAS_EXPLORE_RATE": "0",
     "PULSE_DIRECTIONAL_EXPLORE_RATE": "0",
-    "PULSE_MIN_REWARD_RISK": "0.35",
+    "PULSE_MIN_REWARD_RISK": "0.40",
     # Gamma windows often appear >20s after open_ts; min_seconds_since_open=30 already delays entry.
     "PULSE_MAX_OPEN_LAG_S": "45",
     # Stop halt needs >30 settled before Wilson test (avoids freeze at exactly min_samples).
