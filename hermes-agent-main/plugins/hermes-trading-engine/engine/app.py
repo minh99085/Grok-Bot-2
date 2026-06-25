@@ -194,11 +194,16 @@ async function tick(){
    ` &nbsp;·&nbsp; <b>Total alpha: ${money(cap.total_realized_pnl_usd)}</b> (${f(cap.total_return_pct,1)}%)</div>`+
    `<div class="sub">Practice money — no real funds at risk.</div></div>`));
  // 2) Is it working?
- const trading=(L.open_positions>0)?'Placing a trade right now':'Waiting for a setup it likes';
+ const lc=s.decision_lifecycle||{}, rbs=lc.rejected_by_stage||{};
+ const topGate=Object.entries(rbs).sort((a,b)=>b[1]-a[1])[0];
+ const gateNote=topGate?('Top gate: <span class="muted">'+topGate[0]+' ('+topGate[1]+' blocks)</span>'):'';
+ const trading=(L.open_positions>0)?'Placing a trade right now'
+   :((s.ticks>0)?'Scanning every ~4s — strict gates, not frozen':'Starting up…');
  const wr=(L.win_rate||0)*100, wrtxt=f(wr,0)+'% of trades won'+((wr>47&&wr<53)?' (about a coin flip)':'');
  cards.appendChild(info('Is the bot working?',[
-   'Status: <b style="color:var(--grn)">Running</b>',
+   'Status: <b style="color:var(--grn)">Running</b> (ticks <b>'+(s.ticks||0)+'</b>)',
    'Right now: <b>'+trading+'</b>',
+   gateNote,
    'Trades placed: <b>'+(L.trades||0)+'</b> ('+(L.settled||0)+' finished)',
    'Track record: <b>'+wrtxt+'</b>']));
  // 3) How it decides
