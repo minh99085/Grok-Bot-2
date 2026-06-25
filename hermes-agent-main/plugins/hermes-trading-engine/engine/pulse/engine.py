@@ -242,7 +242,7 @@ class PulseConfig:
     learning_max_weight: float = 0.5         # cap on the model's weight in the blend (<=0.5)
     learning_ramp_samples: float = 300.0     # labels over which weight ramps 0 -> max
     learning_max_calib_error: float = 0.15   # disable influence if ECE worse than this
-    learning_bench_min_samples: int = 50     # graded windows before the market-beating gate applies
+    learning_bench_min_samples: int = 20     # graded windows before the market-beating gate applies
     learning_bench_margin: float = 0.0       # model Brier must beat market Brier by >= this to blend
     sizing_enabled: bool = False             # paper Kelly sizing: default OFF (size unchanged)
     sizing_hard_cap_usd: float = 10.0
@@ -402,7 +402,7 @@ class PulseConfig:
             arb_max_usd=_envf("PULSE_ARB_MAX_USD", 300.0),
             directional_enabled=str(os.getenv("PULSE_DIRECTIONAL_ENABLED", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
-            directional_require_winning_bucket=str(os.getenv("PULSE_DIRECTIONAL_REQUIRE_WINNING", "0"))
+            directional_require_winning_bucket=str(os.getenv("PULSE_DIRECTIONAL_REQUIRE_WINNING", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
             directional_winning_min_samples=int(_envf("PULSE_DIRECTIONAL_WINNING_MIN_SAMPLES", 30)),
             directional_explore_rate=_envf("PULSE_DIRECTIONAL_EXPLORE_RATE", 0.15),
@@ -454,7 +454,7 @@ class PulseConfig:
             learning_enabled=str(os.getenv("PULSE_LEARNING_ENABLED", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
             learning_min_samples=int(_envf("PULSE_LEARNING_MIN_SAMPLES", 60)),
-            learning_bench_min_samples=int(_envf("PULSE_LEARNING_BENCH_MIN_SAMPLES", 50)),
+            learning_bench_min_samples=int(_envf("PULSE_LEARNING_BENCH_MIN_SAMPLES", 20)),
             learning_bench_margin=_envf("PULSE_LEARNING_BENCH_MARGIN", 0.0),
             learning_max_weight=_envf("PULSE_LEARNING_MAX_WEIGHT", 0.5),
             learning_ramp_samples=_envf("PULSE_LEARNING_RAMP_SAMPLES", 300.0),
@@ -650,6 +650,13 @@ class PulseEngine:
         self._ev_before_sum = 0.0                 # EV before/after costs (accepted candidates)
         self._ev_after_sum = 0.0
         self._ev_n = 0
+        self._exec_realistic_samples: list = []
+        self._payoff_guard_counts: dict = {
+            "rejected_tiny_upside": 0,
+            "rejected_bad_reward_to_risk": 0,
+            "rejected_high_entry_insufficient_margin": 0,
+        }
+        self._last_simplex: dict = {}
         # ---- Grok consumers share ONE budget guard (daily $ cap + per-feature hourly calls) ----
         # All OBSERVE-ONLY / off hot path / fail-open; none can place, size, or bypass a trade.
         self.grok_budget = None
@@ -1484,6 +1491,10 @@ class PulseEngine:
                                              outcome_prob=outcome_prob, model_edge=d.edge,
                                              tradeable=d.trade, reason=d.reason)
             if not d.trade:
+                if d.reason == "reward_risk_too_low":
+                    self._payoff_guard_counts["rejected_bad_reward_to_risk"] += 1
+                elif d.reason == "edge_below_min" and d.price is not None and float(d.price) >= 0.80:
+                    self._payoff_guard_counts["rejected_tiny_upside"] += 1
                 dr.action = RejectAction(stage="directional", reason=d.reason)
                 if self.markov is not None:
                     self.markov.record_terminal(state=cand_state, accepted=False)
@@ -1580,7 +1591,9 @@ class PulseEngine:
             # (Wilson lower-bound > breakeven, n>=min). Pre-execution BLOCK, not advisory. Driven
             # strategies (grok-follow / cex-lead) and arb are exempt (they have their own proof).
             if (self.cfg.directional_require_winning_bucket and not grok_follow
-                    and not cex_lead_active and not self._any_winning_bucket(sel_tags)):
+                    and not cex_lead_active
+                    and (not self._any_winning_bucket(sel_tags)
+                         or not self._directional_market_benchmark_ok())):
                 # cold-start carve-out: let a small capped fraction through as EXPLORATION so the
                 # bot keeps trading + learning (otherwise it deadlocks — no trades => no bucket can
                 # ever be proven-winning => permanent block => looks frozen). The rest stay blocked.
@@ -1618,9 +1631,34 @@ class PulseEngine:
                 grok_size_frac = min(self.cfg.cex_lead_max_size_frac,
                                      grok_size_frac * self.cfg.research_exploit_size_mult)
                 gate_decision = "exploit_" + gate_decision
+            # Execution-realistic edge block (Roan Part IV) + margin-based high-entry guard.
+            book = w.up_book if d.side == "up" else w.down_book
+            from engine.pulse.execution_realistic import (compute_candidate_edge,
+                                                          high_entry_margin_reject)
+            edge_block = compute_candidate_edge(
+                side=d.side, raw_fair_p=raw_fp, calibrated_fair_p=cal_fp,
+                market_price=mc.poly_yes, outcome_prob=gate_outcome_prob, book=book,
+                size_usd=round(self.cfg.size_usd * grok_size_frac, 2),
+                up_book=w.up_book, down_book=w.down_book)
+            dr.execution_realistic = edge_block
+            self._exec_realistic_samples.append(edge_block)
+            if len(self._exec_realistic_samples) > 200:
+                self._exec_realistic_samples = self._exec_realistic_samples[-200:]
+            self._last_simplex = edge_block.get("simplex") or {}
+            hre = high_entry_margin_reject(
+                ask=(book.best_ask if book else d.price),
+                calibrated_prob=gate_outcome_prob,
+                min_margin=max(0.04, self.cfg.min_edge),
+            )
+            if hre and not cex_lead_active:
+                self._payoff_guard_counts["rejected_high_entry_insufficient_margin"] += 1
+                dr.action = RejectAction(stage="execution_realistic", reason=hre)
+                if self.markov is not None:
+                    self.markov.record_terminal(state=cand_state, accepted=False)
+                _finalize(dr, "rejected", reason=hre, stage="execution_realistic")
+                continue
             # STRICT execution-quality gate (AUTHORITATIVE): EV from the live ask-ladder VWAP, using
             # the CALIBRATED probability so the floor reflects realized edge, not the model's claim.
-            book = w.up_book if d.side == "up" else w.down_book
             ex = evaluate_execution(
                 side=d.side, book=book, outcome_prob=gate_outcome_prob,
                 size_usd=round(self.cfg.size_usd * grok_size_frac, 2),
@@ -2362,6 +2400,24 @@ class PulseEngine:
         report["learned_selectivity_gate"] = self._selectivity_report()
         report["late_window_entry"] = self._late_window_report()
         report["stop_conditions"] = self.stop_monitor.report()
+        from engine.pulse.execution_realistic import aggregate_report
+        bench = self._market_benchmark()
+        kl_agg = {
+            "observe_only": True,
+            "latest_model_p": None,
+            "latest_market_p": None,
+            "kl": None,
+            "market_benchmark_n": bench.get("n"),
+            "model_beats_market": bench.get("model_beats_market"),
+        }
+        if bench.get("n"):
+            kl_agg["market_benchmark_n"] = bench["n"]
+        report["execution_realistic_edge"] = aggregate_report(
+            samples=self._exec_realistic_samples,
+            payoff_guards=self._payoff_guard_counts,
+            kl_aggregate=kl_agg,
+        )
+        report["simplex_diagnostics"] = self._last_simplex
         return report
 
     def _late_window_report(self) -> dict:
@@ -2568,6 +2624,16 @@ class PulseEngine:
                 self._research_exploit.add(key)
                 applied.append("exploit:" + key)
         return applied
+
+    def _directional_market_benchmark_ok(self) -> bool:
+        """Directional allowlist requires model Brier <= market Brier once enough graded windows."""
+        bench = self._market_benchmark()
+        n = int(bench.get("n") or 0)
+        if n < self.cfg.learning_bench_min_samples:
+            return True
+        if bench.get("model_brier") is None or bench.get("market_brier") is None:
+            return True
+        return bool(bench.get("model_beats_market"))
 
     def _any_winning_bucket(self, sel_tags: dict) -> bool:
         """True if ANY of the candidate's buckets is CONFIDENTLY WINNING (Wilson lower-bound win-rate
@@ -2907,6 +2973,10 @@ class PulseEngine:
                                    stop_conditions=self.stop_monitor.report(),
                                    lessons=self.lessons.report()),
                     encoding="utf-8")
+                from engine.pulse.provenance import write_provenance_artifacts
+                write_provenance_artifacts(
+                    self._data_dir, light_report=lr, status=self.status(),
+                    ledger=self.ledger.to_dict())
             except Exception:  # noqa: BLE001 — report writing never breaks the loop
                 pass
             from engine.pulse.meta_learning import build_bundle

@@ -281,7 +281,22 @@ def build_full_report_md(light: dict, status: Optional[dict] = None,
     if loops:
         out.append("\n**Sub-loops:** " + ", ".join(sorted(loops.keys())))
 
-    h("12. Edge signal & readiness")
+    h("12. Execution-realistic edge (Roan Part IV)")
+    ere = light.get("execution_realistic_edge", {}) or {}
+    out.append("candidates_scored %s · avg_exec_ev_usd %s · avg_kl %s"
+               % (ere.get("candidates_scored"), ere.get("avg_execution_realistic_ev_usd"),
+                  ere.get("avg_kl_model_vs_market")))
+    out.append("\npayoff_guards `%s`" % ere.get("payoff_guards"))
+    out.append("\nsimplex_diagnostics `%s`" % light.get("simplex_diagnostics"))
+    samples = ere.get("recent_samples") or []
+    if samples:
+        table([[s.get("side"), s.get("calibrated_fair_p"), s.get("market_price"),
+                s.get("vwap_entry_price"), s.get("calibrated_probability_margin"),
+                s.get("execution_realistic_ev"), s.get("kl_model_vs_market")]
+               for s in samples[-8:]],
+              ["side", "cal_p", "mkt", "vwap", "margin", "exec_ev", "kl"])
+
+    h("13. Edge signal & readiness")
     out.append("edge_signal `%s`" % json.dumps({k: es.get(k) for k in list(es)[:8]},
                                                default=str)[:700])
     cl = light.get("cex_lead_edge", {}) or {}
@@ -310,7 +325,7 @@ def build_full_report_md(light: dict, status: Optional[dict] = None,
                       arb.get("realized_profit_usd")))
     out.append("\nreadiness `%s`" % (light.get("readiness", {})))
 
-    h("13. Recent paper positions")
+    h("14. Recent paper positions")
     positions = (ledger.get("positions") or [])[:15]
     if positions:
         table([[(p.get("title") or "")[-18:], p.get("side"),
