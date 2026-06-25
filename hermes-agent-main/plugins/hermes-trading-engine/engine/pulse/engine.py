@@ -179,6 +179,9 @@ class PulseConfig:
     mispricing_require_stale_down: bool = True
     mispricing_min_executable_margin: float = 0.03
     edge_ttc_gate_enabled: bool = False
+    # When Grok abstains, still follow a Wilson-aligned CEX-lead mispricing stack (not coin-flip explore).
+    mispricing_follow_on_abstain: bool = True
+    mispricing_follow_size_fraction: float = 0.5
     # ---- within-window RISK-FREE arbitrage (Roan dutch book up_vwap+down_vwap<1; PAPER ONLY) ----
     arbitrage_enabled: bool = True
     arb_fees: float = 0.0                       # modelled taker fee per $ (Polymarket BTC ~0)
@@ -431,6 +434,10 @@ class PulseConfig:
                 "PULSE_MISPRICING_MIN_EXECUTABLE_MARGIN", 0.03),
             edge_ttc_gate_enabled=str(os.getenv("PULSE_EDGE_TTC_GATE_ENABLED", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
+            mispricing_follow_on_abstain=str(
+                os.getenv("PULSE_MISPRICING_FOLLOW_ON_ABSTAIN", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            mispricing_follow_size_fraction=_envf("PULSE_MISPRICING_FOLLOW_SIZE_FRACTION", 0.5),
             arbitrage_enabled=str(os.getenv("PULSE_ARB_ENABLED", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
             arb_fees=_envf("PULSE_ARB_FEES", 0.0),
@@ -1457,7 +1464,9 @@ class PulseEngine:
                            and _view_margin >= float(self.cfg.grok_decider_explore_min_view_margin)
                            and eff_explore_rate > 0.0
                            and self._grok_rng.random() < eff_explore_rate)
-                if not actionable and not exploit and not explore:
+                misprice_entry = (None if (actionable or exploit or explore)
+                                  else self._mispricing_follow_entry(dr.cex_lead, ttc, esnap))
+                if not actionable and not exploit and not explore and misprice_entry is None:
                     if pol["mode"] == "avoid":
                         self._grok_policy_counts["avoid"] += 1
                     reason = ("grok_avoid_proven_bad" if pol["mode"] == "avoid"
@@ -1476,7 +1485,14 @@ class PulseEngine:
                         self.markov.record_terminal(state=cand_state, accepted=False)
                     _finalize(dr, "rejected", reason=reason, stage="grok_decider")
                     continue
-                if actionable:
+                if misprice_entry is not None:
+                    side = misprice_entry["side"]
+                    entry_mode = "mispricing_follow"
+                    grok_oprob = misprice_entry["p_win"]
+                    grok_size_frac = misprice_entry["size_frac"]
+                    self._mispricing_gate_counts["mispricing_follow_on_abstain"] = (
+                        self._mispricing_gate_counts.get("mispricing_follow_on_abstain", 0) + 1)
+                elif actionable:
                     side = grok_dec["action"]
                     entry_mode = "grok_follow"
                     # EV uses the side-aligned P(win) = p_up (up) / 1-p_up (down), NOT raw confidence
@@ -2514,6 +2530,26 @@ class PulseEngine:
             return False
         return True
 
+    def _mispricing_follow_entry(self, cex_sig: "dict | None", ttc_s: "float | None",
+                                 esnap=None) -> "dict | None":
+        """When Grok abstains, follow a confirmed CEX-lead mispricing stack (gates pre-checked)."""
+        if not self.cfg.mispricing_follow_on_abstain:
+            return None
+        cl = cex_sig or {}
+        side = cl.get("side")
+        if side not in ("up", "down"):
+            return None
+        mp_ok, _ = self._mispricing_gate_ok(side=side, cex_sig=cl, ttc_s=ttc_s, esnap=esnap)
+        et_ok, _ = self._edge_ttc_gate_ok(esnap=esnap, ttc_s=ttc_s)
+        if not (mp_ok and et_ok):
+            return None
+        cex_p = cl.get("cex_p_up")
+        if cex_p is None:
+            return None
+        p_win = float(cex_p) if side == "up" else (1.0 - float(cex_p))
+        size_frac = max(0.25, min(1.0, float(self.cfg.mispricing_follow_size_fraction)))
+        return {"side": side, "p_win": p_win, "size_frac": size_frac}
+
     def _mispricing_gate_ok(self, *, side: str, cex_sig: "dict | None", ttc_s: "float | None",
                             esnap=None) -> "tuple[bool, str]":
         """Restrict-only: Grok-follow trades require aligned CEX-lead mispricing in the TTC window."""
@@ -3080,6 +3116,8 @@ class PulseEngine:
         rep["mispricing_gate"] = {
             "enabled": bool(self.cfg.mispricing_gate_enabled),
             "edge_ttc_gate_enabled": bool(self.cfg.edge_ttc_gate_enabled),
+            "follow_on_abstain": bool(self.cfg.mispricing_follow_on_abstain),
+            "follow_size_fraction": self.cfg.mispricing_follow_size_fraction,
             "ttc_window_s": [self.cfg.mispricing_ttc_min_s, self.cfg.mispricing_ttc_max_s],
             "min_executable_margin": self.cfg.mispricing_min_executable_margin,
             "reject_counts": dict(self._mispricing_gate_counts),

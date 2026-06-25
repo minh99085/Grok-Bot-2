@@ -88,3 +88,19 @@ def test_executable_mispricing_margin():
     assert ok is False and reason == "misprice_executable_margin_low"
     ok, _ = eng._executable_mispricing_ok(p_win=0.62, ask=0.55)
     assert ok is True
+
+
+def test_mispricing_follow_entry_on_abstain():
+    eng = _gate_engine(mispricing_ttc_min_s=90.0, mispricing_ttc_max_s=300.0)
+    sig = {"has_signal": True, "side": "up", "divergence": 0.12, "confirmed": True,
+           "cex_p_up": 0.62}
+    entry = eng._mispricing_follow_entry(sig, 250.0, _FakeEsnap("stale_polymarket_up"))
+    assert entry is not None and entry["side"] == "up" and entry["p_win"] == 0.62
+    assert eng._mispricing_follow_entry(sig, 50.0, _FakeEsnap()) is None
+
+
+def test_mispricing_follow_entry_disabled():
+    eng = _gate_engine(mispricing_follow_on_abstain=False)
+    sig = {"has_signal": True, "side": "up", "divergence": 0.12, "confirmed": True,
+           "cex_p_up": 0.62}
+    assert eng._mispricing_follow_entry(sig, 200.0) is None

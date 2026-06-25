@@ -208,6 +208,8 @@ services:
       PULSE_MISPRICING_REQUIRE_STALE_DOWN: "${PULSE_MISPRICING_REQUIRE_STALE_DOWN:-1}"
       PULSE_MISPRICING_MIN_EXECUTABLE_MARGIN: "${PULSE_MISPRICING_MIN_EXECUTABLE_MARGIN:-0.03}"
       PULSE_EDGE_TTC_GATE_ENABLED: "${PULSE_EDGE_TTC_GATE_ENABLED:-0}"
+      PULSE_MISPRICING_FOLLOW_ON_ABSTAIN: "${PULSE_MISPRICING_FOLLOW_ON_ABSTAIN:-1}"
+      PULSE_MISPRICING_FOLLOW_SIZE_FRACTION: "${PULSE_MISPRICING_FOLLOW_SIZE_FRACTION:-0.5}"
       # Within-window RISK-FREE arbitrage (Roan dutch book): buy 1 up + 1 down for < $1 and collect
       # $1 at settlement. Runs BEFORE the directional path, bypasses view gates (it's risk-free, not a
       # view) but uses the same VWAP/depth realism. Booked in a SEPARATE ledger so its P&L is NEVER
