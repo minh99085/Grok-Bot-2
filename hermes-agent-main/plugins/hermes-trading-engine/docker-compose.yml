@@ -127,7 +127,7 @@ services:
       PULSE_SIZE_USD: "${PULSE_SIZE_USD:-5}"
       # notional starting capital for the dashboard "on-hand capital" display (paper; on_hand=start+pnl)
       PULSE_STARTING_CAPITAL_USD: "${PULSE_STARTING_CAPITAL_USD:-500}"
-      PULSE_MIN_EDGE: "${PULSE_MIN_EDGE:-0.03}"
+      PULSE_MIN_EDGE: "${PULSE_MIN_EDGE:-0.02}"
       PULSE_EDGE_BUFFER: "${PULSE_EDGE_BUFFER:-0.01}"
       PULSE_MIN_DEPTH_USD: "${PULSE_MIN_DEPTH_USD:-1}"
       PULSE_MIN_SECONDS_TO_CLOSE: "${PULSE_MIN_SECONDS_TO_CLOSE:-4}"
@@ -231,12 +231,12 @@ services:
       # ON: the directional model is negative-EV, so only trade Wilson-proven-winning buckets +
       # a small exploration fraction (below) to keep learning. This STOPS the directional bleed
       # without freezing (the carve-out guarantees EXPLORE_RATE of eligible candidates still flow).
-      PULSE_DIRECTIONAL_REQUIRE_WINNING: "${PULSE_DIRECTIONAL_REQUIRE_WINNING:-1}"
+      PULSE_DIRECTIONAL_REQUIRE_WINNING: "${PULSE_DIRECTIONAL_REQUIRE_WINNING:-0}"
       PULSE_DIRECTIONAL_WINNING_MIN_SAMPLES: "${PULSE_DIRECTIONAL_WINNING_MIN_SAMPLES:-30}"
       # cold-start carve-out so the allowlist does NOT freeze the bot: without proven-winning
       # buckets it would block every directional trade forever (no trades => nothing to prove).
       # This lets a small capped fraction through as exploration to keep learning. 0=block-all.
-      PULSE_DIRECTIONAL_EXPLORE_RATE: "${PULSE_DIRECTIONAL_EXPLORE_RATE:-0}"
+      PULSE_DIRECTIONAL_EXPLORE_RATE: "${PULSE_DIRECTIONAL_EXPLORE_RATE:-0.12}"
       # SURGICAL capital reset: set to a NEW unique token to zero P&L/ledger/arbitrage/reconciliation
       # back to a fresh $500 while KEEPING all learning (models, selectivity evidence, lessons,
       # gradings). Applies exactly once per new token (idempotent). Empty = no reset.
