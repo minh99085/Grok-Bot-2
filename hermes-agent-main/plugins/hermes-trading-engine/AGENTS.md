@@ -105,9 +105,9 @@ VPS deploy procedure (the VPS cannot `git fetch origin` — use a git bundle):
 - Connect: `ssh root@45.32.224.147` (or `ssh -i <key> root@45.32.224.147`).
 - **Retired:** `45.32.227.242` / `linuxuser` — do not use unless the operator explicitly
   reverts.
-- Repo root and plugin path: discover on first login (`find /opt -name hermes-trading-engine
-  -type d 2>/dev/null`). Previous host used `/opt/hermes-agent-main` with plugin at
-  `/opt/hermes-agent-main/hermes-agent-main/plugins/hermes-trading-engine`.
+- Repo root: `/opt/Grok-Bot-2` (synced from `Grok-Bot-2` via git bundle; VPS cannot `git fetch`).
+- Plugin path: `/opt/Grok-Bot-2/hermes-agent-main/plugins/hermes-trading-engine`.
+- Legacy `/opt/Bot-2` (different repo) — do not deploy pulse from there.
 - Containers: `hermes-training` (pulse loop) + `hermes-trading-engine` (API).
 - Windows operator key (if configured): `%USERPROFILE%\.ssh\hermes_vps_operator_nopass_ed25519`.
 - The VPS cannot `git fetch origin` — sync via git bundle (procedure above).
