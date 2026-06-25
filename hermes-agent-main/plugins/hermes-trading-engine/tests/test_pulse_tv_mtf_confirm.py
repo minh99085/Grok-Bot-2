@@ -62,6 +62,23 @@ def test_confirmation_flows_into_feature_and_grades(tmp_path):
     assert er["by_tf_confirm"]["confirmed_down"]["n"] == 1
 
 
+def test_btcusdt_mtf_via_feature_symbol(tmp_path):
+    """Operator feeds BINANCE:BTCUSDT; engine oracle is btc/usd — MTF must still resolve BTCUSDT."""
+    ik = TradingViewIntake(secret="s3cr3t", bot_name="hermes",
+                           allowed_symbols=("BTCUSDT",), data_dir=str(tmp_path),
+                           feature_symbol="BTCUSDT")
+    t = 4_000_000.0
+    for tf, ts in (("5", t), ("1", t + 10)):
+        payload = {"secret": "s3cr3t", "bot_name": "hermes", "symbol": "BINANCE:BTCUSDT",
+                   "direction": "UP", "timeframe": tf,
+                   "bar_time": ts, "event_id": "BTCUSDT-%s-%d-UP" % (tf, int(ts * 1000))}
+        ik.ingest(json.dumps(payload).encode(), now=ts)
+    c = ik.mtf_confirmation(symbol="btc/usd", now=t + 11)
+    assert c["confirm"] == "confirmed_up" and c["symbol"] == "BTCUSDT"
+    feat = ik.latest_feature(now=t + 11, symbol="btc/usd")
+    assert feat["tf_confirm"] == "confirmed_up"
+
+
 def test_confirmation_survives_restart(tmp_path):
     ik = _intake(tmp_path)
     t = 3_000_000.0

@@ -262,6 +262,19 @@ if(ver.enabled){cards.appendChild(card('Verifier (Claude maker-checker)',[['veri
  if(tv.enabled){
    const vbs=tv.tradingview_valid_by_symbol||{};
    cards.appendChild(card('TradingView signals (observe-only)',[['received',tv.tradingview_alerts_received],['valid',tv.tradingview_alerts_valid,'ok'],['rejected',tv.tradingview_alerts_rejected,'bad'],...Object.entries(vbs).map(([k,v])=>['· valid '+k,v]),...Object.entries(tv.tradingview_reject_reasons||{}).filter(([,v])=>v>0).map(([k,v])=>['· rej '+k,v,'bad']),['observe-only',tv.tradingview_observe_only?'yes':'no','muted']]));
+   const mtf=tv.tradingview_mtf_confirmation||{};
+   const mtfOk=mtf.confirm==='confirmed_up'||mtf.confirm==='confirmed_down';
+   cards.appendChild(card('TV 1m+5m cross-confirm (BTCUSDT)',[
+     ['feature symbol',tv.tradingview_feature_symbol||'BTCUSDT'],
+     ['confirm',mtf.confirm||'none',mtfOk?'ok':(mtf.confirm==='conflict'?'bad':'muted')],
+     ['1m direction',mtf.tf_1m_dir||'—'],
+     ['5m direction',mtf.tf_5m_dir||'—'],
+     ['1m age',mtf.tf_1m_age_s==null?'—':mtf.tf_1m_age_s+'s'],
+     ['5m age',mtf.tf_5m_age_s==null?'—':mtf.tf_5m_age_s+'s'],
+     ['window',(tv.tradingview_mtf_confirmation&&'6min fresh window')||'—','muted']]));
+   const tfb=tv.tradingview_latest_by_timeframe||{};
+   const tfRows=Object.entries(tfb).filter(([k])=>k.startsWith('BTCUSDT@')).map(([k,e])=>[k.replace('BTCUSDT@',''),(e.direction||'—')+' · str '+(e.strength==null?'—':e.strength)]);
+   if(tfRows.length) cards.appendChild(card('TradingView by timeframe (BTCUSDT)',tfRows));
    const lbs=tv.tradingview_latest_by_symbol||{};
    const latestRows=Object.entries(lbs).map(([sym,e])=>[sym,(e.direction||'—')+' · '+(e.timeframe||'?')+'m · '+(e.indicator_name||'')]);
    if(latestRows.length) cards.appendChild(card('TradingView latest signal',latestRows));

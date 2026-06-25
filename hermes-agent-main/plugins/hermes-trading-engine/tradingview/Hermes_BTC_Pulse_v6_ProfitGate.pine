@@ -10,7 +10,11 @@
 //     - Relative-volume filter with spike suppression (volume_state=spike is the biggest leak)
 //     - Event blackout manual toggle (observe-only field still sent for bot grading)
 //   Inherits v5: calibrated strength, score_ratio, full v2/v3/v4 JSON for tradingview.py parser.
-//   USAGE: **1-MINUTE** chart of **BINANCE:BTCUSDT**. Alert webhook → http://<vps-ip>/webhooks/tradingview
+//   USAGE: same script on TWO charts — both BINANCE:BTCUSDT:
+//     A) 1-MINUTE chart  → fresh lead-lag confirmations (timeframe "1")
+//     B) 5-MINUTE chart → swing bias confirmation (timeframe "5")
+//     Create ONE alert per chart (Any alert() function call). Bot cross-confirms both (6min window).
+//   Webhook → http://<vps-ip>/webhooks/tradingview
 // =====================================================================================
 indicator("Hermes BTC Pulse Composite v6 ProfitGate", overlay=true, max_labels_count=500)
 

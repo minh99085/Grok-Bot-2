@@ -263,6 +263,7 @@ class PulseConfig:
     tradingview_webhook_port: int = 8787
     tradingview_webhook_path: str = "/webhooks/tradingview"
     tradingview_max_age_s: float = 90.0
+    tradingview_feature_symbol: str = "BTCUSDT"   # TV chart symbol for 1m+5m MTF (BINANCE:BTCUSDT)
     tradingview_signal_max_feature_age_s: float = 300.0   # only attach signals fresher than this
     # TradingView as the DIRECTIONAL INDICATION SIGNAL (restrict-only): when on, a paper trade is
     # only taken if a FRESH TradingView signal exists and its direction matches the trade side. It
@@ -282,6 +283,7 @@ class PulseConfig:
 
     @classmethod
     def from_env(cls) -> "PulseConfig":
+        from engine.pulse.tradingview import normalize_symbol
         return cls(
             tick_seconds=_envf("PULSE_TICK_SECONDS", 4.0),
             size_usd=_envf("PULSE_SIZE_USD", 5.0),
@@ -486,6 +488,8 @@ class PulseConfig:
             tradingview_webhook_path=(os.getenv("TRADINGVIEW_WEBHOOK_PATH", "/webhooks/tradingview")
                                       or "/webhooks/tradingview").strip(),
             tradingview_max_age_s=_envf("TRADINGVIEW_MAX_AGE_S", 90.0),
+            tradingview_feature_symbol=normalize_symbol(
+                os.getenv("PULSE_TV_FEATURE_SYMBOL", "BTCUSDT") or "BTCUSDT") or "BTCUSDT",
             tradingview_signal_max_feature_age_s=_envf("PULSE_TV_SIGNAL_MAX_FEATURE_AGE_S", 300.0),
             tradingview_signal_gate_enabled=str(os.getenv("PULSE_TRADINGVIEW_SIGNAL_GATE", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
@@ -788,7 +792,8 @@ class PulseEngine:
                     secret=self.cfg.tradingview_secret,
                     allowed_symbols=self.cfg.tradingview_allowed_symbols,
                     bot_name=self.cfg.tradingview_bot_name,
-                    max_age_s=self.cfg.tradingview_max_age_s, data_dir=self.cfg.data_dir)
+                    max_age_s=self.cfg.tradingview_max_age_s, data_dir=self.cfg.data_dir,
+                    feature_symbol=self.cfg.tradingview_feature_symbol)
                 self.webhook = WebhookServer(
                     self.tradingview, host=self.cfg.tradingview_webhook_host,
                     port=self.cfg.tradingview_webhook_port,
@@ -1055,7 +1060,8 @@ class PulseEngine:
                         "due_ts": float(ev.bar_time or ev.received_at)
                         + self.cfg.tradingview_signal_horizon_s})
             self._evaluate_tv_forward_returns(now)
-            feat = self.tradingview.latest_feature(now=now, symbol=self.cfg.oracle_symbol)
+            feat = self.tradingview.latest_feature(now=now,
+                                                   symbol=self.cfg.tradingview_feature_symbol)
             if feat is not None and (feat.get("age_s") is None
                                      or feat["age_s"] <= self.cfg.tradingview_signal_max_feature_age_s):
                 tv_feature = feat

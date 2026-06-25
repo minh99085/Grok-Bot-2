@@ -747,8 +747,12 @@ class TradingViewIntake:
     def __init__(self, *, secret: str, allowed_symbols, bot_name: str = "hermes",
                  max_age_s: float = 90.0, future_skew_s: float = 30.0,
                  data_dir: Optional[str] = None, dedupe_capacity: int = 5000,
-                 header_name: str = "X-Tradingview-Secret"):
+                 header_name: str = "X-Tradingview-Secret",
+                 feature_symbol: str = "BTCUSDT"):
         self.secret = str(secret or "")
+        # Chart symbol the operator feeds (e.g. BINANCE:BTCUSDT -> BTCUSDT). Used for 1m+5m
+        # cross-confirmation lookups — distinct from the Chainlink oracle slug (btc/usd).
+        self.feature_symbol = normalize_symbol(feature_symbol) or "BTCUSDT"
         # normalize allow-list entries the same way incoming symbols are normalized, so
         # exchange-prefixed aliases (INDEX:BTCUSD, BINANCE:BTCUSDT) match their base symbol.
         self.allowed_symbols = {normalize_symbol(s) for s in (allowed_symbols or []) if str(s).strip()}
@@ -776,6 +780,17 @@ class TradingViewIntake:
         self.confirm_window_s: float = 360.0
         self._path = (Path(data_dir) / "btc_pulse_tradingview.json") if data_dir else None
         self._load_state()
+
+    def _mtf_symbol(self, symbol: Optional[str] = None) -> Optional[str]:
+        """Resolve which TV symbol key to use for 1m+5m confirmation lookups."""
+        if symbol:
+            sym = normalize_symbol(symbol)
+            if sym in self.latest_by_symbol or (sym, "1") in self.latest_by_tf or (sym, "5") in self.latest_by_tf:
+                return sym
+            if sym in ("BTC/USD", "BTC", "XBTUSD", "BTCUSD"):
+                return self.feature_symbol
+            return sym
+        return self.feature_symbol or (self.latest.symbol if self.latest else None)
 
     # -- validation (pure given inputs) ------------------------------------- #
     def _check_secret(self, payload: dict, provided_header: Optional[str]) -> Optional[str]:
@@ -944,7 +959,7 @@ class TradingViewIntake:
         # NOTE: lock-free on purpose — it's called both from report() (which holds self._lock) and
         # from latest_feature(); dict reads are atomic under the GIL and this is observe-only.
         now = now if now is not None else time.time()
-        sym = (str(symbol).strip().upper() if symbol else (self.latest.symbol if self.latest else None))
+        sym = self._mtf_symbol(symbol)
         one = self.latest_by_tf.get((sym, "1")) if sym else None
         five = self.latest_by_tf.get((sym, "5")) if sym else None
 
@@ -1006,7 +1021,8 @@ class TradingViewIntake:
                 "tradingview_latest_by_timeframe": {
                     "%s@%s" % (s, tf): {"direction": e.direction, "strength": e.strength}
                     for (s, tf), (e, _ts) in self.latest_by_tf.items()},
-                "tradingview_mtf_confirmation": self.mtf_confirmation(),
+                "tradingview_mtf_confirmation": self.mtf_confirmation(symbol=self.feature_symbol),
+                "tradingview_feature_symbol": self.feature_symbol,
                 "allowed_symbols": sorted(self.allowed_symbols),
                 "bot_name": self.bot_name,
                 "dedupe_tracked": len(self._seen_set),
