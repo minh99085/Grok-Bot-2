@@ -818,7 +818,9 @@ class PulseEngine:
         # ---- #2 compounding lessons + #3 loop registry ----
         from engine.pulse.lessons import LessonsBook
         from engine.pulse.loops import LoopRegistry
+        from engine.pulse.decision_history import TradeDecisionHistory
         self.lessons = LessonsBook(revalidate_ttl_s=self.cfg.lessons_revalidate_ttl_s)
+        self.trade_history = TradeDecisionHistory(max_trades=50)
         self.loops = LoopRegistry()
         # ---- #1 independent Claude maker-checker verifier + #4 research meta-loop ----
         self.claude_budget = None
@@ -1055,6 +1057,9 @@ class PulseEngine:
         self._verifier_pending = list(acct.get("verifier_pending") or [])
         self._recent_windows = list(acct.get("recent_windows") or [])
         self.lessons.load_state(acct.get("lessons") or {})
+        self.trade_history.load_state(acct.get("trade_history") or {})
+        if not self.trade_history.recent(1):
+            self.trade_history.backfill_from_positions(list(self.ledger.positions.values()))
         if self.verifier is not None:
             self.verifier.load_state(acct.get("verifier") or {})
         if self.research_loop is not None:
@@ -1996,6 +2001,19 @@ class PulseEngine:
             pos.research["entry_mode"] = entry_mode
             pos.research["entry_ttc_s"] = float(ttc)
             pos.research["conviction_bucket"] = _conv_bucket(fair_used)
+            if grok_dec is not None:
+                pos.research["grok_snapshot"] = {
+                    "action": grok_dec.get("action"),
+                    "p_up": grok_dec.get("p_up"),
+                    "confidence": grok_dec.get("confidence"),
+                }
+            if self.verifier is not None:
+                vv_snap = self.verifier.get(mc.decision_id)
+                if vv_snap and not vv_snap.get("pending"):
+                    pos.research["verifier_snapshot"] = {
+                        "approved": bool(vv_snap.get("approve")),
+                        "reason": str(vv_snap.get("reason") or "")[:120],
+                    }
             if self.verifier is not None and grok_verdict:
                 pos.research["verifier"] = {"approved": True,
                                             "max_size_fraction": grok_verdict.get("max_size_fraction"),
@@ -2196,6 +2214,21 @@ class PulseEngine:
             if self.verifier is not None and (pos.research or {}).get("verifier"):
                 self.verifier.grade(pos.decision_id or pos.window_key, won=bool(pos.won),
                                     pnl=float(pos.pnl_usd or 0.0), acted=True)
+            rt_hist = pos.research or {}
+            self.trade_history.record_settled(
+                decision_id=pos.decision_id or pos.window_key,
+                title=pos.title,
+                side=pos.side,
+                entry_mode=rt_hist.get("entry_mode") or "unknown",
+                entry_price=float(pos.entry_price),
+                size_usd=float(pos.size_usd),
+                outcome_up=bool(outcome),
+                won=bool(pos.won),
+                pnl_usd=float(pos.pnl_usd or 0.0),
+                research=rt_hist,
+                grok=rt_hist.get("grok_snapshot"),
+                verifier=rt_hist.get("verifier_snapshot") or rt_hist.get("verifier"),
+            )
             self._record_lessons_from_settlement(pos)
             ext = pos.external or {}
             if ext.get("source") == "tradingview":
@@ -2366,6 +2399,7 @@ class PulseEngine:
                        "min_reward_risk_floor": self.cfg.min_reward_risk,
                        "note": "only trade a side if your P(win) clears its breakeven_win_rate after costs"},
             "recent_windows": self._recent_windows_view(10),
+            "trade_decision_history": self.trade_history.view_for_grok(50),
             "lessons": self.lessons.recent(10),
             "tradingview_signal": tv,
             "news": (self.grok_news.latest() if self.grok_news is not None else None),
@@ -3491,6 +3525,7 @@ class PulseEngine:
                               "research_loop": (self.research_loop.to_state()
                                                 if self.research_loop is not None else {}),
                               "lessons": self.lessons.to_state(),
+                              "trade_history": self.trade_history.to_state(),
                               "edge_model": (self.edge_model.to_state()
                                              if self.edge_model is not None else {}),
                               "selectivity_evidence": self.selectivity_evidence.to_state(),
