@@ -1,17 +1,17 @@
 {
-  "cycle": 10,
+  "cycle": 12,
   "phase": "soak",
   "soak_hours": 2,
-  "deployed_at": "2026-06-26T07:14:44.976694+00:00",
-  "soak_until": "2026-06-26T09:14:44.976694+00:00",
-  "last_eval_at": "2026-06-26T07:12:07.386099+00:00",
+  "deployed_at": "2026-06-26T11:20:28.475662+00:00",
+  "soak_until": "2026-06-26T13:20:28.475662+00:00",
+  "last_eval_at": "2026-06-26T11:18:58.905258+00:00",
   "last_verdict": "issues",
   "last_fixes": [
-    "mispricing_follow UP disabled (33% WR live)",
-    "cex_lead UP requires TV UP_STRONG + down_bias; block late_window UP"
+    "down_bias: block UP when vwap_state=above (20% WR, -12.65 PnL)",
+    "down_bias: block UP when bb_state=expansion_up (0% WR)"
   ],
   "last_health_verdict": "healthy",
-  "vps_sha": "c25dd2aa8fee71fb1f226634c708a511dd7ab615",
+  "vps_sha": "3bf66d574a983c54af27d9320d4862babb0cb77b",
   "history": [
     {
       "ts": "2026-06-25T19:06:42.423656+00:00",
@@ -561,6 +561,86 @@
       "fixes_applied": [
         "mispricing_follow UP disabled (33% WR live)",
         "cex_lead UP requires TV UP_STRONG + down_bias; block late_window UP"
+      ]
+    },
+    {
+      "ts": "2026-06-26T09:15:46.030488+00:00",
+      "verdict": "issues",
+      "metrics": {
+        "settled": 48,
+        "win_rate": 0.625,
+        "profit_factor": 1.0199,
+        "win_rate_up": 0.5,
+        "win_rate_down": 0.7143,
+        "realized_pnl_usd": 1.49,
+        "tv_valid": 923,
+        "mtf_passed": 82,
+        "mtf_blocked": 275,
+        "context_blocked": 827,
+        "down_bias_blocked": 538,
+        "signal_gate": false,
+        "min_reward_risk": 0.42,
+        "global_reconciled": true
+      },
+      "issue_codes": [
+        "up_side_bleed"
+      ]
+    },
+    {
+      "ts": "2026-06-26T09:18:09.547666+00:00",
+      "verdict": "deploy",
+      "metrics": {
+        "commit": "006b770",
+        "settled": 48,
+        "win_rate_up": 0.5,
+        "win_rate_down": 0.7143
+      },
+      "issue_codes": [
+        "up_side_bleed"
+      ],
+      "fixes_applied": [
+        "down_bias: block mixed-MTF UP (40% WR, -10.65 PnL)",
+        "down_bias: block bullish-supertrend UP (0% WR on 4 trades)"
+      ]
+    },
+    {
+      "ts": "2026-06-26T11:18:58.905258+00:00",
+      "verdict": "issues",
+      "metrics": {
+        "settled": 48,
+        "win_rate": 0.625,
+        "profit_factor": 1.0199,
+        "win_rate_up": 0.5,
+        "win_rate_down": 0.7143,
+        "realized_pnl_usd": 1.49,
+        "tv_valid": 994,
+        "mtf_passed": 82,
+        "mtf_blocked": 275,
+        "context_blocked": 855,
+        "down_bias_blocked": 538,
+        "signal_gate": false,
+        "min_reward_risk": 0.42,
+        "global_reconciled": true
+      },
+      "issue_codes": [
+        "up_side_bleed"
+      ]
+    },
+    {
+      "ts": "2026-06-26T11:20:28.475662+00:00",
+      "verdict": "deploy",
+      "metrics": {
+        "commit": "3bf66d5",
+        "settled": 48,
+        "win_rate_up": 0.5,
+        "win_rate_down": 0.7143
+      },
+      "issue_codes": [
+        "up_side_bleed"
+      ],
+      "fixes_applied": [
+        "down_bias: block UP when vwap_state=above (20% WR, -12.65 PnL)",
+        "down_bias: block UP when bb_state=expansion_up (0% WR)"
       ]
     }
   ],
