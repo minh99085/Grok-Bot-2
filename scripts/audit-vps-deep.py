@@ -17,7 +17,7 @@ EXPECTED_ENV = {
     "PULSE_ARB_NONATOMIC_ENABLED": "1",
     "PULSE_SIZING_PROMOTION_GATED": "1",
     "PULSE_DEPENDENCY_ARB_ENABLED": "1",
-    "PULSE_SERIES_SLUGS": "btc-up-or-down-5m,btc-up-or-down-15m",
+    "PULSE_SERIES_SLUGS": "btc-up-or-down-15m",
 }
 
 

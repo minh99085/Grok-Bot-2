@@ -349,8 +349,8 @@ class PulseConfig:
     tradingview_mtf_confirm_window_15m_s: float = 960.0
     tradingview_mtf_confirm_window_4m_s: float = 300.0
     tradingview_mtf_confirm_window_13m_s: float = 840.0
-    # Polymarket series to trade concurrently (5m + 15m BTC up/down).
-    pulse_series_slugs: tuple = (SERIES_SLUG_5M, SERIES_SLUG_15M)
+    # Polymarket series to trade (default 15m only; set PULSE_SERIES_SLUGS for multi-series).
+    pulse_series_slugs: tuple = (SERIES_SLUG_15M,)
     tradingview_signal_max_feature_age_s: float = 300.0   # only attach signals fresher than this
     # TradingView as the DIRECTIONAL INDICATION SIGNAL (restrict-only): when on, a paper trade is
     # only taken if a FRESH TradingView signal exists and its direction matches the trade side. It
@@ -376,7 +376,7 @@ class PulseConfig:
         _series_slugs = tuple(
             s.strip() for s in os.getenv(
                 "PULSE_SERIES_SLUGS",
-                "btc-up-or-down-5m,btc-up-or-down-15m").split(",") if s.strip())
+                "btc-up-or-down-15m").split(",") if s.strip())
         if str(os.getenv("PULSE_ETH_SERIES_ENABLED", "0")).strip().lower() in (
                 "1", "true", "yes", "on"):
             _series_slugs = tuple(dict.fromkeys(

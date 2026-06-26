@@ -75,8 +75,8 @@ UPDATES = {
     "PULSE_BASELINE_COHORT_REQUIRE_HIGH_EDGE": "1",
     "PULSE_BASELINE_COHORT_REQUIRE_STRONG_CEX": "1",
     "PULSE_BASELINE_UP_TV_GATE_ENABLED": "1",
-    # Dual-market: 5m + 15m Polymarket BTC up/down series.
-    "PULSE_SERIES_SLUGS": "btc-up-or-down-5m,btc-up-or-down-15m",
+    # 15m only — 5m directional bleed stopped (user request 2026-06-26).
+    "PULSE_SERIES_SLUGS": "btc-up-or-down-15m",
     # Profit-discovery Phase 1–2: arb-first, stop directional bleed.
     "PULSE_ARB_EPSILON": "0.05",
     "PULSE_ARB_MAX_USD": "300",
