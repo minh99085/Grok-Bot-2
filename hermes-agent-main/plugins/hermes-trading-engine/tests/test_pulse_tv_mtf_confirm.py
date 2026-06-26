@@ -42,6 +42,51 @@ def test_1m_5m_confirmation_states(tmp_path):
     assert c3["confirm"] == "single_tf" and c3["tf_5m_dir"] is None and c3["tf_1m_dir"] == "UP"
 
 
+def test_10m_stored_separately_not_overriding_other_tfs(tmp_path):
+    ik = _intake(tmp_path)
+    t = 6_000_000.0
+    _send(ik, direction="DOWN", tf="1", now=t)
+    _send(ik, direction="UP", tf="5", now=t + 5)
+    _send(ik, direction="UP", tf="10", now=t + 10)
+    _send(ik, direction="DOWN", tf="15", now=t + 15)
+    rep = ik.report()
+    by_tf = rep["tradingview_latest_by_timeframe"]
+    assert by_tf["BTCUSDT@1"]["direction"] == "DOWN"
+    assert by_tf["BTCUSDT@5"]["direction"] == "UP"
+    assert by_tf["BTCUSDT@10"]["direction"] == "UP"
+    assert by_tf["BTCUSDT@15"]["direction"] == "DOWN"
+    mtf = ik.mtf_confirmation(symbol="BTCUSD", now=t + 20)
+    assert mtf["tf_1m_dir"] == "DOWN"
+    assert mtf["tf_5m_dir"] == "UP"
+    assert mtf["tf_10m_dir"] == "UP"
+    assert mtf["tf_15m_dir"] == "DOWN"
+
+
+def test_10m_timeframe_normalized_from_suffix(tmp_path):
+    ik = _intake(tmp_path)
+    t = 6_100_000.0
+    payload = {"secret": "s3cr3t", "bot_name": "hermes", "symbol": "BTCUSD",
+               "direction": "UP", "timeframe": "10m", "bar_time": t,
+               "event_id": "BTCUSD-10m-%d" % int(t * 1000)}
+    code, body = ik.ingest(json.dumps(payload).encode(), now=t)
+    assert code == 200 and body.get("accepted")
+    assert "BTCUSDT@10" in ik.report()["tradingview_latest_by_timeframe"]
+
+
+def test_4tf_trend_alignment(tmp_path):
+    ik = _intake(tmp_path)
+    t = 6_200_000.0
+    for tf in ("1", "5", "10", "15"):
+        _send(ik, direction="UP", tf=tf, now=t + int(tf))
+    mtf = ik.mtf_confirmation(symbol="BTCUSD", now=t + 20)
+    assert mtf["confirm_4tf"] == "confirmed_up_4tf"
+    assert mtf["direction_4tf"] == "UP"
+    assert mtf["trend_fresh_count"] == 4
+    feat = ik.latest_feature(now=t + 20, symbol="BTCUSD")
+    assert feat["tf_confirm_4tf"] == "confirmed_up_4tf"
+    assert feat["trend_by_tf"] == {"1": "UP", "5": "UP", "10": "UP", "15": "UP"}
+
+
 def test_15m_aligns_with_1m_5m(tmp_path):
     ik = _intake(tmp_path)
     t = 5_000_000.0

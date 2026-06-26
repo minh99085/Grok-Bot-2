@@ -73,6 +73,25 @@ def normalize_symbol(raw) -> str:
     return s
 
 
+def normalize_timeframe(raw) -> Optional[str]:
+    """Canonical minute key for per-TF storage (``10``, ``10m``, ``10min`` -> ``10``).
+
+    Each timeframe is stored separately in ``latest_by_tf`` so 1m/5m/10m/15m alerts never
+    overwrite one another — only the matching TF slot is updated."""
+    if raw is None:
+        return None
+    s = str(raw).strip().lower()
+    if not s:
+        return None
+    for suffix in ("minutes", "minute", "min", "m"):
+        if s.endswith(suffix):
+            core = s[: -len(suffix)].strip()
+            if core.isdigit():
+                s = core
+                break
+    return s if s else None
+
+
 def _parse_ts(val) -> Optional[float]:
     """Parse an epoch (s or ms) or ISO-8601 timestamp into epoch seconds."""
     if val is None:
@@ -796,6 +815,7 @@ class TradingViewIntake:
                  header_name: str = "X-Tradingview-Secret",
                  feature_symbol: str = "BTCUSDT",
                  confirm_window_s: float = 360.0,
+                 confirm_window_10m_s: float = 660.0,
                  confirm_window_15m_s: float = 960.0):
         self.secret = str(secret or "")
         # Chart symbol the operator feeds (e.g. BINANCE:BTCUSDT -> BTCUSDT). Used for 1m+5m
@@ -826,7 +846,9 @@ class TradingViewIntake:
         self.latest_by_tf: dict = {}
         # 1m+5m: ~6min window so a fresh 1m aligns with the current 5m bar.
         self.confirm_window_s: float = float(confirm_window_s)
-        # 15m chart alerts stay fresh up to ~16min for 3-TF alignment.
+        # 10m chart alerts stay fresh up to ~11min for 4-TF trend alignment.
+        self.confirm_window_10m_s: float = float(confirm_window_10m_s)
+        # 15m chart alerts stay fresh up to ~16min for 3/4-TF alignment.
         self.confirm_window_15m_s: float = float(confirm_window_15m_s)
         self._path = (Path(data_dir) / "btc_pulse_tradingview.json") if data_dir else None
         self._load_state()
@@ -941,7 +963,7 @@ class TradingViewIntake:
             rel_vol = None
         ev = TradingViewSignalEvent(
             event_id=event_id, bot_name=(bot or self.bot_name), symbol=symbol,
-            timeframe=(str(payload.get("timeframe") or payload.get("interval") or "").strip() or None),
+            timeframe=normalize_timeframe(payload.get("timeframe") or payload.get("interval")),
             bar_time=bar_time, received_at=now, direction=direction, strength=strength,
             signal_level=signal_level, price=price,
             indicator_name=(str(payload.get("indicator_name") or payload.get("indicator")
@@ -1034,17 +1056,18 @@ class TradingViewIntake:
 
     def mtf_confirmation(self, *, symbol: Optional[str] = None,
                          now: Optional[float] = None) -> dict:
-        """Cross-timeframe confirmation across fresh 1m, 5m, and 15m signals.
+        """Cross-timeframe confirmation across fresh 1m, 5m, 10m, and 15m signals.
 
         ``confirm`` — 1m+5m (legacy): confirmed_up/down, conflict, single_tf, none.
-        ``confirm_3tf`` — all three: confirmed_up_3tf / confirmed_down_3tf,
-          conflict_15m (1m+5m agree, 15m opposes), partial_3tf (1m+5m agree, 15m missing),
-          plus conflict/single_tf/none when 1m+5m not aligned.
+        ``confirm_3tf`` — 1m+5m+15m (legacy): confirmed_up_3tf / confirmed_down_3tf, etc.
+        ``confirm_4tf`` — all four chart alerts for BTC trend view: confirmed_up_4tf /
+          confirmed_down_4tf, partial_up/down_4tf (majority), conflict_4tf, single_tf, none.
         OBSERVE-ONLY — graded feature only."""
         now = now if now is not None else time.time()
         sym = self._mtf_symbol(symbol)
         one = self.latest_by_tf.get((sym, "1")) if sym else None
         five = self.latest_by_tf.get((sym, "5")) if sym else None
+        ten = self.latest_by_tf.get((sym, "10")) if sym else None
         fifteen = self.latest_by_tf.get((sym, "15")) if sym else None
 
         def _fresh(entry, window_s: float):
@@ -1054,17 +1077,23 @@ class TradingViewIntake:
             return ev if (now - float(ts)) <= float(window_s) else None
 
         e1, e5 = _fresh(one, self.confirm_window_s), _fresh(five, self.confirm_window_s)
+        e10 = _fresh(ten, self.confirm_window_10m_s)
         e15 = _fresh(fifteen, self.confirm_window_15m_s)
         d1 = e1.direction if e1 else None
         d5 = e5.direction if e5 else None
+        d10 = e10.direction if e10 else None
         d15 = e15.direction if e15 else None
         out = {
-            "symbol": sym, "tf_1m_dir": d1, "tf_5m_dir": d5, "tf_15m_dir": d15,
+            "symbol": sym,
+            "tf_1m_dir": d1, "tf_5m_dir": d5, "tf_10m_dir": d10, "tf_15m_dir": d15,
             "tf_1m_age_s": (round(now - one[1], 1) if one else None),
             "tf_5m_age_s": (round(now - five[1], 1) if five else None),
+            "tf_10m_age_s": (round(now - ten[1], 1) if ten else None),
             "tf_15m_age_s": (round(now - fifteen[1], 1) if fifteen else None),
             "confirm_window_s": self.confirm_window_s,
+            "confirm_window_10m_s": self.confirm_window_10m_s,
             "confirm_window_15m_s": self.confirm_window_15m_s,
+            "trend_by_tf": {k: v for k, v in (("1", d1), ("5", d5), ("10", d10), ("15", d15)) if v},
         }
         if d1 and d5:
             if d1 == d5 and d1 in ("UP", "DOWN"):
@@ -1099,6 +1128,33 @@ class TradingViewIntake:
         else:
             out["confirm_3tf"] = out["confirm"]
             out["direction_3tf"] = out.get("direction")
+        dirs_4 = [d for d in (d1, d5, d10, d15) if d in ("UP", "DOWN")]
+        out["trend_fresh_count"] = len(dirs_4)
+        if len(dirs_4) == 4:
+            if len(set(dirs_4)) == 1:
+                out["confirm_4tf"] = "confirmed_up_4tf" if dirs_4[0] == "UP" else "confirmed_down_4tf"
+                out["direction_4tf"] = dirs_4[0]
+            else:
+                out["confirm_4tf"] = "conflict_4tf"
+                out["direction_4tf"] = None
+        elif len(dirs_4) >= 2:
+            ups = sum(1 for d in dirs_4 if d == "UP")
+            downs = len(dirs_4) - ups
+            if ups > downs:
+                out["confirm_4tf"] = "partial_up_4tf"
+                out["direction_4tf"] = "UP"
+            elif downs > ups:
+                out["confirm_4tf"] = "partial_down_4tf"
+                out["direction_4tf"] = "DOWN"
+            else:
+                out["confirm_4tf"] = "conflict_4tf"
+                out["direction_4tf"] = None
+        elif len(dirs_4) == 1:
+            out["confirm_4tf"] = "single_tf"
+            out["direction_4tf"] = dirs_4[0]
+        else:
+            out["confirm_4tf"] = "none"
+            out["direction_4tf"] = None
         return out
 
     def latest_feature(self, *, now: Optional[float] = None, symbol: Optional[str] = None) -> Optional[dict]:
@@ -1114,10 +1170,15 @@ class TradingViewIntake:
         feat["tf_confirm_direction"] = mtf.get("direction")
         feat["tf_1m_dir"] = mtf.get("tf_1m_dir")
         feat["tf_5m_dir"] = mtf.get("tf_5m_dir")
+        feat["tf_10m_dir"] = mtf.get("tf_10m_dir")
         feat["tf_15m_dir"] = mtf.get("tf_15m_dir")
         feat["tf_15m_age_s"] = mtf.get("tf_15m_age_s")
         feat["tf_confirm_3tf"] = mtf.get("confirm_3tf")
         feat["tf_confirm_3tf_direction"] = mtf.get("direction_3tf")
+        feat["tf_confirm_4tf"] = mtf.get("confirm_4tf")
+        feat["tf_confirm_4tf_direction"] = mtf.get("direction_4tf")
+        feat["trend_by_tf"] = mtf.get("trend_by_tf")
+        feat["trend_fresh_count"] = mtf.get("trend_fresh_count")
         return feat
 
     def report(self) -> dict:

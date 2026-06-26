@@ -296,8 +296,9 @@ class PulseConfig:
     tradingview_webhook_port: int = 8787
     tradingview_webhook_path: str = "/webhooks/tradingview"
     tradingview_max_age_s: float = 90.0
-    tradingview_feature_symbol: str = "BTCUSDT"   # TV chart symbol for 1m+5m+15m MTF
+    tradingview_feature_symbol: str = "BTCUSDT"   # TV chart symbol for 1m+5m+10m+15m MTF
     tradingview_mtf_confirm_window_s: float = 360.0
+    tradingview_mtf_confirm_window_10m_s: float = 660.0
     tradingview_mtf_confirm_window_15m_s: float = 960.0
     # Polymarket series to trade concurrently (5m + 15m BTC up/down).
     pulse_series_slugs: tuple = (SERIES_SLUG_5M, SERIES_SLUG_15M)
@@ -583,6 +584,7 @@ class PulseConfig:
             tradingview_feature_symbol=normalize_symbol(
                 os.getenv("PULSE_TV_FEATURE_SYMBOL", "BTCUSDT") or "BTCUSDT") or "BTCUSDT",
             tradingview_mtf_confirm_window_s=_envf("PULSE_TV_MTF_CONFIRM_WINDOW_S", 360.0),
+            tradingview_mtf_confirm_window_10m_s=_envf("PULSE_TV_MTF_CONFIRM_WINDOW_10M_S", 660.0),
             tradingview_mtf_confirm_window_15m_s=_envf("PULSE_TV_MTF_CONFIRM_WINDOW_15M_S", 960.0),
             pulse_series_slugs=tuple(
                 s.strip() for s in os.getenv(
@@ -918,6 +920,7 @@ class PulseEngine:
                     max_age_s=self.cfg.tradingview_max_age_s, data_dir=self.cfg.data_dir,
                     feature_symbol=self.cfg.tradingview_feature_symbol,
                     confirm_window_s=self.cfg.tradingview_mtf_confirm_window_s,
+                    confirm_window_10m_s=self.cfg.tradingview_mtf_confirm_window_10m_s,
                     confirm_window_15m_s=self.cfg.tradingview_mtf_confirm_window_15m_s)
                 self.webhook = WebhookServer(
                     self.tradingview, host=self.cfg.tradingview_webhook_host,
@@ -1870,7 +1873,10 @@ class PulseEngine:
                                "tf_confirm": (tv_feature or {}).get("tf_confirm"),
                                "tf_confirm_direction": (tv_feature or {}).get("tf_confirm_direction"),
                                "tf_1m_dir": (tv_feature or {}).get("tf_1m_dir"),
-                               "tf_5m_dir": (tv_feature or {}).get("tf_5m_dir")}
+                               "tf_5m_dir": (tv_feature or {}).get("tf_5m_dir"),
+                               "tf_10m_dir": (tv_feature or {}).get("tf_10m_dir"),
+                               "tf_15m_dir": (tv_feature or {}).get("tf_15m_dir"),
+                               "tf_confirm_4tf": (tv_feature or {}).get("tf_confirm_4tf")}
                 if mtf_res["decision"] == "block":
                     dr.action = RejectAction(stage="mtf_gate", reason=mtf_res["reasons"][0])
                     if self.markov is not None:

@@ -195,13 +195,15 @@ async function tick(){
   const tv=s.tradingview||{};
   if(tv.enabled){
     const mtf=tv.tradingview_mtf_confirmation||{};
-    const mtf3=mtf.confirm_3tf||mtf.confirm||'none';
-    const mtfCls=(mtf3.includes('confirmed')?'pos':(mtf3.includes('conflict')?'neg':'neu'));
-    summary.appendChild(kvCard('TradingView · 1m / 5m / 15m',[
+    const mtf4=mtf.confirm_4tf||mtf.confirm_3tf||mtf.confirm||'none';
+    const mtfCls=(mtf4.includes('confirmed')?'pos':(mtf4.includes('conflict')?'neg':'neu'));
+    summary.appendChild(kvCard('TradingView · 1m / 5m / 10m / 15m',[
       ['1m', mtf.tf_1m_dir||'—'],
       ['5m', mtf.tf_5m_dir||'—'],
+      ['10m', mtf.tf_10m_dir||'—'],
       ['15m', mtf.tf_15m_dir||'—'],
-      ['3-TF align', mtf3, mtfCls],
+      ['4-TF trend', mtf4, mtfCls],
+      ['Fresh TFs', (mtf.trend_fresh_count==null?'—':mtf.trend_fresh_count+'/4')],
       ['Alerts valid', tv.tradingview_alerts_valid||0],
     ]));
   }

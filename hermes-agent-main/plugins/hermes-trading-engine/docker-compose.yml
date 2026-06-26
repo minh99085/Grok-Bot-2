@@ -280,6 +280,7 @@ services:
       PULSE_SERIES_SLUGS: "${PULSE_SERIES_SLUGS:-btc-up-or-down-5m,btc-up-or-down-15m}"
       PULSE_TV_FEATURE_SYMBOL: "${PULSE_TV_FEATURE_SYMBOL:-BTCUSDT}"
       PULSE_TV_MTF_CONFIRM_WINDOW_S: "${PULSE_TV_MTF_CONFIRM_WINDOW_S:-360}"
+      PULSE_TV_MTF_CONFIRM_WINDOW_10M_S: "${PULSE_TV_MTF_CONFIRM_WINDOW_10M_S:-660}"
       PULSE_TV_MTF_CONFIRM_WINDOW_15M_S: "${PULSE_TV_MTF_CONFIRM_WINDOW_15M_S:-960}"
       # Use TradingView as the DIRECTIONAL INDICATION SIGNAL (restrict-only): trade only when a
       # fresh TradingView signal agrees with the side. Can only PREVENT trades, never force/bypass.
