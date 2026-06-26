@@ -232,6 +232,32 @@ def test_allows_up_high_edge_strong_cex():
                       cex_agreement_bucket="strong")["decision"] == "pass"
 
 
+def test_blocks_up_ask_heavy_ob():
+    g = TradingViewDownBiasGate(enabled=True, exploration_rate=0.0,
+                                block_up_without_bearish=False,
+                                block_mixed_mtf_up=False,
+                                block_up_markov_chop_noise=False,
+                                block_up_medium_edge=False,
+                                block_up_weak_cex=False)
+    r = g.evaluate(side="up", mtf_alignment="bearish_aligned",
+                   tv_direction="DOWN", ob_pressure_bucket="ask_heavy")
+    assert r["decision"] == "block"
+    assert "tv_down_bias_up_ask_heavy_ob" in r["reasons"]
+
+
+def test_blocks_up_tf_confirm_conflict():
+    g = TradingViewDownBiasGate(enabled=True, exploration_rate=0.0,
+                                block_up_without_bearish=False,
+                                block_mixed_mtf_up=False,
+                                block_up_markov_chop_noise=False,
+                                block_up_medium_edge=False,
+                                block_up_weak_cex=False)
+    r = g.evaluate(side="up", mtf_alignment="bearish_aligned",
+                   tv_direction="DOWN", tf_confirm="conflict")
+    assert r["decision"] == "block"
+    assert "tv_down_bias_up_tf_confirm_conflict" in r["reasons"]
+
+
 def test_allows_up_mid_ttc_window():
     g = TradingViewDownBiasGate(enabled=True, exploration_rate=0.0,
                                 block_up_without_bearish=False,

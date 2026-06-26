@@ -295,6 +295,8 @@ class PulseConfig:
     tv_down_bias_block_up_weak_cex: bool = True
     tv_down_bias_block_up_late_ttc: bool = True
     tv_down_bias_block_up_early_ttc: bool = True
+    tv_down_bias_block_up_ask_heavy_ob: bool = True
+    tv_down_bias_block_up_tf_confirm_conflict: bool = True
     tv_down_bias_up_late_ttc_min_s: float = 240.0
     tv_down_bias_up_early_ttc_max_s: float = 120.0
     tv_mtf_conflict_gate_enabled: bool = True
@@ -660,6 +662,12 @@ class PulseConfig:
             tv_down_bias_block_up_early_ttc=str(
                 os.getenv("PULSE_TV_DOWN_BIAS_BLOCK_UP_EARLY_TTC", "1")).strip().lower()
             in ("1", "true", "yes", "on"),
+            tv_down_bias_block_up_ask_heavy_ob=str(
+                os.getenv("PULSE_TV_DOWN_BIAS_BLOCK_UP_ASK_HEAVY_OB", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            tv_down_bias_block_up_tf_confirm_conflict=str(
+                os.getenv("PULSE_TV_DOWN_BIAS_BLOCK_UP_TF_CONFIRM_CONFLICT", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
             tv_down_bias_up_late_ttc_min_s=_envf("PULSE_TV_DOWN_BIAS_UP_LATE_TTC_MIN_S", 240.0),
             tv_down_bias_up_early_ttc_max_s=_envf("PULSE_TV_DOWN_BIAS_UP_EARLY_TTC_MAX_S", 120.0),
             tv_mtf_conflict_gate_enabled=str(os.getenv("PULSE_TV_MTF_CONFLICT_GATE", "1"))
@@ -877,6 +885,9 @@ class PulseEngine:
             block_up_weak_cex=bool(self.cfg.tv_down_bias_block_up_weak_cex),
             block_up_late_ttc=bool(self.cfg.tv_down_bias_block_up_late_ttc),
             block_up_early_ttc=bool(self.cfg.tv_down_bias_block_up_early_ttc),
+            block_up_ask_heavy_ob=bool(self.cfg.tv_down_bias_block_up_ask_heavy_ob),
+            block_up_tf_confirm_conflict=bool(
+                self.cfg.tv_down_bias_block_up_tf_confirm_conflict),
             up_late_ttc_min_s=self.cfg.tv_down_bias_up_late_ttc_min_s,
             up_early_ttc_max_s=self.cfg.tv_down_bias_up_early_ttc_max_s,
             exploration_rate=self.cfg.tv_down_bias_exploration_rate)
@@ -3171,6 +3182,7 @@ class PulseEngine:
             candle_pressure=feat.get("candle_pressure"),
             edge_score_bucket=self._edge_snap_field(esnap, "pulse_edge_score_bucket"),
             cex_agreement_bucket=self._edge_snap_field(esnap, "cex_agreement_bucket"),
+            ob_pressure_bucket=self._edge_snap_ob_pressure(esnap),
             ttc_s=ttc_s,
         )
 
@@ -3215,6 +3227,12 @@ class PulseEngine:
         if val is None and isinstance(esnap, dict):
             val = esnap.get(field)
         return val
+
+    def _edge_snap_ob_pressure(self, esnap) -> "str | None":
+        obp = self._edge_snap_field(esnap, "orderbook_pressure")
+        if isinstance(obp, dict):
+            return obp.get("bucket")
+        return None
 
     def _mispricing_follow_up_ok(self, esnap=None,
                                  tv_feature: "dict | None" = None) -> "tuple[bool, str]":
