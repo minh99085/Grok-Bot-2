@@ -29,6 +29,19 @@ def test_directional_not_halted_with_insufficient_samples():
     assert out["reasons"] == ["insufficient_samples"]
 
 
+def test_directional_not_halted_when_wilson_low_but_wr_and_pf_ok():
+    """Wide Wilson CI on high avg entry must not halt a demonstrably profitable window."""
+    cfg = StopConfig(min_samples=30, min_profit_factor=0.85, max_drawdown_pct=99)
+    wins = [_Pos(entry_ts=float(i), entry_price=0.63, pnl_usd=2.0, won=True) for i in range(26)]
+    losses = [_Pos(entry_ts=float(100 + i), entry_price=0.63, pnl_usd=-4.0, won=False)
+              for i in range(15)]
+    out = evaluate_directional(positions=wins + losses,
+                               ledger_stats={"max_drawdown_usd": 20},
+                               starting_capital=500, cfg=cfg)
+    assert out["halted"] is False
+    assert "wilson_wr_below_breakeven" not in out["reasons"]
+
+
 def test_directional_halted_on_low_profit_factor():
     cfg = StopConfig(min_samples=30, min_profit_factor=0.85, max_drawdown_pct=99)
     out = evaluate_directional(positions=_losing_streak(35),

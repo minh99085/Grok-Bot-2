@@ -52,7 +52,7 @@ def _rolling_settled(positions, *, rolling_n: int) -> list:
     return settled[-rolling_n:]
 
 
-def _directional_metrics(positions, *, rolling_n: int) -> dict:
+def _directional_metrics(positions, *, rolling_n: int, confidence_z: float = 1.64) -> dict:
     recent = _rolling_settled(positions, rolling_n=rolling_n)
     n = len(recent)
     if not n:
@@ -79,7 +79,7 @@ def _directional_metrics(positions, *, rolling_n: int) -> dict:
     breakeven = entry_sum / n
     pf = (gross_win / gross_loss) if gross_loss > 0 else None
     return {"n": n, "wins": wins, "win_rate": round(wr, 4),
-            "wilson_lower": (_wilson_lower(wins, n) if n else None),
+            "wilson_lower": (_wilson_lower(wins, n, z=confidence_z) if n else None),
             "breakeven_wr": round(breakeven, 4), "profit_factor": (round(pf, 4) if pf else None),
             "pnl_usd": round(pnl, 4)}
 
@@ -90,7 +90,8 @@ def evaluate_directional(*, positions, ledger_stats: dict, starting_capital: flo
     if not cfg.enabled:
         return {"strategy": "directional", "enabled": False, "halted": False,
                 "verifiable": False, "reasons": [], "metrics": {}}
-    metrics = _directional_metrics(positions, rolling_n=cfg.rolling_n)
+    metrics = _directional_metrics(positions, rolling_n=cfg.rolling_n,
+                                   confidence_z=cfg.confidence_z)
     dd_usd = float((ledger_stats or {}).get("max_drawdown_usd") or 0.0)
     start = max(1.0, float(starting_capital or 500.0))
     dd_pct = round(dd_usd / start * 100, 2)
@@ -103,9 +104,13 @@ def evaluate_directional(*, positions, ledger_stats: dict, starting_capital: flo
                 "metrics": metrics, "min_samples": cfg.min_samples}
     wl = metrics.get("wilson_lower")
     be = metrics.get("breakeven_wr")
-    if wl is not None and be is not None and wl < be:
-        reasons.append("wilson_wr_below_breakeven")
+    wr = metrics.get("win_rate")
     pf = metrics.get("profit_factor")
+    # Wilson alone can false-halt when avg entry price is high (wide CI) but realized WR/PF are ok.
+    if (wl is not None and be is not None and wl < be
+            and ((wr is not None and wr < be)
+                 or (pf is not None and pf < cfg.min_profit_factor))):
+        reasons.append("wilson_wr_below_breakeven")
     if pf is not None and pf < cfg.min_profit_factor:
         reasons.append("profit_factor_below_floor")
     if dd_pct > cfg.max_drawdown_pct:

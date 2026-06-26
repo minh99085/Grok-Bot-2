@@ -1717,6 +1717,13 @@ class PulseEngine:
             # the quant's directional opinion; in FOLLOW / CEX-LEAD-DRIVE mode the direction is owned
             # by the proven driver so they are bypassed. The deterministic FLOOR (selectivity +
             # calibration + execution-quality gate + caps) below still applies in every mode.
+            if (not grok_follow and not cex_lead_active and d.side == "up"
+                    and not self._grok_up_side_allowed()):
+                dr.action = RejectAction(stage="grok_decider", reason="grok_no_edge_up")
+                if self.markov is not None:
+                    self.markov.record_terminal(state=cand_state, accepted=False)
+                _finalize(dr, "rejected", reason="grok_no_edge_up", stage="grok_decider")
+                continue
             if not grok_follow and not cex_lead_active:
                 tv_reason = self._tv_signal_gate(tv_feature, d.side)
                 if tv_reason is not None:
