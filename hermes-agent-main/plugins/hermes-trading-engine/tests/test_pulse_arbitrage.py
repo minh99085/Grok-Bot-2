@@ -164,7 +164,8 @@ def _arb_engine(tmp_path, *, arb=True, **over):
     cfg = PulseConfig(tick_seconds=1.0, size_usd=10.0, min_edge=0.02, basis_buffer=0.0,
                       min_seconds_since_open=0.0, sigma_trust_floor=0.0, min_vol_samples=2,
                       settle_grace_s=0.0, exec_max_depth_consume_frac=0.9,
-                      selectivity_exploration_rate=0.0, data_dir=str(tmp_path), **over)
+                      selectivity_exploration_rate=0.0, data_dir=str(tmp_path),
+                      directional_block_up_until_promoted=False, **over)
     return PulseEngine(cfg, market_feed=_ArbMkt(win, arb=arb), price_feed=feed), t0
 
 

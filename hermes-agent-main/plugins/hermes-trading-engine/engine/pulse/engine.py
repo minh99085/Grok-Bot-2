@@ -196,10 +196,8 @@ class PulseConfig:
     # ---- within-window RISK-FREE arbitrage (Roan dutch book up_vwap+down_vwap<1; PAPER ONLY) ----
     arbitrage_enabled: bool = True
     arb_fees: float = 0.0                       # modelled taker fee per $ (Polymarket BTC ~0)
-    arb_epsilon: float = 0.01                   # min risk-free edge below $1 to act (must exceed real
-    #                                             fees+slippage; Polymarket BTC taker fee ~0 so 0.01
-    #                                             still leaves a safety buffer for non-atomic fills).
-    #                                             Lower = capture more frequent shallower dutch books.
+    arb_epsilon: float = 0.05                   # min risk-free edge below $1 (Bible execution-risk
+    #                                             floor; must cover fees + non-atomic slippage buffer).
     arb_min_profit_usd: float = 0.0
     arb_size_usd: float = 100.0                 # fallback target when book depth is unknown
     arb_max_usd: float = 300.0                  # SIZE-TO-DEPTH ceiling: take the full available depth
@@ -216,6 +214,10 @@ class PulseConfig:
     # Allow this capped fraction of otherwise-eligible candidates through as exploration so the bot
     # keeps learning and can DISCOVER winning buckets. 0 = strict block-all; 1 = effectively off.
     directional_explore_rate: float = 0.05
+    directional_max_bankroll_frac: float = 0.10   # cap directional open exposure vs starting capital
+    directional_block_up_until_promoted: bool = True  # hard block UP until direction=up promoted
+    primary_edge_source: str = "arbitrage"      # report field: arbitrage | directional | none
+    dependency_arb_enabled: bool = True         # LCMM nested-window scanner (log-only default)
     # ---- Learned Selectivity Gate v1 (between decision and execution; PAPER ONLY) ----
     # Uses live settled-trade bucket evidence to REJECT proven-losing buckets. Can only make the
     # bot MORE selective; never trades/resizes/bypasses the execution gate.
@@ -480,7 +482,7 @@ class PulseConfig:
             arbitrage_enabled=str(os.getenv("PULSE_ARB_ENABLED", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
             arb_fees=_envf("PULSE_ARB_FEES", 0.0),
-            arb_epsilon=_envf("PULSE_ARB_EPSILON", 0.01),
+            arb_epsilon=_envf("PULSE_ARB_EPSILON", 0.05),
             arb_min_profit_usd=_envf("PULSE_ARB_MIN_PROFIT_USD", 0.0),
             arb_size_usd=_envf("PULSE_ARB_SIZE_USD", 100.0),
             arb_max_usd=_envf("PULSE_ARB_MAX_USD", 300.0),
@@ -490,6 +492,14 @@ class PulseConfig:
             .strip().lower() in ("1", "true", "yes", "on"),
             directional_winning_min_samples=int(_envf("PULSE_DIRECTIONAL_WINNING_MIN_SAMPLES", 30)),
             directional_explore_rate=_envf("PULSE_DIRECTIONAL_EXPLORE_RATE", 0.05),
+            directional_max_bankroll_frac=_envf("PULSE_DIRECTIONAL_MAX_BANKROLL_FRAC", 0.10),
+            directional_block_up_until_promoted=str(
+                os.getenv("PULSE_DIRECTIONAL_BLOCK_UP_UNTIL_PROMOTED", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            primary_edge_source=str(os.getenv("PULSE_PRIMARY_EDGE_SOURCE", "arbitrage")).strip()
+            or "arbitrage",
+            dependency_arb_enabled=str(os.getenv("PULSE_DEPENDENCY_ARB_ENABLED", "1"))
+            .strip().lower() in ("1", "true", "yes", "on"),
             selectivity_gate_enabled=str(os.getenv("PULSE_SELECTIVITY_GATE_ENABLED", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
             selectivity_min_samples=int(_envf("PULSE_SELECTIVITY_MIN_SAMPLES", 50)),
@@ -812,6 +822,10 @@ class PulseEngine:
         if bool(getattr(self.cfg, "arbitrage_enabled", True)):
             from engine.pulse.arbitrage import ArbLedger
             self.arb_ledger = ArbLedger()
+        self.dep_arb_ledger = None
+        if bool(getattr(self.cfg, "dependency_arb_enabled", True)):
+            from engine.pulse.dependency_arb import DependencyArbLedger
+            self.dep_arb_ledger = DependencyArbLedger()
         # market-beating benchmark for the learning blend: grade the edge model's P(up) vs the MARKET
         # price (poly_yes) per window; the blend only activates when the model actually beats the
         # market out-of-sample (kills phantom edge — calibrated != more accurate than the market).
@@ -1036,6 +1050,9 @@ class PulseEngine:
         if self.arb_ledger is not None:
             from engine.pulse.arbitrage import ArbLedger
             self.arb_ledger = ArbLedger()
+        if self.dep_arb_ledger is not None:
+            from engine.pulse.dependency_arb import DependencyArbLedger
+            self.dep_arb_ledger = DependencyArbLedger()
         self._ev_before_sum = 0.0
         self._ev_after_sum = 0.0
         self._ev_n = 0
@@ -1111,6 +1128,8 @@ class PulseEngine:
                                        maxlen=400)
         if self.arb_ledger is not None:
             self.arb_ledger.load_state(acct.get("arb_ledger") or {})
+        if self.dep_arb_ledger is not None:
+            self.dep_arb_ledger.load_state(acct.get("dep_arb_ledger") or {})
         self._allowlist_explored = int(acct.get("allowlist_explored", 0) or 0)
         self._allowlist_blocked = int(acct.get("allowlist_blocked", 0) or 0)
         # restore research avoid-rules, but RE-VALIDATE each against current evidence (drops legacy
@@ -1277,6 +1296,8 @@ class PulseEngine:
             directional_stats=self.ledger.stats(),
             arb_report=(self.arb_ledger.report() if self.arb_ledger is not None else {}),
             starting_capital=self.cfg.starting_capital_usd)
+        self._scan_arbitrage_all_windows(windows, now)
+        self._scan_dependency_arb(windows, now)
         _grok_news = ((self.grok_news.latest() if self.grok_news is not None else None) or {})
 
         def _bump(r):
@@ -1350,35 +1371,12 @@ class PulseEngine:
             mc.best_ask = w.up_book.best_ask if w.up_book else None
             mc.spread = w.up_book.spread if w.up_book else None
             mc.ask_depth_usd = w.up_book.ask_depth_usd if w.up_book else None
-            # ---- ARB-FIRST: within-window RISK-FREE dutch book (Roan). Runs BEFORE the directional
-            # path; bypasses view gates (it's risk-free, not a view) but uses VWAP/depth realism.
-            # Booked in a SEPARATE ledger so its P&L is never blended with directional stats. ----
-            if self.arb_ledger is not None and self.arb_ledger.has_arb(w.event_id):
-                # window already has a risk-free arb position -> never also trade directional on it
-                _finalize(dr, "skipped", reason="arbitrage_taken")
-                continue
-            if self.arb_ledger is not None and not self.stop_monitor.is_halted("arbitrage"):
-                from engine.pulse.arbitrage import detect_arbitrage
-                opp = detect_arbitrage(
-                    w.up_book, w.down_book, size_usd=self.cfg.arb_size_usd, fees=self.cfg.arb_fees,
-                    epsilon=self.cfg.arb_epsilon,
-                    max_depth_consume_frac=self.cfg.exec_max_depth_consume_frac,
-                    tick_size=w.tick_size, now=now, max_book_age_s=self.cfg.exec_max_book_age_s,
-                    min_profit_usd=self.cfg.arb_min_profit_usd, max_usd=self.cfg.arb_max_usd)
-                self.arb_ledger.record_scan(opp, near_miss_eps=max(0.02, self.cfg.arb_epsilon))
-                if opp is not None:
-                    dr.arbitrage = opp.to_dict()
-                    if opp.kind == "sell_both":
-                        self.arb_ledger.sell_both_detected += 1
-                    if opp.actionable:
-                        self.arb_ledger.detected += 1
-                        if self.arb_ledger.book(w.event_id, opp, close_ts=w.close_ts, now=now):
-                            self.loops.beat("arbitrage", now)
-                            # classify as 'skipped' for the DIRECTIONAL lifecycle (it took no
-                            # directional trade) so directional reconciliation stays exact; the arb
-                            # itself is tracked in the SEPARATE arb_ledger.
-                            _finalize(dr, "skipped", reason="arbitrage_taken")
-                            continue           # took the risk-free arb; skip directional for this window
+            # ---- ARB-FIRST: scanned in _scan_arbitrage_all_windows (no vol/snapshot gate). ----
+            if self.arb_ledger is not None:
+                dr.arbitrage = self.arb_ledger.last_scan.get(w.event_id)
+                if self.arb_ledger.has_arb(w.event_id):
+                    _finalize(dr, "skipped", reason="arbitrage_taken")
+                    continue
             # directional strategy can be disabled (arb runs standalone) — Loop-Eng scope lock
             if not self.cfg.directional_enabled:
                 _finalize(dr, "skipped", reason="directional_disabled")
@@ -1848,6 +1846,14 @@ class PulseEngine:
                     self.markov.record_terminal(state=cand_state, accepted=False)
                 _finalize(dr, "rejected", reason=d.reason, stage="directional")
                 continue
+            if (self.cfg.directional_block_up_until_promoted and not grok_follow
+                    and not cex_lead_active and d.side == "up"
+                    and not self._up_direction_promoted()):
+                dr.action = RejectAction(stage="directional", reason="up_blocked_until_promoted")
+                if self.markov is not None:
+                    self.markov.record_terminal(state=cand_state, accepted=False)
+                _finalize(dr, "rejected", reason="up_blocked_until_promoted", stage="directional")
+                continue
             # --- quant OPINION gates (TV-signal / context / late-window / selectivity). These are
             # the quant's directional opinion; in FOLLOW / CEX-LEAD-DRIVE mode the direction is owned
             # by the proven driver so they are bypassed. The deterministic FLOOR (selectivity +
@@ -2103,8 +2109,17 @@ class PulseEngine:
                 _finalize(dr, "rejected", reason=ex.reason, stage="execution_gate")
                 continue
             d.price = ex.fill_price               # paper fill at realistic VWAP price
-            pos = self.ledger.open_position(w, d, now,
-                                            size_usd=round(self.cfg.size_usd * grok_size_frac, 2),
+            trade_size = round(self.cfg.size_usd * grok_size_frac, 2)
+            dir_cap = (float(self.cfg.starting_capital_usd)
+                       * float(self.cfg.directional_max_bankroll_frac))
+            open_dir = self._directional_open_exposure()
+            if open_dir + trade_size > dir_cap + 1e-6:
+                dr.action = RejectAction(stage="directional", reason="directional_bankroll_cap")
+                if self.markov is not None:
+                    self.markov.record_terminal(state=cand_state, accepted=False)
+                _finalize(dr, "rejected", reason="directional_bankroll_cap", stage="directional")
+                continue
+            pos = self.ledger.open_position(w, d, now, size_usd=trade_size,
                                             s_open=snap.price, decision_id=mc.decision_id)
             if pos is None:
                 # gate accepted but the paper fill could not be recorded — do NOT claim a trade;
@@ -3241,6 +3256,19 @@ class PulseEngine:
                                    else {"enabled": False})
         report["arbitrage"] = (self.arb_ledger.report() if self.arb_ledger is not None
                                else {"enabled": False})
+        report["dependency_arbitrage"] = (self.dep_arb_ledger.report()
+                                          if self.dep_arb_ledger is not None
+                                          else {"enabled": False})
+        report["profit_discovery"] = self._profit_discovery_status()
+        report["directional_risk"] = {
+            "max_bankroll_frac": self.cfg.directional_max_bankroll_frac,
+            "bankroll_cap_usd": round(
+                float(self.cfg.starting_capital_usd) * float(self.cfg.directional_max_bankroll_frac),
+                2),
+            "open_exposure_usd": round(self._directional_open_exposure(), 2),
+            "block_up_until_promoted": bool(self.cfg.directional_block_up_until_promoted),
+            "up_promoted": self._up_direction_promoted(),
+        }
         report["directional_allowlist"] = {
             "enabled": bool(self.cfg.directional_require_winning_bucket),
             "explore_rate": self.cfg.directional_explore_rate,
@@ -3486,6 +3514,89 @@ class PulseEngine:
                 applied.append("exploit:" + key)
         return applied
 
+    def _scan_arbitrage_all_windows(self, windows: list, now: float) -> None:
+        """ARB-FIRST pass: scan every open window (5m+15m) without directional vol/snapshot gates."""
+        if self.arb_ledger is None or self.stop_monitor.is_halted("arbitrage"):
+            return
+        from engine.pulse.arbitrage import detect_arbitrage
+        for w in windows:
+            if now < w.open_ts or w.seconds_to_close(now) <= 0:
+                continue
+            if self.arb_ledger.has_arb(w.event_id):
+                continue
+            self.market.hydrate_books(w)
+            opp = detect_arbitrage(
+                w.up_book, w.down_book, size_usd=self.cfg.arb_size_usd, fees=self.cfg.arb_fees,
+                epsilon=self.cfg.arb_epsilon,
+                max_depth_consume_frac=self.cfg.exec_max_depth_consume_frac,
+                tick_size=w.tick_size, now=now, max_book_age_s=self.cfg.exec_max_book_age_s,
+                min_profit_usd=self.cfg.arb_min_profit_usd, max_usd=self.cfg.arb_max_usd)
+            self.arb_ledger.record_scan(
+                opp, near_miss_eps=max(0.02, self.cfg.arb_epsilon),
+                window_key=w.event_id, series_label=getattr(w, "series_label", None))
+            if opp is None:
+                continue
+            if opp.kind == "sell_both":
+                self.arb_ledger.sell_both_detected += 1
+            if opp.actionable:
+                self.arb_ledger.detected += 1
+                if self.arb_ledger.book(w.event_id, opp, close_ts=w.close_ts, now=now,
+                                        series_label=getattr(w, "series_label", None)):
+                    self.loops.beat("arbitrage", now)
+
+    def _scan_dependency_arb(self, windows: list, now: float) -> None:
+        """LCMM dependency scan (log-only): nested 5m inside 15m implication checks."""
+        if self.dep_arb_ledger is None:
+            return
+        open_w = [w for w in windows if w.open_ts <= now < w.close_ts]
+        if not open_w:
+            return
+        for w in open_w:
+            if w.up_book is None or w.down_book is None:
+                self.market.hydrate_books(w)
+        from engine.pulse.dependency_arb import scan_windows
+        violations = scan_windows(open_w, epsilon=max(0.02, self.cfg.arb_epsilon))
+        self.dep_arb_ledger.record_scan(violations)
+
+    def _directional_open_exposure(self) -> float:
+        exp = 0.0
+        for pos in self.ledger.positions.values():
+            if pos.status == "open":
+                exp += float(getattr(pos, "size_usd", 0.0) or 0.0)
+        return exp
+
+    def _up_direction_promoted(self) -> bool:
+        """True when direction=up bucket clears Wilson LB promotion (n>=min, PnL>0)."""
+        return self._research_exploit_backed("direction", "up")
+
+    def _profit_discovery_status(self) -> dict:
+        """5x improvement tracker vs baseline; honest status only."""
+        baseline_total = float(getattr(self, "_profit_baseline_usd", 35.95) or 35.95)
+        ls = self.ledger.stats()
+        arb_pnl = float((self.arb_ledger.realized_profit_usd if self.arb_ledger else 0.0) or 0.0)
+        dir_pnl = float(ls.get("realized_pnl_usd") or 0.0)
+        dep_pnl = float((self.dep_arb_ledger.realized_profit_usd
+                         if self.dep_arb_ledger else 0.0) or 0.0)
+        total = arb_pnl + dir_pnl + dep_pnl
+        ratio = (total / baseline_total) if baseline_total > 0 else None
+        target = 5.0
+        proven = bool(ratio is not None and ratio >= target and arb_pnl >= total * 0.9)
+        blockers = []
+        if ratio is None or ratio < target:
+            blockers.append("total_pnl_below_5x_baseline")
+        if total > 0 and arb_pnl < total * 0.9:
+            blockers.append("arb_not_dominant_source")
+        if self.arb_ledger is not None and self.arb_ledger.executed < 8:
+            blockers.append("insufficient_arb_sample")
+        return {"five_x_target": target, "baseline_total_pnl_usd": baseline_total,
+                "current_total_pnl_usd": round(total, 4),
+                "arb_pnl_usd": round(arb_pnl, 4), "directional_pnl_usd": round(dir_pnl, 4),
+                "dependency_arb_pnl_usd": round(dep_pnl, 4),
+                "improvement_ratio": (round(ratio, 4) if ratio is not None else None),
+                "five_x_improvement_status": ("proven" if proven else "not_proven_yet"),
+                "primary_edge_source": self.cfg.primary_edge_source,
+                "top_blockers": blockers[:3]}
+
     def _directional_market_benchmark_ok(self) -> bool:
         """Directional allowlist requires model Brier <= market Brier once enough graded windows."""
         bench = self._market_benchmark()
@@ -3605,6 +3716,7 @@ class PulseEngine:
         # TOTAL alpha the operator sees (directional vs arb stay separately reported).
         arb_pnl = float((self.arb_ledger.realized_profit_usd if self.arb_ledger is not None else 0.0) or 0.0)
         total_realized = realized + arb_pnl
+        dir_cap = round(start * float(self.cfg.directional_max_bankroll_frac), 2)
         return {"paper_only": True, "starting_capital_usd": round(start, 2),
                 "realized_pnl_usd": round(realized, 2),
                 "on_hand_capital_usd": round(on_hand, 2),
@@ -3614,6 +3726,9 @@ class PulseEngine:
                 "total_on_hand_usd": round(start + total_realized, 2),
                 "total_return_pct": (round(total_realized / start * 100, 2) if start else None),
                 "open_exposure_usd": round(open_exposure, 2),
+                "directional_bankroll_cap_usd": dir_cap,
+                "directional_cap_remaining_usd": round(max(0.0, dir_cap - open_exposure), 2),
+                "primary_edge_source": self.cfg.primary_edge_source,
                 "open_positions": ls.get("open_positions")}
 
     def _grok_decider_report(self) -> dict:
@@ -3820,6 +3935,8 @@ class PulseEngine:
                               "mkt_bench_recent": [list(x) for x in self._mkt_bench_recent],
                               "arb_ledger": (self.arb_ledger.to_state()
                                              if self.arb_ledger is not None else {}),
+                              "dep_arb_ledger": (self.dep_arb_ledger.to_state()
+                                                 if self.dep_arb_ledger is not None else {}),
                               "allowlist_explored": self._allowlist_explored,
                               "allowlist_blocked": self._allowlist_blocked,
                               "research_avoid": sorted(self._research_avoid),

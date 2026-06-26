@@ -160,10 +160,29 @@ class ArbLedger:
         self.scans = 0
         self.near_miss = 0                  # vwap ask-sum within epsilon of 1 (diagnostic)
         self.min_vwap_residual: Optional[float] = None
+        self.windows_scanned = 0              # open windows scanned this engine lifetime
+        self.windows_by_series: dict = {}     # series_label -> scan count
+        self.candidates = 0                   # actionable opportunities seen (pre-book)
+        self.rejected_by_reason: dict = {}    # reason -> count (non-actionable with opp)
+        self.last_scan: dict = {}             # window_key -> last opp dict (diagnostic)
+        self.per_window: dict = {}            # window_key -> {series_label, executed, profit, ...}
 
-    def record_scan(self, opp: Optional["ArbOpportunity"], *, near_miss_eps: float = 0.02) -> None:
+    def record_scan(self, opp: Optional["ArbOpportunity"], *, near_miss_eps: float = 0.02,
+                    window_key: Optional[str] = None, series_label: Optional[str] = None) -> None:
         """P1 instrumentation: track every dutch-book scan for capacity planning."""
         self.scans += 1
+        self.windows_scanned += 1
+        if series_label:
+            sl = str(series_label)
+            self.windows_by_series[sl] = int(self.windows_by_series.get(sl, 0) or 0) + 1
+        if window_key:
+            if opp is not None:
+                snap = opp.to_dict()
+                if series_label:
+                    snap["series_label"] = str(series_label)
+                self.last_scan[window_key] = snap
+            else:
+                self.last_scan[window_key] = None
         if opp is None:
             return
         vr = abs(float(opp.vwap_residual))
@@ -171,18 +190,30 @@ class ArbLedger:
             self.min_vwap_residual = round(vr, 6)
         if (not opp.actionable) and vr <= float(near_miss_eps):
             self.near_miss += 1
+        if not opp.actionable and opp.reason:
+            r = str(opp.reason)
+            self.rejected_by_reason[r] = int(self.rejected_by_reason.get(r, 0) or 0) + 1
+        if opp.actionable:
+            self.candidates += 1
 
     def has_arb(self, window_key: str) -> bool:
         return window_key in self.positions
 
-    def book(self, window_key: str, opp: ArbOpportunity, *, close_ts: float, now: float) -> bool:
+    def book(self, window_key: str, opp: ArbOpportunity, *, close_ts: float, now: float,
+             series_label: Optional[str] = None) -> bool:
         if not opp.actionable or window_key in self.positions:
             return False
+        series_label = series_label or (self.last_scan.get(window_key) or {}).get("series_label")
         self.positions[window_key] = {
             "window_key": window_key, "kind": opp.kind, "shares": opp.shares,
             "cost_usd": opp.cost_usd, "guaranteed_profit_usd": opp.guaranteed_profit_usd,
             "up_vwap": opp.up_vwap, "down_vwap": opp.down_vwap, "entry_ts": float(now),
-            "close_ts": float(close_ts), "status": "open", "entry_mode": "arbitrage"}
+            "close_ts": float(close_ts), "status": "open", "entry_mode": "arbitrage",
+            "series_label": series_label}
+        self.per_window[window_key] = {
+            "window_key": window_key, "series_label": series_label, "kind": opp.kind,
+            "executed": True, "guaranteed_profit_usd": opp.guaranteed_profit_usd,
+            "cost_usd": opp.cost_usd, "shares": opp.shares}
         self.executed += 1
         if opp.kind == "sell_both":
             self.executed_sell += 1
@@ -210,6 +241,11 @@ class ArbLedger:
     def report(self) -> dict:
         return {"strategy": "within_window_arbitrage", "paper_only": True, "risk_free": True,
                 "segregated_from_directional": True, "detected_actionable": self.detected,
+                "arb_candidates": self.candidates, "arb_scan_count": self.scans,
+                "windows_scanned": self.windows_scanned,
+                "windows_by_series": dict(self.windows_by_series),
+                "arb_rejected_by_reason": dict(self.rejected_by_reason),
+                "per_window": {k: dict(v) for k, v in self.per_window.items()},
                 "sell_both_detected": self.sell_both_detected, "executed": self.executed,
                 "executed_buy": self.executed_buy, "executed_sell": self.executed_sell,
                 "settled": self.settled, "open": len(self.open_positions()),
@@ -229,7 +265,13 @@ class ArbLedger:
                 "realized_profit_usd": self.realized_profit_usd,
                 "guaranteed_booked_usd": self.guaranteed_booked_usd,
                 "scans": self.scans, "near_miss": self.near_miss,
-                "min_vwap_residual": self.min_vwap_residual}
+                "min_vwap_residual": self.min_vwap_residual,
+                "windows_scanned": self.windows_scanned,
+                "windows_by_series": dict(self.windows_by_series),
+                "candidates": self.candidates,
+                "rejected_by_reason": dict(self.rejected_by_reason),
+                "per_window": {k: dict(v) for k, v in self.per_window.items()},
+                "last_scan": dict(self.last_scan)}
 
     def load_state(self, data: dict) -> None:
         if not data:
@@ -247,3 +289,9 @@ class ArbLedger:
         self.near_miss = int(data.get("near_miss", 0) or 0)
         mvr = data.get("min_vwap_residual")
         self.min_vwap_residual = (float(mvr) if mvr is not None else None)
+        self.windows_scanned = int(data.get("windows_scanned", 0) or 0)
+        self.windows_by_series = dict(data.get("windows_by_series") or {})
+        self.candidates = int(data.get("candidates", 0) or 0)
+        self.rejected_by_reason = dict(data.get("rejected_by_reason") or {})
+        self.per_window = {k: dict(v) for k, v in (data.get("per_window") or {}).items()}
+        self.last_scan = dict(data.get("last_scan") or {})

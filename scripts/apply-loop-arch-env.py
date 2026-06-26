@@ -71,6 +71,13 @@ UPDATES = {
     "PULSE_BASELINE_UP_TV_GATE_ENABLED": "1",
     # Dual-market: 5m + 15m Polymarket BTC up/down series.
     "PULSE_SERIES_SLUGS": "btc-up-or-down-5m,btc-up-or-down-15m",
+    # Profit-discovery Phase 1–2: arb-first, stop directional bleed.
+    "PULSE_ARB_EPSILON": "0.05",
+    "PULSE_ARB_MAX_USD": "300",
+    "PULSE_PRIMARY_EDGE_SOURCE": "arbitrage",
+    "PULSE_DIRECTIONAL_MAX_BANKROLL_FRAC": "0.10",
+    "PULSE_DIRECTIONAL_BLOCK_UP_UNTIL_PROMOTED": "1",
+    "PULSE_DEPENDENCY_ARB_ENABLED": "1",
     # TradingView INDEX:BTCUSD — 1m + 5m + 10m + 15m chart alerts (four charts, same script).
     "PULSE_TV_FEATURE_SYMBOL": "BTCUSD",
     "TRADINGVIEW_ALLOWED_SYMBOLS": "BTCUSD,INDEX:BTCUSD",
