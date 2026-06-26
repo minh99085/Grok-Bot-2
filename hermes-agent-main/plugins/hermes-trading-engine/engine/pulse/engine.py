@@ -249,6 +249,8 @@ class PulseConfig:
     tv_down_bias_block_up_against_confirmed_down: bool = False
     tv_down_bias_block_mixed_mtf_up: bool = True
     tv_down_bias_block_bullish_supertrend_up: bool = True
+    tv_down_bias_block_up_vwap_above: bool = True
+    tv_down_bias_block_up_bb_expansion_up: bool = True
     tv_mtf_conflict_gate_enabled: bool = True
     tv_mtf_require_confirm: bool = False   # loop arch: conflict veto only, not 1m+5m trade authority
     tv_mtf_require_side_align: bool = False
@@ -535,6 +537,12 @@ class PulseConfig:
             tv_down_bias_block_bullish_supertrend_up=str(
                 os.getenv("PULSE_TV_DOWN_BIAS_BLOCK_BULLISH_SUPERTREND_UP", "1")).strip().lower()
             in ("1", "true", "yes", "on"),
+            tv_down_bias_block_up_vwap_above=str(
+                os.getenv("PULSE_TV_DOWN_BIAS_BLOCK_UP_VWAP_ABOVE", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            tv_down_bias_block_up_bb_expansion_up=str(
+                os.getenv("PULSE_TV_DOWN_BIAS_BLOCK_UP_BB_EXPANSION_UP", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
             tv_mtf_conflict_gate_enabled=str(os.getenv("PULSE_TV_MTF_CONFLICT_GATE", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
             tv_mtf_require_confirm=str(os.getenv("PULSE_TV_MTF_REQUIRE_CONFIRM", "0"))
@@ -709,6 +717,8 @@ class PulseEngine:
             block_mixed_mtf_up=bool(self.cfg.tv_down_bias_block_mixed_mtf_up),
             block_bullish_supertrend_up=bool(
                 self.cfg.tv_down_bias_block_bullish_supertrend_up),
+            block_up_vwap_above=bool(self.cfg.tv_down_bias_block_up_vwap_above),
+            block_up_bb_expansion_up=bool(self.cfg.tv_down_bias_block_up_bb_expansion_up),
             exploration_rate=self.cfg.tv_down_bias_exploration_rate)
         from engine.pulse.tv_mtf_gate import TradingViewMtfConflictGate
         self.tv_mtf_gate = TradingViewMtfConflictGate(
@@ -2937,6 +2947,8 @@ class PulseEngine:
             tv_direction=feat.get("direction"),
             tf_confirm=feat.get("tf_confirm"),
             supertrend_direction=feat.get("supertrend_direction"),
+            vwap_state=feat.get("vwap_state"),
+            bb_state=feat.get("bb_state"),
         )
 
     def _up_side_tv_bias_ok(self, tv_feature: "dict | None") -> "tuple[bool, str]":

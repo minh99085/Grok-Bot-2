@@ -25,6 +25,8 @@ class TradingViewDownBiasGate:
         block_up_against_confirmed_down: bool = True,
         block_mixed_mtf_up: bool = True,
         block_bullish_supertrend_up: bool = True,
+        block_up_vwap_above: bool = True,
+        block_up_bb_expansion_up: bool = True,
         exploration_rate: float = 0.0,
         seed: Optional[int] = None,
     ):
@@ -36,6 +38,8 @@ class TradingViewDownBiasGate:
         self.block_up_against_confirmed_down = bool(block_up_against_confirmed_down)
         self.block_mixed_mtf_up = bool(block_mixed_mtf_up)
         self.block_bullish_supertrend_up = bool(block_bullish_supertrend_up)
+        self.block_up_vwap_above = bool(block_up_vwap_above)
+        self.block_up_bb_expansion_up = bool(block_up_bb_expansion_up)
         self.exploration_rate = max(0.0, min(0.05, float(exploration_rate)))
         self.passed = 0
         self.blocked = 0
@@ -52,6 +56,8 @@ class TradingViewDownBiasGate:
         tv_direction=None,
         tf_confirm=None,
         supertrend_direction=None,
+        vwap_state=None,
+        bb_state=None,
     ) -> list[str]:
         if not side or str(side).lower() != "up":
             return []
@@ -60,6 +66,8 @@ class TradingViewDownBiasGate:
         td = str(tv_direction or "").strip().upper()
         tc = str(tf_confirm or "").strip().lower()
         st = str(supertrend_direction or "").strip().lower()
+        vw = str(vwap_state or "").strip().lower()
+        bb = str(bb_state or "").strip().lower()
         if self.block_bullish_aligned_up and ma == "bullish_aligned":
             reasons.append("tv_down_bias_bullish_aligned_up")
         if self.block_mixed_mtf_up and ma == "mixed":
@@ -75,6 +83,10 @@ class TradingViewDownBiasGate:
             reasons.append("tv_down_bias_up_tv_down_non_bearish")
         if self.block_up_against_confirmed_down and tc == "confirmed_down":
             reasons.append("tv_down_bias_up_against_confirmed_down")
+        if self.block_up_vwap_above and vw == "above":
+            reasons.append("tv_down_bias_up_vwap_above")
+        if self.block_up_bb_expansion_up and bb == "expansion_up":
+            reasons.append("tv_down_bias_up_bb_expansion_up")
         return reasons
 
     def evaluate(
@@ -85,12 +97,15 @@ class TradingViewDownBiasGate:
         tv_direction=None,
         tf_confirm=None,
         supertrend_direction=None,
+        vwap_state=None,
+        bb_state=None,
     ) -> dict:
         if not self.enabled:
             return {"decision": "pass", "reasons": [], "active": False}
         reasons = self.violations(side=side, mtf_alignment=mtf_alignment,
                                   tv_direction=tv_direction, tf_confirm=tf_confirm,
-                                  supertrend_direction=supertrend_direction)
+                                  supertrend_direction=supertrend_direction,
+                                  vwap_state=vwap_state, bb_state=bb_state)
         if not reasons:
             self.passed += 1
             return {"decision": "pass", "reasons": [], "active": True}
@@ -114,6 +129,8 @@ class TradingViewDownBiasGate:
             "block_up_against_confirmed_down": self.block_up_against_confirmed_down,
             "block_mixed_mtf_up": self.block_mixed_mtf_up,
             "block_bullish_supertrend_up": self.block_bullish_supertrend_up,
+            "block_up_vwap_above": self.block_up_vwap_above,
+            "block_up_bb_expansion_up": self.block_up_bb_expansion_up,
             "exploration_rate": self.exploration_rate,
             "passed": self.passed,
             "blocked": self.blocked,
