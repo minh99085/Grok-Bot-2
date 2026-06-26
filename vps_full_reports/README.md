@@ -7,6 +7,7 @@ Live snapshots of the **BTC 5-minute pulse** PAPER engine running on the VPS.
 
 ## `latest/`
 - `report.md` — human-readable summary (oracle, paper P&L, settlement, calibration, overlay).
+- `report.docx` — Word export of the full report (always committed with each pull).
 - `btc_pulse_status.json` — full engine status (oracle reference model, price feed, ledger
   stats, calibration, Grok overlay, RTDS + lead-feature health).
 - `btc_pulse_ledger.json` — full paper ledger (per-window positions, P&L, accumulators).

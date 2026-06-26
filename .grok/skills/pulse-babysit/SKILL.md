@@ -49,7 +49,9 @@ DEPLOY → SOAK (15m default) → PULL → EVALUATE → (issues?) → FIX → CO
 1. Read `scripts/pulse-babysit/state.json`.
 2. If `phase` is `soak` and `now < soak_until`: run `status`, exit (do not fix).
 3. Run `python scripts/pulse-babysit/scan-health.py` — full runtime checklist (Grok/verifier/loops/stop).
-4. Run `.\scripts\pulse-babysit\pull-vps-artifacts.ps1`.
+4. Run `.\scripts\pulse-babysit\pull-vps-artifacts.ps1` — pulls artifacts **and always commits +
+   pushes** `vps_full_reports/latest/` to `origin/main` (includes `report.docx`). Use `-SkipPush`
+   only for local debugging.
 5. Run `python scripts/pulse-babysit/evaluate-cycle.py` — parse JSON stdout.
 5. If `verdict` is `healthy`: append history, set `phase=soak`, `soak_until=now+soak_hours`, done.
 6. If `verdict` is `issues`: pick **at most 2** highest-severity issues; fix in plugin code only.
@@ -107,10 +109,11 @@ or large refactors.
 grok -p "/pulse-babysit cycle" --yolo --cwd C:\Users\tieut\Grok-Bot-2 --max-turns 40
 ```
 
-## Report outputs
+## Report outputs (mandatory)
 
-After each eval, refresh `vps_full_reports/latest/` and commit if the operator wants history
-on `main` (optional; skip if only state changed).
+After every pull, **always** commit + push `vps_full_reports/latest/` to `origin/main`, including
+`report.docx`. This is automatic via `pull-vps-artifacts.ps1` → `push-report-to-main.ps1`.
+Standalone push: `.\scripts\pulse-babysit\push-report-to-main.ps1`.
 
 ## Completion message
 

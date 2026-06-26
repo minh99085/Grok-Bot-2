@@ -20,7 +20,8 @@ changes → measure on 15-min soak. See `.grok/rules/quant-team.md`.
 ## Project layout
 
 - Trading bot plugin: `hermes-agent-main/plugins/hermes-trading-engine/`
-- Full VPS reports: `vps_full_reports/latest/`
+- Full VPS reports: `vps_full_reports/latest/` — **always commit + push to `main` after pull**
+  (includes `report.docx`; automatic via `pull-vps-artifacts.ps1`)
 - Design townhall: `Design Townhall` (repo root)
 - Operator guide for the pulse engine: `hermes-agent-main/plugins/hermes-trading-engine/AGENTS.md`
 - Autonomous closed loop: `/pulse-babysit cycle` or `.\scripts\pulse-babysit\install-scheduled-task.ps1` (15m soak default; see `.grok/skills/pulse-babysit/SKILL.md`)
