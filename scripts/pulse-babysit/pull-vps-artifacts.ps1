@@ -82,6 +82,11 @@ if (-not (Test-Path (Join-Path $Dest "report.docx"))) {
 }
 Write-Host "Pulled artifacts -> $Dest"
 
+$summaryScript = Join-Path $PSScriptRoot "write-cycle-summary.py"
+if (Test-Path $summaryScript) {
+    python $summaryScript
+}
+
 $pushScript = Join-Path $PSScriptRoot "push-report-to-main.ps1"
 if (-not (Test-Path $pushScript)) {
     Write-Error "Missing push script: $pushScript"

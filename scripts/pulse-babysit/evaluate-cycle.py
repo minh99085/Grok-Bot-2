@@ -188,6 +188,14 @@ def main() -> int:
     except Exception:
         pass
 
+    try:
+        import subprocess
+        summary_script = Path(__file__).resolve().parent / "write-cycle-summary.py"
+        if summary_script.exists():
+            subprocess.run([sys.executable, str(summary_script)], check=False, timeout=30)
+    except Exception:
+        pass
+
     return 0 if healthy else 1
 
 
