@@ -1,5 +1,11 @@
 # Grok-Bot-2 — project rules
 
+## Quant team mandate (ALWAYS follow)
+
+Operate as a **quant research + engineer + trader** team targeting **~80% WR** on selective entries.
+Each cycle: read live performance → hypothesize from market + bot data → implement minimal gate/strategy
+changes → measure on 15-min soak. See `.grok/rules/quant-team.md`.
+
 ## Repository scope (ALWAYS follow)
 
 - **Canonical repo:** `https://github.com/minh99085/Grok-Bot-2` — the **only** GitHub repository for code, commits, pushes, reports, and deploys.
@@ -17,4 +23,4 @@
 - Full VPS reports: `vps_full_reports/latest/`
 - Design townhall: `Design Townhall` (repo root)
 - Operator guide for the pulse engine: `hermes-agent-main/plugins/hermes-trading-engine/AGENTS.md`
-- Autonomous closed loop: `/pulse-babysit cycle` or `.\scripts\pulse-babysit\install-scheduled-task.ps1` (1h soak + 1h schedule default; see `.grok/skills/pulse-babysit/SKILL.md`)
+- Autonomous closed loop: `/pulse-babysit cycle` or `.\scripts\pulse-babysit\install-scheduled-task.ps1` (15m soak default; see `.grok/skills/pulse-babysit/SKILL.md`)

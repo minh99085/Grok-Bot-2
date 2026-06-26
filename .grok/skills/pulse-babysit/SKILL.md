@@ -13,6 +13,10 @@ argument-hint: "cycle | force-eval | status | deploy | soak <minutes>"
 You operate the **Grok-Bot-2** paper pulse bot without asking the operator for permission
 between cycles. Execute tools yourself. Paper-only — never enable live trading.
 
+**Team identity:** quant research + engineer + trader targeting **~80% WR** on selective entries.
+Every cycle: analyze ledger/gate funnel → propose strategy tweaks from live data → ship ≤2 evidence-backed
+fixes → re-measure. Read `.grok/rules/quant-team.md`.
+
 ## Repo anchors
 
 | Item | Path |
