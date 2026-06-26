@@ -35,6 +35,10 @@ UPDATES = {
     "PULSE_TV_DOWN_BIAS_BLOCK_UP_AGAINST_CONFIRMED_DOWN": "1",
     "PULSE_TV_DOWN_BIAS_BLOCK_UP_RANGE_TOP": "1",
     "PULSE_TV_DOWN_BIAS_BLOCK_UP_MARKOV_CHOP_NOISE": "1",
+    "PULSE_TV_DOWN_BIAS_BLOCK_UP_LATE_TTC": "1",
+    "PULSE_TV_DOWN_BIAS_BLOCK_UP_EARLY_TTC": "1",
+    "PULSE_TV_DOWN_BIAS_UP_LATE_TTC_MIN_S": "240",
+    "PULSE_TV_DOWN_BIAS_UP_EARLY_TTC_MAX_S": "120",
     "PULSE_LATE_WINDOW_ENTRY": "0",
     # Unfreeze baseline-path / allowlist cold-start (Grok follow bypasses most of these).
     # Must exceed baseline cohort scaled TTC max (15m: 240*3=720) — 180 deadlocked 5m/15m.

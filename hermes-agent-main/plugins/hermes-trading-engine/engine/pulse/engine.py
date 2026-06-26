@@ -282,6 +282,10 @@ class PulseConfig:
     tv_down_bias_block_up_range_top: bool = True
     tv_down_bias_block_up_bb_squeeze: bool = True
     tv_down_bias_block_up_markov_chop_noise: bool = True
+    tv_down_bias_block_up_late_ttc: bool = True
+    tv_down_bias_block_up_early_ttc: bool = True
+    tv_down_bias_up_late_ttc_min_s: float = 240.0
+    tv_down_bias_up_early_ttc_max_s: float = 120.0
     tv_mtf_conflict_gate_enabled: bool = True
     tv_mtf_require_confirm: bool = False   # loop arch: conflict veto only, not 4m+5m trade authority
     tv_mtf_require_side_align: bool = False
@@ -606,6 +610,14 @@ class PulseConfig:
             tv_down_bias_block_up_markov_chop_noise=str(
                 os.getenv("PULSE_TV_DOWN_BIAS_BLOCK_UP_MARKOV_CHOP_NOISE", "1")).strip().lower()
             in ("1", "true", "yes", "on"),
+            tv_down_bias_block_up_late_ttc=str(
+                os.getenv("PULSE_TV_DOWN_BIAS_BLOCK_UP_LATE_TTC", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            tv_down_bias_block_up_early_ttc=str(
+                os.getenv("PULSE_TV_DOWN_BIAS_BLOCK_UP_EARLY_TTC", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            tv_down_bias_up_late_ttc_min_s=_envf("PULSE_TV_DOWN_BIAS_UP_LATE_TTC_MIN_S", 240.0),
+            tv_down_bias_up_early_ttc_max_s=_envf("PULSE_TV_DOWN_BIAS_UP_EARLY_TTC_MAX_S", 120.0),
             tv_mtf_conflict_gate_enabled=str(os.getenv("PULSE_TV_MTF_CONFLICT_GATE", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
             tv_mtf_require_confirm=str(os.getenv("PULSE_TV_MTF_REQUIRE_CONFIRM", "0"))
@@ -817,6 +829,10 @@ class PulseEngine:
             block_up_bb_squeeze=bool(self.cfg.tv_down_bias_block_up_bb_squeeze),
             block_up_markov_chop_noise=bool(
                 self.cfg.tv_down_bias_block_up_markov_chop_noise),
+            block_up_late_ttc=bool(self.cfg.tv_down_bias_block_up_late_ttc),
+            block_up_early_ttc=bool(self.cfg.tv_down_bias_block_up_early_ttc),
+            up_late_ttc_min_s=self.cfg.tv_down_bias_up_late_ttc_min_s,
+            up_early_ttc_max_s=self.cfg.tv_down_bias_up_early_ttc_max_s,
             exploration_rate=self.cfg.tv_down_bias_exploration_rate)
         from engine.pulse.tv_mtf_gate import TradingViewMtfConflictGate
         self.tv_mtf_gate = TradingViewMtfConflictGate(
@@ -1765,7 +1781,7 @@ class PulseEngine:
                 # Restrict-only DOWN/TV asymmetry gate applies to all Grok-owned UP trades.
                 if side == "up":
                     db_res = self._down_bias_eval(side=side, tv_feature=tv_feature,
-                                                  markov_state=cand_state)
+                                                  markov_state=cand_state, ttc_s=ttc)
                     if db_res["decision"] in ("block", "explore"):
                         dr.down_bias_gate = {"decision": db_res["decision"],
                                              "reasons": db_res["reasons"]}
@@ -1852,7 +1868,8 @@ class PulseEngine:
                 cex_lead_active = True
                 side = cex_lead_drive["side"]
                 if side == "up":
-                    up_ok, up_reason = self._up_side_tv_bias_ok(tv_feature)
+                    up_ok, up_reason = self._up_side_tv_bias_ok(tv_feature, ttc_s=ttc,
+                                                                 markov_state=cand_state)
                     if not up_ok:
                         dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
                                                          outcome_prob=None, model_edge=0.0,
@@ -1978,7 +1995,7 @@ class PulseEngine:
                     continue
                 context_explored = (ctx_res["decision"] == "explore")
                 db_res = self._down_bias_eval(side=d.side, tv_feature=tv_feature,
-                                              markov_state=cand_state)
+                                              markov_state=cand_state, ttc_s=ttc)
                 dr.down_bias_gate = {"decision": db_res["decision"], "reasons": db_res["reasons"]}
                 db_block = (db_res["decision"] == "block"
                             or (d.side == "up" and db_res["decision"] == "explore"))
@@ -3065,7 +3082,8 @@ class PulseEngine:
         }
 
     def _down_bias_eval(self, *, side: str, tv_feature: "dict | None",
-                        markov_state: "str | None" = None) -> dict:
+                        markov_state: "str | None" = None,
+                        ttc_s: "float | None" = None) -> dict:
         feat = tv_feature or {}
         return self.tv_down_bias_gate.evaluate(
             side=side,
@@ -3077,14 +3095,18 @@ class PulseEngine:
             bb_state=feat.get("bb_state"),
             range_state=feat.get("range_state"),
             markov_state=markov_state,
+            ttc_s=ttc_s,
         )
 
-    def _up_side_tv_bias_ok(self, tv_feature: "dict | None") -> "tuple[bool, str]":
+    def _up_side_tv_bias_ok(self, tv_feature: "dict | None",
+                            ttc_s: "float | None" = None,
+                            markov_state: "str | None" = None) -> "tuple[bool, str]":
         """UP restrict-only: TV UP_STRONG plus down_bias pass (all entry modes)."""
         tv_ok, tv_reason = self._baseline_up_tv_strength_ok(tv_feature)
         if not tv_ok:
             return False, tv_reason
-        db_res = self._down_bias_eval(side="up", tv_feature=tv_feature)
+        db_res = self._down_bias_eval(side="up", tv_feature=tv_feature,
+                                      markov_state=markov_state, ttc_s=ttc_s)
         if db_res["decision"] in ("block", "explore"):
             return False, db_res["reasons"][0]
         return True, ""

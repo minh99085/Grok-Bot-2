@@ -31,6 +31,10 @@ class TradingViewDownBiasGate:
         block_up_range_top: bool = True,
         block_up_bb_squeeze: bool = True,
         block_up_markov_chop_noise: bool = True,
+        block_up_late_ttc: bool = True,
+        block_up_early_ttc: bool = True,
+        up_late_ttc_min_s: float = 240.0,
+        up_early_ttc_max_s: float = 120.0,
         exploration_rate: float = 0.0,
         seed: Optional[int] = None,
     ):
@@ -48,6 +52,10 @@ class TradingViewDownBiasGate:
         self.block_up_range_top = bool(block_up_range_top)
         self.block_up_bb_squeeze = bool(block_up_bb_squeeze)
         self.block_up_markov_chop_noise = bool(block_up_markov_chop_noise)
+        self.block_up_late_ttc = bool(block_up_late_ttc)
+        self.block_up_early_ttc = bool(block_up_early_ttc)
+        self.up_late_ttc_min_s = max(0.0, float(up_late_ttc_min_s))
+        self.up_early_ttc_max_s = max(0.0, float(up_early_ttc_max_s))
         self.exploration_rate = max(0.0, min(0.05, float(exploration_rate)))
         self.passed = 0
         self.blocked = 0
@@ -68,6 +76,7 @@ class TradingViewDownBiasGate:
         bb_state=None,
         range_state=None,
         markov_state=None,
+        ttc_s=None,
     ) -> list[str]:
         if not side or str(side).lower() != "up":
             return []
@@ -107,6 +116,12 @@ class TradingViewDownBiasGate:
             reasons.append("tv_down_bias_up_bb_squeeze")
         if self.block_up_markov_chop_noise and ms == "chop_noise":
             reasons.append("tv_down_bias_up_markov_chop_noise")
+        if ttc_s is not None:
+            ttc = float(ttc_s)
+            if self.block_up_late_ttc and ttc >= self.up_late_ttc_min_s:
+                reasons.append("tv_down_bias_up_late_ttc")
+            if self.block_up_early_ttc and ttc < self.up_early_ttc_max_s:
+                reasons.append("tv_down_bias_up_early_ttc")
         return reasons
 
     def evaluate(
@@ -121,6 +136,7 @@ class TradingViewDownBiasGate:
         bb_state=None,
         range_state=None,
         markov_state=None,
+        ttc_s=None,
     ) -> dict:
         if not self.enabled:
             return {"decision": "pass", "reasons": [], "active": False}
@@ -128,7 +144,8 @@ class TradingViewDownBiasGate:
                                   tv_direction=tv_direction, tf_confirm=tf_confirm,
                                   supertrend_direction=supertrend_direction,
                                   vwap_state=vwap_state, bb_state=bb_state,
-                                  range_state=range_state, markov_state=markov_state)
+                                  range_state=range_state, markov_state=markov_state,
+                                  ttc_s=ttc_s)
         if not reasons:
             self.passed += 1
             return {"decision": "pass", "reasons": [], "active": True}
@@ -158,6 +175,10 @@ class TradingViewDownBiasGate:
             "block_up_range_top": self.block_up_range_top,
             "block_up_bb_squeeze": self.block_up_bb_squeeze,
             "block_up_markov_chop_noise": self.block_up_markov_chop_noise,
+            "block_up_late_ttc": self.block_up_late_ttc,
+            "block_up_early_ttc": self.block_up_early_ttc,
+            "up_late_ttc_min_s": self.up_late_ttc_min_s,
+            "up_early_ttc_max_s": self.up_early_ttc_max_s,
             "exploration_rate": self.exploration_rate,
             "passed": self.passed,
             "blocked": self.blocked,
