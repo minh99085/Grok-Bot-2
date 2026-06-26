@@ -180,6 +180,13 @@ def test_unsupported_symbol_rejected():
     assert code == 400 and body["reason"] == UNSUPPORTED_SYMBOL
 
 
+def test_btc_exchange_prefix_symbols_accepted():
+    intake = _intake()
+    for sym in ("BITSTAMP:BTCUSD", "COINBASE:BTCUSD", "BTC/USD"):
+        code, body = intake.ingest(_alert(symbol=sym, event_id="btc-%s" % sym), now=1_000_000.0)
+        assert code == 200 and body.get("accepted") is True, (sym, body)
+
+
 def test_stale_timestamp_rejected():
     intake = _intake()
     now = 1_000_000.0

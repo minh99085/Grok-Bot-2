@@ -130,7 +130,8 @@ def build_mtf_confirm_windows(
             out[tf] = windows[tf]
         else:
             try:
-                out[tf] = float(int(tf) * 60 + 60)
+                # ~2.5 chart bars: selective Pine alerts may skip bars without a scored signal.
+                out[tf] = float(int(tf) * 60 * 2.5)
             except ValueError:
                 out[tf] = 360.0
     return out
@@ -929,6 +930,17 @@ class TradingViewIntake:
         """Canonical key for counters/latest maps — all BTC-family tickers -> feature_symbol."""
         return canonical_storage_symbol(symbol, self.feature_symbol)
 
+    def _symbol_allowed(self, symbol: str) -> bool:
+        """True if symbol is allow-listed or maps to the configured BTC feature symbol."""
+        if not self.allowed_symbols:
+            return True
+        if symbol in self.allowed_symbols:
+            return True
+        store = canonical_storage_symbol(symbol, self.feature_symbol)
+        if store in self.allowed_symbols or store == self.feature_symbol:
+            return True
+        return symbol in _BTC_SYMBOL_ALIASES
+
     def _mtf_symbol(self, symbol: Optional[str] = None) -> Optional[str]:
         """Resolve which TV symbol key to use for MTF confirmation lookups."""
         if symbol:
@@ -995,9 +1007,9 @@ class TradingViewIntake:
         bot = str(payload.get("bot_name") or payload.get("bot") or "").strip()
         if self.bot_name and bot.lower() != self.bot_name:
             return None, WRONG_BOT
-        # 3) symbol allow-list (exchange-prefix tolerant)
+        # 3) symbol allow-list (exchange-prefix tolerant; BTC index family auto-maps)
         symbol = normalize_symbol(payload.get("symbol") or payload.get("ticker"))
-        if not symbol or (self.allowed_symbols and symbol not in self.allowed_symbols):
+        if not symbol or not self._symbol_allowed(symbol):
             return None, UNSUPPORTED_SYMBOL
         # 4) direction
         direction = normalize_direction(payload.get("direction") or payload.get("action")
