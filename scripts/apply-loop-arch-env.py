@@ -41,13 +41,13 @@ UPDATES = {
     "PULSE_TV_DOWN_BIAS_UP_EARLY_TTC_MAX_S": "120",
     "PULSE_LATE_WINDOW_ENTRY": "0",
     # Unfreeze baseline-path / allowlist cold-start (Grok follow bypasses most of these).
-    # Must exceed baseline cohort scaled TTC max (15m: 240*3=720) — 180 deadlocked 5m/15m.
-    "PULSE_TV_CONTEXT_MAX_TTC_S": "900",
+    # Must exceed scaled cohort max (15m fast lane: 480*3=1440). Coupling auto-clamps if too low.
+    "PULSE_TV_CONTEXT_MAX_TTC_S": "1500",
     "PULSE_TV_CONTEXT_EXPLORATION_RATE": "0",
     "PULSE_TV_DOWN_BIAS_EXPLORE_RATE": "0",
     # Baseline quant path: allowlist was deadlocking (no proven bucket + 0% explore).
     "PULSE_DIRECTIONAL_REQUIRE_WINNING": "0",
-    "PULSE_DIRECTIONAL_EXPLORE_RATE": "0.12",
+    "PULSE_DIRECTIONAL_EXPLORE_RATE": "0.18",
     "PULSE_MIN_EDGE": "0.02",
     "PULSE_MIN_REWARD_RISK": "0.42",
     "PULSE_MIN_REWARD_RISK_UP_PREMIUM": "0.28",
@@ -58,8 +58,8 @@ UPDATES = {
     "PULSE_STOP_MIN_SAMPLES": "40",
     # Mispricing stack (quant path only; Grok abstain follow disabled).
     "PULSE_MISPRICING_GATE_ENABLED": "1",
-    "PULSE_MISPRICING_TTC_MIN_S": "90",
-    "PULSE_MISPRICING_TTC_MAX_S": "240",
+    "PULSE_MISPRICING_TTC_MIN_S": "60",
+    "PULSE_MISPRICING_TTC_MAX_S": "480",
     "PULSE_MISPRICING_REQUIRE_CONFIRMED": "0",
     "PULSE_MISPRICING_REQUIRE_STALE_DOWN": "1",
     "PULSE_MISPRICING_MIN_EXECUTABLE_MARGIN": "0.02",
@@ -68,12 +68,15 @@ UPDATES = {
     "PULSE_EDGE_TTC_GATE_ENABLED": "1",
     "PULSE_CEX_LEAD_MIN_EDGE_VS_MARKET": "0.02",
     "PULSE_CEX_LEAD_TV_STRENGTH_THR": "0.72",
-    # Tier 1: baseline only trades proven shadow cohorts (180-240s, high edge, strong CEX).
+    # Tier 1: baseline cohort + 15m DOWN fast lane (wider TTC, medium edge, moderate CEX).
     "PULSE_BASELINE_COHORT_GATE_ENABLED": "1",
-    "PULSE_BASELINE_COHORT_TTC_MIN_S": "180",
-    "PULSE_BASELINE_COHORT_TTC_MAX_S": "240",
+    "PULSE_BASELINE_COHORT_TTC_MIN_S": "60",
+    "PULSE_BASELINE_COHORT_TTC_MAX_S": "480",
     "PULSE_BASELINE_COHORT_REQUIRE_HIGH_EDGE": "1",
     "PULSE_BASELINE_COHORT_REQUIRE_STRONG_CEX": "1",
+    "PULSE_BASELINE_COHORT_15M_FAST_LANE": "1",
+    "PULSE_BASELINE_COHORT_15M_TTC_MIN_S": "60",
+    "PULSE_BASELINE_COHORT_15M_TTC_MAX_S": "480",
     "PULSE_BASELINE_UP_TV_GATE_ENABLED": "1",
     # 15m only — 5m directional bleed stopped (user request 2026-06-26).
     "PULSE_SERIES_SLUGS": "btc-up-or-down-15m",

@@ -96,7 +96,24 @@ def test_edge_ttc_gate_blocks_late_window_low_score():
                                        ttc_s=250.0)
     assert ok is False and reason == "edge_ttc_late_window_low_score"
     ok, _ = eng._edge_ttc_gate_ok(esnap=_FakeEsnap(pulse_edge_score_bucket="high"), ttc_s=250.0)
-    assert ok is True
+
+
+def test_15m_mispricing_and_edge_ttc_scale_with_window():
+    eng = _gate_engine(mispricing_ttc_min_s=60.0, mispricing_ttc_max_s=480.0,
+                       mispricing_gate_enabled=True, edge_ttc_gate_enabled=True)
+    stale = _FakeEsnap(stale_divergence_class="stale_polymarket_down")
+    ok, _ = eng._mispricing_gate_ok(
+        side="down", cex_sig=_cex_sig(), ttc_s=500.0, esnap=stale, window_seconds=900)
+    assert ok
+    ok, reason = eng._mispricing_gate_ok(
+        side="down", cex_sig=_cex_sig(), ttc_s=100.0, esnap=stale, window_seconds=900)
+    assert not ok and reason == "misprice_ttc_out_of_window"
+    ok, reason = eng._edge_ttc_gate_ok(
+        esnap=_FakeEsnap(pulse_edge_score_bucket="medium"), ttc_s=400.0, window_seconds=900)
+    assert not ok and reason == "edge_ttc_mid_window_low_score"
+    ok, _ = eng._edge_ttc_gate_ok(
+        esnap=_FakeEsnap(pulse_edge_score_bucket="high"), ttc_s=400.0, window_seconds=900)
+    assert ok
 
 
 def test_executable_mispricing_margin():

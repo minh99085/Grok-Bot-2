@@ -210,6 +210,10 @@ class PulseConfig:
     baseline_cohort_require_high_edge: bool = True
     baseline_cohort_require_strong_cex: bool = True
     baseline_up_tv_gate_enabled: bool = True
+    # 15m DOWN fast lane: widen scaled TTC band + allow medium edge / moderate CEX (proven 15m edge).
+    baseline_cohort_15m_fast_lane: bool = True
+    baseline_cohort_15m_ttc_min_s: float = 60.0
+    baseline_cohort_15m_ttc_max_s: float = 480.0
     # When Grok abstains, still follow a Wilson-aligned CEX-lead mispricing stack (not coin-flip explore).
     mispricing_follow_on_abstain: bool = False
     mispricing_follow_size_fraction: float = 0.5
@@ -530,6 +534,11 @@ class PulseConfig:
             baseline_up_tv_gate_enabled=str(
                 os.getenv("PULSE_BASELINE_UP_TV_GATE_ENABLED", "1")).strip().lower()
             in ("1", "true", "yes", "on"),
+            baseline_cohort_15m_fast_lane=str(
+                os.getenv("PULSE_BASELINE_COHORT_15M_FAST_LANE", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            baseline_cohort_15m_ttc_min_s=_envf("PULSE_BASELINE_COHORT_15M_TTC_MIN_S", 60.0),
+            baseline_cohort_15m_ttc_max_s=_envf("PULSE_BASELINE_COHORT_15M_TTC_MAX_S", 480.0),
             mispricing_follow_on_abstain=str(
                 os.getenv("PULSE_MISPRICING_FOLLOW_ON_ABSTAIN", "0")).strip().lower()
             in ("1", "true", "yes", "on"),
@@ -1774,7 +1783,8 @@ class PulseEngine:
                     _finalize(dr, "rejected", reason="grok_up_p_win_too_low", stage="grok_decider")
                     continue
                 mp_ok, mp_reason = self._mispricing_gate_ok(
-                    side=side, cex_sig=dr.cex_lead, ttc_s=ttc, esnap=esnap)
+                    side=side, cex_sig=dr.cex_lead, ttc_s=ttc, esnap=esnap,
+                    window_seconds=int(getattr(w, "window_seconds", 300) or 300))
                 if not mp_ok:
                     self._mispricing_gate_counts[mp_reason] = (
                         self._mispricing_gate_counts.get(mp_reason, 0) + 1)
@@ -1785,7 +1795,9 @@ class PulseEngine:
                         self.markov.record_terminal(state=cand_state, accepted=False)
                     _finalize(dr, "rejected", reason=mp_reason, stage="mispricing_gate")
                     continue
-                et_ok, et_reason = self._edge_ttc_gate_ok(esnap=esnap, ttc_s=ttc)
+                et_ok, et_reason = self._edge_ttc_gate_ok(
+                    esnap=esnap, ttc_s=ttc,
+                    window_seconds=int(getattr(w, "window_seconds", 300) or 300))
                 if not et_ok:
                     self._mispricing_gate_counts[et_reason] = (
                         self._mispricing_gate_counts.get(et_reason, 0) + 1)
@@ -3082,20 +3094,32 @@ class PulseEngine:
             return False, "baseline_cohort_bad_side"
         if ttc_s is None:
             return False, "baseline_cohort_ttc_unknown"
-        scale = float(window_seconds or 300) / 300.0
-        ttc_min = float(self.cfg.baseline_cohort_ttc_min_s) * scale
-        ttc_max = float(self.cfg.baseline_cohort_ttc_max_s) * scale
+        ws = int(window_seconds or 300)
+        scale = float(ws) / 300.0
+        fast_lane = (self.cfg.baseline_cohort_15m_fast_lane and ws >= 900 and side == "down")
+        if fast_lane:
+            ttc_min = float(self.cfg.baseline_cohort_15m_ttc_min_s) * scale
+            ttc_max = float(self.cfg.baseline_cohort_15m_ttc_max_s) * scale
+        else:
+            ttc_min = float(self.cfg.baseline_cohort_ttc_min_s) * scale
+            ttc_max = float(self.cfg.baseline_cohort_ttc_max_s) * scale
         ttc_f = float(ttc_s)
         if ttc_f > ttc_max:
             return False, "baseline_cohort_ttc_too_late"
         if ttc_f < ttc_min:
             return False, "baseline_cohort_ttc_too_early"
         edge_bucket = self._edge_snap_field(esnap, "pulse_edge_score_bucket")
-        if self.cfg.baseline_cohort_require_high_edge:
+        if fast_lane:
+            if edge_bucket not in ("medium", "high", "very_high"):
+                return False, "baseline_cohort_edge_not_high"
+        elif self.cfg.baseline_cohort_require_high_edge:
             if edge_bucket not in ("high", "very_high"):
                 return False, "baseline_cohort_edge_not_high"
         cex_bucket = self._edge_snap_field(esnap, "cex_agreement_bucket")
-        if self.cfg.baseline_cohort_require_strong_cex:
+        if fast_lane:
+            if cex_bucket not in ("moderate", "strong"):
+                return False, "baseline_cohort_cex_not_strong"
+        elif self.cfg.baseline_cohort_require_strong_cex:
             if cex_bucket != "strong":
                 return False, "baseline_cohort_cex_not_strong"
         if side == "up":
@@ -3119,7 +3143,11 @@ class PulseEngine:
             "require_strong_cex": self.cfg.baseline_cohort_require_strong_cex,
             "blocked": sum(self._baseline_cohort_gate_counts.values()),
             "block_reasons": dict(self._baseline_cohort_gate_counts),
-            "note": ("baseline quant path only: 180-240s TTC, high edge_score, strong CEX; "
+            "15m_fast_lane": bool(self.cfg.baseline_cohort_15m_fast_lane),
+            "15m_ttc_band_s": [self.cfg.baseline_cohort_15m_ttc_min_s,
+                               self.cfg.baseline_cohort_15m_ttc_max_s],
+            "note": ("baseline quant path: scaled TTC band + edge/CEX floors; "
+                     "15m DOWN fast lane widens band and allows medium edge / moderate CEX; "
                      "UP also requires TV UP_STRONG"),
         }
 
@@ -3228,7 +3256,7 @@ class PulseEngine:
         return {"side": side, "p_win": p_win, "size_frac": size_frac}
 
     def _mispricing_gate_ok(self, *, side: str, cex_sig: "dict | None", ttc_s: "float | None",
-                            esnap=None) -> "tuple[bool, str]":
+                            esnap=None, window_seconds: int = 300) -> "tuple[bool, str]":
         """Restrict-only: Grok-follow trades require aligned CEX-lead mispricing in the TTC window."""
         if not self.cfg.mispricing_gate_enabled:
             return True, ""
@@ -3248,7 +3276,10 @@ class PulseEngine:
         if ttc_s is None:
             return False, "misprice_ttc_unknown"
         ttc_f = float(ttc_s)
-        if ttc_f < float(self.cfg.mispricing_ttc_min_s) or ttc_f > float(self.cfg.mispricing_ttc_max_s):
+        scale = float(window_seconds or 300) / 300.0
+        ttc_min = float(self.cfg.mispricing_ttc_min_s) * scale
+        ttc_max = float(self.cfg.mispricing_ttc_max_s) * scale
+        if ttc_f < ttc_min or ttc_f > ttc_max:
             return False, "misprice_ttc_out_of_window"
         if side == "down" and self.cfg.mispricing_require_stale_down:
             stale = getattr(esnap, "stale_divergence_class", None) if esnap is not None else None
@@ -3258,16 +3289,21 @@ class PulseEngine:
                 return False, "misprice_stale_down_required"
         return True, ""
 
-    def _edge_ttc_gate_ok(self, *, esnap=None, ttc_s: "float | None" = None) -> "tuple[bool, str]":
-        """Restrict-only: block 90–180s TTC unless pulse_edge_score is high or very_high."""
+    def _edge_ttc_gate_ok(self, *, esnap=None, ttc_s: "float | None" = None,
+                          window_seconds: int = 300) -> "tuple[bool, str]":
+        """Restrict-only: block mid/late TTC unless pulse_edge_score is high or very_high."""
         if not self.cfg.edge_ttc_gate_enabled or ttc_s is None:
             return True, ""
         ttc_f = float(ttc_s)
+        scale = float(window_seconds or 300) / 300.0
+        mid_lo = 90.0 * scale
+        mid_hi = 180.0 * scale
+        late_thr = 240.0 * scale
         bucket = self._edge_snap_field(esnap, "pulse_edge_score_bucket")
-        if 90.0 <= ttc_f < 180.0:
+        if mid_lo <= ttc_f < mid_hi:
             if bucket not in ("high", "very_high"):
                 return False, "edge_ttc_mid_window_low_score"
-        if ttc_f >= 240.0 and bucket not in ("high", "very_high"):
+        if ttc_f >= late_thr and bucket not in ("high", "very_high"):
             return False, "edge_ttc_late_window_low_score"
         return True, ""
 
