@@ -3410,6 +3410,8 @@ class PulseEngine:
                 2),
             "open_exposure_usd": round(self._directional_open_exposure(), 2),
             "block_up_until_promoted": bool(self.cfg.directional_block_up_until_promoted),
+            "research_auto_apply": bool(self.cfg.research_auto_apply),
+            "research_forbid_size_increase": bool(self.cfg.research_forbid_size_increase),
             "up_promoted": self._up_direction_promoted(),
         }
         report["directional_allowlist"] = {

@@ -182,6 +182,114 @@ def high_entry_margin_reject(
     return None
 
 
+def max_acceptable_leg2_ask(
+    *,
+    leg1_vwap: float,
+    epsilon: float = 0.05,
+    fees: float = 0.0,
+) -> float:
+    """Pre-commit ceiling for leg-2 ask (buy-both): leg1 + leg2 must stay below 1 - fees - ε."""
+    return round(1.0 - float(fees) - float(epsilon) - float(leg1_vwap), 6)
+
+
+def _consume_asks(levels: list, notional: float) -> list:
+    """Shallow-copied ask ladder with ``notional`` USD consumed from the front."""
+    out = []
+    remaining = float(notional)
+    for px, sz in levels or []:
+        px, sz = float(px), float(sz)
+        lvl_usd = px * sz
+        if remaining <= 0:
+            out.append((px, sz))
+            continue
+        if lvl_usd <= remaining + 1e-9:
+            remaining -= lvl_usd
+            continue
+        keep_sh = (lvl_usd - remaining) / px
+        out.append((px, keep_sh))
+        remaining = 0.0
+    return out
+
+
+def simulate_buy_both_sequential(
+    up_book,
+    down_book,
+    *,
+    target_usd: float,
+    fees: float = 0.0,
+    epsilon: float = 0.05,
+    leg2_slippage_bps: float = 50.0,
+    leg_order: str = "up_first",
+    max_book_age_s: float = 30.0,
+    now: Optional[float] = None,
+) -> dict:
+    """Multi-leg non-atomic simulation with pre-commit leg-2 max and unwind flag.
+
+    Fills leg 1, stresses leg 2 (impact + slippage), rejects if profit cannot survive.
+    """
+
+    leg_order = (leg_order or "up_first").lower()
+    first_book, second_book = (up_book, down_book) if leg_order == "up_first" else (down_book, up_book)
+    first_asks = list(getattr(first_book, "asks", None) or [])
+    second_asks = list(getattr(second_book, "asks", None) or [])
+    if not first_asks or not second_asks:
+        return {"non_atomic_pass": False, "reason": "missing_book", "unwind_required": False}
+
+    v1, spent1, sh1, full1 = vwap_fill(first_asks, target_usd)
+    if v1 is None or not full1 or sh1 <= 0:
+        return {"non_atomic_pass": False, "reason": "leg1_partial_or_empty", "unwind_required": False}
+
+    pre_commit_max = max_acceptable_leg2_ask(leg1_vwap=v1, epsilon=epsilon, fees=fees)
+    impacted = _consume_asks(second_asks, spent1)
+    slip_mult = 1.0 + float(leg2_slippage_bps) / 10000.0
+    stressed = [(round(px * slip_mult, 6), sz) for px, sz in impacted]
+
+    best_second = float(stressed[0][0]) if stressed else None
+    leg2_breach = bool(best_second is not None and best_second > pre_commit_max + 1e-9)
+
+    v2, spent2, sh2, full2 = vwap_fill(stressed, target_usd)
+    if v2 is None or not full2:
+        return {
+            "non_atomic_pass": False,
+            "reason": "leg2_partial_after_impact",
+            "leg_order_tested": leg_order,
+            "leg1_vwap": round(v1, 6),
+            "pre_commit_leg2_max": pre_commit_max,
+            "leg2_breach_pre_commit": leg2_breach,
+            "unwind_required": True,
+            "worst_case_profit_usd": None,
+        }
+
+    shares = min(sh1, sh2)
+    ask_sum = v1 + v2
+    profit = shares * (1.0 - ask_sum)
+    threshold = 1.0 - float(fees) - float(epsilon)
+    survives = bool(shares > 0 and ask_sum < threshold and profit > 0 and not leg2_breach)
+
+    reason = "ok" if survives else (
+        "leg2_pre_commit_breach" if leg2_breach else
+        ("below_epsilon_after_nonatomic" if ask_sum >= threshold else "nonatomic_profit_gone"))
+
+    return {
+        "non_atomic_pass": survives,
+        "survives": survives,
+        "reason": reason,
+        "shares": round(shares, 4),
+        "leg_order_tested": leg_order,
+        "leg1_vwap": round(v1, 6),
+        "leg2_vwap": round(v2, 6),
+        "pre_commit_leg2_max": pre_commit_max,
+        "leg2_breach_pre_commit": leg2_breach,
+        "ask_sum": round(ask_sum, 6),
+        "guaranteed_profit_usd": round(profit, 4),
+        "worst_case_profit_usd": round(profit, 4),
+        "partial_fill_exposure": round(spent1, 4) if not survives else 0.0,
+        "unwind_required": bool(not survives and full1),
+        "leg2_stressed": True,
+        "leg2_slippage_bps": leg2_slippage_bps,
+    }
+
+
 def aggregate_report(
     *,
     samples: list,

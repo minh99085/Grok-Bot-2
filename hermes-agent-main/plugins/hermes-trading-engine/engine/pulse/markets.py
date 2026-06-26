@@ -27,12 +27,16 @@ GAMMA = "https://gamma-api.polymarket.com"
 CLOB = "https://clob.polymarket.com"
 SERIES_SLUG_5M = "btc-up-or-down-5m"
 SERIES_SLUG_15M = "btc-up-or-down-15m"
+SERIES_SLUG_ETH_5M = "eth-up-or-down-5m"
+SERIES_SLUG_ETH_15M = "eth-up-or-down-15m"
 WINDOW_SECONDS = 300
 WINDOW_SECONDS_15M = 900
 
 SERIES_DEFAULTS = {
     SERIES_SLUG_5M: {"window_seconds": WINDOW_SECONDS, "lookahead_s": 330.0, "label": "5m"},
     SERIES_SLUG_15M: {"window_seconds": WINDOW_SECONDS_15M, "lookahead_s": 990.0, "label": "15m"},
+    SERIES_SLUG_ETH_5M: {"window_seconds": WINDOW_SECONDS, "lookahead_s": 330.0, "label": "eth_5m"},
+    SERIES_SLUG_ETH_15M: {"window_seconds": WINDOW_SECONDS_15M, "lookahead_s": 990.0, "label": "eth_15m"},
 }
 
 _SLUG_TS_RE = re.compile(r"-(\d{9,11})$")

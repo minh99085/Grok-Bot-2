@@ -25,7 +25,7 @@ def test_nonatomic_bible_failure_case_rejected():
         up, dn, target_usd=50.0, fees=0.0, epsilon=0.05, leg2_slippage_bps=8000.0)
     assert sim["survives"] is False
     assert sim["reason"] in ("nonatomic_profit_gone", "below_epsilon_after_nonatomic",
-                             "leg2_partial_after_impact")
+                             "leg2_partial_after_impact", "leg2_pre_commit_breach")
 
 
 def test_nonatomic_passes_when_edge_survives_slippage():

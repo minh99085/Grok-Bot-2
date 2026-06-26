@@ -316,7 +316,7 @@ def test_engine_research_exploit_is_evidence_gated(tmp_path):
 def test_engine_research_avoid_blocks_flagged_context(tmp_path):
     # the self-improving loop end-to-end: a research-flagged context is hard-blocked before execution.
     from engine.pulse.reporting import spread_bucket
-    eng, t0 = _engine(tmp_path, deep=True, expl=0.0)
+    eng, t0 = _engine(tmp_path, deep=True, expl=0.0, research_auto_apply=True)
     # the deep up book has spread 0.05 -> add THAT spread bucket as a research avoid-rule
     eng._research_avoid = {"spread_bucket=%s" % spread_bucket(0.05)}
     _drive(eng, t0)

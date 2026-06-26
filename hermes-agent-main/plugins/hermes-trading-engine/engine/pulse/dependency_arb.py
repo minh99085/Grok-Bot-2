@@ -75,7 +75,41 @@ def validate_violation(v: DependencyViolation) -> tuple[bool, str]:
     return True, "ok"
 
 
-def scan_nested_implication(parent, children: list, *, epsilon: float = 0.02) -> list:
+def enrich_vwap_actionable(
+    violation: DependencyViolation,
+    parent,
+    child,
+    *,
+    max_usd: float = 50.0,
+    epsilon: float = 0.02,
+    capture_frac: float = 0.5,
+) -> DependencyViolation:
+    """Mark violation actionable when VWAP-executable parent-UP buy clears epsilon."""
+    ok, val_reason = validate_violation(violation)
+    if not ok:
+        violation.actionable = False
+        violation.reason = val_reason
+        return violation
+    trade = try_execute_nested_implication(
+        parent, child, violation, max_usd=max_usd, epsilon=epsilon,
+        capture_frac=capture_frac)
+    if trade is None or float(trade.get("expected_profit_usd") or 0.0) <= 0:
+        violation.actionable = False
+        violation.reason = "vwap_not_executable"
+        return violation
+    violation.actionable = True
+    violation.reason = "vwap_executable"
+    return violation
+
+
+def scan_nested_implication(
+    parent,
+    children: list,
+    *,
+    epsilon: float = 0.02,
+    max_usd: float = 50.0,
+    vwap_enrich: bool = True,
+) -> list:
     """LCMM: P(up over 15m) >= max P(up over constituent 5m windows) on mids."""
     out = []
     p_mid = _up_mid(parent)
@@ -87,7 +121,7 @@ def scan_nested_implication(parent, children: list, *, epsilon: float = 0.02) ->
             continue
         mag = float(c_mid) - float(p_mid)
         if mag > float(epsilon):
-            out.append(DependencyViolation(
+            v = DependencyViolation(
                 constraint_type="nested_implication",
                 parent_window_key=str(parent.event_id),
                 child_window_keys=[str(c.event_id)],
@@ -99,15 +133,27 @@ def scan_nested_implication(parent, children: list, *, epsilon: float = 0.02) ->
                 violation_magnitude=round(mag, 6),
                 actionable=False,
                 reason="detected",
-            ))
+            )
+            if vwap_enrich:
+                v = enrich_vwap_actionable(
+                    v, parent, c, max_usd=max_usd, epsilon=epsilon)
+            out.append(v)
     return out
 
 
-def scan_windows(windows: list, *, epsilon: float = 0.02) -> list:
-    """Run all LCMM dependency scans."""
+def scan_windows(
+    windows: list,
+    *,
+    epsilon: float = 0.02,
+    max_usd: float = 50.0,
+    vwap_enrich: bool = True,
+) -> list:
+    """Run all LCMM dependency scans with optional VWAP executability enrichment."""
     violations = []
     for parent, children in group_nested_windows(windows):
-        violations.extend(scan_nested_implication(parent, children, epsilon=epsilon))
+        violations.extend(scan_nested_implication(
+            parent, children, epsilon=epsilon, max_usd=max_usd,
+            vwap_enrich=vwap_enrich))
     return violations
 
 
@@ -161,6 +207,7 @@ class DependencyArbLedger:
         self.execute_enabled = bool(execute_enabled)
         self.scans = 0
         self.violations_detected = 0
+        self.actionable_detected = 0
         self.executed = 0
         self.settled = 0
         self.realized_profit_usd = 0.0
@@ -173,6 +220,8 @@ class DependencyArbLedger:
         self.last_violations = [v.to_dict() if hasattr(v, "to_dict") else dict(v)
                               for v in (violations or [])]
         self.violations_detected += len(self.last_violations)
+        self.actionable_detected += sum(
+            1 for v in (violations or []) if bool(getattr(v, "actionable", False)))
 
     def has_open(self, parent_key: str) -> bool:
         return parent_key in self.positions
@@ -203,6 +252,7 @@ class DependencyArbLedger:
         return {"strategy": "dependency_arbitrage", "paper_only": True,
                 "enabled": self.execute_enabled, "mode": mode,
                 "scans": self.scans, "violations_detected": self.violations_detected,
+                "actionable_detected": int(getattr(self, "actionable_detected", 0) or 0),
                 "rejected_invalid": self.rejected_invalid,
                 "executed": self.executed, "settled": self.settled,
                 "open": sum(1 for p in self.positions.values() if p.get("status") == "open"),

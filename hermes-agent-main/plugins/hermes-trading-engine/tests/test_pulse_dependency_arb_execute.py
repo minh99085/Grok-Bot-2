@@ -6,6 +6,7 @@ from engine.pulse.markets import OrderBook, PulseWindow
 from engine.pulse.dependency_arb import (
     DependencyArbLedger,
     DependencyViolation,
+    enrich_vwap_actionable,
     validate_violation,
     try_execute_nested_implication,
     scan_nested_implication,
@@ -70,6 +71,25 @@ def test_paper_execute_and_settle_dependency_ledger():
     rep = ledger.report()
     assert rep["segregated_from_directional"] is True
     assert rep["strategy"] == "dependency_arbitrage"
+
+
+def test_vwap_enrichment_marks_actionable():
+    t0 = 10_000_000.0
+    parent = PulseWindow(
+        event_id="p15", market_id="mp", slug="sp", title="15m",
+        open_ts=t0, close_ts=t0 + 900, up_token_id="UP", down_token_id="DP",
+        window_seconds=900, series_label="15m",
+    )
+    child = PulseWindow(
+        event_id="c5", market_id="mc", slug="sc", title="5m",
+        open_ts=t0 + 60, close_ts=t0 + 360, up_token_id="UC", down_token_id="DC",
+        window_seconds=300, series_label="5m",
+    )
+    parent.up_book = _book(0.42)
+    child.up_book = _book(0.57)
+    vios = scan_nested_implication(parent, [child], epsilon=0.02, vwap_enrich=True)
+    assert vios and vios[0].actionable is True
+    assert vios[0].reason == "vwap_executable"
 
 
 def test_execute_disabled_does_not_book():

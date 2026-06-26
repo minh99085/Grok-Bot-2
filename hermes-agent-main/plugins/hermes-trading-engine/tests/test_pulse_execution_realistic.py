@@ -7,6 +7,8 @@ from engine.pulse.execution_realistic import (
     compute_candidate_edge,
     high_entry_margin_reject,
     kl_model_vs_market,
+    max_acceptable_leg2_ask,
+    simulate_buy_both_sequential,
     simplex_diagnostics,
 )
 from engine.pulse.markets import OrderBook
@@ -46,6 +48,19 @@ def test_compute_candidate_edge_fields():
     assert block["execution_realistic_ev"] is not None
     assert block["kl_model_vs_market"] is not None
     assert "simplex" in block
+
+
+def test_pre_commit_leg2_max():
+    assert max_acceptable_leg2_ask(leg1_vwap=0.30, epsilon=0.05) == 0.65
+
+
+def test_sequential_sim_rejects_bible_slippage():
+    up = OrderBook(best_bid=0.28, best_ask=0.30, asks=[(0.30, 10_000.0)], bids=[(0.28, 10_000.0)])
+    dn = OrderBook(best_bid=0.43, best_ask=0.45, asks=[(0.45, 10_000.0)], bids=[(0.43, 10_000.0)])
+    sim = simulate_buy_both_sequential(
+        up, dn, target_usd=50.0, epsilon=0.05, leg2_slippage_bps=8000.0)
+    assert sim["non_atomic_pass"] is False
+    assert sim.get("unwind_required") is True
 
 
 def test_aggregate_report_rollup():
