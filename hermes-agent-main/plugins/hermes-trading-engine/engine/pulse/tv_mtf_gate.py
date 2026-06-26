@@ -1,9 +1,9 @@
-"""TradingView 1m+5m MTF gate (restrict-only, PAPER ONLY).
+"""TradingView fast-pair MTF gate (restrict-only, PAPER ONLY).
 
 Loop architecture: Grok → verifier → execution gate owns trade authority. TradingView is
 observe-only context; this gate is a **conflict veto only** by default.
 
-Layer 1 (default, when enabled): block ``conflict`` — fresh 1m and 5m disagree.
+Layer 1 (default, when enabled): block ``conflict`` — fresh 4m and 5m disagree (fast pair).
 Layer 2 (``require_confirm=1``, opt-in legacy): require ``confirmed_up`` / ``confirmed_down``.
 Optional ``require_side_align``: candidate side must match the MTF direction.
 """
@@ -36,7 +36,7 @@ class TradingViewMtfConflictGate:
         tc = str(tf_confirm or "").strip().lower()
         reasons = []
         if tc == "conflict":
-            reasons.append("tv_mtf_1m_5m_conflict")
+            reasons.append("tv_mtf_4m_5m_conflict")
         if self.require_confirm:
             if tc == "single_tf":
                 reasons.append("tv_mtf_single_tf_only")
@@ -97,8 +97,9 @@ class TradingViewMtfConflictGate:
             "explored": self.explored,
             "block_reasons": dict(self.block_reasons),
             "explore_reasons": dict(self.explore_reasons),
-            "note": ("observe-only conflict veto: blocks 1m/5m conflict only (loop arch default). "
-                     "require_confirm/side_align are opt-in restrict-only layers, not trade authority."),
+            "note": ("observe-only conflict veto: blocks 4m/5m fast-pair conflict only "
+                     "(loop arch default). require_confirm/side_align are opt-in restrict-only "
+                     "layers, not trade authority."),
         }
 
     def to_state(self) -> dict:

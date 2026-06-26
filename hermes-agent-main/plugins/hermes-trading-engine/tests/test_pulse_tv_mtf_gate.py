@@ -1,4 +1,4 @@
-"""TradingView 1m+5m MTF gate."""
+"""TradingView 4m+5m fast-pair MTF gate."""
 
 from __future__ import annotations
 
@@ -53,10 +53,14 @@ def _engine(tmp_path, **over):
     feed = PulsePriceFeed(fetcher=fetch, source_name="rtds_chainlink",
                           vol=RollingVol(window_s=900, min_samples=8), max_open_lag_s=20.0)
     cfg = PulseConfig(
-        tick_seconds=1.0, size_usd=10.0, min_edge=0.02, basis_buffer=0.0,
+        tick_seconds=1.0, size_usd=10.0, min_edge=0.0, basis_buffer=0.0,
         min_seconds_since_open=0.0, sigma_trust_floor=0.0, min_vol_samples=2,
         settle_grace_s=0.0, exec_max_depth_consume_frac=0.9,
+        min_reward_risk=0.0,
+        baseline_cohort_gate_enabled=False,
+        directional_block_up_until_promoted=False,
         tv_context_gate_enabled=False,
+        tv_down_bias_gate_enabled=False,
         tv_mtf_conflict_gate_enabled=True,
         tv_mtf_conflict_exploration_rate=0.0,
         tradingview_secret="s3cr3t",
@@ -77,7 +81,7 @@ def _ingest(eng, *, direction, tf, now):
 def test_engine_blocks_mtf_conflict(tmp_path):
     eng, t0 = _engine(tmp_path)
     _ingest(eng, direction="UP", tf="5", now=t0 - 8)
-    _ingest(eng, direction="DOWN", tf="1", now=t0 - 5)
+    _ingest(eng, direction="DOWN", tf="4", now=t0 - 5)
     _drive(eng, t0)
     assert eng.ledger.trades == 0
     lc = eng.status()["decision_lifecycle"]
@@ -91,7 +95,7 @@ def test_engine_blocks_mtf_conflict(tmp_path):
 def test_default_config_conflict_veto_only(tmp_path):
     """Loop arch default: require_confirm off — single_tf does not block."""
     eng, t0 = _engine(tmp_path)
-    _ingest(eng, direction="DOWN", tf="1", now=t0 - 5)
+    _ingest(eng, direction="DOWN", tf="4", now=t0 - 5)
     _drive(eng, t0)
     mg = eng.status()["tradingview"]["mtf_gate"]
     assert mg["require_confirm"] is False
@@ -102,7 +106,7 @@ def test_default_config_conflict_veto_only(tmp_path):
 
 def test_engine_blocks_without_full_confirm(tmp_path):
     eng, t0 = _engine(tmp_path, tv_mtf_require_confirm=True)
-    _ingest(eng, direction="DOWN", tf="1", now=t0 - 5)
+    _ingest(eng, direction="DOWN", tf="4", now=t0 - 5)
     _drive(eng, t0)
     mg = eng.status()["tradingview"]["mtf_gate"]
     assert mg["blocked"] >= 1
@@ -112,14 +116,14 @@ def test_engine_blocks_without_full_confirm(tmp_path):
 
 
 def test_engine_passes_mtf_confirmed(tmp_path):
-    # side-align tested in unit test; here verify full 1m+5m confirm is not blocked
+    # side-align tested in unit test; here verify full 4m+5m confirm is not blocked
     eng, t0 = _engine(tmp_path, tv_mtf_require_side_align=False)
     _ingest(eng, direction="DOWN", tf="5", now=t0 - 8)
-    _ingest(eng, direction="DOWN", tf="1", now=t0 - 5)
+    _ingest(eng, direction="DOWN", tf="4", now=t0 - 5)
     _drive(eng, t0)
     mg = eng.status()["tradingview"]["mtf_gate"]
     lc = eng.status()["decision_lifecycle"]
-    assert mg["block_reasons"].get("tv_mtf_1m_5m_conflict", 0) == 0
+    assert mg["block_reasons"].get("tv_mtf_4m_5m_conflict", 0) == 0
     assert mg["block_reasons"].get("tv_mtf_single_tf_only", 0) == 0
     assert lc["rejected_by_stage"].get("mtf_gate", 0) == 0
     if eng.webhook is not None:

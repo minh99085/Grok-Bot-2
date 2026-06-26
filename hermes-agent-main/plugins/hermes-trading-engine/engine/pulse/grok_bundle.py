@@ -4,6 +4,13 @@ from __future__ import annotations
 
 from typing import Optional
 
+from engine.pulse.tradingview import (
+    DEFAULT_MTF_TIMEFRAMES,
+    tf_age_key,
+    tf_dir_key,
+    tf_label,
+)
+
 
 def gate_funnel_top(rejected_by_stage: dict, *, top_n: int = 8) -> dict:
     """Summarize where candidate trades get blocked (highest counts first)."""
@@ -21,26 +28,37 @@ def tv_trend_snapshot(
     latest_by_timeframe: dict,
     feature_symbol: str = "BTCUSD",
 ) -> dict:
-    """All four TV chart alerts (1m/5m/10m/15m) with strength + 4-TF trend verdict."""
+    """All configured TV chart alerts (default 4/5/10/13/15m) with strength + MTF trend verdict."""
     mtf = mtf or {}
     feat = str(feature_symbol or "BTCUSD").strip() or "BTCUSD"
-    dir_keys = {"1": "tf_1m_dir", "5": "tf_5m_dir", "10": "tf_10m_dir", "15": "tf_15m_dir"}
-    age_keys = {"1": "tf_1m_age_s", "5": "tf_5m_age_s", "10": "tf_10m_age_s", "15": "tf_15m_age_s"}
+    tfs = tuple(mtf.get("mtf_timeframes") or DEFAULT_MTF_TIMEFRAMES)
+    n = int(mtf.get("mtf_count") or len(tfs))
     charts = {}
-    for tf, label in (("1", "1m"), ("5", "5m"), ("10", "10m"), ("15", "15m")):
+    for tf in tfs:
+        label = tf_label(tf)
         snap = latest_by_timeframe.get("%s@%s" % (feat, tf)) or {}
-        fresh_dir = mtf.get(dir_keys[tf])
+        fresh_dir = mtf.get(tf_dir_key(tf))
         stored_dir = snap.get("direction")
         charts[label] = {
+            "timeframe": tf,
             "direction": fresh_dir or stored_dir,
             "strength": snap.get("strength"),
             "fresh": fresh_dir is not None,
-            "age_s": mtf.get(age_keys[tf]),
+            "age_s": mtf.get(tf_age_key(tf)),
             "stale_stored_dir": (stored_dir if fresh_dir is None and stored_dir else None),
         }
+    confirm_ntf = mtf.get("confirm_%dtf" % n) if n else None
+    direction_ntf = mtf.get("direction_%dtf" % n) if n else None
     return {
-        "confirm_4tf": mtf.get("confirm_4tf"),
-        "direction_4tf": mtf.get("direction_4tf"),
+        "mtf_timeframes": list(tfs),
+        "mtf_count": n,
+        "fast_pair": mtf.get("fast_pair"),
+        "fast_pair_confirm": mtf.get("confirm"),
+        "fast_pair_direction": mtf.get("direction"),
+        "confirm_mtf": mtf.get("confirm_mtf"),
+        "direction_mtf": mtf.get("direction_mtf"),
+        "confirm_%dtf" % n: confirm_ntf,
+        "direction_%dtf" % n: direction_ntf,
         "fresh_tf_count": mtf.get("trend_fresh_count"),
         "trend_by_tf": mtf.get("trend_by_tf"),
         "charts": charts,

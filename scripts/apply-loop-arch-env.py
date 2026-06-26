@@ -78,11 +78,14 @@ UPDATES = {
     "PULSE_DIRECTIONAL_MAX_BANKROLL_FRAC": "0.10",
     "PULSE_DIRECTIONAL_BLOCK_UP_UNTIL_PROMOTED": "1",
     "PULSE_DEPENDENCY_ARB_ENABLED": "1",
-    # TradingView INDEX:BTCUSD — 1m + 5m + 10m + 15m chart alerts (four charts, same script).
+    # TradingView INDEX:BTCUSD — 4m + 5m + 10m + 13m + 15m chart alerts (five charts, same script).
     "PULSE_TV_FEATURE_SYMBOL": "BTCUSD",
     "TRADINGVIEW_ALLOWED_SYMBOLS": "BTCUSD,INDEX:BTCUSD",
+    "PULSE_TV_MTF_TIMEFRAMES": "4,5,10,13,15",
+    "PULSE_TV_MTF_CONFIRM_WINDOW_4M_S": "300",
     "PULSE_TV_MTF_CONFIRM_WINDOW_S": "360",
     "PULSE_TV_MTF_CONFIRM_WINDOW_10M_S": "660",
+    "PULSE_TV_MTF_CONFIRM_WINDOW_13M_S": "840",
     "PULSE_TV_MTF_CONFIRM_WINDOW_15M_S": "960",
     # Tier 2: selectivity blocks need PF floor + higher min_samples + BH-FDR.
     "PULSE_SELECTIVITY_MIN_SAMPLES": "50",

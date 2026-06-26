@@ -73,10 +73,73 @@ def normalize_symbol(raw) -> str:
     return s
 
 
+DEFAULT_MTF_TIMEFRAMES = ("4", "5", "10", "13", "15")
+DEFAULT_MTF_CONFIRM_WINDOWS = {
+    "4": 300.0,
+    "5": 360.0,
+    "10": 660.0,
+    "13": 840.0,
+    "15": 960.0,
+}
+
+
+def parse_mtf_timeframes(raw) -> tuple[str, ...]:
+    """Parse ``PULSE_TV_MTF_TIMEFRAMES`` (e.g. ``4,5,10,13,15``) into canonical minute keys."""
+    if raw is None or not str(raw).strip():
+        return DEFAULT_MTF_TIMEFRAMES
+    out: list[str] = []
+    for part in str(raw).split(","):
+        tf = normalize_timeframe(part.strip())
+        if tf and tf not in out:
+            out.append(tf)
+    return tuple(out) if out else DEFAULT_MTF_TIMEFRAMES
+
+
+def tf_label(tf: str) -> str:
+    return "%sm" % str(tf)
+
+
+def tf_dir_key(tf: str) -> str:
+    return "tf_%sm_dir" % str(tf)
+
+
+def tf_age_key(tf: str) -> str:
+    return "tf_%sm_age_s" % str(tf)
+
+
+def build_mtf_confirm_windows(
+    mtf_timeframes: tuple[str, ...],
+    *,
+    legacy_5m_s: float = 360.0,
+    legacy_10m_s: float = 660.0,
+    legacy_15m_s: float = 960.0,
+    overrides: Optional[dict] = None,
+) -> dict[str, float]:
+    """Per-TF freshness windows (seconds) for MTF confirmation."""
+    windows = dict(DEFAULT_MTF_CONFIRM_WINDOWS)
+    windows["5"] = float(legacy_5m_s)
+    windows["10"] = float(legacy_10m_s)
+    windows["15"] = float(legacy_15m_s)
+    if overrides:
+        for tf, val in overrides.items():
+            if val is not None:
+                windows[str(tf)] = float(val)
+    out: dict[str, float] = {}
+    for tf in mtf_timeframes:
+        if tf in windows:
+            out[tf] = windows[tf]
+        else:
+            try:
+                out[tf] = float(int(tf) * 60 + 60)
+            except ValueError:
+                out[tf] = 360.0
+    return out
+
+
 def normalize_timeframe(raw) -> Optional[str]:
     """Canonical minute key for per-TF storage (``10``, ``10m``, ``10min`` -> ``10``).
 
-    Each timeframe is stored separately in ``latest_by_tf`` so 1m/5m/10m/15m alerts never
+    Each timeframe is stored separately in ``latest_by_tf`` so 4m/5m/10m/13m/15m alerts never
     overwrite one another — only the matching TF slot is updated."""
     if raw is None:
         return None
@@ -814,13 +877,22 @@ class TradingViewIntake:
                  data_dir: Optional[str] = None, dedupe_capacity: int = 5000,
                  header_name: str = "X-Tradingview-Secret",
                  feature_symbol: str = "BTCUSD",
+                 mtf_timeframes: Optional[tuple[str, ...]] = None,
+                 confirm_windows_by_tf: Optional[dict[str, float]] = None,
                  confirm_window_s: float = 360.0,
                  confirm_window_10m_s: float = 660.0,
                  confirm_window_15m_s: float = 960.0):
         self.secret = str(secret or "")
-        # Chart symbol the operator feeds (INDEX:BTCUSD -> BTCUSD). Used for 1m/5m/10m/15m
+        # Chart symbol the operator feeds (INDEX:BTCUSD -> BTCUSD). Used for 4m/5m/10m/13m/15m
         # cross-confirmation lookups — distinct from the Chainlink oracle slug (btc/usd).
         self.feature_symbol = normalize_symbol(feature_symbol) or "BTCUSD"
+        self.mtf_timeframes = tuple(mtf_timeframes) if mtf_timeframes else DEFAULT_MTF_TIMEFRAMES
+        self.confirm_windows_by_tf = confirm_windows_by_tf or build_mtf_confirm_windows(
+            self.mtf_timeframes,
+            legacy_5m_s=confirm_window_s,
+            legacy_10m_s=confirm_window_10m_s,
+            legacy_15m_s=confirm_window_15m_s,
+        )
         # normalize allow-list entries the same way incoming symbols are normalized, so
         # exchange-prefixed aliases (INDEX:BTCUSD) match their base symbol.
         self.allowed_symbols = {normalize_symbol(s) for s in (allowed_symbols or []) if str(s).strip()}
@@ -841,15 +913,15 @@ class TradingViewIntake:
         # per-source tracking (INDEX:BTCUSD alerts stored under feature_symbol)
         self.latest_by_symbol: dict = {}
         self.valid_by_symbol: dict = {}
-        # per-(symbol,timeframe) latest so multiple alert timeframes (e.g. 1m + 5m) can be
+        # per-(symbol,timeframe) latest so multiple alert timeframes (e.g. 4m + 5m) can be
         # CROSS-CONFIRMED instead of overwriting each other. value = (event, received_ts).
         self.latest_by_tf: dict = {}
-        # 1m+5m: ~6min window so a fresh 1m aligns with the current 5m bar.
-        self.confirm_window_s: float = float(confirm_window_s)
-        # 10m chart alerts stay fresh up to ~11min for 4-TF trend alignment.
-        self.confirm_window_10m_s: float = float(confirm_window_10m_s)
-        # 15m chart alerts stay fresh up to ~16min for 3/4-TF alignment.
-        self.confirm_window_15m_s: float = float(confirm_window_15m_s)
+        # Legacy aliases — 5m/10m/15m windows (see confirm_windows_by_tf for full map).
+        self.confirm_window_s: float = float(self.confirm_windows_by_tf.get("5", confirm_window_s))
+        self.confirm_window_10m_s: float = float(
+            self.confirm_windows_by_tf.get("10", confirm_window_10m_s))
+        self.confirm_window_15m_s: float = float(
+            self.confirm_windows_by_tf.get("15", confirm_window_15m_s))
         self._path = (Path(data_dir) / "btc_pulse_tradingview.json") if data_dir else None
         self._load_state()
 
@@ -858,7 +930,7 @@ class TradingViewIntake:
         return canonical_storage_symbol(symbol, self.feature_symbol)
 
     def _mtf_symbol(self, symbol: Optional[str] = None) -> Optional[str]:
-        """Resolve which TV symbol key to use for 1m+5m confirmation lookups."""
+        """Resolve which TV symbol key to use for MTF confirmation lookups."""
         if symbol:
             return self._storage_symbol(symbol)
         return self.feature_symbol or (self.latest.symbol if self.latest else None)
@@ -1056,19 +1128,17 @@ class TradingViewIntake:
 
     def mtf_confirmation(self, *, symbol: Optional[str] = None,
                          now: Optional[float] = None) -> dict:
-        """Cross-timeframe confirmation across fresh 1m, 5m, 10m, and 15m signals.
+        """Cross-timeframe confirmation across configured chart alerts (default 4/5/10/13/15m).
 
-        ``confirm`` — 1m+5m (legacy): confirmed_up/down, conflict, single_tf, none.
-        ``confirm_3tf`` — 1m+5m+15m (legacy): confirmed_up_3tf / confirmed_down_3tf, etc.
-        ``confirm_4tf`` — all four chart alerts for BTC trend view: confirmed_up_4tf /
-          confirmed_down_4tf, partial_up/down_4tf (majority), conflict_4tf, single_tf, none.
+        ``confirm`` — fast pair (first two TFs, default 4m+5m): confirmed_up/down, conflict,
+          single_tf, none. Used by the MTF conflict gate.
+        ``confirm_mtf`` / ``confirm_{N}tf`` — all configured TFs: confirmed_up_mtf,
+          partial_up_mtf, conflict_mtf, etc. Grok reads this via ``tradingview_trend``.
         OBSERVE-ONLY — graded feature only."""
         now = now if now is not None else time.time()
         sym = self._mtf_symbol(symbol)
-        one = self.latest_by_tf.get((sym, "1")) if sym else None
-        five = self.latest_by_tf.get((sym, "5")) if sym else None
-        ten = self.latest_by_tf.get((sym, "10")) if sym else None
-        fifteen = self.latest_by_tf.get((sym, "15")) if sym else None
+        tfs = self.mtf_timeframes
+        windows = self.confirm_windows_by_tf
 
         def _fresh(entry, window_s: float):
             if not entry:
@@ -1076,85 +1146,107 @@ class TradingViewIntake:
             ev, ts = entry
             return ev if (now - float(ts)) <= float(window_s) else None
 
-        e1, e5 = _fresh(one, self.confirm_window_s), _fresh(five, self.confirm_window_s)
-        e10 = _fresh(ten, self.confirm_window_10m_s)
-        e15 = _fresh(fifteen, self.confirm_window_15m_s)
-        d1 = e1.direction if e1 else None
-        d5 = e5.direction if e5 else None
-        d10 = e10.direction if e10 else None
-        d15 = e15.direction if e15 else None
-        out = {
+        dirs: dict[str, Optional[str]] = {}
+        entries: dict[str, Optional[tuple]] = {}
+        for tf in tfs:
+            entry = self.latest_by_tf.get((sym, tf)) if sym else None
+            entries[tf] = entry
+            ev = _fresh(entry, windows.get(tf, 360.0))
+            dirs[tf] = ev.direction if ev else None
+
+        out: dict = {
             "symbol": sym,
-            "tf_1m_dir": d1, "tf_5m_dir": d5, "tf_10m_dir": d10, "tf_15m_dir": d15,
-            "tf_1m_age_s": (round(now - one[1], 1) if one else None),
-            "tf_5m_age_s": (round(now - five[1], 1) if five else None),
-            "tf_10m_age_s": (round(now - ten[1], 1) if ten else None),
-            "tf_15m_age_s": (round(now - fifteen[1], 1) if fifteen else None),
-            "confirm_window_s": self.confirm_window_s,
-            "confirm_window_10m_s": self.confirm_window_10m_s,
-            "confirm_window_15m_s": self.confirm_window_15m_s,
-            "trend_by_tf": {k: v for k, v in (("1", d1), ("5", d5), ("10", d10), ("15", d15)) if v},
+            "mtf_timeframes": list(tfs),
+            "mtf_count": len(tfs),
+            "confirm_windows_by_tf": {tf: windows[tf] for tf in tfs},
+            "fast_pair": list(tfs[:2]) if len(tfs) >= 2 else [],
+            "trend_by_tf": {tf: d for tf, d in dirs.items() if d},
         }
-        if d1 and d5:
-            if d1 == d5 and d1 in ("UP", "DOWN"):
-                out["confirm"] = "confirmed_up" if d1 == "UP" else "confirmed_down"
-                out["direction"] = d1
+        for tf in tfs:
+            out[tf_dir_key(tf)] = dirs[tf]
+            ent = entries[tf]
+            out[tf_age_key(tf)] = (round(now - ent[1], 1) if ent else None)
+
+        # Fast-pair confirm (4m+5m by default) — conflict gate reads ``confirm``.
+        if len(tfs) >= 2:
+            tf_a, tf_b = tfs[0], tfs[1]
+            d_a, d_b = dirs[tf_a], dirs[tf_b]
+            if d_a and d_b:
+                if d_a == d_b and d_a in ("UP", "DOWN"):
+                    out["confirm"] = "confirmed_up" if d_a == "UP" else "confirmed_down"
+                    out["direction"] = d_a
+                else:
+                    out["confirm"] = "conflict"
+                    out["direction"] = None
+            elif d_a or d_b:
+                out["confirm"] = "single_tf"
+                out["direction"] = d_a or d_b
             else:
-                out["confirm"] = "conflict"
+                out["confirm"] = "none"
                 out["direction"] = None
-        elif d1 or d5:
-            out["confirm"] = "single_tf"
-            out["direction"] = (d1 or d5)
+        elif tfs:
+            d0 = dirs[tfs[0]]
+            out["confirm"] = "single_tf" if d0 else "none"
+            out["direction"] = d0
         else:
             out["confirm"] = "none"
             out["direction"] = None
-        # 3-TF alignment (1m + 5m + 15m chart alerts)
-        if d1 and d5 and d1 == d5 and d1 in ("UP", "DOWN"):
-            if d15 == d1:
-                out["confirm_3tf"] = "confirmed_up_3tf" if d1 == "UP" else "confirmed_down_3tf"
-                out["direction_3tf"] = d1
-            elif d15 and d15 != d1:
-                out["confirm_3tf"] = "conflict_15m"
+
+        # Slow-TF alignment: fast pair + 15m (when present).
+        slow_tf = "15" if "15" in tfs else (tfs[-1] if tfs else None)
+        d_slow = dirs.get(slow_tf) if slow_tf else None
+        fast_dir = out.get("direction")
+        if len(tfs) >= 2 and fast_dir in ("UP", "DOWN"):
+            if d_slow == fast_dir:
+                out["confirm_3tf"] = (
+                    "confirmed_up_3tf" if fast_dir == "UP" else "confirmed_down_3tf")
+                out["direction_3tf"] = fast_dir
+            elif d_slow and d_slow != fast_dir:
+                out["confirm_3tf"] = "conflict_%sm" % slow_tf
                 out["direction_3tf"] = None
             else:
                 out["confirm_3tf"] = "partial_3tf"
-                out["direction_3tf"] = d1
-        elif d15 and (d1 or d5):
+                out["direction_3tf"] = fast_dir
+        elif d_slow and (len(tfs) >= 2 and (dirs[tfs[0]] or dirs[tfs[1]])):
             out["confirm_3tf"] = "partial_3tf"
-            out["direction_3tf"] = d15 if not (d1 and d5) else None
-        elif d15:
-            out["confirm_3tf"] = "single_tf_15m"
-            out["direction_3tf"] = d15
+            out["direction_3tf"] = d_slow if not fast_dir else None
+        elif d_slow:
+            out["confirm_3tf"] = "single_tf_%sm" % slow_tf
+            out["direction_3tf"] = d_slow
         else:
             out["confirm_3tf"] = out["confirm"]
             out["direction_3tf"] = out.get("direction")
-        dirs_4 = [d for d in (d1, d5, d10, d15) if d in ("UP", "DOWN")]
-        out["trend_fresh_count"] = len(dirs_4)
-        if len(dirs_4) == 4:
-            if len(set(dirs_4)) == 1:
-                out["confirm_4tf"] = "confirmed_up_4tf" if dirs_4[0] == "UP" else "confirmed_down_4tf"
-                out["direction_4tf"] = dirs_4[0]
-            else:
-                out["confirm_4tf"] = "conflict_4tf"
-                out["direction_4tf"] = None
-        elif len(dirs_4) >= 2:
-            ups = sum(1 for d in dirs_4 if d == "UP")
-            downs = len(dirs_4) - ups
-            if ups > downs:
-                out["confirm_4tf"] = "partial_up_4tf"
-                out["direction_4tf"] = "UP"
-            elif downs > ups:
-                out["confirm_4tf"] = "partial_down_4tf"
-                out["direction_4tf"] = "DOWN"
-            else:
-                out["confirm_4tf"] = "conflict_4tf"
-                out["direction_4tf"] = None
-        elif len(dirs_4) == 1:
-            out["confirm_4tf"] = "single_tf"
-            out["direction_4tf"] = dirs_4[0]
-        else:
-            out["confirm_4tf"] = "none"
-            out["direction_4tf"] = None
+
+        dirs_all = [d for d in dirs.values() if d in ("UP", "DOWN")]
+        out["trend_fresh_count"] = len(dirs_all)
+        n = len(tfs)
+        confirm_ntf = "confirm_%dtf" % n
+        direction_ntf = "direction_%dtf" % n
+
+        def _align_all(dirs_list: list[str], *, suffix: str) -> tuple[str, Optional[str]]:
+            if len(dirs_list) == n and n > 0:
+                if len(set(dirs_list)) == 1:
+                    tag = "confirmed_up_%s" if dirs_list[0] == "UP" else "confirmed_down_%s"
+                    return tag % suffix, dirs_list[0]
+                return "conflict_%s" % suffix, None
+            if len(dirs_list) >= 2:
+                ups = sum(1 for d in dirs_list if d == "UP")
+                downs = len(dirs_list) - ups
+                if ups > downs:
+                    return "partial_up_%s" % suffix, "UP"
+                if downs > ups:
+                    return "partial_down_%s" % suffix, "DOWN"
+                return "conflict_%s" % suffix, None
+            if len(dirs_list) == 1:
+                return "single_tf", dirs_list[0]
+            return "none", None
+
+        confirm_mtf, direction_mtf = _align_all(dirs_all, suffix="mtf")
+        out["confirm_mtf"] = confirm_mtf
+        out["direction_mtf"] = direction_mtf
+        confirm_n, direction_n = _align_all(dirs_all, suffix="%dtf" % n)
+        out[confirm_ntf] = confirm_n
+        out[direction_ntf] = direction_n
         return out
 
     def latest_feature(self, *, now: Optional[float] = None, symbol: Optional[str] = None) -> Optional[dict]:
@@ -1163,22 +1255,26 @@ class TradingViewIntake:
         if ev is None:
             return None
         feat = ev.as_feature(now=now)
-        # attach the cross-timeframe (1m+5m) confirmation so the engine can SEE and GRADE both
-        # signals together, not just whichever alert arrived last. Observe-only.
+        # attach cross-timeframe confirmation so the engine can SEE and GRADE every chart TF,
+        # not just whichever alert arrived last. Observe-only.
         mtf = self.mtf_confirmation(symbol=(symbol or ev.symbol), now=now)
         feat["tf_confirm"] = mtf.get("confirm")
         feat["tf_confirm_direction"] = mtf.get("direction")
-        feat["tf_1m_dir"] = mtf.get("tf_1m_dir")
-        feat["tf_5m_dir"] = mtf.get("tf_5m_dir")
-        feat["tf_10m_dir"] = mtf.get("tf_10m_dir")
-        feat["tf_15m_dir"] = mtf.get("tf_15m_dir")
-        feat["tf_15m_age_s"] = mtf.get("tf_15m_age_s")
         feat["tf_confirm_3tf"] = mtf.get("confirm_3tf")
         feat["tf_confirm_3tf_direction"] = mtf.get("direction_3tf")
-        feat["tf_confirm_4tf"] = mtf.get("confirm_4tf")
-        feat["tf_confirm_4tf_direction"] = mtf.get("direction_4tf")
+        feat["tf_confirm_mtf"] = mtf.get("confirm_mtf")
+        feat["tf_confirm_mtf_direction"] = mtf.get("direction_mtf")
+        feat["mtf_timeframes"] = mtf.get("mtf_timeframes")
+        feat["mtf_count"] = mtf.get("mtf_count")
         feat["trend_by_tf"] = mtf.get("trend_by_tf")
         feat["trend_fresh_count"] = mtf.get("trend_fresh_count")
+        n = int(mtf.get("mtf_count") or 0)
+        if n:
+            feat["tf_confirm_%dtf" % n] = mtf.get("confirm_%dtf" % n)
+            feat["tf_confirm_%dtf_direction" % n] = mtf.get("direction_%dtf" % n)
+        for tf in mtf.get("mtf_timeframes") or []:
+            feat[tf_dir_key(tf)] = mtf.get(tf_dir_key(tf))
+            feat[tf_age_key(tf)] = mtf.get(tf_age_key(tf))
         return feat
 
     def report(self) -> dict:
@@ -1199,6 +1295,7 @@ class TradingViewIntake:
                     "%s@%s" % (s, tf): {"direction": e.direction, "strength": e.strength}
                     for (s, tf), (e, _ts) in self.latest_by_tf.items()},
                 "tradingview_mtf_confirmation": self.mtf_confirmation(symbol=self.feature_symbol),
+                "tradingview_mtf_timeframes": list(self.mtf_timeframes),
                 "tradingview_feature_symbol": self.feature_symbol,
                 "allowed_symbols": sorted(self.allowed_symbols),
                 "bot_name": self.bot_name,

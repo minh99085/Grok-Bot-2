@@ -45,6 +45,25 @@ def _envf(name: str, default: float) -> float:
         return default
 
 
+def _parse_tv_mtf_timeframes(raw) -> tuple[str, ...]:
+    from engine.pulse.tradingview import parse_mtf_timeframes
+    return parse_mtf_timeframes(raw)
+
+
+def _tv_mtf_confirm_windows(cfg: "PulseConfig") -> dict[str, float]:
+    from engine.pulse.tradingview import build_mtf_confirm_windows
+    return build_mtf_confirm_windows(
+        cfg.tradingview_mtf_timeframes,
+        legacy_5m_s=cfg.tradingview_mtf_confirm_window_s,
+        legacy_10m_s=cfg.tradingview_mtf_confirm_window_10m_s,
+        legacy_15m_s=cfg.tradingview_mtf_confirm_window_15m_s,
+        overrides={
+            "4": cfg.tradingview_mtf_confirm_window_4m_s,
+            "13": cfg.tradingview_mtf_confirm_window_13m_s,
+        },
+    )
+
+
 @dataclass
 class PulseConfig:
     tick_seconds: float = 4.0
@@ -254,7 +273,7 @@ class PulseConfig:
     tv_down_bias_block_up_vwap_above: bool = True
     tv_down_bias_block_up_bb_expansion_up: bool = True
     tv_mtf_conflict_gate_enabled: bool = True
-    tv_mtf_require_confirm: bool = False   # loop arch: conflict veto only, not 1m+5m trade authority
+    tv_mtf_require_confirm: bool = False   # loop arch: conflict veto only, not 4m+5m trade authority
     tv_mtf_require_side_align: bool = False
     tv_mtf_conflict_exploration_rate: float = 0.0
     # ---- verifiable stop conditions (agent-independent kill switches; Loop Eng #6) ----
@@ -302,10 +321,13 @@ class PulseConfig:
     tradingview_webhook_port: int = 8787
     tradingview_webhook_path: str = "/webhooks/tradingview"
     tradingview_max_age_s: float = 90.0
-    tradingview_feature_symbol: str = "BTCUSD"   # TV INDEX:BTCUSD — 1m/5m/10m/15m MTF
+    tradingview_feature_symbol: str = "BTCUSD"   # TV INDEX:BTCUSD — 4m/5m/10m/13m/15m MTF
+    tradingview_mtf_timeframes: tuple = ("4", "5", "10", "13", "15")
     tradingview_mtf_confirm_window_s: float = 360.0
     tradingview_mtf_confirm_window_10m_s: float = 660.0
     tradingview_mtf_confirm_window_15m_s: float = 960.0
+    tradingview_mtf_confirm_window_4m_s: float = 300.0
+    tradingview_mtf_confirm_window_13m_s: float = 840.0
     # Polymarket series to trade concurrently (5m + 15m BTC up/down).
     pulse_series_slugs: tuple = (SERIES_SLUG_5M, SERIES_SLUG_15M)
     tradingview_signal_max_feature_age_s: float = 300.0   # only attach signals fresher than this
@@ -609,9 +631,13 @@ class PulseConfig:
             tradingview_max_age_s=_envf("TRADINGVIEW_MAX_AGE_S", 90.0),
             tradingview_feature_symbol=normalize_symbol(
                 os.getenv("PULSE_TV_FEATURE_SYMBOL", "BTCUSD") or "BTCUSD") or "BTCUSD",
+            tradingview_mtf_timeframes=_parse_tv_mtf_timeframes(
+                os.getenv("PULSE_TV_MTF_TIMEFRAMES", "4,5,10,13,15")),
             tradingview_mtf_confirm_window_s=_envf("PULSE_TV_MTF_CONFIRM_WINDOW_S", 360.0),
             tradingview_mtf_confirm_window_10m_s=_envf("PULSE_TV_MTF_CONFIRM_WINDOW_10M_S", 660.0),
             tradingview_mtf_confirm_window_15m_s=_envf("PULSE_TV_MTF_CONFIRM_WINDOW_15M_S", 960.0),
+            tradingview_mtf_confirm_window_4m_s=_envf("PULSE_TV_MTF_CONFIRM_WINDOW_4M_S", 300.0),
+            tradingview_mtf_confirm_window_13m_s=_envf("PULSE_TV_MTF_CONFIRM_WINDOW_13M_S", 840.0),
             pulse_series_slugs=tuple(
                 s.strip() for s in os.getenv(
                     "PULSE_SERIES_SLUGS",
@@ -979,6 +1005,8 @@ class PulseEngine:
                     bot_name=self.cfg.tradingview_bot_name,
                     max_age_s=self.cfg.tradingview_max_age_s, data_dir=self.cfg.data_dir,
                     feature_symbol=self.cfg.tradingview_feature_symbol,
+                    mtf_timeframes=self.cfg.tradingview_mtf_timeframes,
+                    confirm_windows_by_tf=_tv_mtf_confirm_windows(self.cfg),
                     confirm_window_s=self.cfg.tradingview_mtf_confirm_window_s,
                     confirm_window_10m_s=self.cfg.tradingview_mtf_confirm_window_10m_s,
                     confirm_window_15m_s=self.cfg.tradingview_mtf_confirm_window_15m_s)
@@ -1924,11 +1952,9 @@ class PulseEngine:
                 dr.mtf_gate = {"decision": mtf_res["decision"], "reasons": mtf_res["reasons"],
                                "tf_confirm": (tv_feature or {}).get("tf_confirm"),
                                "tf_confirm_direction": (tv_feature or {}).get("tf_confirm_direction"),
-                               "tf_1m_dir": (tv_feature or {}).get("tf_1m_dir"),
-                               "tf_5m_dir": (tv_feature or {}).get("tf_5m_dir"),
-                               "tf_10m_dir": (tv_feature or {}).get("tf_10m_dir"),
-                               "tf_15m_dir": (tv_feature or {}).get("tf_15m_dir"),
-                               "tf_confirm_4tf": (tv_feature or {}).get("tf_confirm_4tf")}
+                               "mtf_timeframes": (tv_feature or {}).get("mtf_timeframes"),
+                               "tf_confirm_mtf": (tv_feature or {}).get("tf_confirm_mtf"),
+                               "trend_by_tf": (tv_feature or {}).get("trend_by_tf")}
                 if mtf_res["decision"] == "block":
                     dr.action = RejectAction(stage="mtf_gate", reason=mtf_res["reasons"][0])
                     if self.markov is not None:

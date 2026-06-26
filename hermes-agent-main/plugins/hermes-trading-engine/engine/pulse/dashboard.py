@@ -219,20 +219,21 @@ async function tick(){
     const mtf=tv.tradingview_mtf_confirmation||{};
     const byTf=tv.tradingview_latest_by_timeframe||{};
     const featSym=tv.tradingview_feature_symbol||'BTCUSD';
-    const mtf4=mtf.confirm_4tf||mtf.confirm_3tf||mtf.confirm||'none';
-    const mtfCls=(mtf4.includes('confirmed')?'pos':(mtf4.includes('conflict')?'neg':'neu'));
-    const dirMap={'1':'tf_1m_dir','5':'tf_5m_dir','10':'tf_10m_dir','15':'tf_15m_dir'};
-    const ageMap={'1':'tf_1m_age_s','5':'tf_5m_age_s','10':'tf_10m_age_s','15':'tf_15m_age_s'};
+    const tfs=(tv.tradingview_mtf_timeframes||mtf.mtf_timeframes||['4','5','10','13','15']);
+    const mtfN=mtf.mtf_count||tfs.length;
+    const mtfVerdict=mtf['confirm_'+mtfN+'tf']||mtf.confirm_mtf||mtf.confirm_3tf||mtf.confirm||'none';
+    const mtfCls=(mtfVerdict.includes('confirmed')?'pos':(mtfVerdict.includes('conflict')?'neg':'neu'));
     const tvPanel=$('<div class="panel" style="grid-column:1/-1"><h2>BTC trend · TradingView alerts</h2></div>');
     const tb=$('<table class="market-table"><thead><tr><th>Chart</th><th>Direction</th><th>Strength</th><th>Age</th></tr></thead><tbody></tbody></table>');
-    [['1','1m'],['5','5m'],['10','10m'],['15','15m']].forEach(([tf,label])=>{
+    tfs.forEach((tf)=>{
+      const label=tf+'m';
       const snap=byTf[featSym+'@'+tf]||{};
-      const freshDir=mtf[dirMap[tf]];
+      const freshDir=mtf['tf_'+tf+'m_dir'];
       const storedDir=snap.direction||null;
       const dir=freshDir||storedDir;
       const stale=freshDir==null&&storedDir!=null;
       const dirCls=dir==='UP'?'pos':(dir==='DOWN'?'neg':'neu');
-      const age=mtf[ageMap[tf]];
+      const age=mtf['tf_'+tf+'m_age_s'];
       tb.querySelector('tbody').appendChild($(`<tr>
         <td>${label}</td>
         <td class="${dirCls}">${dir||'—'}${stale?' <span class="neu">(stale)</span>':''}</td>
@@ -242,8 +243,8 @@ async function tick(){
     });
     tvPanel.appendChild(tb);
     const foot=$('<div class="money-sub" style="margin-top:12px"></div>');
-    foot.innerHTML='4-TF trend: <b class="'+mtfCls+'">'+mtf4+'</b> · '
-      +(mtf.trend_fresh_count==null?'—':mtf.trend_fresh_count)+'/4 fresh · '
+    foot.innerHTML=mtfN+'-TF trend: <b class="'+mtfCls+'">'+mtfVerdict+'</b> · '
+      +(mtf.trend_fresh_count==null?'—':mtf.trend_fresh_count)+'/'+mtfN+' fresh · '
       +(tv.tradingview_alerts_valid||0)+' alerts received';
     tvPanel.appendChild(foot);
     summary.appendChild(tvPanel);
