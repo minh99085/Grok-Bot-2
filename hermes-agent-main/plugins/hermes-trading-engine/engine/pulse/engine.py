@@ -752,6 +752,7 @@ class PulseEngine:
         self.grok_decider = None
         self.grok_news = None
         self._grok_pending: list = []             # pending decision grades (decision_id/price0/close)
+        self._verifier_pending: list = []        # pending verifier counterfactual grades at window close
         self._recent_windows: list = []           # rolling recent BTC 5m window outcomes (for Grok)
         import random as _random
         self._grok_rng = _random.Random()         # exploration sampler (follow-mode data gathering)
@@ -1051,6 +1052,7 @@ class PulseEngine:
         if self.grok_news is not None:
             self.grok_news.load_state(acct.get("grok_news") or {})
         self._grok_pending = list(acct.get("grok_pending") or [])
+        self._verifier_pending = list(acct.get("verifier_pending") or [])
         self._recent_windows = list(acct.get("recent_windows") or [])
         self.lessons.load_state(acct.get("lessons") or {})
         if self.verifier is not None:
@@ -1154,6 +1156,7 @@ class PulseEngine:
                     if gp is not None:
                         tv_feature = {**feat, "grok_p_up": gp.get("p_up")}
         self._grade_grok_decisions(now)   # grade prior Grok decisions vs realized window close
+        self._grade_verifier_decisions(now)  # counterfactual grade for vetoed (and shadow) setups
         self._grade_cex_lead(now)         # grade prior CEX-lead signals vs realized window close
         self._grade_market_benchmark(now) # grade model-vs-market accuracy (learning-blend gate)
         if self.arb_ledger is not None:   # settle risk-free arb positions at window close (deterministic)
@@ -1438,6 +1441,8 @@ class PulseEngine:
                             "recent_windows": self._recent_windows_view(6),
                             "lessons": self.lessons.recent(10),
                             "view_accuracy": self.grok_decider.report().get("view_accuracy")})
+                self._maybe_schedule_verifier_counterfactual(
+                    mc, w, snap, grok_dec, acted=False)
             # FOLLOW only when: mode=follow, breaker not tripped, and this window is in the A/B canary
             # follow-fraction. Otherwise fall through to the baseline path (the A/B control arm).
             grok_follow = False
@@ -1603,6 +1608,12 @@ class PulseEngine:
                         grok_verdict = self.verifier.verdict_or_failopen(mc.decision_id)
                     if not grok_verdict.get("approve"):
                         vr = "verifier_pending" if grok_verdict.get("pending") else "verifier_veto"
+                        if not grok_verdict.get("pending"):
+                            book_v = w.up_book if side == "up" else w.down_book
+                            ask_v = book_v.best_ask if book_v else None
+                            self._maybe_schedule_verifier_counterfactual(
+                                mc, w, snap, grok_dec, side=side, entry_ask=ask_v,
+                                size_frac=grok_size_frac, acted=False)
                         dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
                                                          outcome_prob=None, model_edge=0.0,
                                                          tradeable=False, reason=vr)
@@ -2401,6 +2412,85 @@ class PulseEngine:
         import hashlib
         h = int(hashlib.sha256(str(decision_id).encode("utf-8")).hexdigest()[:8], 16) / 0xFFFFFFFF
         return h < frac
+
+    @staticmethod
+    def _counterfactual_side_pnl(side: str, entry_price: float, size_usd: float,
+                                   outcome_up: bool):
+        if side not in ("up", "down") or not entry_price or entry_price <= 0 or entry_price >= 1:
+            return None, 0.0
+        won = (side == "up" and outcome_up) or (side == "down" and not outcome_up)
+        shares = float(size_usd) / float(entry_price)
+        pnl = round((shares if won else 0.0) - float(size_usd), 6)
+        return bool(won), pnl
+
+    @staticmethod
+    def _grok_proposed_side(grok_dec: Optional[dict]) -> Optional[str]:
+        if not grok_dec:
+            return None
+        act = grok_dec.get("action")
+        return act if act in ("up", "down") else None
+
+    def _schedule_verifier_grade(self, decision_id: str, *, price0, close_ts: float, side: str,
+                                 entry_ask: float, size_usd: float, acted: bool) -> None:
+        """Queue a verifier verdict for counterfactual grading at window close."""
+        if (not decision_id or side not in ("up", "down") or price0 is None
+                or entry_ask is None or self.verifier is None):
+            return
+        for p in self._verifier_pending:
+            if p["decision_id"] == decision_id:
+                return
+        self._verifier_pending.append({
+            "decision_id": decision_id,
+            "price0": float(price0),
+            "close_ts": float(close_ts),
+            "side": side,
+            "entry_ask": float(entry_ask),
+            "size_usd": float(size_usd),
+            "acted": bool(acted),
+        })
+
+    def _maybe_schedule_verifier_counterfactual(self, mc, w, snap, grok_dec, *,
+                                                side=None, entry_ask=None,
+                                                size_frac: float = 1.0, acted: bool = False) -> None:
+        """Schedule counterfactual P&L grade when Claude has a final verdict on a proposed side."""
+        if self.verifier is None or acted:
+            return
+        verdict = self.verifier.get(mc.decision_id)
+        if not verdict or verdict.get("pending") or verdict.get("approve"):
+            return
+        side = side or self._grok_proposed_side(grok_dec)
+        if side not in ("up", "down"):
+            return
+        if entry_ask is None:
+            book = w.up_book if side == "up" else w.down_book
+            entry_ask = book.best_ask if book else None
+        if entry_ask is None or snap.price is None:
+            return
+        size_usd = float(self.cfg.size_usd) * float(size_frac or 1.0)
+        self._schedule_verifier_grade(
+            mc.decision_id, price0=snap.price, close_ts=w.close_ts, side=side,
+            entry_ask=float(entry_ask), size_usd=size_usd, acted=False)
+
+    def _grade_verifier_decisions(self, now: float) -> None:
+        """Grade due verifier verdicts vs the realized 5-min outcome (veto counterfactual P&L)."""
+        if not self._verifier_pending or self.verifier is None:
+            return
+        px = self.price.current()
+        still = []
+        for p in self._verifier_pending:
+            if now < p["close_ts"]:
+                still.append(p)
+                continue
+            if px is not None:
+                outcome_up = float(px) >= float(p["price0"])
+                won, pnl = self._counterfactual_side_pnl(
+                    p["side"], p["entry_ask"], p["size_usd"], outcome_up)
+                if won is not None:
+                    self.verifier.grade(p["decision_id"], won=won, pnl=pnl,
+                                        acted=bool(p.get("acted")))
+            elif now <= p["close_ts"] + 600:
+                still.append(p)
+        self._verifier_pending = still[-2000:]
 
     def _schedule_grok_grade(self, decision_id: str, price0, close_ts: float, decision: dict) -> None:
         """Queue a decision for grading at window close. The gradeable fields (action/p_up/context)
@@ -3394,6 +3484,7 @@ class PulseEngine:
                               "grok_news": (self.grok_news.to_state()
                                             if self.grok_news is not None else {}),
                               "grok_pending": self._grok_pending[-2000:],
+                              "verifier_pending": self._verifier_pending[-2000:],
                               "recent_windows": self._recent_windows[-40:],
                               "verifier": (self.verifier.to_state() if self.verifier is not None
                                            else {}),

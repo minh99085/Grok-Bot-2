@@ -88,6 +88,7 @@ class ClaudeVerifier:
         # outcome tracking: did the verifier's APPROVE / VETO calls help?
         self.approved_settled = {"n": 0, "wins": 0, "pnl": 0.0}
         self.vetoed_would_have = {"n": 0, "wins": 0, "pnl": 0.0}   # graded counterfactually
+        self._graded: set = set()
 
     def request(self, decision_id: str, payload: dict) -> None:
         if not decision_id or not self.enabled:
@@ -148,10 +149,18 @@ class ClaudeVerifier:
         """Grade a verdict vs the realized window: approved-and-acted trades feed approved_settled;
         vetoed setups are graded counterfactually (would the vetoed trade have won?)."""
         with self._lock:
+            if not decision_id or decision_id in self._graded:
+                return
             v = self._results.get(decision_id)
             if not v:
                 return
-            bucket = self.approved_settled if (v.get("approve") and acted) else self.vetoed_would_have
+            if v.get("approve") and acted:
+                bucket = self.approved_settled
+            elif not v.get("approve"):
+                bucket = self.vetoed_would_have
+            else:
+                return
+            self._graded.add(decision_id)
             bucket["n"] += 1
             bucket["wins"] += int(bool(won))
             bucket["pnl"] = round(bucket["pnl"] + float(pnl or 0.0), 6)
@@ -200,7 +209,8 @@ class ClaudeVerifier:
                     "approvals": self.approvals, "vetoes": self.vetoes, "errors": self.errors,
                     "skipped_budget": self.skipped_budget, "latency_sum": round(self.latency_sum, 3),
                     "approved_settled": dict(self.approved_settled),
-                    "vetoed_would_have": dict(self.vetoed_would_have)}
+                    "vetoed_would_have": dict(self.vetoed_would_have),
+                    "graded_ids": list(self._graded)[-5000:]}
 
     def load_state(self, data: dict) -> None:
         if not data:
@@ -218,3 +228,6 @@ class ClaudeVerifier:
                 s = data.get(src) or {}
                 getattr(self, k).update({"n": int(s.get("n", 0) or 0), "wins": int(s.get("wins", 0) or 0),
                                          "pnl": float(s.get("pnl", 0.0) or 0.0)})
+            graded = data.get("graded_ids") or []
+            if isinstance(graded, list):
+                self._graded = {str(x) for x in graded if x}

@@ -39,6 +39,39 @@ def test_verifier_approve_veto_and_grade():
     assert v2.get("d2")["approve"] is False and v2.report()["vetoes"] == 1
 
 
+def test_verifier_veto_counterfactual_grade():
+    v = ClaudeVerifier(verify_fn=lambda p: {"approve": False, "reason": "weak edge"}, enabled=True)
+    v.request("d-veto", {})
+    v._process_one()
+    v.grade("d-veto", won=True, pnl=3.5, acted=False)
+    rep = v.report()
+    assert rep["vetoed_would_have_settled"]["n"] == 1
+    assert rep["vetoed_would_have_settled"]["win_rate"] == 1.0
+    assert rep["vetoed_would_have_settled"]["pnl_usd"] == 3.5
+    assert rep["approved_acted_settled"]["n"] == 0
+    # idempotent
+    v.grade("d-veto", won=False, pnl=-5.0, acted=False)
+    assert rep["vetoed_would_have_settled"]["n"] == 1
+
+
+def test_verifier_grade_buckets_approve_not_acted_skipped():
+    v = ClaudeVerifier(verify_fn=lambda p: {"approve": True}, enabled=True)
+    v.request("d3", {})
+    v._process_one()
+    v.grade("d3", won=True, pnl=1.0, acted=False)
+    rep = v.report()
+    assert rep["approved_acted_settled"]["n"] == 0
+    assert rep["vetoed_would_have_settled"]["n"] == 0
+
+
+def test_counterfactual_side_pnl():
+    from engine.pulse.engine import PulseEngine
+    won, pnl = PulseEngine._counterfactual_side_pnl("up", 0.5, 5.0, True)
+    assert won is True and pnl == 5.0
+    won, pnl = PulseEngine._counterfactual_side_pnl("down", 0.5, 5.0, True)
+    assert won is False and pnl == -5.0
+
+
 def test_verifier_fail_open_and_failclosed():
     v = ClaudeVerifier(verify_fn=lambda p: None, enabled=True, fail_open=True)
     # no verdict yet -> fail-open APPROVE so the bot doesn't freeze
