@@ -23,15 +23,15 @@ UPDATES = {
     "PULSE_TV_DOWN_BIAS_BLOCK_UP_AGAINST_CONFIRMED_DOWN": "1",
     "PULSE_LATE_WINDOW_ENTRY": "0",
     # Unfreeze baseline-path / allowlist cold-start (Grok follow bypasses most of these).
-    "PULSE_TV_CONTEXT_MAX_TTC_S": "240",
+    "PULSE_TV_CONTEXT_MAX_TTC_S": "180",
     "PULSE_TV_CONTEXT_EXPLORATION_RATE": "0",
     "PULSE_TV_DOWN_BIAS_EXPLORE_RATE": "0",
     # Baseline quant path: allowlist was deadlocking (no proven bucket + 0% explore).
     "PULSE_DIRECTIONAL_REQUIRE_WINNING": "0",
     "PULSE_DIRECTIONAL_EXPLORE_RATE": "0.12",
     "PULSE_MIN_EDGE": "0.02",
-    "PULSE_MIN_REWARD_RISK": "0.38",
-    "PULSE_MIN_REWARD_RISK_UP_PREMIUM": "0.25",
+    "PULSE_MIN_REWARD_RISK": "0.42",
+    "PULSE_MIN_REWARD_RISK_UP_PREMIUM": "0.28",
     "PULSE_GROK_UP_MIN_P_WIN": "0.58",
     # Gamma windows often appear >20s after open_ts; min_seconds_since_open=30 already delays entry.
     "PULSE_MAX_OPEN_LAG_S": "120",

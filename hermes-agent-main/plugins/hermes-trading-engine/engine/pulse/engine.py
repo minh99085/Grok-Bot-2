@@ -184,7 +184,7 @@ class PulseConfig:
     mispricing_min_executable_margin: float = 0.03
     edge_ttc_gate_enabled: bool = False
     # When Grok abstains, still follow a Wilson-aligned CEX-lead mispricing stack (not coin-flip explore).
-    mispricing_follow_on_abstain: bool = True
+    mispricing_follow_on_abstain: bool = False
     mispricing_follow_size_fraction: float = 0.5
     # ---- within-window RISK-FREE arbitrage (Roan dutch book up_vwap+down_vwap<1; PAPER ONLY) ----
     arbitrage_enabled: bool = True
@@ -441,7 +441,7 @@ class PulseConfig:
             edge_ttc_gate_enabled=str(os.getenv("PULSE_EDGE_TTC_GATE_ENABLED", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
             mispricing_follow_on_abstain=str(
-                os.getenv("PULSE_MISPRICING_FOLLOW_ON_ABSTAIN", "1")).strip().lower()
+                os.getenv("PULSE_MISPRICING_FOLLOW_ON_ABSTAIN", "0")).strip().lower()
             in ("1", "true", "yes", "on"),
             mispricing_follow_size_fraction=_envf("PULSE_MISPRICING_FOLLOW_SIZE_FRACTION", 0.5),
             arbitrage_enabled=str(os.getenv("PULSE_ARB_ENABLED", "1"))
@@ -1570,9 +1570,8 @@ class PulseEngine:
                         self.markov.record_terminal(state=cand_state, accepted=False)
                     _finalize(dr, "rejected", reason="grok_no_edge_up", stage="grok_decider")
                     continue
-                # Restrict-only DOWN/TV asymmetry gate still applies to Grok-owned UP trades.
-                if (side == "up" and entry_mode != "mispricing_follow"
-                        and not self.cfg.mispricing_gate_enabled):
+                # Restrict-only DOWN/TV asymmetry gate applies to all Grok-owned UP trades.
+                if side == "up" and not self.cfg.mispricing_gate_enabled:
                     db_res = self.tv_down_bias_gate.evaluate(
                         side=side,
                         mtf_alignment=(tv_feature or {}).get("mtf_alignment"),
@@ -1724,6 +1723,14 @@ class PulseEngine:
                     self.markov.record_terminal(state=cand_state, accepted=False)
                 _finalize(dr, "rejected", reason="grok_no_edge_up", stage="grok_decider")
                 continue
+            if not grok_follow and not cex_lead_active and d.side == "up":
+                up_tv_ok, up_tv_reason = self._baseline_up_tv_strength_ok(tv_feature)
+                if not up_tv_ok:
+                    dr.action = RejectAction(stage="directional", reason=up_tv_reason)
+                    if self.markov is not None:
+                        self.markov.record_terminal(state=cand_state, accepted=False)
+                    _finalize(dr, "rejected", reason=up_tv_reason, stage="directional")
+                    continue
             if not grok_follow and not cex_lead_active:
                 tv_reason = self._tv_signal_gate(tv_feature, d.side)
                 if tv_reason is not None:
@@ -2565,6 +2572,21 @@ class PulseEngine:
         if graded >= 20 and acc is not None and float(acc) < 0.52:
             return False
         return True
+
+    def _baseline_up_tv_strength_ok(self, tv_feature: "dict | None") -> "tuple[bool, str]":
+        """Baseline UP requires TV UP_STRONG (strength >= 0.8) when the alert direction is UP."""
+        if not tv_feature:
+            return True, ""
+        direction = str(tv_feature.get("direction") or "").upper()
+        if direction != "UP":
+            return True, ""
+        try:
+            strength = float(tv_feature.get("strength"))
+        except (TypeError, ValueError):
+            return False, "baseline_up_tv_strength_missing"
+        if strength < 0.8:
+            return False, "baseline_up_tv_weak"
+        return True, ""
 
     def _edge_snap_field(self, esnap, field: str):
         if esnap is None:

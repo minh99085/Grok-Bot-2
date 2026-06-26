@@ -412,3 +412,15 @@ def test_grok_up_side_blocked_at_coin_flip_accuracy():
     eng.grok_decider = type("G", (), {"report": lambda self: {
         "graded_directional": 42, "direction_accuracy": 0.5}})()
     assert eng._grok_up_side_allowed() is False
+
+
+def test_baseline_up_tv_strength_gate():
+    eng = PulseEngine(PulseConfig())
+    ok, _ = eng._baseline_up_tv_strength_ok({"direction": "DOWN", "strength": 0.5})
+    assert ok is True
+    ok, reason = eng._baseline_up_tv_strength_ok({"direction": "UP", "strength": 0.65})
+    assert ok is False and reason == "baseline_up_tv_weak"
+    ok, _ = eng._baseline_up_tv_strength_ok({"direction": "UP", "strength": 0.85})
+    assert ok is True
+    ok, _ = eng._baseline_up_tv_strength_ok(None)
+    assert ok is True

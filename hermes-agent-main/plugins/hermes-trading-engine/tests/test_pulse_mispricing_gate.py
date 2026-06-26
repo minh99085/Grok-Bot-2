@@ -100,7 +100,8 @@ def test_executable_mispricing_margin():
 
 
 def test_mispricing_follow_entry_on_abstain():
-    eng = _gate_engine(mispricing_ttc_min_s=90.0, mispricing_ttc_max_s=300.0)
+    eng = _gate_engine(mispricing_ttc_min_s=90.0, mispricing_ttc_max_s=300.0,
+                       mispricing_follow_on_abstain=True)
     eng.grok_decider = type("G", (), {"report": lambda self: {"graded_directional": 30,
                                                                "direction_accuracy": 0.55}})()
     sig = {"has_signal": True, "side": "up", "divergence": 0.12, "confirmed": True,
@@ -114,7 +115,8 @@ def test_mispricing_follow_entry_on_abstain():
 
 
 def test_mispricing_follow_up_requires_high_edge_and_strong_cex():
-    eng = _gate_engine(mispricing_ttc_min_s=90.0, mispricing_ttc_max_s=240.0)
+    eng = _gate_engine(mispricing_ttc_min_s=90.0, mispricing_ttc_max_s=240.0,
+                       mispricing_follow_on_abstain=True)
     eng.grok_decider = type("G", (), {"report": lambda self: {"graded_directional": 30,
                                                                "direction_accuracy": 0.55}})()
     sig = {"has_signal": True, "side": "up", "divergence": 0.12, "confirmed": True,
