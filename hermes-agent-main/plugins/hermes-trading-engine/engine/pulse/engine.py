@@ -1571,7 +1571,7 @@ class PulseEngine:
                     _finalize(dr, "rejected", reason="grok_no_edge_up", stage="grok_decider")
                     continue
                 # Restrict-only DOWN/TV asymmetry gate applies to all Grok-owned UP trades.
-                if side == "up" and not self.cfg.mispricing_gate_enabled:
+                if side == "up":
                     db_res = self.tv_down_bias_gate.evaluate(
                         side=side,
                         mtf_alignment=(tv_feature or {}).get("mtf_alignment"),
@@ -2574,12 +2574,12 @@ class PulseEngine:
         return True
 
     def _baseline_up_tv_strength_ok(self, tv_feature: "dict | None") -> "tuple[bool, str]":
-        """Baseline UP requires TV UP_STRONG (strength >= 0.8) when the alert direction is UP."""
+        """Baseline UP requires fresh TV UP_STRONG (direction UP, strength >= 0.8)."""
         if not tv_feature:
-            return True, ""
+            return False, "baseline_up_tv_missing"
         direction = str(tv_feature.get("direction") or "").upper()
         if direction != "UP":
-            return True, ""
+            return False, "baseline_up_tv_opposes"
         try:
             strength = float(tv_feature.get("strength"))
         except (TypeError, ValueError):
