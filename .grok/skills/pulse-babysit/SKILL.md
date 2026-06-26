@@ -5,7 +5,7 @@ description: >-
   score trading performance, diagnose issues, fix code, commit/push main, sync-vps
   with orphan cleanup and rebuild, repeat. Use when the user wants hands-off bot
   iteration, autonomous improvement, closed-loop ops, or runs /pulse-babysit.
-argument-hint: "cycle | force-eval | status | deploy | soak <hours>"
+argument-hint: "cycle | force-eval | status | deploy | soak <minutes>"
 ---
 
 # Pulse Babysit (closed loop)
@@ -32,14 +32,14 @@ between cycles. Execute tools yourself. Paper-only — never enable live trading
 | `force-eval` | Pull + evaluate now; skip soak wait |
 | `status` | Print state + last evaluation summary |
 | `deploy` | `git push origin main` + `sync-vps.ps1` only |
-| `soak <hours>` | Set soak duration (default 1) and reset timer after deploy |
+| `soak <minutes>` | Set soak duration (default **15 min**) via `set-soak.ps1` |
 
 If no argument: run `cycle`.
 
 ## State machine
 
 ```
-DEPLOY → SOAK (1h default) → PULL → EVALUATE → (issues?) → FIX → COMMIT → DEPLOY → …
+DEPLOY → SOAK (15m default) → PULL → EVALUATE → (issues?) → FIX → COMMIT → DEPLOY → …
 ```
 
 1. Read `scripts/pulse-babysit/state.json`.
@@ -72,10 +72,10 @@ or large refactors.
 
 ## Soak duration
 
-| Situation | Hours |
-|-----------|-------|
-| Default after deploy | **1** (always) |
-| Operator override | `soak <hours>` via `set-soak.ps1` |
+| Situation | Duration |
+|-----------|----------|
+| Default after deploy | **15 min** (fast profit-discovery loop) |
+| Operator override | `.\scripts\pulse-babysit\set-soak.ps1 -Minutes N` |
 
 ## Todo scaffold (each cycle)
 
@@ -89,7 +89,7 @@ or large refactors.
 
 **Option A — Grok TUI (session open):**
 ```
-/loop 1h /pulse-babysit cycle
+/loop 15m /pulse-babysit cycle
 /always-approve
 ```
 

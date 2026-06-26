@@ -1,6 +1,6 @@
 # Register Windows Scheduled Task to run Grok headless pulse-babysit cycle.
 param(
-    [int]$IntervalHours = 1,
+    [int]$IntervalMinutes = 15,
     [string]$TaskName = "GrokBot2-PulseBabysit",
     [string]$RepoRoot = "C:\Users\tieut\Grok-Bot-2"
 )
@@ -24,13 +24,13 @@ $action = New-ScheduledTaskAction -Execute $grok -Argument $argString -WorkingDi
 
 $startAt = (Get-Date).AddMinutes(2)
 $trigger = New-ScheduledTaskTrigger -Once -At $startAt `
-    -RepetitionInterval (New-TimeSpan -Hours $IntervalHours) `
+    -RepetitionInterval (New-TimeSpan -Minutes $IntervalMinutes) `
     -RepetitionDuration (New-TimeSpan -Days 3650)
 
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
 
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings -Force | Out-Null
 
-Write-Host "Registered '$TaskName' every ${IntervalHours}h using:"
+Write-Host "Registered '$TaskName' every ${IntervalMinutes} min using:"
 Write-Host "  $grok -p `/pulse-babysit cycle` --yolo --cwd $RepoRoot"
 Write-Host "View: taskschd.msc | Remove: Unregister-ScheduledTask -TaskName $TaskName -Confirm:`$false"

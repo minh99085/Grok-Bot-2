@@ -1,22 +1,17 @@
 {
-  "cycle": 2,
+  "cycle": 6,
   "phase": "soak",
-  "soak_hours": 1,
-  "deployed_at": "2026-06-25T19:56:30.000000+00:00",
-  "soak_until": "2026-06-25T20:56:30.000000+00:00",
-  "last_eval_at": "2026-06-25T19:06:42.423656+00:00",
+  "soak_hours": 0.25,
+  "deployed_at": "2026-06-26T02:06:00.341078+00:00",
+  "soak_until": "2026-06-26T02:21:00.341078+00:00",
+  "last_eval_at": "2026-06-26T00:51:27.626736+00:00",
   "last_verdict": "issues",
   "last_fixes": [
-    "PULSE_MISPRICING_GATE_ENABLED=1",
-    "PULSE_EDGE_TTC_GATE_ENABLED=1",
-    "PULSE_MISPRICING_TTC_MIN_S=180",
-    "PULSE_MISPRICING_TTC_MAX_S=240",
-    "PULSE_MISPRICING_MIN_EXECUTABLE_MARGIN=0.03",
-    "PULSE_CEX_LEAD_MIN_EDGE_VS_MARKET=0.02",
-    "PULSE_CEX_LEAD_TV_STRENGTH_THR=0.72"
+    "Wilson halt only when PF below floor (not hairline WR alone)",
+    "PF=0.0 reported correctly for all-loss windows"
   ],
   "last_health_verdict": "healthy",
-  "vps_sha": "fdfeb338575a28fda0ec4180587f08bb5c1c2a9e",
+  "vps_sha": "a54c25fcb2ebbfac0f1280ae26499503364a3411",
   "history": [
     {
       "ts": "2026-06-25T19:06:42.423656+00:00",
@@ -60,6 +55,236 @@
         "PULSE_CEX_LEAD_MIN_EDGE_VS_MARKET=0.02",
         "PULSE_CEX_LEAD_TV_STRENGTH_THR=0.72"
       ]
+    },
+    {
+      "ts": "2026-06-25T21:27:59.449896+00:00",
+      "verdict": "issues",
+      "metrics": {
+        "settled": 31,
+        "win_rate": 0.6452,
+        "profit_factor": 0.9677,
+        "win_rate_up": 0.4545,
+        "win_rate_down": 0.75,
+        "realized_pnl_usd": -1.62,
+        "tv_valid": 463,
+        "mtf_passed": 27,
+        "mtf_blocked": 79,
+        "context_blocked": 621,
+        "down_bias_blocked": 514,
+        "signal_gate": false,
+        "min_reward_risk": 0.4,
+        "global_reconciled": true
+      },
+      "issue_codes": [
+        "grok_no_edge",
+        "profit_factor_low",
+        "up_side_bleed"
+      ]
+    },
+    {
+      "ts": "2026-06-25T21:30:43.000000+00:00",
+      "verdict": "deploy",
+      "metrics": {
+        "commit": "5995ad1",
+        "settled": 31,
+        "profit_factor": 0.9677,
+        "win_rate_up": 0.4545
+      },
+      "issue_codes": [
+        "up_side_bleed",
+        "profit_factor_low"
+      ],
+      "fixes_applied": [
+        "PULSE_MIN_REWARD_RISK=0.45",
+        "PULSE_MIN_REWARD_RISK_UP_PREMIUM=0.15",
+        "PULSE_GROK_UP_MIN_P_WIN=0.58",
+        "grok_up_p_win_too_low gate",
+        "disable adaptive explore at coin-flip accuracy"
+      ]
+    },
+    {
+      "ts": "2026-06-25T22:40:40.515606+00:00",
+      "verdict": "issues",
+      "metrics": {
+        "settled": 35,
+        "win_rate": 0.5714,
+        "profit_factor": 0.8064,
+        "win_rate_up": 0.3333,
+        "win_rate_down": 0.75,
+        "realized_pnl_usd": -11.62,
+        "tv_valid": 518,
+        "mtf_passed": 27,
+        "mtf_blocked": 79,
+        "context_blocked": 621,
+        "down_bias_blocked": 514,
+        "signal_gate": false,
+        "min_reward_risk": 0.45,
+        "global_reconciled": true
+      },
+      "issue_codes": [
+        "grok_no_edge",
+        "profit_factor_low",
+        "up_side_bleed"
+      ]
+    },
+    {
+      "ts": "2026-06-25T22:45:00.000000+00:00",
+      "verdict": "deploy",
+      "metrics": {
+        "commit": "0b89fce",
+        "settled": 35,
+        "profit_factor": 0.8064,
+        "win_rate_up": 0.3333,
+        "mispricing_follow_wr": 0.0
+      },
+      "issue_codes": [
+        "up_side_bleed",
+        "profit_factor_low",
+        "grok_no_edge"
+      ],
+      "fixes_applied": [
+        "block mispricing_follow UP unless edge high+ and cex_agreement strong",
+        "re-apply grok_up_min_p_win on grok_follow",
+        "edge_ttc_late_window_low_score",
+        "PULSE_MISPRICING_TTC_MAX_S=240",
+        "min_fill_price waiver for mispricing_follow"
+      ]
+    },
+    {
+      "ts": "2026-06-25T22:53:54.683842+00:00",
+      "verdict": "blocked",
+      "metrics": {
+        "settled": 35,
+        "win_rate": 0.5714,
+        "profit_factor": 0.8064,
+        "win_rate_up": 0.3333,
+        "win_rate_down": 0.75,
+        "realized_pnl_usd": -11.62,
+        "tv_valid": 518,
+        "mtf_passed": 27,
+        "mtf_blocked": 79,
+        "context_blocked": 621,
+        "down_bias_blocked": 514,
+        "signal_gate": false,
+        "min_reward_risk": 0.45,
+        "global_reconciled": true
+      },
+      "issue_codes": [
+        "grok_not_shadow",
+        "grok_follow_on",
+        "grok_no_edge",
+        "profit_factor_low",
+        "up_side_bleed"
+      ]
+    },
+    {
+      "ts": "2026-06-25T23:36:11.235496+00:00",
+      "verdict": "issues",
+      "metrics": {
+        "settled": 37,
+        "win_rate": 0.5946,
+        "profit_factor": 0.8761,
+        "win_rate_up": 0.4118,
+        "win_rate_down": 0.75,
+        "realized_pnl_usd": -7.44,
+        "tv_valid": 554,
+        "mtf_passed": 37,
+        "mtf_blocked": 95,
+        "context_blocked": 636,
+        "down_bias_blocked": 532,
+        "signal_gate": false,
+        "min_reward_risk": 0.45,
+        "global_reconciled": true
+      },
+      "issue_codes": [
+        "profit_factor_low",
+        "up_side_bleed"
+      ]
+    },
+    {
+      "ts": "2026-06-26T00:27:59.770687+00:00",
+      "verdict": "blocked",
+      "metrics": {
+        "settled": 41,
+        "win_rate": 0.6341,
+        "profit_factor": 1.0706,
+        "win_rate_up": 0.5,
+        "win_rate_down": 0.7619,
+        "realized_pnl_usd": 4.24,
+        "tv_valid": 580,
+        "mtf_passed": 49,
+        "mtf_blocked": 102,
+        "context_blocked": 652,
+        "down_bias_blocked": 538,
+        "signal_gate": false,
+        "min_reward_risk": 0.38,
+        "global_reconciled": true
+      },
+      "issue_codes": [
+        "strategy_halted",
+        "up_side_bleed"
+      ]
+    },
+    {
+      "ts": "2026-06-26T00:29:29.933750+00:00",
+      "verdict": "deploy",
+      "metrics": {
+        "commit": "9d75ea7",
+        "settled": 41,
+        "profit_factor": 1.0706,
+        "win_rate_up": 0.5
+      },
+      "issue_codes": [
+        "strategy_halted",
+        "up_side_bleed"
+      ],
+      "fixes_applied": [
+        "Wilson halt requires actual WR or PF breach (not CI alone)",
+        "baseline UP blocked when Grok directional accuracy < 52%"
+      ]
+    },
+    {
+      "ts": "2026-06-26T00:51:27.626736+00:00",
+      "verdict": "blocked",
+      "metrics": {
+        "settled": 43,
+        "win_rate": 0.6279,
+        "profit_factor": 1.0279,
+        "win_rate_up": 0.5,
+        "win_rate_down": 0.7391,
+        "realized_pnl_usd": 1.81,
+        "tv_valid": 592,
+        "mtf_passed": 53,
+        "mtf_blocked": 102,
+        "context_blocked": 659,
+        "down_bias_blocked": 538,
+        "signal_gate": false,
+        "min_reward_risk": 0.38,
+        "global_reconciled": true
+      },
+      "issue_codes": [
+        "strategy_halted",
+        "up_side_bleed"
+      ]
+    },
+    {
+      "ts": "2026-06-26T00:55:00.000000+00:00",
+      "verdict": "deploy",
+      "metrics": {
+        "commit": "a54c25f",
+        "settled": 43,
+        "profit_factor": 1.0279,
+        "pnl_usd": 1.81,
+        "halted_before": true
+      },
+      "issue_codes": [
+        "strategy_halted"
+      ],
+      "fixes_applied": [
+        "Wilson halt only when PF below floor (not hairline WR alone)",
+        "PF=0.0 reported correctly for all-loss windows"
+      ]
     }
-  ]
+  ],
+  "soak_minutes": 15
 }
