@@ -52,8 +52,9 @@ def test_confirmation_flows_into_feature_and_grades(tmp_path):
     # report exposes both timeframes' latest (confirm in report uses wall-clock, so not asserted here)
     rep = ik.report()
     assert "tradingview_mtf_confirmation" in rep
-    assert "BTCUSD@1" in rep["tradingview_latest_by_timeframe"]
-    assert "BTCUSD@5" in rep["tradingview_latest_by_timeframe"]
+    # BTCUSD alerts canonicalize to default feature_symbol BTCUSDT for storage keys.
+    assert "BTCUSDT@1" in rep["tradingview_latest_by_timeframe"]
+    assert "BTCUSDT@5" in rep["tradingview_latest_by_timeframe"]
     # the edge learner grades tf_confirm as its own dimension
     edge = TradingViewEdge()
     edge.record(tv=feat, traded_side="down", outcome_up=False, won=True, pnl=4.0)

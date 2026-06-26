@@ -444,7 +444,7 @@ def test_grok_up_side_blocked_at_coin_flip_accuracy():
 
 
 def test_baseline_up_tv_strength_gate():
-    eng = PulseEngine(PulseConfig())
+    eng = PulseEngine(PulseConfig(baseline_up_tv_gate_enabled=True))
     ok, reason = eng._baseline_up_tv_strength_ok({"direction": "DOWN", "strength": 0.5})
     assert ok is False and reason == "baseline_up_tv_opposes"
     ok, reason = eng._baseline_up_tv_strength_ok({"direction": "UP", "strength": 0.65})
