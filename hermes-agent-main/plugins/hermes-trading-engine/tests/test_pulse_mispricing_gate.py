@@ -118,44 +118,27 @@ def test_mispricing_follow_entry_on_abstain():
     esnap.pulse_edge_score_bucket = "high"
     esnap.cex_agreement_bucket = "strong"
     tv = _up_strong_tv()
-    entry = eng._mispricing_follow_entry(sig, 210.0, esnap, tv)
-    assert entry is not None and entry["side"] == "up" and entry["p_win"] == 0.62
-    assert eng._mispricing_follow_entry(sig, 50.0, esnap, tv) is None
+    assert eng._mispricing_follow_entry(sig, 210.0, esnap, tv) is None
+    assert eng._mispricing_gate_counts.get("misprice_up_side_disabled") == 1
+    down_sig = {"has_signal": True, "side": "down", "divergence": -0.12, "confirmed": True,
+                "cex_p_up": 0.38}
+    down_esnap = _FakeEsnap("stale_polymarket_down")
+    down_esnap.pulse_edge_score_bucket = "high"
+    entry = eng._mispricing_follow_entry(down_sig, 210.0, down_esnap, tv)
+    assert entry is not None and entry["side"] == "down"
+    assert eng._mispricing_follow_entry(down_sig, 50.0, down_esnap, tv) is None
 
 
-def test_mispricing_follow_up_requires_high_edge_and_strong_cex():
+def test_mispricing_follow_up_side_disabled():
     eng = _gate_engine(mispricing_ttc_min_s=90.0, mispricing_ttc_max_s=240.0,
                        mispricing_follow_on_abstain=True)
-    eng.grok_decider = type("G", (), {"report": lambda self: {"graded_directional": 30,
-                                                               "direction_accuracy": 0.55}})()
-    sig = {"has_signal": True, "side": "up", "divergence": 0.12, "confirmed": True,
-           "cex_p_up": 0.62}
-    weak = _FakeEsnap("not_stale")
-    weak.pulse_edge_score_bucket = "medium"
-    weak.cex_agreement_bucket = "strong"
-    assert eng._mispricing_follow_entry(sig, 200.0, weak, _up_strong_tv()) is None
-    assert eng._mispricing_gate_counts.get("misprice_up_low_edge_score") == 1
-
-
-def test_mispricing_follow_up_requires_up_strong_tv():
-    eng = _gate_engine(mispricing_ttc_min_s=90.0, mispricing_ttc_max_s=240.0,
-                       mispricing_follow_on_abstain=True)
-    eng.grok_decider = type("G", (), {"report": lambda self: {"graded_directional": 30,
-                                                               "direction_accuracy": 0.55}})()
     sig = {"has_signal": True, "side": "up", "divergence": 0.12, "confirmed": True,
            "cex_p_up": 0.62}
     esnap = _FakeEsnap("not_stale")
     esnap.pulse_edge_score_bucket = "high"
     esnap.cex_agreement_bucket = "strong"
-    assert eng._mispricing_follow_entry(sig, 200.0, esnap, None) is None
-    assert eng._mispricing_gate_counts.get("misprice_baseline_up_tv_missing") == 1
-    assert eng._mispricing_follow_entry(
-        sig, 200.0, esnap, {"direction": "DOWN", "strength": 0.9}) is None
-    assert eng._mispricing_gate_counts.get("misprice_baseline_up_tv_opposes") == 1
-    assert eng._mispricing_follow_entry(
-        sig, 200.0, esnap, {"direction": "UP", "strength": 0.85,
-                             "signal_level": "UP_WEAK"}) is None
-    assert eng._mispricing_gate_counts.get("misprice_baseline_up_tv_not_strong") == 1
+    assert eng._mispricing_follow_entry(sig, 200.0, esnap, _up_strong_tv()) is None
+    assert eng._mispricing_gate_counts.get("misprice_up_side_disabled") == 1
 
 
 def test_mispricing_follow_entry_disabled():

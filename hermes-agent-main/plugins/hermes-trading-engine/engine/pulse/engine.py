@@ -1742,6 +1742,16 @@ class PulseEngine:
                 # calibration + EV gate + caps + breaker) below still applies and stays authoritative.
                 cex_lead_active = True
                 side = cex_lead_drive["side"]
+                if side == "up":
+                    up_ok, up_reason = self._up_side_tv_bias_ok(tv_feature)
+                    if not up_ok:
+                        dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
+                                                         outcome_prob=None, model_edge=0.0,
+                                                         tradeable=False, reason=up_reason)
+                        if self.markov is not None:
+                            self.markov.record_terminal(state=cand_state, accepted=False)
+                        _finalize(dr, "rejected", reason=up_reason, stage="down_bias_gate")
+                        continue
                 entry_mode = ("cex_lead_late" if cex_lead_drive.get("late_decisive") else "cex_lead")
                 cex_oprob = float(cex_lead_drive["outcome_prob"])
                 # D: edge-scaled (fractional-Kelly) sizing for the proven edge, clamped to a sane band
@@ -1895,6 +1905,14 @@ class PulseEngine:
                     continue
                 entry_mode = ("late_window" if (lw_res["late"] and lw_res["high_conviction"])
                               else "standard")
+                if entry_mode == "late_window" and d.side == "up":
+                    dr.action = RejectAction(stage="late_window_gate",
+                                             reason="late_window_up_blocked")
+                    if self.markov is not None:
+                        self.markov.record_terminal(state=cand_state, accepted=False)
+                    _finalize(dr, "rejected", reason="late_window_up_blocked",
+                              stage="late_window_gate")
+                    continue
             # SAFETY FLOOR (ALL MODES incl. grok-follow): proven-loss selectivity block + probability
             # CALIBRATION. Blocking a statistically-proven losing bucket and de-biasing an OVER-
             # CONFIDENT probability are SAFETY/realism, not directional opinion, so they apply even
@@ -2910,6 +2928,21 @@ class PulseEngine:
                      "UP also requires TV UP_STRONG"),
         }
 
+    def _up_side_tv_bias_ok(self, tv_feature: "dict | None") -> "tuple[bool, str]":
+        """UP restrict-only: TV UP_STRONG plus down_bias pass (all entry modes)."""
+        tv_ok, tv_reason = self._baseline_up_tv_strength_ok(tv_feature)
+        if not tv_ok:
+            return False, tv_reason
+        db_res = self.tv_down_bias_gate.evaluate(
+            side="up",
+            mtf_alignment=(tv_feature or {}).get("mtf_alignment"),
+            tv_direction=(tv_feature or {}).get("direction"),
+            tf_confirm=(tv_feature or {}).get("tf_confirm"),
+        )
+        if db_res["decision"] in ("block", "explore"):
+            return False, db_res["reasons"][0]
+        return True, ""
+
     def _baseline_up_tv_strength_ok(self, tv_feature: "dict | None") -> "tuple[bool, str]":
         """Baseline UP requires fresh TV UP_STRONG (direction UP, strength >= 0.8)."""
         if not self.cfg.baseline_up_tv_gate_enabled:
@@ -2963,11 +2996,10 @@ class PulseEngine:
         if side not in ("up", "down"):
             return None
         if side == "up":
-            up_ok, up_reason = self._mispricing_follow_up_ok(esnap=esnap, tv_feature=tv_feature)
-            if not up_ok:
-                self._mispricing_gate_counts[up_reason] = (
-                    self._mispricing_gate_counts.get(up_reason, 0) + 1)
-                return None
+            # Live ledger: mispricing_follow UP ~33% WR vs DOWN strength — DOWN-only until proven.
+            self._mispricing_gate_counts["misprice_up_side_disabled"] = (
+                self._mispricing_gate_counts.get("misprice_up_side_disabled", 0) + 1)
+            return None
         mp_ok, _ = self._mispricing_gate_ok(side=side, cex_sig=cl, ttc_s=ttc_s, esnap=esnap)
         et_ok, _ = self._edge_ttc_gate_ok(esnap=esnap, ttc_s=ttc_s)
         if not (mp_ok and et_ok):
