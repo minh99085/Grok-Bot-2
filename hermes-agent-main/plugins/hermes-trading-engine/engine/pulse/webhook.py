@@ -71,8 +71,8 @@ def _make_handler(intake, path: str, header_name: str):
             p = self.path.split("?", 1)[0].rstrip("/")
             if p in ("", "/dashboard"):                     # read-only dashboard (port 80)
                 try:
-                    from engine.app import _DASHBOARD_HTML
-                    self._send_html(_DASHBOARD_HTML)
+                    from engine.pulse.dashboard import DASHBOARD_HTML
+                    self._send_html(DASHBOARD_HTML)
                 except Exception:  # noqa: BLE001
                     self._send(500, {"ok": False, "reason": "dashboard_unavailable"})
             elif p == "/api/polymarket/training/btc_pulse":
