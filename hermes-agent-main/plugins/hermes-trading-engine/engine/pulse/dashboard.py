@@ -193,19 +193,39 @@ async function tick(){
   ]));
 
   const tv=s.tradingview||{};
-  if(tv.enabled){
+  const tvActive=tv.enabled||(tv.tradingview_alerts_valid>0);
+  if(tvActive){
     const mtf=tv.tradingview_mtf_confirmation||{};
+    const byTf=tv.tradingview_latest_by_timeframe||{};
+    const featSym=tv.tradingview_feature_symbol||'BTCUSDT';
     const mtf4=mtf.confirm_4tf||mtf.confirm_3tf||mtf.confirm||'none';
     const mtfCls=(mtf4.includes('confirmed')?'pos':(mtf4.includes('conflict')?'neg':'neu'));
-    summary.appendChild(kvCard('TradingView · 1m / 5m / 10m / 15m',[
-      ['1m', mtf.tf_1m_dir||'—'],
-      ['5m', mtf.tf_5m_dir||'—'],
-      ['10m', mtf.tf_10m_dir||'—'],
-      ['15m', mtf.tf_15m_dir||'—'],
-      ['4-TF trend', mtf4, mtfCls],
-      ['Fresh TFs', (mtf.trend_fresh_count==null?'—':mtf.trend_fresh_count+'/4')],
-      ['Alerts valid', tv.tradingview_alerts_valid||0],
-    ]));
+    const dirMap={'1':'tf_1m_dir','5':'tf_5m_dir','10':'tf_10m_dir','15':'tf_15m_dir'};
+    const ageMap={'1':'tf_1m_age_s','5':'tf_5m_age_s','10':'tf_10m_age_s','15':'tf_15m_age_s'};
+    const tvPanel=$('<div class="panel" style="grid-column:1/-1"><h2>BTC trend · TradingView alerts</h2></div>');
+    const tb=$('<table class="market-table"><thead><tr><th>Chart</th><th>Direction</th><th>Strength</th><th>Age</th></tr></thead><tbody></tbody></table>');
+    [['1','1m'],['5','5m'],['10','10m'],['15','15m']].forEach(([tf,label])=>{
+      const snap=byTf[featSym+'@'+tf]||{};
+      const freshDir=mtf[dirMap[tf]];
+      const storedDir=snap.direction||null;
+      const dir=freshDir||storedDir;
+      const stale=freshDir==null&&storedDir!=null;
+      const dirCls=dir==='UP'?'pos':(dir==='DOWN'?'neg':'neu');
+      const age=mtf[ageMap[tf]];
+      tb.querySelector('tbody').appendChild($(`<tr>
+        <td>${label}</td>
+        <td class="${dirCls}">${dir||'—'}${stale?' <span class="neu">(stale)</span>':''}</td>
+        <td>${snap.strength==null?'—':f(snap.strength,2)}</td>
+        <td class="neu">${age==null?'—':f(age,0)+'s'}</td>
+      </tr>`));
+    });
+    tvPanel.appendChild(tb);
+    const foot=$('<div class="money-sub" style="margin-top:12px"></div>');
+    foot.innerHTML='4-TF trend: <b class="'+mtfCls+'">'+mtf4+'</b> · '
+      +(mtf.trend_fresh_count==null?'—':mtf.trend_fresh_count)+'/4 fresh · '
+      +(tv.tradingview_alerts_valid||0)+' alerts received';
+    tvPanel.appendChild(foot);
+    summary.appendChild(tvPanel);
   }
 
   const tech=document.getElementById('tech');tech.innerHTML='';
