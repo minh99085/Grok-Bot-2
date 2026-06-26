@@ -23,7 +23,8 @@ UPDATES = {
     "PULSE_TV_DOWN_BIAS_BLOCK_UP_AGAINST_CONFIRMED_DOWN": "1",
     "PULSE_LATE_WINDOW_ENTRY": "0",
     # Unfreeze baseline-path / allowlist cold-start (Grok follow bypasses most of these).
-    "PULSE_TV_CONTEXT_MAX_TTC_S": "180",
+    # Must exceed baseline cohort scaled TTC max (15m: 240*3=720) — 180 deadlocked 5m/15m.
+    "PULSE_TV_CONTEXT_MAX_TTC_S": "900",
     "PULSE_TV_CONTEXT_EXPLORATION_RATE": "0",
     "PULSE_TV_DOWN_BIAS_EXPLORE_RATE": "0",
     # Baseline quant path: allowlist was deadlocking (no proven bucket + 0% explore).
