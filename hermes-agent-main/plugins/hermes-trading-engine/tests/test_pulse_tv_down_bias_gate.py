@@ -105,3 +105,23 @@ def test_blocks_up_bb_expansion_up():
                    tv_direction="DOWN", bb_state="expansion_up")
     assert r["decision"] == "block"
     assert "tv_down_bias_up_bb_expansion_up" in r["reasons"]
+
+
+def test_blocks_up_range_breakout_down():
+    g = TradingViewDownBiasGate(enabled=True, exploration_rate=0.0,
+                                block_up_without_bearish=False,
+                                block_mixed_mtf_up=False)
+    r = g.evaluate(side="up", mtf_alignment="bearish_aligned",
+                   tv_direction="DOWN", range_state="breakout_down")
+    assert r["decision"] == "block"
+    assert "tv_down_bias_up_range_breakout_down" in r["reasons"]
+
+
+def test_blocks_up_bb_squeeze():
+    g = TradingViewDownBiasGate(enabled=True, exploration_rate=0.0,
+                                block_up_without_bearish=False,
+                                block_mixed_mtf_up=False)
+    r = g.evaluate(side="up", mtf_alignment="bearish_aligned",
+                   tv_direction="DOWN", bb_state="squeeze")
+    assert r["decision"] == "block"
+    assert "tv_down_bias_up_bb_squeeze" in r["reasons"]
