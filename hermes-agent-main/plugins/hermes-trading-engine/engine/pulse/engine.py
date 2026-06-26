@@ -247,6 +247,8 @@ class PulseConfig:
     tv_down_bias_block_up_on_bearish_down_stack: bool = True
     tv_down_bias_block_up_tv_down_non_bearish: bool = True
     tv_down_bias_block_up_against_confirmed_down: bool = False
+    tv_down_bias_block_mixed_mtf_up: bool = True
+    tv_down_bias_block_bullish_supertrend_up: bool = True
     tv_mtf_conflict_gate_enabled: bool = True
     tv_mtf_require_confirm: bool = False   # loop arch: conflict veto only, not 1m+5m trade authority
     tv_mtf_require_side_align: bool = False
@@ -527,6 +529,12 @@ class PulseConfig:
             tv_down_bias_block_up_against_confirmed_down=str(
                 os.getenv("PULSE_TV_DOWN_BIAS_BLOCK_UP_AGAINST_CONFIRMED_DOWN", "0")).strip().lower()
             in ("1", "true", "yes", "on"),
+            tv_down_bias_block_mixed_mtf_up=str(
+                os.getenv("PULSE_TV_DOWN_BIAS_BLOCK_MIXED_MTF_UP", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            tv_down_bias_block_bullish_supertrend_up=str(
+                os.getenv("PULSE_TV_DOWN_BIAS_BLOCK_BULLISH_SUPERTREND_UP", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
             tv_mtf_conflict_gate_enabled=str(os.getenv("PULSE_TV_MTF_CONFLICT_GATE", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
             tv_mtf_require_confirm=str(os.getenv("PULSE_TV_MTF_REQUIRE_CONFIRM", "0"))
@@ -698,6 +706,9 @@ class PulseEngine:
                 self.cfg.tv_down_bias_block_up_tv_down_non_bearish),
             block_up_against_confirmed_down=bool(
                 self.cfg.tv_down_bias_block_up_against_confirmed_down),
+            block_mixed_mtf_up=bool(self.cfg.tv_down_bias_block_mixed_mtf_up),
+            block_bullish_supertrend_up=bool(
+                self.cfg.tv_down_bias_block_bullish_supertrend_up),
             exploration_rate=self.cfg.tv_down_bias_exploration_rate)
         from engine.pulse.tv_mtf_gate import TradingViewMtfConflictGate
         self.tv_mtf_gate = TradingViewMtfConflictGate(
@@ -1651,12 +1662,7 @@ class PulseEngine:
                         continue
                 # Restrict-only DOWN/TV asymmetry gate applies to all Grok-owned UP trades.
                 if side == "up":
-                    db_res = self.tv_down_bias_gate.evaluate(
-                        side=side,
-                        mtf_alignment=(tv_feature or {}).get("mtf_alignment"),
-                        tv_direction=(tv_feature or {}).get("direction"),
-                        tf_confirm=(tv_feature or {}).get("tf_confirm"),
-                    )
+                    db_res = self._down_bias_eval(side=side, tv_feature=tv_feature)
                     if db_res["decision"] in ("block", "explore"):
                         dr.down_bias_gate = {"decision": db_res["decision"],
                                              "reasons": db_res["reasons"]}
@@ -1860,12 +1866,7 @@ class PulseEngine:
                     _finalize(dr, "rejected", reason=ctx_res["reasons"][0], stage="context_gate")
                     continue
                 context_explored = (ctx_res["decision"] == "explore")
-                db_res = self.tv_down_bias_gate.evaluate(
-                    side=d.side,
-                    mtf_alignment=(tv_feature or {}).get("mtf_alignment"),
-                    tv_direction=(tv_feature or {}).get("direction"),
-                    tf_confirm=(tv_feature or {}).get("tf_confirm"),
-                )
+                db_res = self._down_bias_eval(side=d.side, tv_feature=tv_feature)
                 dr.down_bias_gate = {"decision": db_res["decision"], "reasons": db_res["reasons"]}
                 db_block = (db_res["decision"] == "block"
                             or (d.side == "up" and db_res["decision"] == "explore"))
@@ -2928,17 +2929,22 @@ class PulseEngine:
                      "UP also requires TV UP_STRONG"),
         }
 
+    def _down_bias_eval(self, *, side: str, tv_feature: "dict | None") -> dict:
+        feat = tv_feature or {}
+        return self.tv_down_bias_gate.evaluate(
+            side=side,
+            mtf_alignment=feat.get("mtf_alignment"),
+            tv_direction=feat.get("direction"),
+            tf_confirm=feat.get("tf_confirm"),
+            supertrend_direction=feat.get("supertrend_direction"),
+        )
+
     def _up_side_tv_bias_ok(self, tv_feature: "dict | None") -> "tuple[bool, str]":
         """UP restrict-only: TV UP_STRONG plus down_bias pass (all entry modes)."""
         tv_ok, tv_reason = self._baseline_up_tv_strength_ok(tv_feature)
         if not tv_ok:
             return False, tv_reason
-        db_res = self.tv_down_bias_gate.evaluate(
-            side="up",
-            mtf_alignment=(tv_feature or {}).get("mtf_alignment"),
-            tv_direction=(tv_feature or {}).get("direction"),
-            tf_confirm=(tv_feature or {}).get("tf_confirm"),
-        )
+        db_res = self._down_bias_eval(side="up", tv_feature=tv_feature)
         if db_res["decision"] in ("block", "explore"):
             return False, db_res["reasons"][0]
         return True, ""

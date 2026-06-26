@@ -66,3 +66,22 @@ def test_allows_up_when_confirmed_up():
 def test_disabled_passes():
     g = TradingViewDownBiasGate(enabled=False)
     assert g.evaluate(side="up", mtf_alignment="bullish_aligned")["decision"] == "pass"
+
+
+def test_blocks_mixed_mtf_up():
+    g = TradingViewDownBiasGate(enabled=True, exploration_rate=0.0,
+                                block_up_without_bearish=False,
+                                block_up_tv_down_non_bearish=False)
+    r = g.evaluate(side="up", mtf_alignment="mixed", tv_direction="DOWN")
+    assert r["decision"] == "block"
+    assert "tv_down_bias_mixed_mtf_up" in r["reasons"]
+
+
+def test_blocks_bullish_supertrend_up():
+    g = TradingViewDownBiasGate(enabled=True, exploration_rate=0.0,
+                                block_up_without_bearish=False,
+                                block_mixed_mtf_up=False)
+    r = g.evaluate(side="up", mtf_alignment="bearish_aligned",
+                   tv_direction="DOWN", supertrend_direction="bullish")
+    assert r["decision"] == "block"
+    assert "tv_down_bias_bullish_supertrend_up" in r["reasons"]

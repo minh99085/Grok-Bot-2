@@ -23,6 +23,8 @@ class TradingViewDownBiasGate:
         block_up_on_bearish_down_stack: bool = True,
         block_up_tv_down_non_bearish: bool = True,
         block_up_against_confirmed_down: bool = True,
+        block_mixed_mtf_up: bool = True,
+        block_bullish_supertrend_up: bool = True,
         exploration_rate: float = 0.0,
         seed: Optional[int] = None,
     ):
@@ -32,6 +34,8 @@ class TradingViewDownBiasGate:
         self.block_up_on_bearish_down_stack = bool(block_up_on_bearish_down_stack)
         self.block_up_tv_down_non_bearish = bool(block_up_tv_down_non_bearish)
         self.block_up_against_confirmed_down = bool(block_up_against_confirmed_down)
+        self.block_mixed_mtf_up = bool(block_mixed_mtf_up)
+        self.block_bullish_supertrend_up = bool(block_bullish_supertrend_up)
         self.exploration_rate = max(0.0, min(0.05, float(exploration_rate)))
         self.passed = 0
         self.blocked = 0
@@ -47,6 +51,7 @@ class TradingViewDownBiasGate:
         mtf_alignment=None,
         tv_direction=None,
         tf_confirm=None,
+        supertrend_direction=None,
     ) -> list[str]:
         if not side or str(side).lower() != "up":
             return []
@@ -54,8 +59,13 @@ class TradingViewDownBiasGate:
         ma = str(mtf_alignment or "").strip().lower()
         td = str(tv_direction or "").strip().upper()
         tc = str(tf_confirm or "").strip().lower()
+        st = str(supertrend_direction or "").strip().lower()
         if self.block_bullish_aligned_up and ma == "bullish_aligned":
             reasons.append("tv_down_bias_bullish_aligned_up")
+        if self.block_mixed_mtf_up and ma == "mixed":
+            reasons.append("tv_down_bias_mixed_mtf_up")
+        if self.block_bullish_supertrend_up and st == "bullish":
+            reasons.append("tv_down_bias_bullish_supertrend_up")
         if self.block_up_without_bearish and td == "UP" and ma != "bearish_aligned":
             reasons.append("tv_down_bias_up_without_bearish")
         if self.block_up_on_bearish_down_stack and ma == "bearish_aligned" and td == "DOWN":
@@ -74,11 +84,13 @@ class TradingViewDownBiasGate:
         mtf_alignment=None,
         tv_direction=None,
         tf_confirm=None,
+        supertrend_direction=None,
     ) -> dict:
         if not self.enabled:
             return {"decision": "pass", "reasons": [], "active": False}
         reasons = self.violations(side=side, mtf_alignment=mtf_alignment,
-                                  tv_direction=tv_direction, tf_confirm=tf_confirm)
+                                  tv_direction=tv_direction, tf_confirm=tf_confirm,
+                                  supertrend_direction=supertrend_direction)
         if not reasons:
             self.passed += 1
             return {"decision": "pass", "reasons": [], "active": True}
@@ -100,6 +112,8 @@ class TradingViewDownBiasGate:
             "block_up_on_bearish_down_stack": self.block_up_on_bearish_down_stack,
             "block_up_tv_down_non_bearish": self.block_up_tv_down_non_bearish,
             "block_up_against_confirmed_down": self.block_up_against_confirmed_down,
+            "block_mixed_mtf_up": self.block_mixed_mtf_up,
+            "block_bullish_supertrend_up": self.block_bullish_supertrend_up,
             "exploration_rate": self.exploration_rate,
             "passed": self.passed,
             "blocked": self.blocked,
