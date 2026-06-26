@@ -1,17 +1,17 @@
 {
-  "cycle": 14,
+  "cycle": 16,
   "phase": "soak",
   "soak_hours": 1,
-  "deployed_at": "2026-06-26T18:25:34.180007+00:00",
-  "soak_until": "2026-06-26T19:25:34.180007+00:00",
-  "last_eval_at": "2026-06-26T18:22:51.969640+00:00",
+  "deployed_at": "2026-06-26T21:25:35.953675+00:00",
+  "soak_until": "2026-06-26T22:25:35.953675+00:00",
+  "last_eval_at": "2026-06-26T21:22:37.350648+00:00",
   "last_verdict": "issues",
   "last_fixes": [
-    "down_bias: block UP when ttc>=240s (25% WR, -13.32 PnL, n=8)",
-    "down_bias: block UP when ttc<120s (weak early-window UP entries)"
+    "down_bias: block UP when edge_score=medium (50% WR, -13.92 PnL, n=18)",
+    "down_bias: block UP when CEX agreement not strong (50% WR, -11.20 PnL, n=14)"
   ],
   "last_health_verdict": "issues",
-  "vps_sha": "610d32d87da7fd45b13fd2151c18a02939d4f8cf",
+  "vps_sha": "91e2d49989caf7c7d7e5a6699ad123745f6f161f",
   "history": [
     {
       "ts": "2026-06-25T19:06:42.423656+00:00",
@@ -767,6 +767,86 @@
       "fixes_applied": [
         "down_bias: block UP when ttc>=240s (25% WR, -13.32 PnL, n=8)",
         "down_bias: block UP when ttc<120s (weak early-window UP entries)"
+      ]
+    },
+    {
+      "ts": "2026-06-26T19:25:59.441086+00:00",
+      "verdict": "issues",
+      "metrics": {
+        "settled": 70,
+        "win_rate": 0.6571,
+        "profit_factor": 1.1764,
+        "win_rate_up": 0.5,
+        "win_rate_down": 0.72,
+        "realized_pnl_usd": 18.53,
+        "tv_valid": 67,
+        "mtf_passed": 114,
+        "mtf_blocked": 275,
+        "context_blocked": 876,
+        "down_bias_blocked": 538,
+        "signal_gate": false,
+        "min_reward_risk": 0.42,
+        "global_reconciled": true
+      },
+      "issue_codes": [
+        "up_side_bleed"
+      ]
+    },
+    {
+      "ts": "2026-06-26T19:27:46.365367+00:00",
+      "verdict": "deploy",
+      "metrics": {
+        "commit": "a324042",
+        "settled": 70,
+        "win_rate_up": 0.5,
+        "win_rate_down": 0.72
+      },
+      "issue_codes": [
+        "up_side_bleed"
+      ],
+      "fixes_applied": [
+        "down_bias: block UP when htf_bias=bullish (40% WR, -10.65 PnL, n=10)",
+        "down_bias: block UP when candle_pressure=bear_close_near_low (44% WR, -8.23 PnL, n=9)"
+      ]
+    },
+    {
+      "ts": "2026-06-26T21:22:37.350648+00:00",
+      "verdict": "issues",
+      "metrics": {
+        "settled": 75,
+        "win_rate": 0.6533,
+        "profit_factor": 1.1587,
+        "win_rate_up": 0.5,
+        "win_rate_down": 0.7091,
+        "realized_pnl_usd": 18.25,
+        "tv_valid": 70,
+        "mtf_passed": 127,
+        "mtf_blocked": 275,
+        "context_blocked": 876,
+        "down_bias_blocked": 538,
+        "signal_gate": false,
+        "min_reward_risk": 0.42,
+        "global_reconciled": true
+      },
+      "issue_codes": [
+        "up_side_bleed"
+      ]
+    },
+    {
+      "ts": "2026-06-26T21:25:35.953675+00:00",
+      "verdict": "deploy",
+      "metrics": {
+        "commit": "91e2d49",
+        "settled": 75,
+        "win_rate_up": 0.5,
+        "win_rate_down": 0.7091
+      },
+      "issue_codes": [
+        "up_side_bleed"
+      ],
+      "fixes_applied": [
+        "down_bias: block UP when edge_score=medium (50% WR, -13.92 PnL, n=18)",
+        "down_bias: block UP when CEX agreement not strong (50% WR, -11.20 PnL, n=14)"
       ]
     }
   ],
