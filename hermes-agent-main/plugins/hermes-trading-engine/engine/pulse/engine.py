@@ -313,6 +313,8 @@ class PulseConfig:
     tv_down_bias_block_up_low_conviction: bool = True
     tv_down_bias_block_up_bearish_mtf_tv_up: bool = True
     tv_down_bias_block_up_mid_ttc: bool = True
+    tv_down_bias_block_up_neutral_zscore: bool = True
+    tv_down_bias_block_up_medium_confidence: bool = True
     tv_down_bias_up_late_ttc_min_s: float = 240.0
     tv_down_bias_up_early_ttc_max_s: float = 120.0
     tv_down_bias_up_mid_ttc_min_s: float = 120.0
@@ -729,6 +731,12 @@ class PulseConfig:
             tv_down_bias_block_up_mid_ttc=str(
                 os.getenv("PULSE_TV_DOWN_BIAS_BLOCK_UP_MID_TTC", "1")).strip().lower()
             in ("1", "true", "yes", "on"),
+            tv_down_bias_block_up_neutral_zscore=str(
+                os.getenv("PULSE_TV_DOWN_BIAS_BLOCK_UP_NEUTRAL_ZSCORE", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            tv_down_bias_block_up_medium_confidence=str(
+                os.getenv("PULSE_TV_DOWN_BIAS_BLOCK_UP_MEDIUM_CONFIDENCE", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
             tv_down_bias_up_late_ttc_min_s=_envf("PULSE_TV_DOWN_BIAS_UP_LATE_TTC_MIN_S", 240.0),
             tv_down_bias_up_early_ttc_max_s=_envf("PULSE_TV_DOWN_BIAS_UP_EARLY_TTC_MAX_S", 120.0),
             tv_down_bias_up_mid_ttc_min_s=_envf("PULSE_TV_DOWN_BIAS_UP_MID_TTC_MIN_S", 120.0),
@@ -957,6 +965,8 @@ class PulseEngine:
             block_up_low_conviction=bool(self.cfg.tv_down_bias_block_up_low_conviction),
             block_up_bearish_mtf_tv_up=bool(self.cfg.tv_down_bias_block_up_bearish_mtf_tv_up),
             block_up_mid_ttc=bool(self.cfg.tv_down_bias_block_up_mid_ttc),
+            block_up_neutral_zscore=bool(self.cfg.tv_down_bias_block_up_neutral_zscore),
+            block_up_medium_confidence=bool(self.cfg.tv_down_bias_block_up_medium_confidence),
             up_late_ttc_min_s=self.cfg.tv_down_bias_up_late_ttc_min_s,
             up_early_ttc_max_s=self.cfg.tv_down_bias_up_early_ttc_max_s,
             up_mid_ttc_min_s=self.cfg.tv_down_bias_up_mid_ttc_min_s,
@@ -1938,7 +1948,9 @@ class PulseEngine:
                 if side == "up":
                     db_res = self._down_bias_eval(side=side, tv_feature=tv_feature,
                                                   markov_state=cand_state, ttc_s=ttc, esnap=esnap,
-                                                  fair_p_up=fair_used)
+                                                  fair_p_up=fair_used,
+                                                  zscore_bucket=(rfeat.zscore_bucket if rfeat else None),
+                                                  confidence_tier=self._entry_confidence_tier(dr))
                     if db_res["decision"] in ("block", "explore"):
                         dr.down_bias_gate = {"decision": db_res["decision"],
                                              "reasons": db_res["reasons"]}
@@ -2034,9 +2046,9 @@ class PulseEngine:
                     _finalize(dr, "rejected", reason=up_blk_reason, stage="directional")
                     continue
                 if side == "up":
-                    up_ok, up_reason = self._up_side_tv_bias_ok(tv_feature, ttc_s=ttc,
-                                                                 markov_state=cand_state,
-                                                                 esnap=esnap, fair_p_up=fair_used)
+                    up_ok, up_reason = self._up_side_tv_bias_ok(
+                        tv_feature, ttc_s=ttc, markov_state=cand_state,
+                        esnap=esnap, fair_p_up=fair_used, dr=dr, rfeat=rfeat)
                     if not up_ok:
                         dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
                                                          outcome_prob=None, model_edge=0.0,
@@ -2172,7 +2184,9 @@ class PulseEngine:
                 context_explored = (ctx_res["decision"] == "explore")
                 db_res = self._down_bias_eval(side=d.side, tv_feature=tv_feature,
                                               markov_state=cand_state, ttc_s=ttc, esnap=esnap,
-                                              fair_p_up=fair_used)
+                                              fair_p_up=fair_used,
+                                              zscore_bucket=(rfeat.zscore_bucket if rfeat else None),
+                                              confidence_tier=self._entry_confidence_tier(dr))
                 dr.down_bias_gate = {"decision": db_res["decision"], "reasons": db_res["reasons"]}
                 db_block = (db_res["decision"] == "block"
                             or (d.side == "up" and db_res["decision"] == "explore"))
@@ -3300,11 +3314,19 @@ class PulseEngine:
                      "strong CEX; DOWN blocks bullish range-top; UP blocked until promoted"),
         }
 
+    def _entry_confidence_tier(self, dr) -> "str | None":
+        model = dr.model or {}
+        if model.get("trained"):
+            return _confidence_tier(model.get("model_confidence"))
+        return _confidence_tier((dr.signals or {}).get("confidence"))
+
     def _down_bias_eval(self, *, side: str, tv_feature: "dict | None",
                         markov_state: "str | None" = None,
                         ttc_s: "float | None" = None,
                         esnap=None,
-                        fair_p_up: "float | None" = None) -> dict:
+                        fair_p_up: "float | None" = None,
+                        zscore_bucket: "str | None" = None,
+                        confidence_tier: "str | None" = None) -> dict:
         from engine.pulse.late_window import conviction as _conviction
         feat = tv_feature or {}
         return self.tv_down_bias_gate.evaluate(
@@ -3325,20 +3347,27 @@ class PulseEngine:
             cvd_state=feat.get("cvd_state"),
             conviction=_conviction(fair_p_up),
             ttc_s=ttc_s,
+            zscore_bucket=zscore_bucket,
+            confidence_tier=confidence_tier,
         )
 
     def _up_side_tv_bias_ok(self, tv_feature: "dict | None",
                             ttc_s: "float | None" = None,
                             markov_state: "str | None" = None,
                             esnap=None,
-                            fair_p_up: "float | None" = None) -> "tuple[bool, str]":
+                            fair_p_up: "float | None" = None,
+                            dr=None,
+                            rfeat=None) -> "tuple[bool, str]":
         """UP restrict-only: TV UP_STRONG plus down_bias pass (all entry modes)."""
         tv_ok, tv_reason = self._baseline_up_tv_strength_ok(tv_feature)
         if not tv_ok:
             return False, tv_reason
         db_res = self._down_bias_eval(side="up", tv_feature=tv_feature,
                                       markov_state=markov_state, ttc_s=ttc_s, esnap=esnap,
-                                      fair_p_up=fair_p_up)
+                                      fair_p_up=fair_p_up,
+                                      zscore_bucket=(rfeat.zscore_bucket if rfeat else None),
+                                      confidence_tier=(self._entry_confidence_tier(dr)
+                                                       if dr is not None else None))
         if db_res["decision"] in ("block", "explore"):
             return False, db_res["reasons"][0]
         return True, ""

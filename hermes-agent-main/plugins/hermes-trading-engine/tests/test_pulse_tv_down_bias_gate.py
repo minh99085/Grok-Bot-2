@@ -337,3 +337,29 @@ def test_blocks_up_mid_ttc():
                    tv_direction="DOWN", ttc_s=150.0)
     assert r["decision"] == "block"
     assert "tv_down_bias_up_mid_ttc" in r["reasons"]
+
+
+def test_blocks_up_neutral_zscore():
+    g = TradingViewDownBiasGate(enabled=True, exploration_rate=0.0,
+                                block_up_without_bearish=False,
+                                block_mixed_mtf_up=False,
+                                block_up_markov_chop_noise=False,
+                                block_up_medium_edge=False,
+                                block_up_weak_cex=False)
+    r = g.evaluate(side="up", mtf_alignment="bearish_aligned",
+                   tv_direction="DOWN", zscore_bucket="-1..1")
+    assert r["decision"] == "block"
+    assert "tv_down_bias_up_neutral_zscore" in r["reasons"]
+
+
+def test_blocks_up_medium_confidence():
+    g = TradingViewDownBiasGate(enabled=True, exploration_rate=0.0,
+                                block_up_without_bearish=False,
+                                block_mixed_mtf_up=False,
+                                block_up_markov_chop_noise=False,
+                                block_up_medium_edge=False,
+                                block_up_weak_cex=False)
+    r = g.evaluate(side="up", mtf_alignment="bearish_aligned",
+                   tv_direction="DOWN", confidence_tier="medium")
+    assert r["decision"] == "block"
+    assert "tv_down_bias_up_medium_confidence" in r["reasons"]

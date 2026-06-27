@@ -44,6 +44,8 @@ class TradingViewDownBiasGate:
         block_up_low_conviction: bool = True,
         block_up_bearish_mtf_tv_up: bool = True,
         block_up_mid_ttc: bool = True,
+        block_up_neutral_zscore: bool = True,
+        block_up_medium_confidence: bool = True,
         up_late_ttc_min_s: float = 240.0,
         up_early_ttc_max_s: float = 120.0,
         up_mid_ttc_min_s: float = 120.0,
@@ -79,6 +81,8 @@ class TradingViewDownBiasGate:
         self.block_up_low_conviction = bool(block_up_low_conviction)
         self.block_up_bearish_mtf_tv_up = bool(block_up_bearish_mtf_tv_up)
         self.block_up_mid_ttc = bool(block_up_mid_ttc)
+        self.block_up_neutral_zscore = bool(block_up_neutral_zscore)
+        self.block_up_medium_confidence = bool(block_up_medium_confidence)
         self.up_late_ttc_min_s = max(0.0, float(up_late_ttc_min_s))
         self.up_early_ttc_max_s = max(0.0, float(up_early_ttc_max_s))
         self.up_mid_ttc_min_s = max(0.0, float(up_mid_ttc_min_s))
@@ -112,6 +116,8 @@ class TradingViewDownBiasGate:
         cvd_state=None,
         conviction=None,
         ttc_s=None,
+        zscore_bucket=None,
+        confidence_tier=None,
     ) -> list[str]:
         if not side or str(side).lower() != "up":
             return []
@@ -130,6 +136,8 @@ class TradingViewDownBiasGate:
         cex = str(cex_agreement_bucket or "").strip().lower()
         ob = str(ob_pressure_bucket or "").strip().lower()
         cvd = str(cvd_state or "").strip().lower()
+        zb = str(zscore_bucket or "").strip().lower()
+        ct = str(confidence_tier or "").strip().lower()
         if self.block_bullish_aligned_up and ma == "bullish_aligned":
             reasons.append("tv_down_bias_bullish_aligned_up")
         if self.block_mixed_mtf_up and ma == "mixed":
@@ -175,6 +183,10 @@ class TradingViewDownBiasGate:
             reasons.append("tv_down_bias_up_cvd_neutral")
         if self.block_up_cvd_buy_pressure and cvd == "buy_pressure":
             reasons.append("tv_down_bias_up_cvd_buy_pressure")
+        if self.block_up_neutral_zscore and zb == "-1..1":
+            reasons.append("tv_down_bias_up_neutral_zscore")
+        if self.block_up_medium_confidence and ct == "medium":
+            reasons.append("tv_down_bias_up_medium_confidence")
         if self.block_up_low_conviction and conviction is not None:
             if float(conviction) < self.up_min_conviction:
                 reasons.append("tv_down_bias_up_low_conviction")
@@ -210,6 +222,8 @@ class TradingViewDownBiasGate:
         cvd_state=None,
         conviction=None,
         ttc_s=None,
+        zscore_bucket=None,
+        confidence_tier=None,
     ) -> dict:
         if not self.enabled:
             return {"decision": "pass", "reasons": [], "active": False}
@@ -223,7 +237,8 @@ class TradingViewDownBiasGate:
                                   cex_agreement_bucket=cex_agreement_bucket,
                                   ob_pressure_bucket=ob_pressure_bucket,
                                   cvd_state=cvd_state, conviction=conviction,
-                                  ttc_s=ttc_s)
+                                  ttc_s=ttc_s, zscore_bucket=zscore_bucket,
+                                  confidence_tier=confidence_tier)
         if not reasons:
             self.passed += 1
             return {"decision": "pass", "reasons": [], "active": True}
@@ -266,6 +281,8 @@ class TradingViewDownBiasGate:
             "block_up_low_conviction": self.block_up_low_conviction,
             "block_up_bearish_mtf_tv_up": self.block_up_bearish_mtf_tv_up,
             "block_up_mid_ttc": self.block_up_mid_ttc,
+            "block_up_neutral_zscore": self.block_up_neutral_zscore,
+            "block_up_medium_confidence": self.block_up_medium_confidence,
             "up_late_ttc_min_s": self.up_late_ttc_min_s,
             "up_early_ttc_max_s": self.up_early_ttc_max_s,
             "up_mid_ttc_min_s": self.up_mid_ttc_min_s,
