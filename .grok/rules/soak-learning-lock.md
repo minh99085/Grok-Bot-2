@@ -123,6 +123,26 @@ Status API must show:
 - `decision_lifecycle.reconciled` = true
 - `price.tracked_opens` > 0 after first window post-restart
 
+## Roan / Bregman rollout (Phase 0+ — does not relax directional learning)
+
+**Design:** 5m brain, 15m hands — see `docs/roan-bregman-architecture.md`.
+
+| Series | Role during learning_collection |
+|--------|----------------------------------|
+| `btc-up-or-down-5m` | **Brain only** (Phase 1+): scan, LCMM child, arb detect — **no directional trades** |
+| `btc-up-or-down-15m` | **Hands**: directional DOWN + parent LCMM + settlement |
+
+**Allowed in Phase 1 without ending learning_collection:**
+
+- `PULSE_SERIES_SLUGS` → `btc-up-or-down-5m,btc-up-or-down-15m` (scan breadth)
+- `PULSE_DIRECTIONAL_SERIES_SLUGS` stays `btc-up-or-down-15m` only
+
+**Still forbidden until promotion scorecard (`roan-bregman-promotion-scorecard.json`):**
+
+- `PULSE_DEPENDENCY_ARB_EXECUTE=1`
+- `PULSE_BREGMAN_TRADE_AUTHORITY=1`
+- Directional trading on 5m series
+
 ## Ending learning-collection mode
 
 Operator must say explicitly in the current message. Until then, treat WR targets as **deferred**

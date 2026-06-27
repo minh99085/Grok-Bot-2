@@ -1,10 +1,22 @@
 {
-  "schema": "pulse_frozen_manifest/1.0",
+  "schema": "pulse_frozen_manifest/1.1",
   "mode": "learning_collection",
   "locked_at": "2026-06-27",
+  "roan_bregman_phase": 0,
   "source_of_truth": "scripts/apply-loop-arch-env.py",
   "rules_doc": ".grok/rules/soak-learning-lock.md",
   "tv_lock_doc": ".grok/rules/tv-observe-only-lock.md",
+  "architecture_doc": "docs/roan-bregman-architecture.md",
+  "promotion_scorecard": "scripts/pulse-babysit/roan-bregman-promotion-scorecard.json",
+  "series_architecture": {
+    "design": "5m brain, 15m hands",
+    "brain_slug": "btc-up-or-down-5m",
+    "hands_slug": "btc-up-or-down-15m",
+    "brain_role": "features, LCMM child, dutch-book scan, Bregman violation detect",
+    "hands_role": "directional DOWN execution, parent LCMM, primary settlement",
+    "phase_1_target_pulse_series_slugs": "btc-up-or-down-5m,btc-up-or-down-15m",
+    "directional_series_frozen": "btc-up-or-down-15m"
+  },
   "required_nonempty": [
     "XAI_API_KEY",
     "ANTHROPIC_API_KEY",
@@ -123,5 +135,39 @@
     "grok_decider.affects_trading": false,
     "tradingview.signal_gate.enabled": false,
     "tradingview.mtf_gate.require_confirm": false
-  }
+  },
+  "roan_bregman_planned": {
+    "phase_1": {
+      "PULSE_SERIES_SLUGS": "btc-up-or-down-5m,btc-up-or-down-15m",
+      "PULSE_DIRECTIONAL_SERIES_SLUGS": "btc-up-or-down-15m"
+    },
+    "phase_2": {
+      "PULSE_BREGMAN_PROJECTION_ENABLED": "1",
+      "PULSE_BREGMAN_TRADE_AUTHORITY": "0"
+    },
+    "phase_3": {
+      "PULSE_BREGMAN_ALPHA": "0.9",
+      "PULSE_BREGMAN_EPSILON_INIT": "0.1",
+      "PULSE_BREGMAN_FW_MAX_ITERS": "50",
+      "PULSE_BREGMAN_FW_TIME_BUDGET_MS": "500",
+      "PULSE_IP_ORACLE_BACKEND": "ortools"
+    },
+    "phase_4": {
+      "PULSE_DEPENDENCY_ARB_EXECUTE": "1",
+      "PULSE_BREGMAN_TRADE_AUTHORITY": "1"
+    },
+    "forbidden_until_phase_4": [
+      "PULSE_BREGMAN_TRADE_AUTHORITY=1 without promotion scorecard",
+      "PULSE_DEPENDENCY_ARB_EXECUTE=1 without phase_1 soak pass",
+      "PULSE_DIRECTIONAL_SERIES_SLUGS including 5m"
+    ]
+  },
+  "roan_bregman_frozen_code_paths": [
+    "engine/pulse/bregman_projection.py",
+    "engine/pulse/dependency_arb.py",
+    "engine/pulse/arbitrage.py",
+    "engine/pulse/arb_graph.py",
+    "tests/fixtures/roan_nested_implication_violation.json",
+    "tests/fixtures/roan_dutch_book_opportunity.json"
+  ]
 }

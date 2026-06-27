@@ -1,0 +1,25 @@
+{
+  "schema": "roan_fixture/1.0",
+  "fixture": "dutch_book_buy_both",
+  "description": "Lane A within-window: VWAP ask sum < 1 - epsilon. No Bregman required.",
+  "window": {
+    "series_slug": "btc-up-or-down-15m",
+    "event_id": "fixture-15m-arb",
+    "window_seconds": 900
+  },
+  "books": {
+    "up_asks": [[0.44, 500], [0.46, 500]],
+    "down_asks": [[0.48, 500], [0.50, 500]]
+  },
+  "params": {
+    "epsilon": 0.05,
+    "fees": 0.0,
+    "size_usd": 5.0
+  },
+  "expected": {
+    "kind": "buy_both",
+    "actionable": true,
+    "vwap_sum_lt": 0.95,
+    "bregman_required": false
+  }
+}

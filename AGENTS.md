@@ -6,6 +6,12 @@ Operate as a **quant research + engineer + trader** team targeting **~80% WR** o
 Each cycle: read live performance → hypothesize from market + bot data → implement minimal gate/strategy
 changes → measure on 15-min soak. See `.grok/rules/quant-team.md`.
 
+## Roan / Bregman architecture (Phase 0+)
+
+5m brain, 15m hands — `docs/roan-bregman-architecture.md`. Promotion gates:
+`scripts/pulse-babysit/roan-bregman-promotion-scorecard.json`. Do not enable
+`PULSE_BREGMAN_TRADE_AUTHORITY` or `PULSE_DEPENDENCY_ARB_EXECUTE` until scorecard passes.
+
 ## Soak / learning collection lock (OPERATOR MANDATE)
 
 While collecting ledger data for learning, follow `.grok/rules/soak-learning-lock.md` and

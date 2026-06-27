@@ -1,9 +1,16 @@
 {
   "schema": "bot_design_manifest/1.0",
   "updated": "2026-06-27",
+  "roan_bregman_phase": 0,
+  "roan_bregman_doc": "docs/roan-bregman-architecture.md",
   "architecture": {
     "name": "BTC Pulse — 5m brain, 15m hands",
-    "summary": "TradingView 2/3/4m alerts observe-only. Quant cohort owns 15m DOWN entries in TTC band. Grok shadow. Paper only.",
+    "summary": "Engineered on 5m BTC up/down microstructure; executes on 15m windows. Roan Lane A dutch book + Lane B LCMM/Bregman (phased). TV observe-only. 15m DOWN directional for learning. Paper only.",
+    "series_split": {
+      "brain": "btc-up-or-down-5m",
+      "hands": "btc-up-or-down-15m",
+      "directional_trades_on": "hands only"
+    },
     "trade_authority": [
       "baseline_cohort_gate",
       "strategy_edge_and_reward_risk",
@@ -64,5 +71,14 @@
     "score_history_vps": "btc_pulse_score_history.json (on VPS /data)",
     "cycle_summary": "vps_full_reports/latest/CYCLE_SUMMARY.md"
   },
-  "env_source_of_truth": "scripts/apply-loop-arch-env.py"
+  "env_source_of_truth": "scripts/apply-loop-arch-env.py",
+  "roan_bregman": {
+    "phase": 0,
+    "architecture": "docs/roan-bregman-architecture.md",
+    "promotion_scorecard": "scripts/pulse-babysit/roan-bregman-promotion-scorecard.json",
+    "fixtures": [
+      "hermes-agent-main/plugins/hermes-trading-engine/tests/fixtures/roan_nested_implication_violation.json",
+      "hermes-agent-main/plugins/hermes-trading-engine/tests/fixtures/roan_dutch_book_opportunity.json"
+    ]
+  }
 }

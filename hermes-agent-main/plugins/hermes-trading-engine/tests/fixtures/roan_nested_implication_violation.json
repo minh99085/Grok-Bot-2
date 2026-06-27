@@ -1,0 +1,32 @@
+{
+  "schema": "roan_fixture/1.0",
+  "fixture": "nested_implication_violation",
+  "description": "5m brain UP mid exceeds 15m parent UP mid — LCMM violation P(up_15m) >= P(up_5m) broken.",
+  "brain_5m": {
+    "series_slug": "btc-up-or-down-5m",
+    "event_id": "fixture-5m-001",
+    "window_seconds": 300,
+    "open_ts": 1782600000.0,
+    "close_ts": 1782600300.0,
+    "up_mid": 0.58,
+    "down_mid": 0.42
+  },
+  "hands_15m": {
+    "series_slug": "btc-up-or-down-15m",
+    "event_id": "fixture-15m-parent",
+    "window_seconds": 900,
+    "open_ts": 1782599700.0,
+    "close_ts": 1782600600.0,
+    "up_mid": 0.45,
+    "down_mid": 0.55
+  },
+  "expected": {
+    "constraint_type": "nested_implication",
+    "violation_magnitude": 0.13,
+    "implication_holds": false,
+    "actionable_at_epsilon_0_02": true,
+    "bregman_projection_distance_gt": 0.0,
+    "trade_leg": "buy_parent_up_underpriced"
+  },
+  "notes": "Used by Phase 2+ unit tests. VWAP books attached in test code from mids."
+}

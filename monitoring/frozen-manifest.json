@@ -1,8 +1,7 @@
 {
-  "schema": "pulse_frozen_manifest/1.0",
-  "mode": "learning_collection",
-  "locked_at": "2026-06-27",
+  "schema": "pulse_frozen_manifest/1.1",
   "canonical_path": "scripts/pulse-babysit/frozen-env-keys.json",
-  "rules_doc": ".grok/rules/soak-learning-lock.md",
-  "note": "Mirror of frozen-env-keys.json for monitoring dashboards; edit canonical file only."
+  "roan_bregman_phase": 0,
+  "architecture_doc": "docs/roan-bregman-architecture.md",
+  "series_architecture": "5m brain, 15m hands"
 }
