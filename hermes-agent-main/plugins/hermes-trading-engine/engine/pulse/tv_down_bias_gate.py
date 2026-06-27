@@ -42,8 +42,12 @@ class TradingViewDownBiasGate:
         block_up_cvd_neutral: bool = True,
         block_up_cvd_buy_pressure: bool = True,
         block_up_low_conviction: bool = True,
+        block_up_bearish_mtf_tv_up: bool = True,
+        block_up_mid_ttc: bool = True,
         up_late_ttc_min_s: float = 240.0,
         up_early_ttc_max_s: float = 120.0,
+        up_mid_ttc_min_s: float = 120.0,
+        up_mid_ttc_max_s: float = 180.0,
         up_min_conviction: float = 0.40,
         exploration_rate: float = 0.0,
         seed: Optional[int] = None,
@@ -73,8 +77,12 @@ class TradingViewDownBiasGate:
         self.block_up_cvd_neutral = bool(block_up_cvd_neutral)
         self.block_up_cvd_buy_pressure = bool(block_up_cvd_buy_pressure)
         self.block_up_low_conviction = bool(block_up_low_conviction)
+        self.block_up_bearish_mtf_tv_up = bool(block_up_bearish_mtf_tv_up)
+        self.block_up_mid_ttc = bool(block_up_mid_ttc)
         self.up_late_ttc_min_s = max(0.0, float(up_late_ttc_min_s))
         self.up_early_ttc_max_s = max(0.0, float(up_early_ttc_max_s))
+        self.up_mid_ttc_min_s = max(0.0, float(up_mid_ttc_min_s))
+        self.up_mid_ttc_max_s = max(0.0, float(up_mid_ttc_max_s))
         self.up_min_conviction = max(0.0, min(1.0, float(up_min_conviction)))
         self.exploration_rate = max(0.0, min(0.05, float(exploration_rate)))
         self.passed = 0
@@ -137,6 +145,8 @@ class TradingViewDownBiasGate:
             reasons.append("tv_down_bias_up_tv_down_non_bearish")
         if self.block_up_against_confirmed_down and tc == "confirmed_down":
             reasons.append("tv_down_bias_up_against_confirmed_down")
+        if self.block_up_bearish_mtf_tv_up and ma == "bearish_aligned" and td == "UP":
+            reasons.append("tv_down_bias_up_bearish_mtf_tv_up")
         if self.block_up_tf_confirm_conflict and tc == "conflict":
             reasons.append("tv_down_bias_up_tf_confirm_conflict")
         if self.block_up_vwap_above and vw == "above":
@@ -174,6 +184,10 @@ class TradingViewDownBiasGate:
                 reasons.append("tv_down_bias_up_late_ttc")
             if self.block_up_early_ttc and ttc < self.up_early_ttc_max_s:
                 reasons.append("tv_down_bias_up_early_ttc")
+            if (self.block_up_mid_ttc
+                    and ttc >= self.up_mid_ttc_min_s
+                    and ttc < self.up_mid_ttc_max_s):
+                reasons.append("tv_down_bias_up_mid_ttc")
         return reasons
 
     def evaluate(
@@ -250,8 +264,12 @@ class TradingViewDownBiasGate:
             "block_up_cvd_neutral": self.block_up_cvd_neutral,
             "block_up_cvd_buy_pressure": self.block_up_cvd_buy_pressure,
             "block_up_low_conviction": self.block_up_low_conviction,
+            "block_up_bearish_mtf_tv_up": self.block_up_bearish_mtf_tv_up,
+            "block_up_mid_ttc": self.block_up_mid_ttc,
             "up_late_ttc_min_s": self.up_late_ttc_min_s,
             "up_early_ttc_max_s": self.up_early_ttc_max_s,
+            "up_mid_ttc_min_s": self.up_mid_ttc_min_s,
+            "up_mid_ttc_max_s": self.up_mid_ttc_max_s,
             "up_min_conviction": self.up_min_conviction,
             "exploration_rate": self.exploration_rate,
             "passed": self.passed,

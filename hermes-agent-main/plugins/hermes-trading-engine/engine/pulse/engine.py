@@ -311,8 +311,12 @@ class PulseConfig:
     tv_down_bias_block_up_cvd_neutral: bool = True
     tv_down_bias_block_up_cvd_buy_pressure: bool = True
     tv_down_bias_block_up_low_conviction: bool = True
+    tv_down_bias_block_up_bearish_mtf_tv_up: bool = True
+    tv_down_bias_block_up_mid_ttc: bool = True
     tv_down_bias_up_late_ttc_min_s: float = 240.0
     tv_down_bias_up_early_ttc_max_s: float = 120.0
+    tv_down_bias_up_mid_ttc_min_s: float = 120.0
+    tv_down_bias_up_mid_ttc_max_s: float = 180.0
     tv_down_bias_up_min_conviction: float = 0.40
     tv_mtf_conflict_gate_enabled: bool = True
     tv_mtf_require_confirm: bool = False   # loop arch: conflict veto only, not MTF trade authority
@@ -719,8 +723,16 @@ class PulseConfig:
             tv_down_bias_block_up_low_conviction=str(
                 os.getenv("PULSE_TV_DOWN_BIAS_BLOCK_UP_LOW_CONVICTION", "1")).strip().lower()
             in ("1", "true", "yes", "on"),
+            tv_down_bias_block_up_bearish_mtf_tv_up=str(
+                os.getenv("PULSE_TV_DOWN_BIAS_BLOCK_UP_BEARISH_MTF_TV_UP", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            tv_down_bias_block_up_mid_ttc=str(
+                os.getenv("PULSE_TV_DOWN_BIAS_BLOCK_UP_MID_TTC", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
             tv_down_bias_up_late_ttc_min_s=_envf("PULSE_TV_DOWN_BIAS_UP_LATE_TTC_MIN_S", 240.0),
             tv_down_bias_up_early_ttc_max_s=_envf("PULSE_TV_DOWN_BIAS_UP_EARLY_TTC_MAX_S", 120.0),
+            tv_down_bias_up_mid_ttc_min_s=_envf("PULSE_TV_DOWN_BIAS_UP_MID_TTC_MIN_S", 120.0),
+            tv_down_bias_up_mid_ttc_max_s=_envf("PULSE_TV_DOWN_BIAS_UP_MID_TTC_MAX_S", 180.0),
             tv_down_bias_up_min_conviction=_envf("PULSE_TV_DOWN_BIAS_UP_MIN_CONVICTION", 0.40),
             tv_mtf_conflict_gate_enabled=str(os.getenv("PULSE_TV_MTF_CONFLICT_GATE", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
@@ -943,8 +955,12 @@ class PulseEngine:
             block_up_cvd_neutral=bool(self.cfg.tv_down_bias_block_up_cvd_neutral),
             block_up_cvd_buy_pressure=bool(self.cfg.tv_down_bias_block_up_cvd_buy_pressure),
             block_up_low_conviction=bool(self.cfg.tv_down_bias_block_up_low_conviction),
+            block_up_bearish_mtf_tv_up=bool(self.cfg.tv_down_bias_block_up_bearish_mtf_tv_up),
+            block_up_mid_ttc=bool(self.cfg.tv_down_bias_block_up_mid_ttc),
             up_late_ttc_min_s=self.cfg.tv_down_bias_up_late_ttc_min_s,
             up_early_ttc_max_s=self.cfg.tv_down_bias_up_early_ttc_max_s,
+            up_mid_ttc_min_s=self.cfg.tv_down_bias_up_mid_ttc_min_s,
+            up_mid_ttc_max_s=self.cfg.tv_down_bias_up_mid_ttc_max_s,
             up_min_conviction=self.cfg.tv_down_bias_up_min_conviction,
             exploration_rate=self.cfg.tv_down_bias_exploration_rate)
         from engine.pulse.tv_mtf_gate import TradingViewMtfConflictGate
