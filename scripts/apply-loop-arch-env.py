@@ -85,8 +85,8 @@ UPDATES = {
     "PULSE_BASELINE_DOWN_TV_GATE_ENABLED": "1",
     "PULSE_BASELINE_DOWN_BLOCK_BULLISH_RANGE": "1",
     "PULSE_BASELINE_DOWN_BLOCK_UP_STRONG_BULLISH": "1",
-    # Arb + dependency scan 5m+15m; directional gated to 15m only (series split).
-    "PULSE_SERIES_SLUGS": "btc-up-or-down-5m,btc-up-or-down-15m",
+    # 15m only: no 5m directional, arb, or dependency execution.
+    "PULSE_SERIES_SLUGS": "btc-up-or-down-15m",
     "PULSE_DIRECTIONAL_SERIES_SLUGS": "btc-up-or-down-15m",
     "PULSE_ARB_EPSILON_15M": "0.03",
     "PULSE_DEPENDENCY_ARB_EPSILON": "0.02",

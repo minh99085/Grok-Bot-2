@@ -311,7 +311,7 @@ services:
       TRADINGVIEW_WEBHOOK_PATH: "${TRADINGVIEW_WEBHOOK_PATH:-/webhooks/tradingview}"
       TRADINGVIEW_MAX_AGE_S: "${TRADINGVIEW_MAX_AGE_S:-180}"
       # Dual Polymarket series (5m + 15m) and TV 4m/5m/10m/13m/15m MTF windows.
-      PULSE_SERIES_SLUGS: "${PULSE_SERIES_SLUGS:-btc-up-or-down-5m,btc-up-or-down-15m}"
+      PULSE_SERIES_SLUGS: "${PULSE_SERIES_SLUGS:-btc-up-or-down-15m}"
       PULSE_DIRECTIONAL_SERIES_SLUGS: "${PULSE_DIRECTIONAL_SERIES_SLUGS:-btc-up-or-down-15m}"
       PULSE_ARB_EPSILON_5M: "${PULSE_ARB_EPSILON_5M:-0.05}"
       PULSE_ARB_EPSILON_15M: "${PULSE_ARB_EPSILON_15M:-0.03}"

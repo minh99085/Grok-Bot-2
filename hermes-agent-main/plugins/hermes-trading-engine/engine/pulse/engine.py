@@ -397,7 +397,7 @@ class PulseConfig:
         _series_slugs = tuple(
             s.strip() for s in os.getenv(
                 "PULSE_SERIES_SLUGS",
-                "btc-up-or-down-5m,btc-up-or-down-15m").split(",") if s.strip())
+                "btc-up-or-down-15m").split(",") if s.strip())
         _dir_series = tuple(
             s.strip() for s in os.getenv(
                 "PULSE_DIRECTIONAL_SERIES_SLUGS",
