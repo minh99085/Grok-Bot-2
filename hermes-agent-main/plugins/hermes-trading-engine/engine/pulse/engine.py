@@ -1380,6 +1380,7 @@ class PulseEngine:
         if the ledger already holds trades from BEFORE this canonical accounting existed, capture
         them as an explicit legacy bucket so every count still reconciles. Otherwise start clean."""
         if self._baseline is not None and self._baseline.get("captured") is not None:
+            self._repair_accounting_drift()
             return
         ls = self.ledger.stats()
         eg = self.ledger.exec_gate_stats()
@@ -1391,6 +1392,29 @@ class PulseEngine:
                         self._baseline["exec_accepted"])
         else:
             self._baseline = empty_baseline()
+        self._repair_accounting_drift()
+
+    def _repair_accounting_drift(self) -> None:
+        """Heal ledger/lifecycle count skew from a persistence race by absorbing into baseline."""
+        from engine.pulse.reconciliation import global_reconciliation, repair_accounting_drift
+        lc = self.reconciler.report()
+        eg = self.ledger.exec_gate_stats()
+        ls = self.ledger.stats()
+        if global_reconciliation(lifecycle=lc, exec_gate=eg, ledger_stats=ls,
+                                 baseline=self._baseline)["global_reconciled"]:
+            return
+        repaired, changed = repair_accounting_drift(
+            lifecycle=lc, exec_gate=eg, ledger_stats=ls, baseline=self._baseline)
+        if not changed:
+            return
+        self._baseline = repaired
+        if global_reconciliation(lifecycle=lc, exec_gate=eg, ledger_stats=ls,
+                                 baseline=self._baseline)["global_reconciled"]:
+            logger.warning("reconciliation drift absorbed into baseline: trades=%d settled=%d "
+                           "exec_candidates=%d exec_accepted=%d",
+                           self._baseline["trades"], self._baseline["settled"],
+                           self._baseline["exec_candidates"], self._baseline["exec_accepted"])
+            self._persist()
 
     def _load_state(self) -> None:
         """Restore the paper ledger + calibration from disk so P&L survives restarts."""

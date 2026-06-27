@@ -12,7 +12,8 @@ from __future__ import annotations
 import json
 
 from engine.pulse.reconciliation import (global_reconciliation, capture_baseline, empty_baseline,
-                                          GateObservations, zero_reject_diagnostic)
+                                          GateObservations, repair_accounting_drift,
+                                          zero_reject_diagnostic)
 from engine.pulse.execution_gate import (evaluate_execution, WIDE_SPREAD, INSUFFICIENT_DEPTH,
                                           NEGATIVE_EV, TOO_CLOSE, PARTIAL_FILL_RISK,
                                           STALE_ORDERBOOK, MISSING_MARKET_DATA, REASONS)
@@ -117,6 +118,22 @@ def test_accepted_not_equal_fills_fails():
                               baseline=empty_baseline())
     assert r["global_reconciled"] is False
     assert "accepted_equals_fills" in r["failed_checks"]
+
+
+def test_repair_accounting_drift_absorbs_one_missing_fill():
+    """Ledger/exec_gate can be +1 vs lifecycle after a persistence race; absorb into baseline."""
+    lc = _lifecycle(accepted=86, rejected=5, rej_gate=1, ledgered=86, execution_costed=242)
+    eg = _gate(candidates=243, accepted=87, rejected_total=156)
+    led = _ledger(trades=87, settled=87, open_positions=0)
+    r0 = global_reconciliation(lifecycle=lc, exec_gate=eg, ledger_stats=led,
+                               baseline=empty_baseline())
+    assert r0["global_reconciled"] is False
+    base, changed = repair_accounting_drift(lifecycle=lc, exec_gate=eg, ledger_stats=led,
+                                            baseline=empty_baseline())
+    assert changed is True
+    assert base["trades"] == 1 and base["exec_accepted"] == 1
+    r1 = global_reconciliation(lifecycle=lc, exec_gate=eg, ledger_stats=led, baseline=base)
+    assert r1["global_reconciled"] is True
 
 
 def test_lifecycle_internal_disappearance_fails():
