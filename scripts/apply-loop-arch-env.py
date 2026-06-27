@@ -68,8 +68,8 @@ UPDATES = {
     # Gamma windows often appear >20s after open_ts; min_seconds_since_open=30 already delays entry.
     "PULSE_MAX_OPEN_LAG_S": "120",
     "PULSE_MAX_OPEN_LAG_15M_S": "240",
-    # Stop halt needs >30 settled before Wilson test (avoids freeze at exactly min_samples).
-    "PULSE_STOP_MIN_SAMPLES": "40",
+    # Stop halt: keep above rolling_n until post-relaxation cohort rebuilds (n=50 was frozen).
+    "PULSE_STOP_MIN_SAMPLES": "60",
     # Sweet-spot entry (1M MC sim): base 160-220s → 15m TTC 480-660s (minutes 8-11).
     "PULSE_TICK_SECONDS": "15",
     "PULSE_MAX_PRICE": "0.70",
@@ -110,7 +110,7 @@ UPDATES = {
     "PULSE_BASELINE_DOWN_TV_GATE_ENABLED": "0",
     "PULSE_BASELINE_DOWN_BLOCK_BULLISH_RANGE": "1",
     "PULSE_BASELINE_DOWN_BLOCK_UP_STRONG_BULLISH": "1",
-    "PULSE_BASELINE_DOWN_BLOCK_NOT_STALE": "0",
+    "PULSE_BASELINE_DOWN_BLOCK_NOT_STALE": "1",
     "PULSE_BASELINE_DOWN_BLOCK_MEDIUM_EDGE": "0",
     "PULSE_BASELINE_DOWN_BLOCK_SINGLE_TF": "0",
     "PULSE_BASELINE_DOWN_BLOCK_VOLUME_ACTIVE": "0",
