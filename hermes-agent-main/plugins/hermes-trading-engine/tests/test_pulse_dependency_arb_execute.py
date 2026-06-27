@@ -73,6 +73,33 @@ def test_paper_execute_and_settle_dependency_ledger():
     assert rep["strategy"] == "dependency_arbitrage"
 
 
+def test_vwap_enrichment_rejection_reason():
+    t0 = 10_000_000.0
+    parent = PulseWindow(
+        event_id="p15", market_id="mp", slug="sp", title="15m",
+        open_ts=t0, close_ts=t0 + 900, up_token_id="UP", down_token_id="DP",
+        window_seconds=900, series_label="15m",
+    )
+    child = PulseWindow(
+        event_id="c5", market_id="mc", slug="sc", title="5m",
+        open_ts=t0 + 60, close_ts=t0 + 360, up_token_id="UC", down_token_id="DC",
+        window_seconds=300, series_label="5m",
+    )
+    parent.up_book = OrderBook(best_bid=0.40, best_ask=0.42, asks=[(0.42, 1.0)],
+                               bids=[(0.40, 1000.0)])
+    parent.down_book = _book(0.55)
+    child.up_book = _book(0.57)
+    child.down_book = _book(0.40)
+    vios = scan_nested_implication(parent, [child], epsilon=0.02, vwap_enrich=True)
+    assert len(vios) >= 1
+    v = enrich_vwap_actionable(vios[0], parent, child, max_usd=25.0, epsilon=0.02)
+    assert v.actionable is False
+    assert v.reason in ("partial_fill", "vwap_not_executable", "below_epsilon", "zero_shares")
+    ledger = DependencyArbLedger(execute_enabled=False)
+    ledger.record_scan(vios)
+    assert ledger.rejected_by_reason
+
+
 def test_vwap_enrichment_marks_actionable():
     t0 = 10_000_000.0
     parent = PulseWindow(

@@ -415,9 +415,25 @@ def build_full_report_md(light: dict, status: Optional[dict] = None,
     h3("Risk-free arbitrage")
     if arb:
         kv(arb, ["executed", "settled", "open", "realized_profit_usd", "detected_actionable",
-                 "segregated_from_directional"])
+                 "arb_scan_count", "near_miss_within_eps", "near_miss_residual_buckets",
+                 "best_near_miss_residual", "arb_rejected_by_reason", "segregated_from_directional"])
     else:
         out.append("_no arb activity_")
+
+    dep = light.get("dependency_arbitrage") or {}
+    profit = light.get("profit_discovery") or light.get("five_x_improvement") or {}
+    if dep or profit:
+        h3("Profit discovery (5x target)")
+        if profit:
+            kv(profit, ["five_x_improvement_status", "improvement_ratio", "baseline_total_pnl_usd",
+                        "current_total_pnl_usd", "arb_pnl_usd", "directional_pnl_usd",
+                        "dependency_arb_pnl_usd", "primary_edge_source", "top_blockers"])
+        if dep:
+            kv(dep, ["mode", "enabled", "violations_detected", "actionable_detected",
+                     "rejected_by_reason", "executed", "realized_profit_usd"])
+        graph = light.get("arb_graph") or {}
+        if graph:
+            kv(graph, ["nodes", "edges", "nested_pairs", "dependency_proposals"])
 
     h3("Accounting integrity")
     rec = tp.get("reconciliation", {}) or {}

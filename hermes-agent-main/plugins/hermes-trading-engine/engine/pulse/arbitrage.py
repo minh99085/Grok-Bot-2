@@ -20,6 +20,19 @@ from typing import Optional
 from engine.pulse.execution_gate import vwap_fill, _on_tick
 
 
+def _residual_bucket(abs_residual: float) -> str:
+    r = float(abs_residual)
+    if r < 0.02:
+        return "0.00-0.02"
+    if r < 0.04:
+        return "0.02-0.04"
+    if r < 0.05:
+        return "0.04-0.05"
+    if r < 0.08:
+        return "0.05-0.08"
+    return "0.08+"
+
+
 @dataclass
 class ArbOpportunity:
     """A detected within-window dutch book. ``kind`` is 'buy_both' (executable) or 'sell_both'
@@ -179,7 +192,9 @@ class ArbLedger:
         self.guaranteed_booked_usd = 0.0   # sum of guaranteed profit at book time
         self.scans = 0
         self.near_miss = 0                  # vwap ask-sum within epsilon of 1 (diagnostic)
+        self.near_miss_residual_buckets: dict = {}  # |residual| bucket -> count (diagnostic)
         self.min_vwap_residual: Optional[float] = None
+        self.best_near_miss_residual: Optional[float] = None  # closest sub-epsilon residual seen
         self.windows_scanned = 0              # open windows scanned this engine lifetime
         self.windows_by_series: dict = {}     # series_label -> scan count
         self.candidates = 0                   # actionable opportunities seen (pre-book)
@@ -210,6 +225,12 @@ class ArbLedger:
             self.min_vwap_residual = round(vr, 6)
         if (not opp.actionable) and vr <= float(near_miss_eps):
             self.near_miss += 1
+            bk = _residual_bucket(vr)
+            self.near_miss_residual_buckets[bk] = (
+                int(self.near_miss_residual_buckets.get(bk, 0) or 0) + 1)
+            if (self.best_near_miss_residual is None
+                    or vr < float(self.best_near_miss_residual)):
+                self.best_near_miss_residual = round(vr, 6)
         if not opp.actionable and opp.reason:
             r = str(opp.reason)
             self.rejected_by_reason[r] = int(self.rejected_by_reason.get(r, 0) or 0) + 1
@@ -273,6 +294,8 @@ class ArbLedger:
                 "guaranteed_booked_usd": round(self.guaranteed_booked_usd, 4),
                 "scans": self.scans,
                 "near_miss_within_eps": self.near_miss,
+                "near_miss_residual_buckets": dict(self.near_miss_residual_buckets),
+                "best_near_miss_residual": self.best_near_miss_residual,
                 "min_vwap_ask_residual": self.min_vwap_residual,
                 "note": ("risk-free dutch book: BUY-both (asks<$1) + SELL-both (mint $1 set, sell "
                          "bids>$1); deterministic P&L; NEVER blended into directional. PAPER ONLY.")}
@@ -285,6 +308,8 @@ class ArbLedger:
                 "realized_profit_usd": self.realized_profit_usd,
                 "guaranteed_booked_usd": self.guaranteed_booked_usd,
                 "scans": self.scans, "near_miss": self.near_miss,
+                "near_miss_residual_buckets": dict(self.near_miss_residual_buckets),
+                "best_near_miss_residual": self.best_near_miss_residual,
                 "min_vwap_residual": self.min_vwap_residual,
                 "windows_scanned": self.windows_scanned,
                 "windows_by_series": dict(self.windows_by_series),
@@ -307,6 +332,9 @@ class ArbLedger:
         self.guaranteed_booked_usd = float(data.get("guaranteed_booked_usd", 0.0) or 0.0)
         self.scans = int(data.get("scans", 0) or 0)
         self.near_miss = int(data.get("near_miss", 0) or 0)
+        self.near_miss_residual_buckets = dict(data.get("near_miss_residual_buckets") or {})
+        bnm = data.get("best_near_miss_residual")
+        self.best_near_miss_residual = (float(bnm) if bnm is not None else None)
         mvr = data.get("min_vwap_residual")
         self.min_vwap_residual = (float(mvr) if mvr is not None else None)
         self.windows_scanned = int(data.get("windows_scanned", 0) or 0)

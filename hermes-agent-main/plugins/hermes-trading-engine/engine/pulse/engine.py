@@ -222,6 +222,8 @@ class PulseConfig:
     arb_fees: float = 0.0                       # modelled taker fee per $ (Polymarket BTC ~0)
     arb_epsilon: float = 0.05                   # min risk-free edge below $1 (Bible execution-risk
     #                                             floor; must cover fees + non-atomic slippage buffer).
+    arb_epsilon_5m: float = 0.05                # per-series override (defaults to arb_epsilon)
+    arb_epsilon_15m: float = 0.03               # 15m often thinner — lower bar captures near-misses
     arb_min_profit_usd: float = 0.0
     arb_size_usd: float = 100.0                 # fallback target when book depth is unknown
     arb_max_usd: float = 300.0                  # SIZE-TO-DEPTH ceiling: take the full available depth
@@ -244,11 +246,15 @@ class PulseConfig:
     directional_max_bankroll_frac: float = 0.10   # cap directional open exposure vs starting capital
     directional_block_up_until_promoted: bool = True  # hard block UP until direction=up promoted
     directional_up_restrictions_enabled: bool = True  # UP-only extra gates (TV/down-bias/RR premium)
+    directional_series_slugs: tuple = ()        # empty = all series; else directional only on these
     primary_edge_source: str = "arbitrage"      # report field: arbitrage | directional | none
     dependency_arb_enabled: bool = True         # LCMM nested-window scanner
     dependency_arb_execute_enabled: bool = False  # paper execute validated violations (WS4)
     dependency_arb_max_usd: float = 50.0
+    dependency_arb_epsilon: float = 0.02        # LCMM violation floor (separate from dutch-book eps)
     bregman_projection_enabled: bool = False  # WS4 Layer 2 observe-only diagnostics
+    grok_dependency_enabled: bool = False       # advisory dependency screener (shadow)
+    grok_dependency_interval_s: float = 180.0
     eth_series_enabled: bool = False            # append ETH 5m/15m slugs when listed
     sizing_promotion_gated: bool = True       # Kelly only on promoted buckets (WS3)
     # ---- Learned Selectivity Gate v1 (between decision and execution; PAPER ONLY) ----
@@ -386,7 +392,12 @@ class PulseConfig:
         _series_slugs = tuple(
             s.strip() for s in os.getenv(
                 "PULSE_SERIES_SLUGS",
+                "btc-up-or-down-5m,btc-up-or-down-15m").split(",") if s.strip())
+        _dir_series = tuple(
+            s.strip() for s in os.getenv(
+                "PULSE_DIRECTIONAL_SERIES_SLUGS",
                 "btc-up-or-down-15m").split(",") if s.strip())
+        _arb_eps = _envf("PULSE_ARB_EPSILON", 0.05)
         if str(os.getenv("PULSE_ETH_SERIES_ENABLED", "0")).strip().lower() in (
                 "1", "true", "yes", "on"):
             _series_slugs = tuple(dict.fromkeys(
@@ -552,7 +563,9 @@ class PulseConfig:
             arbitrage_enabled=str(os.getenv("PULSE_ARB_ENABLED", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
             arb_fees=_envf("PULSE_ARB_FEES", 0.0),
-            arb_epsilon=_envf("PULSE_ARB_EPSILON", 0.05),
+            arb_epsilon=_arb_eps,
+            arb_epsilon_5m=_envf("PULSE_ARB_EPSILON_5M", _arb_eps),
+            arb_epsilon_15m=_envf("PULSE_ARB_EPSILON_15M", min(_arb_eps, 0.03)),
             arb_min_profit_usd=_envf("PULSE_ARB_MIN_PROFIT_USD", 0.0),
             arb_size_usd=_envf("PULSE_ARB_SIZE_USD", 100.0),
             arb_max_usd=_envf("PULSE_ARB_MAX_USD", 300.0),
@@ -573,6 +586,7 @@ class PulseConfig:
             directional_up_restrictions_enabled=str(
                 os.getenv("PULSE_DIRECTIONAL_UP_RESTRICTIONS_ENABLED", "1")).strip().lower()
             in ("1", "true", "yes", "on"),
+            directional_series_slugs=_dir_series,
             primary_edge_source=str(os.getenv("PULSE_PRIMARY_EDGE_SOURCE", "arbitrage")).strip()
             or "arbitrage",
             dependency_arb_enabled=str(os.getenv("PULSE_DEPENDENCY_ARB_ENABLED", "1"))
@@ -580,10 +594,14 @@ class PulseConfig:
             dependency_arb_execute_enabled=str(os.getenv("PULSE_DEPENDENCY_ARB_EXECUTE", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
             dependency_arb_max_usd=_envf("PULSE_DEPENDENCY_ARB_MAX_USD", 50.0),
+            dependency_arb_epsilon=_envf("PULSE_DEPENDENCY_ARB_EPSILON", 0.02),
             bregman_projection_enabled=str(os.getenv("PULSE_BREGMAN_PROJECTION_ENABLED", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
             eth_series_enabled=str(os.getenv("PULSE_ETH_SERIES_ENABLED", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
+            grok_dependency_enabled=str(os.getenv("PULSE_GROK_DEPENDENCY_ENABLED", "0"))
+            .strip().lower() in ("1", "true", "yes", "on"),
+            grok_dependency_interval_s=_envf("PULSE_GROK_DEPENDENCY_INTERVAL_S", 180.0),
             sizing_promotion_gated=str(os.getenv("PULSE_SIZING_PROMOTION_GATED", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
             selectivity_gate_enabled=str(os.getenv("PULSE_SELECTIVITY_GATE_ENABLED", "1"))
@@ -1016,6 +1034,7 @@ class PulseEngine:
         self.grok_predictor = None
         self.grok_decider = None
         self.grok_news = None
+        self.grok_dep_screener = None
         self._grok_pending: list = []             # pending decision grades (decision_id/price0/close)
         self._verifier_pending: list = []        # pending verifier counterfactual grades at window close
         self._recent_windows: list = []           # rolling recent BTC 5m window outcomes (for Grok)
@@ -1031,6 +1050,7 @@ class PulseEngine:
             any_grok = (bool(self.cfg.grok_overlay_enabled)
                         or bool(self.cfg.grok_signal_analyst_enabled)
                         or bool(self.cfg.grok_signal_predictor_enabled)
+                        or bool(self.cfg.grok_dependency_enabled)
                         or decider_on)
             if any_grok and xai_key():
                 self.grok_budget = GrokBudget(
@@ -1040,7 +1060,8 @@ class PulseEngine:
                                         "analyst": self.cfg.grok_analyst_max_calls_per_hour,
                                         "overlay": self.cfg.grok_overlay_max_calls_per_hour,
                                         "decider": self.cfg.grok_decider_max_calls_per_hour,
-                                        "news": 30})
+                                        "news": 30,
+                                        "dependency": 8})
             if bool(self.cfg.grok_overlay_enabled) and xai_key():
                 from engine.pulse.overlay import GrokEventOverlay
                 self.overlay = GrokEventOverlay(
@@ -1077,10 +1098,16 @@ class PulseEngine:
                     daily_loss_cap_usd=self.cfg.grok_decider_daily_loss_cap_usd,
                     max_latency_s=self.cfg.grok_decider_max_latency_s,
                     cooldown_s=self.cfg.grok_decider_cooldown_s).start()
+            if bool(self.cfg.grok_dependency_enabled) and xai_key():
+                from engine.pulse.grok_dependency import GrokDependencyScreener
+                self.grok_dep_screener = GrokDependencyScreener(
+                    windows_fn=lambda: self.market.active_windows(),
+                    budget=self.grok_budget,
+                    interval_s=self.cfg.grok_dependency_interval_s).start()
         except Exception:  # noqa: BLE001 — Grok never blocks startup
             logger.exception("grok init failed; continuing as pure quant")
             self.grok_budget = self.overlay = self.grok_analyst = self.grok_predictor = None
-            self.grok_decider = self.grok_news = None
+            self.grok_decider = self.grok_news = self.grok_dep_screener = None
         # ---- #2 compounding lessons + #3 loop registry ----
         from engine.pulse.lessons import LessonsBook
         from engine.pulse.loops import LoopRegistry
@@ -1539,6 +1566,9 @@ class PulseEngine:
             # directional strategy can be disabled (arb runs standalone) — Loop-Eng scope lock
             if not self.cfg.directional_enabled:
                 _finalize(dr, "skipped", reason="directional_disabled")
+                continue
+            if not self._directional_series_allowed(w):
+                _finalize(dr, "skipped", reason="directional_series_not_allowed")
                 continue
             if self.stop_monitor.is_halted("directional"):
                 _finalize(dr, "skipped", reason="directional_stop_halted")
@@ -3513,6 +3543,8 @@ class PulseEngine:
                 2),
             "open_exposure_usd": round(self._directional_open_exposure(), 2),
             "block_up_until_promoted": bool(self.cfg.directional_block_up_until_promoted),
+            "directional_series_slugs": list(self.cfg.directional_series_slugs),
+            "arb_series_slugs": list(self.cfg.pulse_series_slugs),
             "research_auto_apply": bool(self.cfg.research_auto_apply),
             "research_forbid_size_increase": bool(self.cfg.research_forbid_size_increase),
             "up_promoted": self._up_direction_promoted(),
@@ -3769,6 +3801,19 @@ class PulseEngine:
                    for p in self.arb_ledger.positions.values()
                    if p.get("status") == "open")
 
+    def _directional_series_allowed(self, w) -> bool:
+        """Directional trades only on configured series (arb/dependency still scan all)."""
+        allowed = tuple(self.cfg.directional_series_slugs or ())
+        if not allowed:
+            return True
+        return str(getattr(w, "series_slug", "") or "") in allowed
+
+    def _arb_epsilon_for(self, w) -> float:
+        ws = int(getattr(w, "window_seconds", 0) or 0)
+        if ws >= 900:
+            return float(self.cfg.arb_epsilon_15m)
+        return float(self.cfg.arb_epsilon_5m)
+
     def _scan_arbitrage_all_windows(self, windows: list, now: float) -> None:
         """ARB-FIRST pass: scan every open window (5m+15m) without directional vol/snapshot gates."""
         if self.arb_ledger is None or self.stop_monitor.is_halted("arbitrage"):
@@ -3789,9 +3834,10 @@ class PulseEngine:
             max_usd = min(float(self.cfg.arb_max_usd), room * 0.5) if room > 0 else 0.0
             if max_usd <= 0:
                 continue
+            window_eps = self._arb_epsilon_for(w)
             _arb_kw = dict(
                 size_usd=self.cfg.arb_size_usd, fees=self.cfg.arb_fees,
-                epsilon=self.cfg.arb_epsilon,
+                epsilon=window_eps,
                 max_depth_consume_frac=self.cfg.exec_max_depth_consume_frac,
                 tick_size=w.tick_size, now=now, max_book_age_s=self.cfg.exec_max_book_age_s,
                 min_profit_usd=self.cfg.arb_min_profit_usd, max_usd=max_usd,
@@ -3806,7 +3852,7 @@ class PulseEngine:
                         opp = detect_arbitrage(w.up_book, w.down_book, **{**_arb_kw,
                                                                             "max_usd": shrink})
             self.arb_ledger.record_scan(
-                opp, near_miss_eps=max(0.02, self.cfg.arb_epsilon),
+                opp, near_miss_eps=max(0.02, window_eps),
                 window_key=w.event_id, series_label=getattr(w, "series_label", None))
             if opp is None:
                 continue
@@ -3839,14 +3885,17 @@ class PulseEngine:
         from engine.pulse.grok_dependency import validate_grok_proposals
 
         graph = MarketGraph().build_from_windows(open_w)
-        grok_props = list(getattr(self, "_grok_dependency_proposals", None) or [])
+        grok_props = []
+        if self.grok_dep_screener is not None:
+            grok_props = list(self.grok_dep_screener.latest_proposals() or [])
+        grok_props = grok_props or list(getattr(self, "_grok_dependency_proposals", None) or [])
         if grok_props:
             graph.add_grok_proposals(grok_props)
         self._arb_graph_report = graph.report()
         self._grok_dependency_report = validate_grok_proposals(
             grok_props, windows_by_id={w.event_id: w for w in open_w})
 
-        eps = max(0.02, self.cfg.arb_epsilon)
+        eps = max(0.01, float(self.cfg.dependency_arb_epsilon))
         violations = scan_windows(
             open_w, epsilon=eps, max_usd=self.cfg.dependency_arb_max_usd,
             vwap_enrich=True)
@@ -4225,6 +4274,25 @@ class PulseEngine:
                               else {"enabled": False}),
             "arbitrage": (self.arb_ledger.report() if self.arb_ledger is not None
                           else {"enabled": False}),
+            "dependency_arbitrage": (self.dep_arb_ledger.report()
+                                     if self.dep_arb_ledger is not None
+                                     else {"enabled": False}),
+            "arb_graph": getattr(self, "_arb_graph_report", None) or {"nodes": 0},
+            "grok_dependency": getattr(self, "_grok_dependency_report", None) or {
+                "dependency_proposals": 0},
+            "profit_discovery": self._profit_discovery_status(),
+            "five_x_improvement": self._profit_discovery_status(),
+            "directional_risk": {
+                "max_bankroll_frac": self.cfg.directional_max_bankroll_frac,
+                "bankroll_cap_usd": round(
+                    float(self.cfg.starting_capital_usd)
+                    * float(self.cfg.directional_max_bankroll_frac), 2),
+                "open_exposure_usd": round(self._directional_open_exposure(), 2),
+                "block_up_until_promoted": bool(self.cfg.directional_block_up_until_promoted),
+                "directional_series_slugs": list(self.cfg.directional_series_slugs),
+                "arb_series_slugs": list(self.cfg.pulse_series_slugs),
+                "up_promoted": self._up_direction_promoted(),
+            },
             "directional_allowlist": {
                 "enabled": bool(self.cfg.directional_require_winning_bucket),
                 "explore_rate": self.cfg.directional_explore_rate,
@@ -4317,8 +4385,9 @@ class PulseEngine:
                 from engine.pulse.word_report import build_word_report
                 st = self.status()
                 led = self.ledger.to_dict()
-                (self._data_dir / "report.md").write_text(
-                    build_full_report_md(lr, st, led), encoding="utf-8")
+                full_md = build_full_report_md(lr, st, led)
+                (self._data_dir / "report.md").write_text(full_md, encoding="utf-8")
+                (self._data_dir / "FULL_REPORT.md").write_text(full_md, encoding="utf-8")
                 build_word_report(lr, status=st, ledger=led,
                                   score_history=lr.get("score_history"),
                                   output_path=self._data_dir / "report.docx")

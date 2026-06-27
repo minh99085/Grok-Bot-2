@@ -142,6 +142,58 @@ def test_arb_global_open_cap_limits_second_window(tmp_path):
     assert arb["executed"] == 1
 
 
+def test_directional_series_gate_blocks_5m(tmp_path):
+    t0 = 10_000_000.0
+    w5 = PulseWindow(event_id="e5", market_id="m5", slug="s5", title="5m",
+                     open_ts=t0, close_ts=t0 + 300, up_token_id="U5", down_token_id="D5",
+                     series_slug=SERIES_SLUG_5M, window_seconds=300, series_label="5m")
+    w15 = PulseWindow(event_id="e15", market_id="m15", slug="s15", title="15m",
+                      open_ts=t0, close_ts=t0 + 900, up_token_id="U15", down_token_id="D15",
+                      series_slug=SERIES_SLUG_15M, window_seconds=900, series_label="15m")
+    eng, t0 = _engine(
+        tmp_path, _MultiArbMkt([w5, w15]),
+        directional_series_slugs=(SERIES_SLUG_15M,),
+        arbitrage_enabled=False,
+    )
+    assert eng._directional_series_allowed(w5) is False
+    assert eng._directional_series_allowed(w15) is True
+    eng.tick(now=t0 + 5)
+    risk = eng.light_report()["directional_risk"]
+    assert SERIES_SLUG_15M in risk["directional_series_slugs"]
+    assert len(risk.get("arb_series_slugs") or []) >= 1
+
+
+def test_status_includes_profit_discovery(tmp_path):
+    t0 = 10_000_000.0
+    w15 = PulseWindow(event_id="e15", market_id="m15", slug="s15", title="15m",
+                      open_ts=t0, close_ts=t0 + 900, up_token_id="U15", down_token_id="D15",
+                      series_slug=SERIES_SLUG_15M, window_seconds=900, series_label="15m")
+    eng, t0 = _engine(tmp_path, _MultiArbMkt([w15]), directional_enabled=False)
+    eng.tick(now=t0 + 5)
+    st = eng.status()
+    assert "profit_discovery" in st
+    assert st["profit_discovery"]["five_x_improvement_status"] in ("proven", "not_proven_yet")
+    assert "dependency_arbitrage" in st
+
+
+def test_arb_near_miss_residual_buckets(tmp_path):
+    t0 = 10_000_000.0
+    w = PulseWindow(event_id="e1", market_id="m1", slug="s", title="BTC",
+                    open_ts=t0, close_ts=t0 + 300, up_token_id="U", down_token_id="D",
+                    series_slug=SERIES_SLUG_5M, window_seconds=300, series_label="5m")
+    eng, t0 = _engine(
+        tmp_path, _MultiArbMkt([w]),
+        directional_enabled=False,
+        arb_epsilon_5m=0.05,
+        arb_nonatomic_enabled=False,
+    )
+    for i in range(5):
+        eng.tick(now=t0 + i)
+    arb = eng.status()["arbitrage"]
+    assert arb["arb_scan_count"] >= 1
+    assert "near_miss_residual_buckets" in arb
+
+
 def test_directional_bankroll_cap_in_report(tmp_path):
     t0 = 10_000_000.0
     w = PulseWindow(event_id="e1", market_id="m1", slug="s", title="BTC",

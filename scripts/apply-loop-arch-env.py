@@ -82,8 +82,13 @@ UPDATES = {
     "PULSE_BASELINE_COHORT_15M_TTC_MIN_S": "120",
     "PULSE_BASELINE_COHORT_15M_TTC_MAX_S": "240",
     "PULSE_BASELINE_UP_TV_GATE_ENABLED": "1",
-    # 15m only — 5m directional bleed stopped (user request 2026-06-26).
-    "PULSE_SERIES_SLUGS": "btc-up-or-down-15m",
+    # Arb + dependency scan 5m+15m; directional gated to 15m only (series split).
+    "PULSE_SERIES_SLUGS": "btc-up-or-down-5m,btc-up-or-down-15m",
+    "PULSE_DIRECTIONAL_SERIES_SLUGS": "btc-up-or-down-15m",
+    "PULSE_ARB_EPSILON_15M": "0.03",
+    "PULSE_DEPENDENCY_ARB_EPSILON": "0.02",
+    "PULSE_GROK_DEPENDENCY_ENABLED": "1",
+    "PULSE_GROK_DEPENDENCY_INTERVAL_S": "180",
     # Profit-discovery Phase 1–2: arb-first, stop directional bleed.
     "PULSE_ARB_EPSILON": "0.05",
     "PULSE_ARB_MAX_USD": "300",

@@ -104,3 +104,116 @@ Output JSON: {"proposals": [{"constraint_type": "nested_implication", "parent_wi
 "child_window_keys": ["..."], "description": "..."}]}
 Rules: nested_implication only when a shorter window is logically nested inside a longer window.
 Do NOT propose trades. Do NOT invent window ids not in the input list."""
+
+
+def _build_dependency_prompt(windows: list) -> str:
+    rows = []
+    for w in windows or []:
+        eid = str(getattr(w, "event_id", "") or "")
+        if not eid:
+            continue
+        rows.append({
+            "event_id": eid,
+            "title": str(getattr(w, "title", "") or "")[:120],
+            "series_label": str(getattr(w, "series_label", "") or ""),
+            "window_seconds": int(getattr(w, "window_seconds", 0) or 0),
+            "open_ts": float(getattr(w, "open_ts", 0) or 0),
+            "close_ts": float(getattr(w, "close_ts", 0) or 0),
+        })
+    if not rows:
+        return ""
+    import json as _json
+    return GROK_DEPENDENCY_PROMPT + "\n\nWindows:\n" + _json.dumps(rows, indent=1)
+
+
+def make_dependency_screen_fn(*, model: str = "grok-4.3", timeout_s: float = 20.0):
+    """Build a callable ``(windows) -> list[dict]`` for the dependency screener."""
+    from engine.pulse.grok_intel import _grok_chat
+    box: dict = {}
+
+    def _screen(windows: list) -> list:
+        prompt = _build_dependency_prompt(windows)
+        if not prompt:
+            return []
+        raw = _grok_chat(prompt, model=model, timeout_s=timeout_s, box=box)
+        return parse_grok_dependency_response(raw)
+    return _screen
+
+
+class GrokDependencyScreener:
+    """Periodic Grok dependency proposal worker (ADVISORY ONLY — never authorizes trades)."""
+
+    def __init__(self, *, windows_fn, screen_fn=None, budget=None, interval_s: float = 180.0,
+                 max_age_s: float = 600.0):
+        self._windows_fn = windows_fn
+        self._fn = screen_fn if screen_fn is not None else make_dependency_screen_fn()
+        self._budget = budget
+        self.interval_s = max(60.0, float(interval_s))
+        self.max_age_s = float(max_age_s)
+        self._lock = __import__("threading").Lock()
+        self._proposals: list = []
+        self._ts = 0.0
+        self.calls = 0
+        self.errors = 0
+        self.skipped_budget = 0
+        self._stop = __import__("threading").Event()
+        self._thread = None
+
+    def refresh(self) -> list:
+        if self._budget is not None and not self._budget.try_spend("dependency"):
+            self.skipped_budget += 1
+            return []
+        windows = []
+        try:
+            windows = list(self._windows_fn() or [])
+        except Exception:  # noqa: BLE001
+            windows = []
+        props = []
+        try:
+            props = list(self._fn(windows) or [])
+        except Exception:  # noqa: BLE001
+            props = []
+        if not props:
+            self.errors += 1
+        else:
+            self.calls += 1
+            with self._lock:
+                self._proposals, self._ts = props, __import__("time").time()
+        return props
+
+    def latest_proposals(self) -> list:
+        with self._lock:
+            if not self._proposals or (__import__("time").time() - self._ts) > self.max_age_s:
+                return []
+            return list(self._proposals)
+
+    def _worker(self) -> None:
+        self._stop.wait(min(self.interval_s, 15.0))
+        while not self._stop.is_set():
+            try:
+                self.refresh()
+            except Exception:  # noqa: BLE001
+                pass
+            self._stop.wait(self.interval_s)
+
+    def start(self) -> "GrokDependencyScreener":
+        import threading
+        if self._thread is None or not self._thread.is_alive():
+            self._stop.clear()
+            self._thread = threading.Thread(
+                target=self._worker, name="grok-dependency-screener", daemon=True)
+            self._thread.start()
+        return self
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def report(self) -> dict:
+        with self._lock:
+            age = round(__import__("time").time() - self._ts, 1) if self._ts else None
+            n = len(self._proposals)
+        return {
+            "enabled": True, "observe_only": True, "affects_trading": False,
+            "calls": self.calls, "errors": self.errors, "skipped_budget": self.skipped_budget,
+            "proposals_cached": n, "age_s": age, "interval_s": self.interval_s,
+        }

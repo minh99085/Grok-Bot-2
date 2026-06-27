@@ -90,12 +90,12 @@ def enrich_vwap_actionable(
         violation.actionable = False
         violation.reason = val_reason
         return violation
-    trade = try_execute_nested_implication(
+    trade, fail_reason = try_execute_nested_implication(
         parent, child, violation, max_usd=max_usd, epsilon=epsilon,
-        capture_frac=capture_frac)
+        capture_frac=capture_frac, return_reason=True)
     if trade is None or float(trade.get("expected_profit_usd") or 0.0) <= 0:
         violation.actionable = False
-        violation.reason = "vwap_not_executable"
+        violation.reason = fail_reason or "vwap_not_executable"
         return violation
     violation.actionable = True
     violation.reason = "vwap_executable"
@@ -165,27 +165,39 @@ def try_execute_nested_implication(
     max_usd: float = 50.0,
     epsilon: float = 0.02,
     capture_frac: float = 0.5,
+    return_reason: bool = False,
 ) -> Optional[dict]:
     """Paper BUY parent UP when nested implication violated (parent UP underpriced vs child).
 
     Conservative paper model: expected edge = violation_magnitude * shares * capture_frac,
     booked at parent window close. Deterministic validator must pass first.
     """
+    fail = "vwap_not_executable"
+
+    def _ret(trade: Optional[dict], reason: str = "ok"):
+        if return_reason:
+            return trade, (reason if trade is None else "ok")
+        return trade
+
     ok, reason = validate_violation(violation)
     if not ok:
-        return None
+        return _ret(None, reason)
     book = getattr(parent, "up_book", None)
     if book is None or not getattr(book, "asks", None):
-        return None
+        return _ret(None, "missing_parent_book")
     vwap, spent, shares, full = vwap_fill(book.asks, float(max_usd))
-    if vwap is None or not full or shares <= 0:
-        return None
+    if vwap is None:
+        return _ret(None, "vwap_fill_failed")
+    if not full:
+        return _ret(None, "partial_fill")
+    if shares <= 0:
+        return _ret(None, "zero_shares")
     if violation.violation_magnitude < float(epsilon):
-        return None
+        return _ret(None, "below_epsilon")
     expected = round(shares * violation.violation_magnitude * float(capture_frac), 6)
     if expected <= 0:
-        return None
-    return {
+        return _ret(None, "zero_expected_profit")
+    trade = {
         "constraint_type": violation.constraint_type,
         "parent_window_key": str(parent.event_id),
         "child_window_key": str(child.event_id),
@@ -198,6 +210,7 @@ def try_execute_nested_implication(
         "violation_magnitude": violation.violation_magnitude,
         "reason": "lcmm_nested_implication",
     }
+    return _ret(trade, "ok")
 
 
 class DependencyArbLedger:
@@ -214,6 +227,8 @@ class DependencyArbLedger:
         self.last_violations: list = []
         self.positions: dict = {}
         self.rejected_invalid = 0
+        self.rejected_by_reason: dict = {}
+        self.mid_only_violations = 0
 
     def record_scan(self, violations: list) -> None:
         self.scans += 1
@@ -222,6 +237,16 @@ class DependencyArbLedger:
         self.violations_detected += len(self.last_violations)
         self.actionable_detected += sum(
             1 for v in (violations or []) if bool(getattr(v, "actionable", False)))
+        for v in (violations or []):
+            actionable = bool(getattr(v, "actionable", False))
+            reason = str(getattr(v, "reason", "") or "unknown")
+            if actionable:
+                continue
+            if reason == "detected":
+                self.mid_only_violations += 1
+                reason = "mid_only_pending_vwap"
+            self.rejected_by_reason[reason] = (
+                int(self.rejected_by_reason.get(reason, 0) or 0) + 1)
 
     def has_open(self, parent_key: str) -> bool:
         return parent_key in self.positions
@@ -254,6 +279,8 @@ class DependencyArbLedger:
                 "scans": self.scans, "violations_detected": self.violations_detected,
                 "actionable_detected": int(getattr(self, "actionable_detected", 0) or 0),
                 "rejected_invalid": self.rejected_invalid,
+                "rejected_by_reason": dict(self.rejected_by_reason),
+                "mid_only_violations": int(getattr(self, "mid_only_violations", 0) or 0),
                 "executed": self.executed, "settled": self.settled,
                 "open": sum(1 for p in self.positions.values() if p.get("status") == "open"),
                 "realized_profit_usd": round(self.realized_profit_usd, 4),
@@ -266,6 +293,8 @@ class DependencyArbLedger:
         return {"execute_enabled": self.execute_enabled, "scans": self.scans,
                 "violations_detected": self.violations_detected,
                 "rejected_invalid": self.rejected_invalid,
+                "rejected_by_reason": dict(self.rejected_by_reason),
+                "mid_only_violations": int(getattr(self, "mid_only_violations", 0) or 0),
                 "executed": self.executed, "settled": self.settled,
                 "realized_profit_usd": self.realized_profit_usd,
                 "last_violations": self.last_violations,
@@ -278,6 +307,8 @@ class DependencyArbLedger:
         self.scans = int(data.get("scans", 0) or 0)
         self.violations_detected = int(data.get("violations_detected", 0) or 0)
         self.rejected_invalid = int(data.get("rejected_invalid", 0) or 0)
+        self.rejected_by_reason = dict(data.get("rejected_by_reason") or {})
+        self.mid_only_violations = int(data.get("mid_only_violations", 0) or 0)
         self.executed = int(data.get("executed", 0) or 0)
         self.settled = int(data.get("settled", 0) or 0)
         self.realized_profit_usd = float(data.get("realized_profit_usd", 0.0) or 0.0)
