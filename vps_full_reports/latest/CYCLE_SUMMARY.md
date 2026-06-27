@@ -1,13 +1,13 @@
 # Bot cycle summary (plain English)
 
-_Updated: 2026-06-27 12:33 UTC_
+_Updated: 2026-06-27 13:33 UTC_
 
 ## Last cycle
 
 | | |
 |---|---|
 | **Cycle #** | 25 |
-| **Checked at** | 2026-06-27 10:35 UTC |
+| **Checked at** | 2026-06-27 12:33 UTC |
 | **Result** | **issues** |
 | **What it means** | Issues found — UP trades still lose money. More UP blocks may have been added. |
 | **Next check after** | 2026-06-27 11:35 UTC |
@@ -43,8 +43,8 @@ _Updated: 2026-06-27 12:33 UTC_
 
 ### TradingView (INDEX:BTCUSD)
 
-- Alerts received: **342**
-- 5-chart trend: **single_tf** (1/3 fresh)
+- Alerts received: **378**
+- 5-chart trend: **confirmed_up_3tf** (3/3 fresh)
 
 ## Quick verdict
 
