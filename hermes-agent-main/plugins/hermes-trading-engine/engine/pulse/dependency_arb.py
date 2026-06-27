@@ -303,7 +303,7 @@ class DependencyArbLedger:
     def load_state(self, data: dict) -> None:
         if not data:
             return
-        self.execute_enabled = bool(data.get("execute_enabled", self.execute_enabled))
+        # execute_enabled is set from PulseConfig after load — do not restore from disk.
         self.scans = int(data.get("scans", 0) or 0)
         self.violations_detected = int(data.get("violations_detected", 0) or 0)
         self.rejected_invalid = int(data.get("rejected_invalid", 0) or 0)

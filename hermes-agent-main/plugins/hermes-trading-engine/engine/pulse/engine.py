@@ -1314,6 +1314,9 @@ class PulseEngine:
             self.arb_ledger.load_state(acct.get("arb_ledger") or {})
         if self.dep_arb_ledger is not None:
             self.dep_arb_ledger.load_state(acct.get("dep_arb_ledger") or {})
+            # Config is authoritative — persisted execute flag must not block env updates.
+            self.dep_arb_ledger.execute_enabled = bool(
+                self.cfg.dependency_arb_execute_enabled)
         self._allowlist_explored = int(acct.get("allowlist_explored", 0) or 0)
         self._allowlist_blocked = int(acct.get("allowlist_blocked", 0) or 0)
         # restore research avoid-rules, but RE-VALIDATE each against current evidence (drops legacy
