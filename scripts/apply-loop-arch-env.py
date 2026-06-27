@@ -44,8 +44,7 @@ UPDATES = {
     "PULSE_TV_DOWN_BIAS_BLOCK_UP_LOW_CONVICTION": "1",
     "PULSE_TV_DOWN_BIAS_UP_MIN_CONVICTION": "0.40",
     "PULSE_LATE_WINDOW_ENTRY": "0",
-    # Unfreeze baseline-path / allowlist cold-start (Grok follow bypasses most of these).
-    # Must exceed scaled cohort max (15m: 240*3=720). Coupling auto-clamps if too low.
+    # Must exceed scaled cohort max (15m: 220*3+1=661). Coupling auto-clamps if too low.
     "PULSE_TV_CONTEXT_MAX_TTC_S": "900",
     "PULSE_TV_CONTEXT_EXPLORATION_RATE": "0",
     "PULSE_TV_DOWN_BIAS_EXPLORE_RATE": "0",
@@ -60,10 +59,13 @@ UPDATES = {
     "PULSE_MAX_OPEN_LAG_S": "120",
     # Stop halt needs >30 settled before Wilson test (avoids freeze at exactly min_samples).
     "PULSE_STOP_MIN_SAMPLES": "40",
+    # Sweet-spot entry (1M MC sim): base 160-220s → 15m TTC 480-660s (minutes 4-7).
+    "PULSE_TICK_SECONDS": "60",
+    "PULSE_MAX_PRICE": "0.72",
     # Mispricing stack (quant path only; Grok abstain follow disabled).
     "PULSE_MISPRICING_GATE_ENABLED": "1",
-    "PULSE_MISPRICING_TTC_MIN_S": "90",
-    "PULSE_MISPRICING_TTC_MAX_S": "240",
+    "PULSE_MISPRICING_TTC_MIN_S": "160",
+    "PULSE_MISPRICING_TTC_MAX_S": "220",
     "PULSE_MISPRICING_REQUIRE_CONFIRMED": "0",
     "PULSE_MISPRICING_REQUIRE_STALE_DOWN": "1",
     "PULSE_MISPRICING_MIN_EXECUTABLE_MARGIN": "0.02",
@@ -72,15 +74,15 @@ UPDATES = {
     "PULSE_EDGE_TTC_GATE_ENABLED": "1",
     "PULSE_CEX_LEAD_MIN_EDGE_VS_MARKET": "0.02",
     "PULSE_CEX_LEAD_TV_STRENGTH_THR": "0.72",
-    # Tier 1: proven 180-240s cohort + high edge; block medium-edge bleed.
+    # Tier 1: sweet-spot cohort 160-220s base (15m fast-lane → 480-660s TTC).
     "PULSE_BASELINE_COHORT_GATE_ENABLED": "1",
-    "PULSE_BASELINE_COHORT_TTC_MIN_S": "180",
-    "PULSE_BASELINE_COHORT_TTC_MAX_S": "240",
+    "PULSE_BASELINE_COHORT_TTC_MIN_S": "160",
+    "PULSE_BASELINE_COHORT_TTC_MAX_S": "220",
     "PULSE_BASELINE_COHORT_REQUIRE_HIGH_EDGE": "1",
     "PULSE_BASELINE_COHORT_REQUIRE_STRONG_CEX": "1",
     "PULSE_BASELINE_COHORT_15M_FAST_LANE": "1",
-    "PULSE_BASELINE_COHORT_15M_TTC_MIN_S": "180",
-    "PULSE_BASELINE_COHORT_15M_TTC_MAX_S": "240",
+    "PULSE_BASELINE_COHORT_15M_TTC_MIN_S": "160",
+    "PULSE_BASELINE_COHORT_15M_TTC_MAX_S": "220",
     "PULSE_BASELINE_UP_TV_GATE_ENABLED": "1",
     "PULSE_BASELINE_DOWN_TV_GATE_ENABLED": "1",
     "PULSE_BASELINE_DOWN_BLOCK_BULLISH_RANGE": "1",
@@ -171,6 +173,6 @@ for ln in lines:
         out.append(ln)
 for key, val in remaining.items():
     out.append(f"{key}={val}")
-out.append("# LOOP ENGINE ARCH (2026-06-25): Grok shadow + quant baseline + TV observe-only")
+out.append("# LOOP ENGINE ARCH (2026-06-28): sweet-spot TTC 480-660s + tick 60s + max entry 0.72")
 ENV_PATH.write_text("\n".join(out) + "\n", encoding="utf-8")
 print(f"Wrote {ENV_PATH} ({len(UPDATES)} loop-arch keys)")
