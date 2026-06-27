@@ -110,7 +110,7 @@ table.data tr:hover td{background:rgba(255,255,255,.02)}
 <header>
   <h1>BTC Pulse</h1>
   <span class="tag">Paper only</span>
-  <span class="tag" id="health">Connecting…</span>
+  <span class="tag" id="health">Loading...</span>
   <span class="tag neu" id="meta"></span>
 </header>
 <div class="coupling-banner" id="coupling-banner"></div>
@@ -344,7 +344,7 @@ function setHealth(text,cls){
   h.className='tag'+(cls?' '+cls:'');
 }
 async function tick(){
-  setHealth('Loading…','');
+  setHealth('Loading...','');
   let s,l;
   try{
     [s,l]=await Promise.all([
@@ -502,7 +502,7 @@ async function tick(){
     ['Candidates',eg.candidates],['Fills',eg.accepted,'pos'],['Rejected',eg.rejected_total,'neg'],
     ['Reconciled',eg.reconciled?'yes':'no',eg.reconciled?'pos':'neg']
   ]));
-  const sg=s.learned_selectivity_gate||{},cohort=s.baseline_cohort_gate||{};
+  const sg=s.learned_selectivity_gate||{};
   const mtfG2=(s.tradingview||{}).mtf_gate||{};
   tech.appendChild(kvCard('Gates',[
     ['Green path',cohort.green_path_enabled?'on':'off',cohort.green_path_enabled?'pos':'neu'],
