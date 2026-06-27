@@ -11,7 +11,10 @@ ROOT = Path(__file__).resolve().parents[2]
 LATEST = ROOT / "vps_full_reports" / "latest"
 STATUS = LATEST / "btc_pulse_status.json"
 LIGHT = LATEST / "btc_pulse_light_report.json"
+LEDGER = LATEST / "btc_pulse_ledger.json"
 STATE = Path(__file__).resolve().parent / "state.json"
+STARVATION_MIN_HOURS = 6.0
+STARVATION_MIN_TICKS = 3
 
 
 def _load(path: Path) -> dict:
@@ -111,13 +114,61 @@ def main() -> int:
         issues.append(_issue("reconciliation_broken", "P0", "global_reconciled is false",
                              "fix accounting before tuning gates"))
 
-    wr_target = float(((_load(STATE).get("goals") or {}).get("win_rate_target")) or 0.80)
+    st = _load(STATE)
+    wr_target = float((st.get("goals") or {}).get("win_rate_target") or 0.80)
+    engine_ts = float(data.get("ts") or 0)
+    ticks = int(data.get("ticks") or 0)
+    dir_halted = bool((stop.get("strategies") or {}).get("directional", {}).get("halted"))
+
+    last_entry_ts = 0.0
+    led = _load(LEDGER)
+    for pos in led.get("positions") or []:
+        try:
+            last_entry_ts = max(last_entry_ts, float(pos.get("entry_ts") or pos.get("open_ts") or 0))
+        except (TypeError, ValueError):
+            pass
+    hours_since_trade = ((engine_ts - last_entry_ts) / 3600.0
+                           if (engine_ts and last_entry_ts) else None)
+
+    hist = st.get("history") or []
+    recent_settled = [int((h.get("metrics") or {}).get("settled") or 0) for h in hist[-6:]]
+    settled_flat_streak = 0
+    if recent_settled:
+        cur = recent_settled[-1]
+        for n in reversed(recent_settled):
+            if n == cur:
+                settled_flat_streak += 1
+            else:
+                break
+
+    trade_starvation = False
+    if (not dir_halted and ticks >= STARVATION_MIN_TICKS and hours_since_trade is not None
+            and hours_since_trade >= STARVATION_MIN_HOURS):
+        trade_starvation = True
+        issues.append(_issue(
+            "trade_starvation", "P0",
+            f"no_new_trades_for_h={hours_since_trade:.1f} settled={trades} ticks={ticks}",
+            "ABNORMAL: bot scans but never fills — audit gate stack / relax over-tight blocks; "
+            "do NOT add more WR tighten rules until trades resume"))
+    elif (not dir_halted and ticks >= STARVATION_MIN_TICKS
+          and settled_flat_streak >= 3 and trades > 0):
+        trade_starvation = True
+        issues.append(_issue(
+            "trade_starvation_streak", "P0",
+            f"settled_unchanged_for_{settled_flat_streak}_evals settled={trades} ticks={ticks}",
+            "settled count flat across cycles while bot runs — relax gates or fix deadlock; "
+            "never tighten on stale ledger WR alone"))
+
     if trades >= 10:
+        wr_hint = ("tighten MTF/all-confirm, baseline cohort, DOWN TV blocks; "
+                   "block weak contexts until WR >= 80%")
+        if trade_starvation:
+            wr_hint = ("WR is on stale ledger only — do NOT tighten; fix trade_starvation first "
+                       "(relax gates, check MTF regime vs 3/3 DOWN rule)")
         if wr is not None and float(wr) < wr_target:
             issues.append(_issue("win_rate_below_target", "P1",
                                  f"win_rate={wr} target={wr_target} settled={trades}",
-                                 "tighten MTF/all-confirm, baseline cohort, DOWN TV blocks; "
-                                 "block weak contexts until WR >= 80%"))
+                                 wr_hint))
         if wr is not None and float(wr) < 0.55:
             issues.append(_issue("win_rate_low", "P1", f"win_rate={wr}",
                                  "tighten gates / high-WR profile / block weak UP"))
@@ -171,6 +222,10 @@ def main() -> int:
         "signal_gate": sg.get("enabled"),
         "min_reward_risk": config.get("min_reward_risk"),
         "global_reconciled": reconciled,
+        "ticks": ticks,
+        "hours_since_last_trade": (round(hours_since_trade, 2)
+                                   if hours_since_trade is not None else None),
+        "settled_flat_eval_streak": settled_flat_streak,
     }
 
     out = {
@@ -184,7 +239,6 @@ def main() -> int:
 
     # append to state history
     try:
-        st = _load(STATE)
         st["last_eval_at"] = out["ts"]
         st["last_verdict"] = verdict
         hist = st.setdefault("history", [])

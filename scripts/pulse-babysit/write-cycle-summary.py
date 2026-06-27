@@ -60,6 +60,9 @@ def _verdict_plain(verdict: str | None, issues: list) -> str:
         return "Stopped — serious problem found. Check issues below."
     if v == "deploy":
         return "Changes were deployed to the VPS."
+    if "trade_starvation" in codes or "trade_starvation_streak" in codes:
+        return ("ABNORMAL — bot is running but no new trades for hours. "
+                "Relax over-tight gates; do NOT tighten WR rules on stale ledger.")
     if "up_side_bleed" in codes:
         return "Issues found — UP trades still lose money. More UP blocks may have been added."
     if v == "issues":

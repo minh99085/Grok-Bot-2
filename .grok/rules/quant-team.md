@@ -21,6 +21,8 @@ Never leave GitHub and VPS on different SHAs. Details: `.grok/rules/repo-scope.m
 ## Default loop mindset (each cycle)
 
 1. **Research** — what did the last window of trades teach us? (WR, PF, UP bleed, halt reasons, gate blockers)
+   - If **no new trades for ≥6h** while ticks run → **trade starvation** (P0). Relax gates / audit stack;
+     never tighten on stale ledger WR alone.
 2. **Engineer** — smallest change that tests one hypothesis (≤2 fixes per babysit cycle)
 3. **Trade design** — favor DOWN strength, block weak UP, exploit 180–240s TTC and strong CEX agreement when data supports it
 4. **Discover** — **60-min soak cycles**; inspect, fine-tune, measure, discard losers quickly
