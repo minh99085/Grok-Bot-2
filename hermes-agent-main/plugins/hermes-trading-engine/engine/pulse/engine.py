@@ -58,6 +58,8 @@ def _tv_mtf_confirm_windows(cfg: "PulseConfig") -> dict[str, float]:
         legacy_10m_s=cfg.tradingview_mtf_confirm_window_10m_s,
         legacy_15m_s=cfg.tradingview_mtf_confirm_window_15m_s,
         overrides={
+            "2": cfg.tradingview_mtf_confirm_window_2m_s,
+            "3": cfg.tradingview_mtf_confirm_window_3m_s,
             "4": cfg.tradingview_mtf_confirm_window_4m_s,
             "13": cfg.tradingview_mtf_confirm_window_13m_s,
         },
@@ -370,11 +372,13 @@ class PulseConfig:
     tradingview_webhook_path: str = "/webhooks/tradingview"
     tradingview_max_age_s: float = 90.0
     tradingview_feature_symbol: str = "BTCUSD"   # TV INDEX:BTCUSD — 5m/10m/15m MTF
-    tradingview_mtf_timeframes: tuple = ("5", "10", "15")
+    tradingview_mtf_timeframes: tuple = ("2", "3", "4")
     tradingview_mtf_confirm_window_s: float = 360.0
     tradingview_mtf_confirm_window_10m_s: float = 660.0
     tradingview_mtf_confirm_window_15m_s: float = 960.0
-    tradingview_mtf_confirm_window_4m_s: float = 300.0
+    tradingview_mtf_confirm_window_2m_s: float = 300.0
+    tradingview_mtf_confirm_window_3m_s: float = 450.0
+    tradingview_mtf_confirm_window_4m_s: float = 600.0
     tradingview_mtf_confirm_window_13m_s: float = 840.0
     # Polymarket series to trade (default 15m only; set PULSE_SERIES_SLUGS for multi-series).
     pulse_series_slugs: tuple = (SERIES_SLUG_15M,)
@@ -799,11 +803,13 @@ class PulseConfig:
             tradingview_feature_symbol=normalize_symbol(
                 os.getenv("PULSE_TV_FEATURE_SYMBOL", "BTCUSD") or "BTCUSD") or "BTCUSD",
             tradingview_mtf_timeframes=_parse_tv_mtf_timeframes(
-                os.getenv("PULSE_TV_MTF_TIMEFRAMES", "5,10,15")),
+                os.getenv("PULSE_TV_MTF_TIMEFRAMES", "2,3,4")),
             tradingview_mtf_confirm_window_s=_envf("PULSE_TV_MTF_CONFIRM_WINDOW_S", 360.0),
             tradingview_mtf_confirm_window_10m_s=_envf("PULSE_TV_MTF_CONFIRM_WINDOW_10M_S", 660.0),
             tradingview_mtf_confirm_window_15m_s=_envf("PULSE_TV_MTF_CONFIRM_WINDOW_15M_S", 960.0),
-            tradingview_mtf_confirm_window_4m_s=_envf("PULSE_TV_MTF_CONFIRM_WINDOW_4M_S", 300.0),
+            tradingview_mtf_confirm_window_2m_s=_envf("PULSE_TV_MTF_CONFIRM_WINDOW_2M_S", 300.0),
+            tradingview_mtf_confirm_window_3m_s=_envf("PULSE_TV_MTF_CONFIRM_WINDOW_3M_S", 450.0),
+            tradingview_mtf_confirm_window_4m_s=_envf("PULSE_TV_MTF_CONFIRM_WINDOW_4M_S", 600.0),
             tradingview_mtf_confirm_window_13m_s=_envf("PULSE_TV_MTF_CONFIRM_WINDOW_13M_S", 840.0),
             pulse_series_slugs=_series_slugs,
             tradingview_signal_max_feature_age_s=_envf("PULSE_TV_SIGNAL_MAX_FEATURE_AGE_S", 300.0),

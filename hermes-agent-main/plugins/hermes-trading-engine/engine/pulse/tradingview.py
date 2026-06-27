@@ -73,8 +73,11 @@ def normalize_symbol(raw) -> str:
     return s
 
 
-DEFAULT_MTF_TIMEFRAMES = ("5", "10", "15")
+DEFAULT_MTF_TIMEFRAMES = ("2", "3", "4")
 DEFAULT_MTF_CONFIRM_WINDOWS = {
+    "2": 300.0,
+    "3": 450.0,
+    "4": 600.0,
     "5": 750.0,
     "10": 1500.0,
     "15": 2250.0,
