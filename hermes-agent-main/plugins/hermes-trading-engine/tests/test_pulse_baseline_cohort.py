@@ -299,6 +299,32 @@ def test_down_blocks_single_tf():
     assert not ok and r == "baseline_down_tv_single_tf"
 
 
+def test_15m_fast_lane_allows_medium_edge_when_relaxed():
+    eng = _eng(
+        baseline_cohort_15m_fast_lane=True,
+        baseline_cohort_require_high_edge=False,
+        baseline_cohort_require_strong_cex=False,
+        baseline_down_block_medium_edge=False,
+    )
+    ok, r = eng._baseline_quant_cohort_ok(
+        side="down",
+        esnap=_FakeEsnap(pulse_edge_score_bucket="medium", cex_agreement_bucket="moderate"),
+        ttc_s=600.0,
+        tv_feature={"signal_level": "DOWN_STRONG", "mtf_alignment": "bearish_aligned"},
+        window_seconds=900,
+    )
+    assert ok and r == ""
+
+
+def test_green_path_active_only_15m_down():
+    eng = _eng(green_path_enabled=True, baseline_cohort_15m_fast_lane=True)
+    assert eng._green_path_active(side="down", window_seconds=900)
+    assert not eng._green_path_active(side="down", window_seconds=300)
+    assert not eng._green_path_active(side="up", window_seconds=900)
+    off = _eng(green_path_enabled=False, baseline_cohort_15m_fast_lane=True)
+    assert not off._green_path_active(side="down", window_seconds=900)
+
+
 def test_down_blocks_up_strong_range_top_mixed_mtf():
     eng = _eng()
     ok, r = eng._baseline_quant_cohort_ok(

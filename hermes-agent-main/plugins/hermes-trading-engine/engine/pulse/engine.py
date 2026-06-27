@@ -229,6 +229,8 @@ class PulseConfig:
     baseline_cohort_15m_fast_lane: bool = True
     baseline_cohort_15m_ttc_min_s: float = 160.0
     baseline_cohort_15m_ttc_max_s: float = 220.0
+    # 15m DOWN baseline: cohort + MTF only; skip redundant opinion gates (context/tv/down-bias/late).
+    green_path_enabled: bool = False
     # When Grok abstains, still follow a Wilson-aligned CEX-lead mispricing stack (not coin-flip explore).
     mispricing_follow_on_abstain: bool = False
     mispricing_follow_size_fraction: float = 0.5
@@ -621,6 +623,8 @@ class PulseConfig:
             in ("1", "true", "yes", "on"),
             baseline_cohort_15m_ttc_min_s=_envf("PULSE_BASELINE_COHORT_15M_TTC_MIN_S", 160.0),
             baseline_cohort_15m_ttc_max_s=_envf("PULSE_BASELINE_COHORT_15M_TTC_MAX_S", 220.0),
+            green_path_enabled=str(os.getenv("PULSE_GREEN_PATH_ENABLED", "0"))
+            .strip().lower() in ("1", "true", "yes", "on"),
             mispricing_follow_on_abstain=str(
                 os.getenv("PULSE_MISPRICING_FOLLOW_ON_ABSTAIN", "0")).strip().lower()
             in ("1", "true", "yes", "on"),
@@ -2221,51 +2225,61 @@ class PulseEngine:
                         self.markov.record_terminal(state=cand_state, accepted=False)
                     _finalize(dr, "rejected", reason=up_tv_reason, stage="directional")
                     continue
-            if (not grok_follow and not cex_lead_active and d.side == "down"):
-                down_tv_ok, down_tv_reason = self._baseline_down_tv_context_ok(tv_feature)
-                if not down_tv_ok:
-                    dr.action = RejectAction(stage="directional", reason=down_tv_reason)
-                    if self.markov is not None:
-                        self.markov.record_terminal(state=cand_state, accepted=False)
-                    _finalize(dr, "rejected", reason=down_tv_reason, stage="directional")
-                    continue
+            green_path = False
             if not grok_follow and not cex_lead_active:
-                tv_reason = self._tv_signal_gate(tv_feature, d.side)
-                if tv_reason is not None:
-                    dr.action = RejectAction(stage="directional", reason=tv_reason)
-                    if self.markov is not None:
-                        self.markov.record_terminal(state=cand_state, accepted=False)
-                    _finalize(dr, "rejected", reason=tv_reason, stage="directional")
-                    continue
-                ctx_res = self.tv_context_gate.evaluate(
-                    volume_state=(tv_feature or {}).get("volume_state"),
-                    hurst_regime=(rfeat.hurst_regime if rfeat else None), ttc_s=ttc,
-                    liquidation_spike=(tv_feature or {}).get("liquidation_spike"),
-                    event_blackout=(tv_feature or {}).get("event_blackout"),
-                    grok_event_risk=_grok_news.get("event_risk"))
-                dr.context_gate = {"decision": ctx_res["decision"], "reasons": ctx_res["reasons"]}
-                if ctx_res["decision"] == "block":
-                    dr.action = RejectAction(stage="context_gate", reason=ctx_res["reasons"][0])
-                    if self.markov is not None:
-                        self.markov.record_terminal(state=cand_state, accepted=False)
-                    _finalize(dr, "rejected", reason=ctx_res["reasons"][0], stage="context_gate")
-                    continue
-                context_explored = (ctx_res["decision"] == "explore")
-                db_res = self._down_bias_eval(side=d.side, tv_feature=tv_feature,
-                                              markov_state=cand_state, ttc_s=ttc, esnap=esnap,
-                                              fair_p_up=fair_used,
-                                              zscore_bucket=(rfeat.zscore_bucket if rfeat else None),
-                                              confidence_tier=self._entry_confidence_tier(dr),
-                                              ask_price=d.price)
-                dr.down_bias_gate = {"decision": db_res["decision"], "reasons": db_res["reasons"]}
-                db_block = (db_res["decision"] == "block"
-                            or (d.side == "up" and db_res["decision"] == "explore"))
-                if db_block:
-                    dr.action = RejectAction(stage="down_bias_gate", reason=db_res["reasons"][0])
-                    if self.markov is not None:
-                        self.markov.record_terminal(state=cand_state, accepted=False)
-                    _finalize(dr, "rejected", reason=db_res["reasons"][0], stage="down_bias_gate")
-                    continue
+                green_path = self._green_path_active(
+                    side=d.side,
+                    window_seconds=int(getattr(w, "window_seconds", 300) or 300))
+                if green_path:
+                    dr.green_path = {
+                        "active": True,
+                        "skipped": ["tv_signal", "context", "down_bias", "late_window", "down_tv_dup"],
+                    }
+                elif d.side == "down":
+                    down_tv_ok, down_tv_reason = self._baseline_down_tv_context_ok(tv_feature)
+                    if not down_tv_ok:
+                        dr.action = RejectAction(stage="directional", reason=down_tv_reason)
+                        if self.markov is not None:
+                            self.markov.record_terminal(state=cand_state, accepted=False)
+                        _finalize(dr, "rejected", reason=down_tv_reason, stage="directional")
+                        continue
+                if not green_path:
+                    tv_reason = self._tv_signal_gate(tv_feature, d.side)
+                    if tv_reason is not None:
+                        dr.action = RejectAction(stage="directional", reason=tv_reason)
+                        if self.markov is not None:
+                            self.markov.record_terminal(state=cand_state, accepted=False)
+                        _finalize(dr, "rejected", reason=tv_reason, stage="directional")
+                        continue
+                    ctx_res = self.tv_context_gate.evaluate(
+                        volume_state=(tv_feature or {}).get("volume_state"),
+                        hurst_regime=(rfeat.hurst_regime if rfeat else None), ttc_s=ttc,
+                        liquidation_spike=(tv_feature or {}).get("liquidation_spike"),
+                        event_blackout=(tv_feature or {}).get("event_blackout"),
+                        grok_event_risk=_grok_news.get("event_risk"))
+                    dr.context_gate = {"decision": ctx_res["decision"], "reasons": ctx_res["reasons"]}
+                    if ctx_res["decision"] == "block":
+                        dr.action = RejectAction(stage="context_gate", reason=ctx_res["reasons"][0])
+                        if self.markov is not None:
+                            self.markov.record_terminal(state=cand_state, accepted=False)
+                        _finalize(dr, "rejected", reason=ctx_res["reasons"][0], stage="context_gate")
+                        continue
+                    context_explored = (ctx_res["decision"] == "explore")
+                    db_res = self._down_bias_eval(side=d.side, tv_feature=tv_feature,
+                                                  markov_state=cand_state, ttc_s=ttc, esnap=esnap,
+                                                  fair_p_up=fair_used,
+                                                  zscore_bucket=(rfeat.zscore_bucket if rfeat else None),
+                                                  confidence_tier=self._entry_confidence_tier(dr),
+                                                  ask_price=d.price)
+                    dr.down_bias_gate = {"decision": db_res["decision"], "reasons": db_res["reasons"]}
+                    db_block = (db_res["decision"] == "block"
+                                or (d.side == "up" and db_res["decision"] == "explore"))
+                    if db_block:
+                        dr.action = RejectAction(stage="down_bias_gate", reason=db_res["reasons"][0])
+                        if self.markov is not None:
+                            self.markov.record_terminal(state=cand_state, accepted=False)
+                        _finalize(dr, "rejected", reason=db_res["reasons"][0], stage="down_bias_gate")
+                        continue
                 mtf_res = self.tv_mtf_gate.evaluate(
                     tf_confirm=(tv_feature or {}).get("tf_confirm"),
                     tf_confirm_direction=(tv_feature or {}).get("tf_confirm_direction"),
@@ -2285,27 +2299,30 @@ class PulseEngine:
                         self.markov.record_terminal(state=cand_state, accepted=False)
                     _finalize(dr, "rejected", reason=mtf_res["reasons"][0], stage="mtf_gate")
                     continue
-                lw_res = self.late_window_gate.evaluate(ttc_s=ttc, p_up=fair_used)
-                dr.late_window = {"decision": lw_res["decision"], "reason": lw_res["reason"],
-                                  "conviction": lw_res["conviction"], "late": lw_res["late"],
-                                  "high_conviction": lw_res["high_conviction"]}
-                if lw_res["decision"] == "reject":
-                    dr.action = RejectAction(stage="late_window_gate", reason=lw_res["reason"])
-                    if self.markov is not None:
-                        self.markov.record_terminal(state=cand_state, accepted=False)
-                    _finalize(dr, "rejected", reason=lw_res["reason"], stage="late_window_gate")
-                    continue
-                entry_mode = ("late_window" if (lw_res["late"] and lw_res["high_conviction"])
-                              else "standard")
-                if (self.cfg.directional_up_restrictions_enabled
-                        and entry_mode == "late_window" and d.side == "up"):
-                    dr.action = RejectAction(stage="late_window_gate",
-                                             reason="late_window_up_blocked")
-                    if self.markov is not None:
-                        self.markov.record_terminal(state=cand_state, accepted=False)
-                    _finalize(dr, "rejected", reason="late_window_up_blocked",
-                              stage="late_window_gate")
-                    continue
+                if green_path:
+                    entry_mode = "green_path"
+                else:
+                    lw_res = self.late_window_gate.evaluate(ttc_s=ttc, p_up=fair_used)
+                    dr.late_window = {"decision": lw_res["decision"], "reason": lw_res["reason"],
+                                      "conviction": lw_res["conviction"], "late": lw_res["late"],
+                                      "high_conviction": lw_res["high_conviction"]}
+                    if lw_res["decision"] == "reject":
+                        dr.action = RejectAction(stage="late_window_gate", reason=lw_res["reason"])
+                        if self.markov is not None:
+                            self.markov.record_terminal(state=cand_state, accepted=False)
+                        _finalize(dr, "rejected", reason=lw_res["reason"], stage="late_window_gate")
+                        continue
+                    entry_mode = ("late_window" if (lw_res["late"] and lw_res["high_conviction"])
+                                  else "standard")
+                    if (self.cfg.directional_up_restrictions_enabled
+                            and entry_mode == "late_window" and d.side == "up"):
+                        dr.action = RejectAction(stage="late_window_gate",
+                                                 reason="late_window_up_blocked")
+                        if self.markov is not None:
+                            self.markov.record_terminal(state=cand_state, accepted=False)
+                        _finalize(dr, "rejected", reason="late_window_up_blocked",
+                                  stage="late_window_gate")
+                        continue
             # SAFETY FLOOR (ALL MODES incl. grok-follow): proven-loss selectivity block + probability
             # CALIBRATION. Blocking a statistically-proven losing bucket and de-biasing an OVER-
             # CONFIDENT probability are SAFETY/realism, not directional opinion, so they apply even
@@ -3308,6 +3325,17 @@ class PulseEngine:
             return False
         return True
 
+    def _green_path_active(self, *, side: str, window_seconds: int) -> bool:
+        """15m DOWN baseline quant: cohort + MTF; skip stacked opinion gates."""
+        if not self.cfg.green_path_enabled:
+            return False
+        if side != "down":
+            return False
+        ws = int(window_seconds or 300)
+        if ws < 900:
+            return False
+        return bool(self.cfg.baseline_cohort_15m_fast_lane)
+
     def _baseline_quant_cohort_ok(self, *, side: str, esnap=None, ttc_s: "float | None",
                                   tv_feature: "dict | None",
                                   window_seconds: int = 300,
@@ -3413,8 +3441,10 @@ class PulseEngine:
             "down_block_bb_expansion_down": bool(self.cfg.baseline_down_block_bb_expansion_down),
             "down_mid_entry_band": [self.cfg.baseline_down_mid_entry_min,
                                     self.cfg.baseline_down_mid_entry_max],
+            "green_path_enabled": bool(self.cfg.green_path_enabled),
             "note": ("baseline quant path: 180-240s TTC band (scaled on 15m), high edge + "
-                     "strong CEX; DOWN blocks bullish range-top; UP blocked until promoted"),
+                     "strong CEX; DOWN blocks bullish range-top; UP blocked until promoted; "
+                     "green_path=15m DOWN cohort+MTF only"),
         }
 
     def _entry_confidence_tier(self, dr) -> "str | None":
