@@ -487,6 +487,10 @@ def _cfg(tmp_path):
                        settle_grace_s=0.0, exec_max_depth_consume_frac=0.9,
                        tradingview_secret=SECRET, tradingview_webhook_port=0,
                        tradingview_allowed_symbols=("BTC/USD", "BTCUSD"),
+                       directional_down_only=False,
+                       directional_series_slugs=(),
+                       baseline_cohort_gate_enabled=False,
+                       directional_require_winning_bucket=False,
                        data_dir=str(tmp_path))
 
 
@@ -539,7 +543,12 @@ def _gate_cfg(tmp_path, **over):
                        settle_grace_s=0.0, exec_max_depth_consume_frac=0.9,
                        tradingview_secret=SECRET, tradingview_webhook_port=0,
                        tradingview_allowed_symbols=("BTC/USD", "BTCUSD"),
-                       tradingview_signal_gate_enabled=True, data_dir=str(tmp_path), **over)
+                       tradingview_signal_gate_enabled=True,
+                       directional_down_only=False,
+                       directional_series_slugs=(),
+                       baseline_cohort_gate_enabled=False,
+                       directional_require_winning_bucket=False,
+                       data_dir=str(tmp_path), **over)
 
 
 def _gate_engine(tmp_path):
