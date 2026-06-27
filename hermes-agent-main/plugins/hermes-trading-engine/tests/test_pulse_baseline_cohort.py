@@ -156,6 +156,50 @@ def test_down_blocks_volume_active():
     assert not ok and r == "baseline_down_tv_volume_active"
 
 
+def test_down_blocks_not_stale_divergence():
+    eng = _eng()
+    ok, r = eng._baseline_quant_cohort_ok(
+        side="down",
+        esnap=_FakeEsnap(
+            pulse_edge_score_bucket="high",
+            cex_agreement_bucket="strong",
+            stale_divergence_class="not_stale",
+        ),
+        ttc_s=200.0, tv_feature=None)
+    assert not ok and r == "baseline_down_not_stale"
+    ok, r = eng._baseline_quant_cohort_ok(
+        side="down",
+        esnap=_FakeEsnap(
+            pulse_edge_score_bucket="high",
+            cex_agreement_bucket="strong",
+            stale_divergence_class="already_priced",
+        ),
+        ttc_s=200.0, tv_feature=None)
+    assert ok and r == ""
+
+
+def test_down_blocks_mid_entry_band():
+    eng = _eng()
+    ok, r = eng._baseline_quant_cohort_ok(
+        side="down",
+        esnap=_FakeEsnap(
+            pulse_edge_score_bucket="high",
+            cex_agreement_bucket="strong",
+            stale_divergence_class="already_priced",
+        ),
+        ttc_s=200.0, tv_feature=None, ask_price=0.57)
+    assert not ok and r == "baseline_down_mid_entry_band"
+    ok, r = eng._baseline_quant_cohort_ok(
+        side="down",
+        esnap=_FakeEsnap(
+            pulse_edge_score_bucket="high",
+            cex_agreement_bucket="strong",
+            stale_divergence_class="already_priced",
+        ),
+        ttc_s=200.0, tv_feature=None, ask_price=0.62)
+    assert ok and r == ""
+
+
 def test_down_blocks_up_strong_range_top_mixed_mtf():
     eng = _eng()
     ok, r = eng._baseline_quant_cohort_ok(

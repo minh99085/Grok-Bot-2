@@ -217,6 +217,10 @@ class PulseConfig:
     baseline_down_block_up_strong_bullish: bool = True
     baseline_down_block_volume_active: bool = True
     baseline_down_block_up_strong_range_top: bool = True
+    baseline_down_block_not_stale: bool = True
+    baseline_down_block_mid_entry: bool = True
+    baseline_down_mid_entry_min: float = 0.55
+    baseline_down_mid_entry_max: float = 0.60
     # 15m fast lane: scaled TTC band on 15m windows (proven 180-240s cohort).
     baseline_cohort_15m_fast_lane: bool = True
     baseline_cohort_15m_ttc_min_s: float = 180.0
@@ -584,6 +588,14 @@ class PulseConfig:
             baseline_down_block_up_strong_range_top=str(
                 os.getenv("PULSE_BASELINE_DOWN_BLOCK_UP_STRONG_RANGE_TOP", "1")).strip().lower()
             in ("1", "true", "yes", "on"),
+            baseline_down_block_not_stale=str(
+                os.getenv("PULSE_BASELINE_DOWN_BLOCK_NOT_STALE", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            baseline_down_block_mid_entry=str(
+                os.getenv("PULSE_BASELINE_DOWN_BLOCK_MID_ENTRY", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            baseline_down_mid_entry_min=_envf("PULSE_BASELINE_DOWN_MID_ENTRY_MIN", 0.55),
+            baseline_down_mid_entry_max=_envf("PULSE_BASELINE_DOWN_MID_ENTRY_MAX", 0.60),
             baseline_cohort_15m_fast_lane=str(
                 os.getenv("PULSE_BASELINE_COHORT_15M_FAST_LANE", "1")).strip().lower()
             in ("1", "true", "yes", "on"),
@@ -2144,7 +2156,8 @@ class PulseEngine:
             if not grok_follow and not cex_lead_active:
                 cohort_ok, cohort_reason = self._baseline_quant_cohort_ok(
                     side=d.side, esnap=esnap, ttc_s=ttc, tv_feature=tv_feature,
-                    window_seconds=int(getattr(w, "window_seconds", 300) or 300))
+                    window_seconds=int(getattr(w, "window_seconds", 300) or 300),
+                    ask_price=d.price)
                 if not cohort_ok:
                     self._baseline_cohort_gate_counts[cohort_reason] = (
                         self._baseline_cohort_gate_counts.get(cohort_reason, 0) + 1)
@@ -3258,7 +3271,8 @@ class PulseEngine:
 
     def _baseline_quant_cohort_ok(self, *, side: str, esnap=None, ttc_s: "float | None",
                                   tv_feature: "dict | None",
-                                  window_seconds: int = 300) -> "tuple[bool, str]":
+                                  window_seconds: int = 300,
+                                  ask_price: "float | None" = None) -> "tuple[bool, str]":
         """Tier-1: baseline trades only in high-edge + strong-CEX + scaled TTC band; UP needs TV."""
         if not self.cfg.baseline_cohort_gate_enabled:
             return True, ""
@@ -3305,6 +3319,20 @@ class PulseEngine:
             if not tv_ok:
                 return False, tv_reason
         if side == "down":
+            if self.cfg.baseline_down_block_not_stale:
+                stale = self._edge_snap_field(esnap, "stale_divergence_class")
+                if str(stale or "").strip().lower() == "not_stale":
+                    return False, "baseline_down_not_stale"
+            if self.cfg.baseline_down_block_mid_entry and ask_price is not None:
+                try:
+                    ap = float(ask_price)
+                except (TypeError, ValueError):
+                    ap = None
+                if ap is not None:
+                    lo = float(self.cfg.baseline_down_mid_entry_min)
+                    hi = float(self.cfg.baseline_down_mid_entry_max)
+                    if lo <= ap < hi:
+                        return False, "baseline_down_mid_entry_band"
             down_tv_ok, down_tv_reason = self._baseline_down_tv_context_ok(tv_feature)
             if not down_tv_ok:
                 return False, down_tv_reason
@@ -3334,6 +3362,10 @@ class PulseEngine:
             "down_block_volume_active": bool(self.cfg.baseline_down_block_volume_active),
             "down_block_up_strong_range_top": bool(
                 self.cfg.baseline_down_block_up_strong_range_top),
+            "down_block_not_stale": bool(self.cfg.baseline_down_block_not_stale),
+            "down_block_mid_entry": bool(self.cfg.baseline_down_block_mid_entry),
+            "down_mid_entry_band": [self.cfg.baseline_down_mid_entry_min,
+                                    self.cfg.baseline_down_mid_entry_max],
             "note": ("baseline quant path: 180-240s TTC band (scaled on 15m), high edge + "
                      "strong CEX; DOWN blocks bullish range-top; UP blocked until promoted"),
         }
