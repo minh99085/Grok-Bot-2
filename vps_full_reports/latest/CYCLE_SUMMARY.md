@@ -1,24 +1,23 @@
 # Bot cycle summary (plain English)
 
-_Updated: 2026-06-27 06:33 UTC_
+_Updated: 2026-06-27 06:36 UTC_
 
 ## Last cycle
 
 | | |
 |---|---|
-| **Cycle #** | 22 |
-| **Checked at** | 2026-06-27 05:31 UTC |
+| **Cycle #** | 23 |
+| **Checked at** | 2026-06-27 06:36 UTC |
 | **Result** | **issues** |
 | **What it means** | Issues found — UP trades still lose money. More UP blocks may have been added. |
-| **Next check after** | 2026-06-27 06:31 UTC |
+| **Next check after** | 2026-06-27 07:36 UTC |
 
 **Issues flagged:** win_rate_below_target, profit_factor_low, up_side_bleed
 
 **Fixes applied:**
 
-- 80% WR target: soak cycle 60min; evaluate flags win_rate_below_target at 0.80
-- tighten selectivity: PULSE_MAX_PRICE 0.72->0.65 (recent DOWN losses at 0.65-0.69)
-- stop exploration bleed: PULSE_DIRECTIONAL_EXPLORE_RATE 0.12->0
+- baseline_down: block not_stale divergence (54.5pct WR, -37 PnL, n=66)
+- baseline_down: block mid entry band 0.55-0.60 (36.8pct WR, -31 PnL, n=19)
 
 ## How the bot is doing now
 
