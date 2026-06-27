@@ -329,18 +329,35 @@ function proseCard(title,lines){
   lines.forEach(html=>{const el=$('<p></p>');el.innerHTML=html;p.appendChild(el)});
   return c;
 }
+async function fetchJson(url,timeoutMs=20000){
+  const ctrl=new AbortController();
+  const timer=setTimeout(()=>ctrl.abort(),timeoutMs);
+  try{
+    const r=await fetch(url,{cache:'no-store',signal:ctrl.signal});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    return await r.json();
+  }finally{clearTimeout(timer);}
+}
+function setHealth(text,cls){
+  const h=document.getElementById('health');
+  h.textContent=text;
+  h.className='tag'+(cls?' '+cls:'');
+}
 async function tick(){
+  setHealth('Loading…','');
   let s,l;
   try{
-    s=await (await fetch('/api/polymarket/training/btc_pulse',{cache:'no-store'})).json();
-    l=await (await fetch('/api/polymarket/training/btc_pulse/ledger',{cache:'no-store'})).json();
+    [s,l]=await Promise.all([
+      fetchJson('/api/polymarket/training/btc_pulse'),
+      fetchJson('/api/polymarket/training/btc_pulse/ledger?summary=1'),
+    ]);
   }catch(e){
-    const h=document.getElementById('health');
-    h.textContent='Unreachable';h.className='tag off';return;
+    setHealth(e&&e.name==='AbortError'?'Timed out':'Unreachable','off');
+    return;
   }
-  const h=document.getElementById('health');
-  if(!s.available){h.textContent='No data';h.className='tag off';return}
-  h.textContent='Live';h.className='tag live';
+  try{
+  if(!s.available){setHealth('No data','off');return}
+  setHealth('Live','live');
   const cfg=s.config||{};
   document.getElementById('meta').textContent='Ticks '+s.ticks+' · tick '+f(cfg.tick_seconds,0)+'s · max '+f(cfg.max_price,2)+' · '+new Date().toLocaleTimeString();
 
@@ -512,6 +529,9 @@ async function tick(){
     ]));
   }
 
+  }catch(e){
+    setHealth('Render error','off');
+  }
 }
 tick();setInterval(tick,5000);
 </script>

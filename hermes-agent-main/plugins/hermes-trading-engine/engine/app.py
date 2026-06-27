@@ -15,14 +15,16 @@ import time
 from pathlib import Path
 
 import httpx
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
+from starlette.middleware.gzip import GZipMiddleware
 
 from engine.pulse.dashboard import DASHBOARD_HTML as _DASHBOARD_HTML
 
 logger = logging.getLogger("hte.app")
 
 app = FastAPI(title="Hermes BTC 5-min Pulse (paper)", version="2.0")
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 def _data_dir() -> Path:
@@ -65,18 +67,36 @@ def btc_pulse_status() -> dict:
 
 
 @app.get("/api/polymarket/training/btc_pulse/ledger")
-def btc_pulse_ledger() -> dict:
+def btc_pulse_ledger(summary: bool = Query(False)) -> dict:
     """BTC 5-min pulse PAPER ledger: paper positions + realized P&L."""
     led = _read_json("btc_pulse_ledger.json")
     if not led:
         return {"available": False, "reason": "no pulse ledger yet."}
+    if summary:
+        positions = list(led.get("positions") or [])
+        return {
+            "available": True,
+            "paper_only": led.get("paper_only", True),
+            "stats": led.get("stats") or {},
+            "positions": positions[-12:],
+        }
     return {"available": True, **led}
+
+
+@app.get("/api/polymarket/training/btc_pulse/light")
+def btc_pulse_light() -> dict:
+    """Compact pulse report for quick health checks (written each tick)."""
+    rep = _read_json("btc_pulse_light_report.json")
+    if not rep:
+        return {"available": False, "reason": "no light report yet."}
+    return {"available": True, **rep}
 
 
 @app.get("/api")
 def api_index() -> JSONResponse:
     return JSONResponse({"engine": "btc-5min-pulse", "paper_only": True,
                          "endpoints": ["/api/health", "/api/polymarket/training/btc_pulse",
+                                       "/api/polymarket/training/btc_pulse/light",
                                        "/api/polymarket/training/btc_pulse/ledger",
                                        _tv_webhook_path()]})
 
