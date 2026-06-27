@@ -35,6 +35,33 @@ def test_require_side_align():
     assert "tv_mtf_opposes_side" in g.evaluate(tf_confirm="confirmed_up", side="down")["reasons"]
 
 
+def test_require_all_confirm_blocks_partial_down():
+    g = TradingViewMtfConflictGate(enabled=True, require_all_confirm=True,
+                                   exploration_rate=0.0)
+    assert g.evaluate(tf_confirm="confirmed_down", tf_confirm_mtf="partial_down_mtf",
+                      mtf_count=3, trend_fresh_count=2, side="down")["decision"] == "block"
+    assert g.evaluate(tf_confirm_mtf="confirmed_down_mtf",
+                      mtf_count=3, trend_fresh_count=3, side="down")["decision"] == "pass"
+
+
+def test_require_all_confirm_blocks_fresh_count_below_n():
+    g = TradingViewMtfConflictGate(enabled=True, require_all_confirm=True,
+                                   exploration_rate=0.0)
+    res = g.evaluate(tf_confirm_mtf="confirmed_down_mtf",
+                     mtf_count=3, trend_fresh_count=2, side="down")
+    assert res["decision"] == "block"
+    assert "tv_mtf_fresh_count_below_n" in res["reasons"]
+
+
+def test_require_all_confirm_side_align():
+    g = TradingViewMtfConflictGate(enabled=True, require_all_confirm=True,
+                                   require_side_align=True, exploration_rate=0.0)
+    ok = {"tf_confirm_mtf": "confirmed_down_mtf", "mtf_count": 3,
+          "trend_fresh_count": 3, "side": "down"}
+    assert g.evaluate(**ok)["decision"] == "pass"
+    assert g.evaluate(**{**ok, "side": "up"})["decision"] == "block"
+
+
 def test_disabled_passes():
     g = TradingViewMtfConflictGate(enabled=False)
     assert g.evaluate(tf_confirm="conflict")["decision"] == "pass"
@@ -80,8 +107,8 @@ def _ingest(eng, *, direction, tf, now):
 
 def test_engine_blocks_mtf_conflict(tmp_path):
     eng, t0 = _engine(tmp_path)
-    _ingest(eng, direction="UP", tf="5", now=t0 - 8)
-    _ingest(eng, direction="DOWN", tf="4", now=t0 - 5)
+    _ingest(eng, direction="UP", tf="2", now=t0 - 8)
+    _ingest(eng, direction="DOWN", tf="3", now=t0 - 5)
     _drive(eng, t0)
     assert eng.ledger.trades == 0
     lc = eng.status()["decision_lifecycle"]
@@ -95,7 +122,7 @@ def test_engine_blocks_mtf_conflict(tmp_path):
 def test_default_config_conflict_veto_only(tmp_path):
     """Loop arch default: require_confirm off — single_tf does not block."""
     eng, t0 = _engine(tmp_path)
-    _ingest(eng, direction="DOWN", tf="4", now=t0 - 5)
+    _ingest(eng, direction="DOWN", tf="2", now=t0 - 5)
     _drive(eng, t0)
     mg = eng.status()["tradingview"]["mtf_gate"]
     assert mg["require_confirm"] is False
@@ -106,20 +133,21 @@ def test_default_config_conflict_veto_only(tmp_path):
 
 def test_engine_blocks_without_full_confirm(tmp_path):
     eng, t0 = _engine(tmp_path, tv_mtf_require_confirm=True)
-    _ingest(eng, direction="DOWN", tf="4", now=t0 - 5)
+    _ingest(eng, direction="DOWN", tf="2", now=t0 - 5)
     _drive(eng, t0)
     mg = eng.status()["tradingview"]["mtf_gate"]
     assert mg["blocked"] >= 1
-    assert mg["block_reasons"].get("tv_mtf_single_tf_only", 0) >= 1
+    assert (mg["block_reasons"].get("tv_mtf_single_tf_only", 0) >= 1
+            or mg["block_reasons"].get("tv_mtf_no_fresh_confirm", 0) >= 1)
     if eng.webhook is not None:
         eng.webhook.stop()
 
 
 def test_engine_passes_mtf_confirmed(tmp_path):
-    # side-align tested in unit test; here verify full 4m+5m confirm is not blocked
+    # side-align tested in unit test; here verify full 2m+3m fast-pair confirm is not blocked
     eng, t0 = _engine(tmp_path, tv_mtf_require_side_align=False)
-    _ingest(eng, direction="DOWN", tf="5", now=t0 - 8)
-    _ingest(eng, direction="DOWN", tf="4", now=t0 - 5)
+    _ingest(eng, direction="DOWN", tf="2", now=t0 - 8)
+    _ingest(eng, direction="DOWN", tf="3", now=t0 - 5)
     _drive(eng, t0)
     mg = eng.status()["tradingview"]["mtf_gate"]
     lc = eng.status()["decision_lifecycle"]

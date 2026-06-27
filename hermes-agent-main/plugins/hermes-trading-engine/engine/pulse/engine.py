@@ -324,6 +324,7 @@ class PulseConfig:
     tv_down_bias_up_min_conviction: float = 0.40
     tv_mtf_conflict_gate_enabled: bool = True
     tv_mtf_require_confirm: bool = False   # loop arch: conflict veto only, not MTF trade authority
+    tv_mtf_require_all_confirm: bool = False  # require all MTF TFs (e.g. 2/3/4) agree on direction
     tv_mtf_require_side_align: bool = False
     tv_mtf_conflict_exploration_rate: float = 0.0
     # ---- verifiable stop conditions (agent-independent kill switches; Loop Eng #6) ----
@@ -750,6 +751,8 @@ class PulseConfig:
             .strip().lower() in ("1", "true", "yes", "on"),
             tv_mtf_require_confirm=str(os.getenv("PULSE_TV_MTF_REQUIRE_CONFIRM", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
+            tv_mtf_require_all_confirm=str(os.getenv("PULSE_TV_MTF_REQUIRE_ALL_CONFIRM", "0"))
+            .strip().lower() in ("1", "true", "yes", "on"),
             tv_mtf_require_side_align=str(os.getenv("PULSE_TV_MTF_REQUIRE_SIDE_ALIGN", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
             tv_mtf_conflict_exploration_rate=_envf("PULSE_TV_MTF_CONFLICT_EXPLORE_RATE", 0.0),
@@ -983,6 +986,7 @@ class PulseEngine:
         self.tv_mtf_gate = TradingViewMtfConflictGate(
             enabled=bool(self.cfg.tv_mtf_conflict_gate_enabled),
             require_confirm=bool(self.cfg.tv_mtf_require_confirm),
+            require_all_confirm=bool(self.cfg.tv_mtf_require_all_confirm),
             require_side_align=bool(self.cfg.tv_mtf_require_side_align),
             exploration_rate=self.cfg.tv_mtf_conflict_exploration_rate)
         from engine.pulse.down_stack import DownStackGrader
@@ -2205,6 +2209,9 @@ class PulseEngine:
                 mtf_res = self.tv_mtf_gate.evaluate(
                     tf_confirm=(tv_feature or {}).get("tf_confirm"),
                     tf_confirm_direction=(tv_feature or {}).get("tf_confirm_direction"),
+                    tf_confirm_mtf=(tv_feature or {}).get("tf_confirm_mtf"),
+                    mtf_count=(tv_feature or {}).get("mtf_count"),
+                    trend_fresh_count=(tv_feature or {}).get("trend_fresh_count"),
                     side=d.side)
                 dr.mtf_gate = {"decision": mtf_res["decision"], "reasons": mtf_res["reasons"],
                                "tf_confirm": (tv_feature or {}).get("tf_confirm"),
