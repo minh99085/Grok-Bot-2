@@ -41,14 +41,28 @@ try {
     }
 
     git add -f "vps_full_reports/latest/"
+    git add -f "monitoring/timeline.jsonl" "monitoring/latest-snapshot.json"
+    git add -f "monitoring/technical-grades.json" "monitoring/grades-history.jsonl" "monitoring/TECHNICAL_GRADES.md"
+
     $staged = git diff --cached --name-only
     if (-not $staged) {
         Write-Host "Report unchanged - nothing to commit"
         return
     }
 
+    $grade = "?"
+    $gradePath = Join-Path $RepoRoot "monitoring\technical-grades.json"
+    if (Test-Path $gradePath) {
+        try {
+            $g = Get-Content $gradePath -Raw -Encoding UTF8 | ConvertFrom-Json
+            $grade = $g.composite.grade
+        } catch {
+            Write-Warning "Could not parse technical grades for commit message"
+        }
+    }
+
     $ts = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd HH:mm") + " UTC"
-    $msg = ('chore(reports): VPS full report {0} ({1} settled, WR {2}, PF {3})' -f $ts, $settled, $wr, $pf)
+    $msg = ('chore(reports): VPS full report {0} ({1} settled, WR {2}, PF {3}, grade {4})' -f $ts, $settled, $wr, $pf, $grade)
     git commit -m $msg
 
     if ($SkipPush) {

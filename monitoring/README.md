@@ -8,6 +8,7 @@ Track **design intent** + **live technical state** as the bot evolves.
 |-------|------|--------|
 | **Design** | Architecture, trade authority, locked TV rules | `monitoring/design-manifest.json` |
 | **Timeline** | Compact snapshot every pull (~hourly) | `monitoring/timeline.jsonl` |
+| **Grades** | Technical + report composite scores | `monitoring/technical-grades.json`, `TECHNICAL_GRADES.md` |
 | **Full artifacts** | Complete status/ledger/reports | `vps_full_reports/latest/` |
 
 VPS also keeps `btc_pulse_score_history.json` (graded scores over time).
@@ -19,6 +20,7 @@ cd C:\Users\tieut\Grok-Bot-2
 
 # After babysit pull (automatic if using pull script)
 python scripts\pulse-babysit\record-timeline.py --from-latest
+python scripts\pulse-babysit\grade-technical.py
 
 # Standalone (hits live API)
 python scripts\pulse-babysit\record-timeline.py

@@ -92,6 +92,11 @@ if (Test-Path $timelineScript) {
     python $timelineScript --from-latest
 }
 
+$gradeScript = Join-Path $PSScriptRoot "grade-technical.py"
+if (Test-Path $gradeScript) {
+    python $gradeScript
+}
+
 $pushScript = Join-Path $PSScriptRoot "push-report-to-main.ps1"
 if (-not (Test-Path $pushScript)) {
     Write-Error "Missing push script: $pushScript"
