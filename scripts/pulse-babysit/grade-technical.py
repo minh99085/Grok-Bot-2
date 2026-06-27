@@ -20,7 +20,74 @@ MONITOR = ROOT / "monitoring"
 GRADES_JSON = MONITOR / "technical-grades.json"
 GRADES_HISTORY = MONITOR / "grades-history.jsonl"
 GRADES_MD = MONITOR / "TECHNICAL_GRADES.md"
+REPORT_MD = MONITOR / "TECHNICAL_REPORT.md"
 MANIFEST = MONITOR / "design-manifest.json"
+
+GRADE_MEANINGS = {
+    "A+": "Excellent — operating at or near design intent.",
+    "A": "Strong — minor gaps only.",
+    "B+": "Good — healthy with room to improve.",
+    "B": "Solid infrastructure; trading or signals may lag.",
+    "C+": "Mixed — some systems fine, others need attention.",
+    "C": "Below target — review config and performance.",
+    "D": "Weak — meaningful issues; do not promote to live.",
+    "F": "Failing — fix before trusting results.",
+}
+
+COMPONENT_LABELS = {
+    "return_pct": "Total return",
+    "win_rate": "Win rate",
+    "profit_factor": "Profit factor",
+    "directional_pnl": "Directional PnL",
+    "side_balance": "DOWN vs UP balance",
+    "accounting_integrity": "Ledger reconciliation",
+    "sample_size": "Trade sample size",
+    "readiness": "Promotion readiness",
+    "stop_conditions": "Safety stops",
+    "loops_healthy": "Automation loops",
+    "pipeline_activity": "Candidate pipeline activity",
+    "low_errors": "Grok/decider errors",
+    "tv_aligned_edge": "TV-aligned win edge",
+    "tv_hit_rate": "TV signal hit rate",
+    "tv_alert_flow": "TV alert volume",
+    "grok_accuracy": "Grok direction accuracy",
+    "entry_gates_active": "Entry gates (observe)",
+    "cex_lead_proven": "CEX lead proven",
+    "rtds_health": "Oracle / RTDS feed",
+    "tv_intake": "TradingView intake",
+    "design_compliance": "Design manifest match",
+    "trade_pipeline": "Trade pipeline integrity",
+    "gate_coupling": "Gate funnel balance",
+    "connected": "RTDS connected",
+    "oracle_fresh": "Oracle freshness",
+    "stability": "Reconnect stability",
+    "price_feed": "Price sampler",
+    "observe_only": "TV observe-only lock",
+    "alert_flow": "Valid alert flow",
+    "reject_rate": "Webhook reject rate",
+    "trade_gates_off": "TV trade gates off",
+    "mtf_freshness": "MTF chart freshness",
+    "series_15m": "15m series active",
+    "green_path": "Green path enabled",
+    "paper_only": "Paper-only mode",
+    "grok_shadow": "Grok shadow mode",
+    "tick_seconds": "Tick interval",
+    "max_price": "Max entry price",
+    "min_edge": "Minimum edge",
+    "min_reward_risk": "Minimum reward/risk",
+    "cohort_relaxed": "Relaxed cohort gates",
+    "tv_trade_gates_off": "TV gates not blocking trades",
+    "lifecycle": "Lifecycle accounting",
+    "execution_gate": "Execution gate",
+    "recon_checks": "Reconciliation checks",
+    "not_halted": "Not halted",
+    "uptime_ticks": "Engine uptime (ticks)",
+    "lifecycle_funnel": "Candidates → fills funnel",
+    "exec_pass_rate": "Execution pass rate",
+    "reject_diversity": "Rejection spread across gates",
+    "cohort_session_load": "Cohort session blocks",
+    "recent_eval_spread": "Recent eval variety",
+}
 
 sys.path.insert(0, str(ENGINE_ROOT))
 from engine.pulse.performance_scoring import (  # noqa: E402
@@ -350,6 +417,323 @@ def build_grades(
     }
 
 
+def _label(key: str) -> str:
+    return COMPONENT_LABELS.get(key, key.replace("_", " ").title())
+
+
+def _grade_blurb(grade: str) -> str:
+    return GRADE_MEANINGS.get(str(grade), "Score reflects current bot state.")
+
+
+def _pct(val: float | None, digits: int = 1) -> str:
+    if val is None:
+        return "—"
+    return f"{float(val) * 100:.{digits}f}%"
+
+
+def _usd(val: float | None) -> str:
+    if val is None:
+        return "—"
+    return f"${float(val):,.2f}"
+
+
+def _extract_context(status: dict, light: dict, manifest: dict) -> dict:
+    cfg = status.get("config") or {}
+    cohort = status.get("baseline_cohort_gate") or {}
+    cap = status.get("capital") or light.get("capital") or {}
+    led = status.get("ledger") or light.get("ledger") or {}
+    tv = status.get("tradingview") or light.get("tradingview") or {}
+    oracle = status.get("oracle") or {}
+    rtds = oracle.get("rtds") or {}
+    design = manifest.get("entry_design") or {}
+    lc = status.get("decision_lifecycle") or light.get("candidate_lifecycle") or {}
+
+    from collections import Counter
+
+    ev = status.get("recent_evaluations") or []
+    eval_top = Counter(r.get("terminal_reason") or "unknown" for r in ev).most_common(3)
+    rej_top = sorted(
+        (lc.get("rejected_by_stage") or {}).items(),
+        key=lambda x: -x[1],
+    )[:5]
+
+    drift: list[str] = []
+    checks = [
+        ("tick_seconds", cfg.get("tick_seconds"), design.get("tick_seconds"), 1.0),
+        ("max_price", cfg.get("max_price"), design.get("max_entry_price"), 0.05),
+        ("min_edge", cfg.get("min_edge"), design.get("min_edge"), 0.005),
+        ("min_reward_risk", cfg.get("min_reward_risk"), design.get("min_reward_risk"), 0.05),
+    ]
+    for name, actual, expected, tol in checks:
+        if expected is None or actual is None:
+            continue
+        if not _near(actual, expected, tol):
+            drift.append(f"**{_label(name)}** — running `{actual}`, design expects `{expected}`")
+
+    if cohort.get("require_high_edge"):
+        drift.append("**Cohort high-edge gate** — still ON (design: relaxed / OFF)")
+    if cohort.get("require_strong_cex"):
+        drift.append("**Cohort strong-CEX gate** — still ON (design: relaxed / OFF)")
+
+    for gate_name in ("signal_gate", "mtf_gate", "context_gate"):
+        g = tv.get(gate_name) or {}
+        if g.get("enabled"):
+            drift.append(f"**TV {gate_name}** — enabled (operator lock: trade gates OFF)")
+
+    return {
+        "paper_only": status.get("paper_only", True),
+        "halted": (status.get("stop_conditions") or {}).get("strategies", {}).get("directional", {}).get("halted"),
+        "reconciled": (status.get("reconciliation") or {}).get("global_reconciled"),
+        "series": status.get("pulse_series_slugs"),
+        "capital": cap,
+        "ledger": led,
+        "tv": {
+            "valid": tv.get("tradingview_alerts_valid"),
+            "received": tv.get("tradingview_alerts_received"),
+            "observe_only": tv.get("tradingview_observe_only"),
+            "mtf": (tv.get("tradingview_mtf_confirmation") or {}).get("confirm_mtf")
+            or (tv.get("tradingview_mtf_confirmation") or {}).get("confirm_3tf"),
+        },
+        "rtds": {
+            "connected": rtds.get("connected"),
+            "fresh": rtds.get("oracle_fresh"),
+            "age_s": rtds.get("oracle_age_s"),
+        },
+        "config": {
+            "tick_s": cfg.get("tick_seconds"),
+            "max_price": cfg.get("max_price"),
+            "min_edge": cfg.get("min_edge"),
+            "min_rr": cfg.get("min_reward_risk"),
+            "green_path": cohort.get("green_path_enabled"),
+            "ttc_band_15m": [
+                (cohort.get("15m_ttc_band_s") or [160, 220])[0] * 3,
+                (cohort.get("15m_ttc_band_s") or [160, 220])[1] * 3,
+            ],
+        },
+        "eval_top": eval_top,
+        "rej_top": rej_top,
+        "design_drift": drift,
+    }
+
+
+def _weakest_components(section: dict, n: int = 3) -> list[tuple[str, float]]:
+    comps = (section or {}).get("components") or {}
+    ranked = sorted(
+        ((k, float(v.get("score", 0))) for k, v in comps.items()),
+        key=lambda x: x[1],
+    )
+    return ranked[:n]
+
+
+def _verdict_lists(grades: dict, ctx: dict) -> tuple[list[str], list[str], list[str]]:
+    rs = grades.get("report_scores") or {}
+    tr = grades.get("technical_runtime") or {}
+    good: list[str] = []
+    watch: list[str] = []
+    action: list[str] = []
+
+    if (tr.get("subscores") or {}).get("rtds_health", {}).get("score", 0) >= 90:
+        good.append("Oracle and RTDS feeds are healthy and fresh.")
+    if (tr.get("subscores") or {}).get("tv_intake", {}).get("score", 0) >= 90:
+        good.append("TradingView webhooks are flowing; observe-only lock is respected.")
+    if ctx.get("reconciled"):
+        good.append("Ledger and lifecycle accounting reconcile cleanly.")
+    if float((rs.get("operation") or {}).get("score") or 0) >= 85:
+        good.append("Engine operation score is strong — loops, stops, and pipeline are up.")
+
+    cap = ctx.get("capital") or {}
+    if float(cap.get("total_return_pct") or 0) > 0:
+        good.append(f"Paper portfolio is up {_pct(cap.get('total_return_pct') / 100 if cap.get('total_return_pct') and cap.get('total_return_pct') > 1 else cap.get('total_return_pct'), 1)} overall (arb helping).")
+
+    tp_score = float((rs.get("trading_performance") or {}).get("score") or 0)
+    if tp_score < 65:
+        watch.append("Directional trading is underperforming — win rate and profit factor drag the grade.")
+    ex_score = float((rs.get("external_signals") or {}).get("score") or 0)
+    if ex_score < 55:
+        watch.append("External signals (TV hit rate, Grok accuracy) are not yet predictive of outcomes.")
+    if ctx.get("design_drift"):
+        watch.append("Live config differs from design manifest — see drift section below.")
+    if ctx.get("eval_top") and ctx["eval_top"][0][0] == "edge_below_min":
+        watch.append("Recent windows mostly fail on **edge_below_min** — entries may still be too selective.")
+
+    led = ctx.get("ledger") or {}
+    if float(led.get("profit_factor") or 1) < 1.0:
+        action.append("Profit factor below 1.0 — average loss exceeds average win; review entry price and side mix.")
+    if float(led.get("realized_pnl_usd") or 0) < 0:
+        action.append("Directional PnL is negative; arb is carrying total return.")
+    if ctx.get("design_drift"):
+        action.append("Sync VPS env with `scripts/apply-loop-arch-env.py` and redeploy if drift is unintentional.")
+
+    return good, watch, action
+
+
+def render_human_report(grades: dict, status: dict, light: dict, manifest: dict) -> str:
+    rs = grades.get("report_scores") or {}
+    tr = grades.get("technical_runtime") or {}
+    comp = grades.get("composite") or {}
+    ctx = _extract_context(status, light, manifest)
+    cap = ctx.get("capital") or {}
+    led = ctx.get("ledger") or {}
+    good, watch, action = _verdict_lists(grades, ctx)
+
+    ts = grades.get("ts_utc", "?")
+    if "T" in str(ts):
+        ts = str(ts).replace("T", " ").split("+")[0].split(".")[0] + " UTC"
+
+    lines = [
+        "# BTC Pulse — Technical Report (plain English)",
+        "",
+        f"_Updated: {ts}_",
+        "",
+        "## At a glance",
+        "",
+        "| | |",
+        "|---|---|",
+        f"| **Overall grade** | **{comp.get('grade', '?')}** ({comp.get('score', '?')}/100) — {_grade_blurb(comp.get('grade', '?'))} |",
+        f"| Trading performance | {(rs.get('trading_performance') or {}).get('grade', '?')} ({(rs.get('trading_performance') or {}).get('score', '?')}/100) |",
+        f"| Engine operation | {(rs.get('operation') or {}).get('grade', '?')} ({(rs.get('operation') or {}).get('score', '?')}/100) |",
+        f"| External signals | {(rs.get('external_signals') or {}).get('grade', '?')} ({(rs.get('external_signals') or {}).get('score', '?')}/100) |",
+        f"| Technical runtime | {tr.get('grade', '?')} ({tr.get('score', '?')}/100) |",
+        f"| Settled trades | {grades.get('settled', '?')} |",
+        f"| Engine ticks | {grades.get('ticks', '?')} |",
+        "",
+        "## Executive summary",
+        "",
+    ]
+
+    overall = float(comp.get("score") or 0)
+    if overall >= 80:
+        lines.append(
+            "The bot's **infrastructure and data plumbing are in good shape**. "
+            "Focus is on improving directional edge and signal quality."
+        )
+    elif overall >= 65:
+        lines.append(
+            "The bot is **running safely with solid technical runtime**, but "
+            "**trading results and/or external signals are holding the composite grade down**."
+        )
+    else:
+        lines.append(
+            "The bot needs attention: **trading performance or signal quality is weak**, "
+            "even if some infrastructure checks pass."
+        )
+
+    lines.extend([
+        "",
+        "## How the bot is doing (money & trades)",
+        "",
+        "| | |",
+        "|---|---|",
+        f"| Mode | {'Paper only' if ctx.get('paper_only') else 'LIVE'} |",
+        f"| Starting capital | {_usd(cap.get('starting_capital_usd'))} |",
+        f"| Total on hand | {_usd(cap.get('total_on_hand_usd'))} ({_pct(cap.get('total_return_pct') / 100 if (cap.get('total_return_pct') or 0) > 1 else cap.get('total_return_pct'))} return) |",
+        f"| Directional PnL | {_usd(led.get('realized_pnl_usd') or cap.get('realized_pnl_usd'))} |",
+        f"| Arb PnL | {_usd(cap.get('arb_realized_pnl_usd'))} |",
+        f"| Win rate | {_pct(led.get('win_rate'))} ({led.get('settled', '?')} settled) |",
+        f"| UP / DOWN win rate | {_pct(led.get('win_rate_up'))} / {_pct(led.get('win_rate_down'))} |",
+        f"| Profit factor | {led.get('profit_factor', '—')} |",
+        f"| Bot halted? | {'Yes' if ctx.get('halted') else 'No — running'} |",
+        "",
+        "## Infrastructure & data health",
+        "",
+    ])
+
+    rtds = ctx.get("rtds") or {}
+    tv = ctx.get("tv") or {}
+    lines.append(
+        f"- **Oracle (RTDS):** {'Connected' if rtds.get('connected') else 'DISCONNECTED'}; "
+        f"{'fresh' if rtds.get('fresh') else 'stale'} "
+        f"(age {rtds.get('age_s', '?')}s)."
+    )
+    lines.append(
+        f"- **TradingView:** {tv.get('valid', '?')} valid alerts of {tv.get('received', '?')} received; "
+        f"observe-only={'yes' if tv.get('observe_only') else 'NO'}; MTF verdict: `{tv.get('mtf') or '—'}`."
+    )
+    cfg = ctx.get("config") or {}
+    lines.append(
+        f"- **Entry config:** tick {cfg.get('tick_s')}s, max price {cfg.get('max_price')}, "
+        f"min edge {cfg.get('min_edge')}, min R:R {cfg.get('min_rr')}, "
+        f"15m TTC band {cfg.get('ttc_band_15m')}s, green path={'on' if cfg.get('green_path') else 'off'}."
+    )
+
+    lines.extend(["", "## What's dragging the score", ""])
+    for section_key, title in (
+        ("trading_performance", "Trading performance"),
+        ("operation", "Operation"),
+        ("external_signals", "External signals"),
+    ):
+        sec = rs.get(section_key) or {}
+        weak = _weakest_components(sec, 3)
+        if weak:
+            parts = ", ".join(f"{_label(k)} ({v:.0f})" for k, v in weak)
+            lines.append(f"- **{title}** ({sec.get('grade', '?')}): weakest — {parts}.")
+
+    tr_weak = sorted(
+        ((k, float(v.get("score", 0))) for k, v in (tr.get("components") or {}).items()),
+        key=lambda x: x[1],
+    )[:2]
+    if tr_weak:
+        parts = ", ".join(f"{_label(k)} ({v:.0f})" for k, v in tr_weak)
+        lines.append(f"- **Technical runtime**: watch — {parts}.")
+
+    if ctx.get("rej_top"):
+        lines.extend(["", "## Where candidates get blocked (top gates)", ""])
+        for stage, count in ctx["rej_top"]:
+            lines.append(f"- `{stage}`: {count:,}")
+
+    if ctx.get("eval_top"):
+        lines.extend(["", "## Why recent windows didn't trade", ""])
+        for reason, count in ctx["eval_top"]:
+            lines.append(f"- `{reason}`: {count} recent eval(s)")
+
+    if ctx.get("design_drift"):
+        lines.extend(["", "## Design vs deployed (drift)", ""])
+        for item in ctx["design_drift"]:
+            lines.append(f"- {item}")
+
+    lines.extend(["", "## Verdict", ""])
+    if good:
+        lines.append("**Good:**")
+        for g in good:
+            lines.append(f"- {g}")
+        lines.append("")
+    if watch:
+        lines.append("**Watch:**")
+        for w in watch:
+            lines.append(f"- {w}")
+        lines.append("")
+    if action:
+        lines.append("**Suggested actions:**")
+        for a in action:
+            lines.append(f"- {a}")
+        lines.append("")
+
+    tail = grades.get("vps_score_history_tail") or []
+    if len(tail) >= 2:
+        first = tail[0]
+        last = tail[-1]
+        delta = float(last.get("overall") or 0) - float(first.get("overall") or 0)
+        direction = "up" if delta > 0.5 else ("down" if delta < -0.5 else "flat")
+        lines.extend([
+            "## Score trend (VPS history)",
+            "",
+            f"Report overall moved **{direction}** ({first.get('overall')} → {last.get('overall')}) "
+            f"over the last {len(tail)} recorded snapshots. "
+            f"Trading: {first.get('trading_performance')} → {last.get('trading_performance')}; "
+            f"Operation: {first.get('operation')} → {last.get('operation')}.",
+            "",
+        ])
+
+    lines.extend([
+        "---",
+        "",
+        "_Auto-generated by `scripts/pulse-babysit/grade-technical.py`. "
+        "Detailed score tables: `TECHNICAL_GRADES.md`. Full VPS report: `vps_full_reports/latest/report.md`._",
+        "",
+    ])
+    return "\n".join(lines)
+
+
 def _fmt_component_table(components: dict) -> list[str]:
     lines = ["| Component | Score | Weight |", "|-----------|------:|-------:|"]
     for name, info in (components or {}).items():
@@ -477,18 +861,23 @@ def main() -> int:
     grades_path = monitor / "technical-grades.json"
     history_path = monitor / "grades-history.jsonl"
     md_path = monitor / "TECHNICAL_GRADES.md"
+    report_path = monitor / "TECHNICAL_REPORT.md"
 
     grades_path.write_text(json.dumps(grades, indent=2, default=str) + "\n", encoding="utf-8")
     with history_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(_history_compact(grades), default=str) + "\n")
     md_path.write_text(render_markdown(grades), encoding="utf-8")
+    report_path.write_text(
+        render_human_report(grades, status, light, manifest),
+        encoding="utf-8",
+    )
 
     comp = grades["composite"]
     print(
         f"grades composite={comp['score']} ({comp['grade']}) "
         f"tech_runtime={grades['technical_runtime']['score']} "
         f"report={grades['report_scores']['overall']['score']} "
-        f"-> {grades_path}"
+        f"-> {grades_path} + {report_path.name}"
     )
     return 0
 

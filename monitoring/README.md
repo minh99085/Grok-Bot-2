@@ -9,6 +9,7 @@ Track **design intent** + **live technical state** as the bot evolves.
 | **Design** | Architecture, trade authority, locked TV rules | `monitoring/design-manifest.json` |
 | **Timeline** | Compact snapshot every pull (~hourly) | `monitoring/timeline.jsonl` |
 | **Grades** | Technical + report composite scores | `monitoring/technical-grades.json`, `TECHNICAL_GRADES.md` |
+| **Human report** | Plain-English operator summary | `monitoring/TECHNICAL_REPORT.md` |
 | **Full artifacts** | Complete status/ledger/reports | `vps_full_reports/latest/` |
 
 VPS also keeps `btc_pulse_score_history.json` (graded scores over time).

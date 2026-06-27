@@ -42,7 +42,7 @@ try {
 
     git add -f "vps_full_reports/latest/"
     git add -f "monitoring/timeline.jsonl" "monitoring/latest-snapshot.json"
-    git add -f "monitoring/technical-grades.json" "monitoring/grades-history.jsonl" "monitoring/TECHNICAL_GRADES.md"
+    git add -f "monitoring/technical-grades.json" "monitoring/grades-history.jsonl" "monitoring/TECHNICAL_GRADES.md" "monitoring/TECHNICAL_REPORT.md"
 
     $staged = git diff --cached --name-only
     if (-not $staged) {
