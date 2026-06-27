@@ -43,6 +43,11 @@ main{max-width:1180px;margin:0 auto;padding:24px 20px 40px}
   margin:0 0 14px;font-size:18px;font-weight:600;color:var(--text2);
   letter-spacing:.01em;text-transform:none;
 }
+.panel.trades-panel{
+  border-color:rgba(142,184,232,.35);
+  background:linear-gradient(180deg,var(--card) 0%,var(--card2) 100%);
+}
+.panel.trades-panel h2{color:var(--accent);font-size:20px}
 .panel h3.sub{
   margin:20px 0 10px;font-size:17px;font-weight:600;color:var(--text2);
 }
@@ -133,16 +138,42 @@ function is15m(obj){
   const slug=String((obj&&obj.series_slug)||(obj&&obj.market_series)||'').toLowerCase();
   return lbl==='15m'||slug.includes('15m');
 }
-function positionsTable(pos){
-  const tb=$('<table class="data"><thead><tr><th>Mkt</th><th>Side</th><th>Entry</th><th>Fair</th><th>Result</th><th>PnL</th></tr></thead><tbody></tbody></table>');
-  pos.slice(0,12).forEach(x=>{
-    const res=x.won==null?'—':(x.won?'Win':'Loss');
-    const mkt=(x.research&&x.research.series_label)||'15m';
+function is15mPosition(p){
+  const r=(p&&p.research)||{};
+  if(is15m(r)) return true;
+  const ttc=r.entry_ttc_s;
+  if(ttc!=null&&Number(ttc)>=400) return true;
+  const ws=r.window_seconds;
+  if(ws!=null&&Number(ws)>=900) return true;
+  return false;
+}
+function fmtTs(ts){
+  if(ts==null) return '—';
+  try{return new Date(Number(ts)*1000).toLocaleString();}catch(e){return '—';}
+}
+function tradeResult(x){
+  if((x.status||'').toLowerCase()==='open') return ['open','neu'];
+  if(x.won===true) return ['win','pos'];
+  if(x.won===false) return ['loss','neg'];
+  return [x.status||'—','neu'];
+}
+function recentTradesTable(pos){
+  const tb=$('<table class="market-table"><thead><tr><th>Time</th><th>Window</th><th>Side</th><th>Entry</th><th>TTC</th><th>Fair</th><th>Result</th><th>PnL</th><th>Mode</th></tr></thead><tbody></tbody></table>');
+  pos.forEach(x=>{
+    const r=x.research||{};
+    const [res,cls]=tradeResult(x);
+    const side=(x.side||'—').toUpperCase();
+    const sideCls=side==='DOWN'?'neg':(side==='UP'?'pos':'neu');
     tb.querySelector('tbody').appendChild($(`<tr>
-      <td>${mkt}</td><td>${x.side||'—'}</td><td>${f(x.entry_price,3)}</td>
+      <td class="neu">${fmtTs(x.entry_ts)}</td>
+      <td>${x.window_key||'—'}</td>
+      <td class="${sideCls}">${side}</td>
+      <td>${f(x.entry_price,3)}</td>
+      <td class="neu">${r.entry_ttc_s==null?'—':f(r.entry_ttc_s,0)+'s'}</td>
       <td>${f(x.fair_at_entry,3)}</td>
-      <td class="${x.won==null?'neu':(x.won?'pos':'neg')}">${res}</td>
+      <td class="${cls}">${res}</td>
       <td class="${pnlCls(x.pnl_usd)}">${x.pnl_usd==null?'—':money(x.pnl_usd)}</td>
+      <td class="neu">${r.entry_mode||r.gate_decision||'—'}</td>
     </tr>`));
   });
   return tb;
@@ -404,10 +435,26 @@ async function tick(){
   ]));
 
   const summary=document.getElementById('summary');summary.innerHTML='';
+  const allPos=((l&&l.positions)||[]).slice().sort((a,b)=>(Number(b.entry_ts)||0)-(Number(a.entry_ts)||0));
+  const pos15=allPos.filter(is15mPosition).slice(0,10);
+  const tradesPanel=$('<div class="panel trades-panel" style="grid-column:1/-1"><h2>Recent 15m trades</h2></div>');
+  if(pos15.length){
+    const settled=pos15.filter(x=>(x.status||'').toLowerCase()==='settled');
+    const wins=settled.filter(x=>x.won===true).length;
+    const pnl15=settled.reduce((s,x)=>s+(Number(x.pnl_usd)||0),0);
+    const foot=$('<div class="money-sub" style="margin-bottom:14px"></div>');
+    foot.innerHTML='Showing <b>'+pos15.length+'</b> latest 15m fills · '
+      +'settled <b>'+settled.length+'</b> · wins <b>'+wins+'</b> · net <b class="'+pnlCls(pnl15)+'">'+money(pnl15)+'</b>';
+    tradesPanel.appendChild(foot);
+    tradesPanel.appendChild(recentTradesTable(pos15));
+  }else{
+    tradesPanel.appendChild($('<p class="prose" style="margin:0;color:var(--text2)">No 15m trades in the recent ledger window yet.</p>'));
+  }
+  summary.appendChild(tradesPanel);
+
   const bySeries=s.by_market_series||{};
   const seriesKeys=Object.keys(bySeries).filter(k=>is15m(bySeries[k]));
-  const pos15=((l&&l.positions)||[]).filter(x=>is15m(x.research||{}));
-  const mPanel=$('<div class="panel" style="grid-column:1/-1"><h2>Performance by market</h2></div>');
+  const mPanel=$('<div class="panel" style="grid-column:1/-1"><h2>15m performance summary</h2></div>');
   if(seriesKeys.length){
     const tb=$('<table class="market-table"><thead><tr><th>Market</th><th>Settled</th><th>Win rate</th><th>PF</th><th>PnL</th><th>UP</th><th>DOWN</th></tr></thead><tbody></tbody></table>');
     seriesKeys.sort((a,b)=>(bySeries[a].series_label||'').localeCompare(bySeries[b].series_label||''))
@@ -422,11 +469,8 @@ async function tick(){
         </tr>`));
       });
     mPanel.appendChild(tb);
-  }
-  if(pos15.length){
-    const sub=$('<h3 class="sub">Recent positions</h3>');
-    mPanel.appendChild(sub);
-    mPanel.appendChild(positionsTable(pos15));
+  }else{
+    mPanel.appendChild($('<p class="prose" style="margin:0;color:var(--text2)">No 15m aggregate stats yet.</p>'));
   }
   mPanel.appendChild(loopEngineSection(s));
   summary.appendChild(mPanel);

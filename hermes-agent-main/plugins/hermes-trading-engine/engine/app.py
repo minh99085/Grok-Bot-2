@@ -73,12 +73,13 @@ def btc_pulse_ledger(summary: bool = Query(False)) -> dict:
     if not led:
         return {"available": False, "reason": "no pulse ledger yet."}
     if summary:
-        positions = list(led.get("positions") or [])
+        # Ledger stores newest positions first; keep that order for the dashboard.
+        positions = list(led.get("positions") or [])[:20]
         return {
             "available": True,
             "paper_only": led.get("paper_only", True),
             "stats": led.get("stats") or {},
-            "positions": positions[-12:],
+            "positions": positions,
         }
     return {"available": True, **led}
 
