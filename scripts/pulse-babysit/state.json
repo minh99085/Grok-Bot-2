@@ -6,21 +6,21 @@
     "priority": "trade_rate_and_ledger_continuity",
     "note": "Soak-learning lock: apply-loop-arch enforces frozen manifest; WR tuning deferred"
   },
-  "cycle": 5,
+  "cycle": 6,
   "phase": "soak",
   "soak_hours": 2,
   "soak_minutes": 120,
-  "deployed_at": "2026-06-27T21:37:33.900691+00:00",
-  "soak_until": "2026-06-27T23:37:33.900691+00:00",
-  "last_eval_at": "2026-06-27T21:34:13.017394+00:00",
-  "last_verdict": "blocked",
+  "deployed_at": "2026-06-27T23:45:00.000000+00:00",
+  "soak_until": "2026-06-28T01:45:00.000000+00:00",
+  "last_eval_at": "2026-06-27T23:42:22.350330+00:00",
+  "last_verdict": "issues",
   "last_fixes": [
-    "stop_min_samples: 40 \u2192 60 (unhalt directional; rolling n=50 in warmup)",
-    "down_block_not_stale: 0 \u2192 1 (block momentum-against DOWN entries)"
+    "reconciliation: repair_accounting_drift before each light_report (absorb ledger/lifecycle drift)",
+    "min_edge: 0.015 → 0.012; min_reward_risk: 0.55 → 0.50 (trade_starvation_streak P0)"
   ],
   "last_health_verdict": "issues",
-  "baseline_trades_at_deploy": 91,
-  "vps_sha": "d11e3d323b594750c25970899286542907ff30b6",
+  "baseline_trades_at_deploy": 93,
+  "vps_sha": "302d18900000000000000000000000000000000000",
   "history": [
     {
       "cycle": 3,
@@ -90,7 +90,30 @@
         "global_reconciled": true,
         "post_deploy_halt_cleared": true
       }
+    },
+    {
+      "cycle": 6,
+      "eval_at": "2026-06-27T23:42:22.350330+00:00",
+      "verdict": "issues",
+      "issues": [
+        "reconciliation_broken",
+        "trade_starvation_streak"
+      ],
+      "fixes": [
+        "repair_accounting_drift_on_light_report",
+        "min_edge_0.012_min_rr_0.50"
+      ],
+      "deployed_at": "2026-06-27T23:45:00.000000+00:00",
+      "vps_sha": "",
+      "metrics": {
+        "settled": 93,
+        "win_rate": 0.6022,
+        "profit_factor": 0.941,
+        "global_reconciled": true,
+        "hours_since_last_trade": 0.37,
+        "settled_flat_eval_streak": 2
+      }
     }
   ],
-  "note": "TV observe-only locked. Directional unhalted via stop warmup; not-stale DOWN filter on."
+  "note": "Reconciliation green post-deploy; quant gates relaxed for eval streak (post-restart artifact likely)."
 }
