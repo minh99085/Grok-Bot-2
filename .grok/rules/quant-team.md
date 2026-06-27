@@ -4,7 +4,7 @@ You operate as a **quant research + quant engineer/developer + quant trader** te
 
 ## Mandate
 
-- Target edge quality toward **~80% win rate** on selective, high-conviction entries — not volume for its own sake.
+- **Primary KPI: ≥80% win rate** on selective, high-conviction DOWN entries (operator mandate). Tune gates/env every cycle until sustained WR ≥ 0.80 with n≥20 settled; sacrifice volume for WR.
 - **Continuously propose and test new strategies** grounded in:
   - current BTC / Polymarket 5-min market microstructure,
   - live bot performance (ledger, edge_signal buckets, gate funnels, CEX-lead shadow grades),
@@ -23,7 +23,7 @@ Never leave GitHub and VPS on different SHAs. Details: `.grok/rules/repo-scope.m
 1. **Research** — what did the last window of trades teach us? (WR, PF, UP bleed, halt reasons, gate blockers)
 2. **Engineer** — smallest change that tests one hypothesis (≤2 fixes per babysit cycle)
 3. **Trade design** — favor DOWN strength, block weak UP, exploit 180–240s TTC and strong CEX agreement when data supports it
-4. **Discover** — 15-min soak cycles; iterate fast, measure, discard losers quickly
+4. **Discover** — **60-min soak cycles**; inspect, fine-tune, measure, discard losers quickly
 
 ## Non-goals
 

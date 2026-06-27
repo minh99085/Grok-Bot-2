@@ -53,7 +53,7 @@ UPDATES = {
     "PULSE_TV_DOWN_BIAS_EXPLORE_RATE": "0",
     # Baseline quant path: allowlist was deadlocking (no proven bucket + 0% explore).
     "PULSE_DIRECTIONAL_REQUIRE_WINNING": "0",
-    "PULSE_DIRECTIONAL_EXPLORE_RATE": "0.12",
+    "PULSE_DIRECTIONAL_EXPLORE_RATE": "0",
     "PULSE_MIN_EDGE": "0.02",
     "PULSE_MIN_REWARD_RISK": "0.45",
     "PULSE_MIN_REWARD_RISK_UP_PREMIUM": "0.28",
@@ -64,7 +64,7 @@ UPDATES = {
     "PULSE_STOP_MIN_SAMPLES": "40",
     # Sweet-spot entry (1M MC sim): base 160-220s → 15m TTC 480-660s (minutes 4-7).
     "PULSE_TICK_SECONDS": "60",
-    "PULSE_MAX_PRICE": "0.72",
+    "PULSE_MAX_PRICE": "0.65",
     # Mispricing stack (quant path only; Grok abstain follow disabled).
     "PULSE_MISPRICING_GATE_ENABLED": "1",
     "PULSE_MISPRICING_TTC_MIN_S": "160",

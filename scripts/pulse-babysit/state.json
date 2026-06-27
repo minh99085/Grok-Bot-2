@@ -1,14 +1,19 @@
 {
+  "goals": {
+    "win_rate_target": 0.80,
+    "note": "Operator mandate: >=80% WR on selective DOWN entries; 60-min inspect/fine-tune cycles"
+  },
   "cycle": 21,
   "phase": "soak",
-  "soak_hours": 0.25,
-  "deployed_at": "2026-06-27T05:25:20.884779+00:00",
-  "soak_until": "2026-06-27T05:40:20.884779+00:00",
-  "last_eval_at": "2026-06-27T05:22:39.258041+00:00",
+  "soak_hours": 1,
+  "deployed_at": "2026-06-27T05:30:43.205029+00:00",
+  "soak_until": "2026-06-27T06:30:43.205029+00:00",
+  "last_eval_at": "2026-06-27T05:31:03.367275+00:00",
   "last_verdict": "issues",
   "last_fixes": [
-    "baseline_down: block DOWN when volume_state=active (33.3% WR, -13.38 PnL, n=6 on 15m late)",
-    "baseline_down: block DOWN when UP_STRONG+range_top on non-bullish MTF (mixed loss cluster)"
+    "80% WR target: soak cycle 60min; evaluate flags win_rate_below_target at 0.80",
+    "tighten selectivity: PULSE_MAX_PRICE 0.72->0.65 (recent DOWN losses at 0.65-0.69)",
+    "stop exploration bleed: PULSE_DIRECTIONAL_EXPLORE_RATE 0.12->0"
   ],
   "last_health_verdict": "issues",
   "vps_sha": "d92fce3d4560d6862f4dad71a99752fde21c3be6",
@@ -1084,7 +1089,33 @@
         "baseline_down: block DOWN when volume_state=active (33.3% WR, -13.38 PnL, n=6 on 15m late)",
         "baseline_down: block DOWN when UP_STRONG+range_top on non-bullish MTF (mixed loss cluster)"
       ]
+    },
+    {
+      "ts": "2026-06-27T05:31:03.367275+00:00",
+      "verdict": "issues",
+      "metrics": {
+        "settled": 86,
+        "win_rate_target": 0.8,
+        "win_rate": 0.6163,
+        "profit_factor": 0.9752,
+        "win_rate_up": 0.5,
+        "win_rate_down": 0.6515,
+        "realized_pnl_usd": -3.72,
+        "tv_valid": 150,
+        "mtf_passed": 140,
+        "mtf_blocked": 275,
+        "context_blocked": 879,
+        "down_bias_blocked": 538,
+        "signal_gate": false,
+        "min_reward_risk": 0.45,
+        "global_reconciled": true
+      },
+      "issue_codes": [
+        "win_rate_below_target",
+        "profit_factor_low",
+        "up_side_bleed"
+      ]
     }
   ],
-  "soak_minutes": 15
+  "soak_minutes": 60
 }

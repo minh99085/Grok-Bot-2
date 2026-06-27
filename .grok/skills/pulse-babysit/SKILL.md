@@ -36,14 +36,14 @@ fixes → re-measure. Read `.grok/rules/quant-team.md`.
 | `force-eval` | Pull + evaluate now; skip soak wait |
 | `status` | Print state + last evaluation summary |
 | `deploy` | `git push origin main` + full VPS deploy (sync-vps + env + force-recreate training) |
-| `soak <minutes>` | Set soak duration (default **15 min**) via `set-soak.ps1` |
+| `soak <minutes>` | Set soak duration (default **60 min**) via `set-soak.ps1` |
 
 If no argument: run `cycle`.
 
 ## State machine
 
 ```
-DEPLOY → SOAK (15m default) → PULL → EVALUATE → (issues?) → FIX → COMMIT → DEPLOY → …
+DEPLOY → SOAK (60m default) → PULL → EVALUATE → (issues?) → FIX → COMMIT → DEPLOY → …
 ```
 
 1. Read `scripts/pulse-babysit/state.json`.
@@ -97,7 +97,7 @@ or large refactors.
 
 | Situation | Duration |
 |-----------|----------|
-| Default after deploy | **15 min** (fast profit-discovery loop) |
+| Default after deploy | **60 min** (inspect + fine-tune toward **≥80% WR**) |
 | Operator override | `.\scripts\pulse-babysit\set-soak.ps1 -Minutes N` |
 
 ## Todo scaffold (each cycle)

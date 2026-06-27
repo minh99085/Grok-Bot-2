@@ -111,7 +111,13 @@ def main() -> int:
         issues.append(_issue("reconciliation_broken", "P0", "global_reconciled is false",
                              "fix accounting before tuning gates"))
 
+    wr_target = float(((_load(STATE).get("goals") or {}).get("win_rate_target")) or 0.80)
     if trades >= 10:
+        if wr is not None and float(wr) < wr_target:
+            issues.append(_issue("win_rate_below_target", "P1",
+                                 f"win_rate={wr} target={wr_target} settled={trades}",
+                                 "tighten MTF/all-confirm, baseline cohort, DOWN TV blocks; "
+                                 "block weak contexts until WR >= 80%"))
         if wr is not None and float(wr) < 0.55:
             issues.append(_issue("win_rate_low", "P1", f"win_rate={wr}",
                                  "tighten gates / high-WR profile / block weak UP"))
@@ -151,6 +157,7 @@ def main() -> int:
 
     metrics = {
         "settled": trades,
+        "win_rate_target": wr_target,
         "win_rate": wr,
         "profit_factor": pf,
         "win_rate_up": wr_up,
