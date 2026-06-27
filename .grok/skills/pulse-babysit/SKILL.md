@@ -75,27 +75,30 @@ Read `scripts/pulse-babysit/env-coupling.md` before any gate/TTC env change.
 - Status field: `config_coupling.configured_ok` / `effective_s` / `fix_hint`
 - `scan-health.py` flags `gate_coupling_misconfigured` (P0) if `.env` is unsafe
 - Engine auto-clamps at runtime but `.env` must still be fixed
-- TradingView: **INDEX:BTCUSD only** — four charts (1m/5m/10m/15m), see `tradingview/README.md`
+- TradingView: **INDEX:BTCUSD** — 2m/3m/4m chart alerts (observe-only); see `tradingview/README.md`
+- **TV observe-only lock (operator mandate):** `.grok/rules/tv-observe-only-lock.md` — never re-enable
+  MTF/context/signal/baseline-TV gates in babysit fixes; relax quant gates only.
 
 ## Evaluation rules (do not override without evidence)
 
 The script flags issues. You may fix only what the report supports:
 
 - **`trade_starvation` / `trade_starvation_streak` (P0)** → bot ticks but settled flat for **2**
-  consecutive eval cycles, or no fills for ≥6h. **Relax** gates, audit MTF vs regime, fix inverted blocks. **Never tighten**
+  consecutive eval cycles, or no fills for ≥6h. **Relax quant gates** (cohort edge/CEX, execution floor,
+  selectivity) — **never** re-enable TV trade gates per `tv-observe-only-lock.md`. **Never tighten**
   on `win_rate_below_target` / `profit_factor_low` in the same cycle when starvation is present.
-- `win_rate_low` / `profit_factor_low` → gates, selectivity, reward/risk, TV filters
-  (**only if not trade_starvation** — stale WR on zero new trades is misleading)
-- `up_side_bleed` → down_bias_gate, context_gate, block weak UP
-- `mtf_starved` → TV alert health (observe-only note in report; do not disable MTF without data)
+- `win_rate_low` / `profit_factor_low` → quant gates, selectivity, reward/risk (**not** TV gates;
+  **only if not trade_starvation** — stale WR on zero new trades is misleading)
+- `up_side_bleed` → DOWN-only + quant restrictors (not TV context/MTF gates — locked off)
+- `mtf_starved` → TV webhook health only (observe-only); **do not** enable MTF require/side-align
 - `reconciliation_broken` → bug fix immediately (P0)
 - `verifier_disabled` / `grok_not_follow` → run `validate-vps-env.py` on VPS; fix `.env`; recreate `hermes-training`
 - `strategy_halted` → stop_conditions (Wilson/PF/DD); adjust `PULSE_STOP_MIN_SAMPLES` or performance
 - `tv_feed_unhealthy` → webhook/secret/symbol (ops)
 - `learning_hurts` → learning weight / bench veto
 
-**Never** in autopilot: enable live trading, disable execution gate, set exploration > 0 on TV gates,
-or large refactors.
+**Never** in autopilot: enable live trading, disable execution gate, re-enable any TV trade gate
+(MTF/context/signal/baseline-TV), set exploration > 0 on TV gates, or large refactors.
 
 ## Soak duration
 

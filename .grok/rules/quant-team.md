@@ -32,6 +32,7 @@ Never leave GitHub and VPS on different SHAs. Details: `.grok/rules/repo-scope.m
 - Re-enabling Grok as trade authority without proof it beats baseline
 - Large refactors or exploration-rate increases without ledger evidence
 - Ignoring stop_conditions or reconciliation breaks
+- **Re-enabling TradingView as a trade gate** (MTF require/side-align, context, signal gate, baseline TV blocks) — see `.grok/rules/tv-observe-only-lock.md` (operator lock; never override in babysit/starvation fixes)
 
 ## Improvement roadmap (3AI doc)
 

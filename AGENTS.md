@@ -6,6 +6,13 @@ Operate as a **quant research + engineer + trader** team targeting **~80% WR** o
 Each cycle: read live performance → hypothesize from market + bot data → implement minimal gate/strategy
 changes → measure on 15-min soak. See `.grok/rules/quant-team.md`.
 
+## TradingView observe-only lock (OPERATOR MANDATE — NEVER OVERRIDE)
+
+TradingView is **observe-only forever** — not a trade gate. Do **not** re-enable MTF require/side-align,
+TV context, signal gate, or baseline TV stack blocks in env, code, or babysit fixes unless the operator
+explicitly says otherwise **in the current message**. Full frozen keys and behavior:
+`.grok/rules/tv-observe-only-lock.md`.
+
 ## Repository scope (ALWAYS follow)
 
 - **Canonical repo:** `https://github.com/minh99085/Grok-Bot-2` — the **only** GitHub repository for code, commits, pushes, reports, and deploys.

@@ -16,6 +16,9 @@ ENV_PATH = Path("/opt/Grok-Bot-2/hermes-agent-main/plugins/hermes-trading-engine
 if not ENV_PATH.exists():
     ENV_PATH = ENGINE_ROOT / ".env"
 
+# FROZEN (operator lock 2026-06-27): TV gate keys in UPDATES below marked [TV-LOCK] must not be
+# re-enabled in babysit/autopilot fixes. See .grok/rules/tv-observe-only-lock.md
+
 UPDATES = {
     # Grok observe-only: decide + grade every window, never place/size a trade.
     "PULSE_GROK_DECIDER_MODE": "shadow",
@@ -26,7 +29,7 @@ UPDATES = {
     "PULSE_VERIFIER_ENABLED": "1",
     "PULSE_VERIFIER_FAIL_OPEN": "0",
     "PULSE_VERIFIER_FOLLOW_REQUIRE_VERDICT": "1",
-    # TV observe-only — webhooks feed features/Grok; no MTF or signal trade authority.
+    # [TV-LOCK] observe-only — webhooks feed features/Grok; no MTF or signal trade authority.
     "PULSE_TRADINGVIEW_SIGNAL_GATE": "0",
     "PULSE_TV_MIN_SIGNAL_STRENGTH": "0",
     "PULSE_TV_MTF_CONFLICT_GATE": "0",
@@ -68,7 +71,7 @@ UPDATES = {
     # Sweet-spot entry (1M MC sim): base 160-220s → 15m TTC 480-660s (minutes 4-7).
     "PULSE_TICK_SECONDS": "30",
     "PULSE_MAX_PRICE": "0.65",
-    # TV context off — green path owns 15m DOWN; avoids ~800 context_gate blocks.
+    # [TV-LOCK] context gate off — TV never blocks entries.
     "PULSE_TV_CONTEXT_GATE": "0",
     # Mispricing/edge-TTC off on quant baseline (Grok shadow; redundant with cohort).
     "PULSE_MISPRICING_GATE_ENABLED": "0",
@@ -91,6 +94,7 @@ UPDATES = {
     "PULSE_BASELINE_COHORT_15M_FAST_LANE": "1",
     "PULSE_BASELINE_COHORT_15M_TTC_MIN_S": "160",
     "PULSE_BASELINE_COHORT_15M_TTC_MAX_S": "220",
+    # [TV-LOCK] baseline path does not use TV stack to block entries.
     "PULSE_BASELINE_UP_TV_GATE_ENABLED": "0",
     "PULSE_BASELINE_DOWN_TV_GATE_ENABLED": "0",
     "PULSE_BASELINE_DOWN_BLOCK_BULLISH_RANGE": "1",
