@@ -1,17 +1,17 @@
 {
-  "cycle": 18,
+  "cycle": 20,
   "phase": "soak",
-  "soak_hours": 1,
-  "deployed_at": "2026-06-27T00:27:38.758796+00:00",
-  "soak_until": "2026-06-27T01:27:38.758796+00:00",
-  "last_eval_at": "2026-06-27T00:25:27.118695+00:00",
+  "soak_hours": 0.25,
+  "deployed_at": "2026-06-27T04:24:30.115357+00:00",
+  "soak_until": "2026-06-27T04:39:30.115357+00:00",
+  "last_eval_at": "2026-06-27T04:22:29.693076+00:00",
   "last_verdict": "issues",
   "last_fixes": [
-    "down_bias: block UP when cvd_state=neutral (25% WR, -12.86 PnL, n=4)",
-    "down_bias: block UP when conviction<0.4 (coin-flip fair); PULSE_MIN_REWARD_RISK=0.45"
+    "down_bias: block UP when zscore_bucket=-1..1 (46.2% WR, -17.44 PnL, n=13)",
+    "down_bias: block UP when confidence_tier=medium (44.4% WR, -8.45 PnL, n=9)"
   ],
   "last_health_verdict": "issues",
-  "vps_sha": "49cd66c71ecd7c3629def0386bcd5575dc2297a4",
+  "vps_sha": "9d5bc1999fe0f6944a343341fdba51f26089fbba",
   "history": [
     {
       "ts": "2026-06-25T19:06:42.423656+00:00",
@@ -932,7 +932,116 @@
         "down_bias: block UP when cvd_state=neutral (25% WR, -12.86 PnL, n=4)",
         "down_bias: block UP when conviction<0.4 (coin-flip fair); PULSE_MIN_REWARD_RISK=0.45"
       ]
+    },
+    {
+      "ts": "2026-06-27T02:22:34.055192+00:00",
+      "verdict": "issues",
+      "metrics": {
+        "settled": 84,
+        "win_rate": 0.619,
+        "profit_factor": 0.9848,
+        "win_rate_up": 0.5,
+        "win_rate_down": 0.6562,
+        "realized_pnl_usd": -2.2,
+        "tv_valid": 117,
+        "mtf_passed": 138,
+        "mtf_blocked": 275,
+        "context_blocked": 879,
+        "down_bias_blocked": 538,
+        "signal_gate": false,
+        "min_reward_risk": 0.45,
+        "global_reconciled": true
+      },
+      "issue_codes": [
+        "profit_factor_low",
+        "up_side_bleed"
+      ]
+    },
+    {
+      "ts": "2026-06-27T02:24:29.179128+00:00",
+      "verdict": "deploy",
+      "metrics": {
+        "commit": "10a6798",
+        "settled": 84,
+        "win_rate_up": 0.5,
+        "win_rate_down": 0.6562,
+        "profit_factor": 0.9848
+      },
+      "issue_codes": [
+        "profit_factor_low",
+        "up_side_bleed"
+      ],
+      "fixes_applied": [
+        "down_bias: enable block UP vs tf_confirm=confirmed_down (40% WR, -10.50 PnL, n=5)",
+        "down_bias: block UP when cvd_state=buy_pressure (25% WR, -4.69 PnL, n=4)"
+      ]
+    },
+    {
+      "ts": "2026-06-27T03:22:39.395481+00:00",
+      "verdict": "issues",
+      "metrics": {
+        "settled": 85,
+        "win_rate": 0.6235,
+        "profit_factor": 1.0088,
+        "win_rate_up": 0.5,
+        "win_rate_down": 0.6615,
+        "realized_pnl_usd": 1.28,
+        "tv_valid": 132,
+        "mtf_passed": 139,
+        "mtf_blocked": 275,
+        "context_blocked": 879,
+        "down_bias_blocked": 538,
+        "signal_gate": false,
+        "min_reward_risk": 0.45,
+        "global_reconciled": true
+      },
+      "issue_codes": [
+        "up_side_bleed"
+      ]
+    },
+    {
+      "ts": "2026-06-27T04:22:29.693076+00:00",
+      "verdict": "issues",
+      "metrics": {
+        "settled": 86,
+        "win_rate": 0.6163,
+        "profit_factor": 0.9752,
+        "win_rate_up": 0.5,
+        "win_rate_down": 0.6515,
+        "realized_pnl_usd": -3.72,
+        "tv_valid": 145,
+        "mtf_passed": 140,
+        "mtf_blocked": 275,
+        "context_blocked": 879,
+        "down_bias_blocked": 538,
+        "signal_gate": false,
+        "min_reward_risk": 0.45,
+        "global_reconciled": true
+      },
+      "issue_codes": [
+        "profit_factor_low",
+        "up_side_bleed"
+      ]
+    },
+    {
+      "ts": "2026-06-27T04:24:30.115357+00:00",
+      "verdict": "deploy",
+      "metrics": {
+        "commit": "9d5bc19",
+        "settled": 86,
+        "profit_factor": 0.9752,
+        "win_rate_up": 0.5,
+        "win_rate_down": 0.6515
+      },
+      "issue_codes": [
+        "profit_factor_low",
+        "up_side_bleed"
+      ],
+      "fixes_applied": [
+        "down_bias: block UP when zscore_bucket=-1..1 (46.2% WR, -17.44 PnL, n=13)",
+        "down_bias: block UP when confidence_tier=medium (44.4% WR, -8.45 PnL, n=9)"
+      ]
     }
   ],
-  "soak_minutes": 60
+  "soak_minutes": 15
 }
