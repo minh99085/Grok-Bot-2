@@ -20,7 +20,7 @@
   ],
   "last_health_verdict": "issues",
   "baseline_trades_at_deploy": 93,
-  "vps_sha": "302d18900000000000000000000000000000000000",
+  "vps_sha": "e672220f53daa528b1279fa21fc643986ca61dd0",
   "history": [
     {
       "cycle": 3,
@@ -104,7 +104,7 @@
         "min_edge_0.012_min_rr_0.50"
       ],
       "deployed_at": "2026-06-27T23:45:00.000000+00:00",
-      "vps_sha": "",
+      "vps_sha": "e672220f53daa528b1279fa21fc643986ca61dd0",
       "metrics": {
         "settled": 93,
         "win_rate": 0.6022,
