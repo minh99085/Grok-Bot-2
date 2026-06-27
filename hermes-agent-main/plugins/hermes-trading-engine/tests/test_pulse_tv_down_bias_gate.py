@@ -258,6 +258,33 @@ def test_blocks_up_tf_confirm_conflict():
     assert "tv_down_bias_up_tf_confirm_conflict" in r["reasons"]
 
 
+def test_blocks_up_cvd_neutral():
+    g = TradingViewDownBiasGate(enabled=True, exploration_rate=0.0,
+                                block_up_without_bearish=False,
+                                block_mixed_mtf_up=False,
+                                block_up_markov_chop_noise=False,
+                                block_up_medium_edge=False,
+                                block_up_weak_cex=False)
+    r = g.evaluate(side="up", mtf_alignment="bearish_aligned",
+                   tv_direction="DOWN", cvd_state="neutral")
+    assert r["decision"] == "block"
+    assert "tv_down_bias_up_cvd_neutral" in r["reasons"]
+
+
+def test_blocks_up_low_conviction():
+    g = TradingViewDownBiasGate(enabled=True, exploration_rate=0.0,
+                                block_up_without_bearish=False,
+                                block_mixed_mtf_up=False,
+                                block_up_markov_chop_noise=False,
+                                block_up_medium_edge=False,
+                                block_up_weak_cex=False,
+                                up_min_conviction=0.40)
+    r = g.evaluate(side="up", mtf_alignment="bearish_aligned",
+                   tv_direction="DOWN", conviction=0.15)
+    assert r["decision"] == "block"
+    assert "tv_down_bias_up_low_conviction" in r["reasons"]
+
+
 def test_allows_up_mid_ttc_window():
     g = TradingViewDownBiasGate(enabled=True, exploration_rate=0.0,
                                 block_up_without_bearish=False,

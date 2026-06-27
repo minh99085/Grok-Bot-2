@@ -40,6 +40,9 @@ UPDATES = {
     "PULSE_TV_DOWN_BIAS_BLOCK_UP_EARLY_TTC": "1",
     "PULSE_TV_DOWN_BIAS_UP_LATE_TTC_MIN_S": "240",
     "PULSE_TV_DOWN_BIAS_UP_EARLY_TTC_MAX_S": "120",
+    "PULSE_TV_DOWN_BIAS_BLOCK_UP_CVD_NEUTRAL": "1",
+    "PULSE_TV_DOWN_BIAS_BLOCK_UP_LOW_CONVICTION": "1",
+    "PULSE_TV_DOWN_BIAS_UP_MIN_CONVICTION": "0.40",
     "PULSE_LATE_WINDOW_ENTRY": "0",
     # Unfreeze baseline-path / allowlist cold-start (Grok follow bypasses most of these).
     # Must exceed scaled cohort max (15m: 240*3=720). Coupling auto-clamps if too low.
@@ -50,7 +53,7 @@ UPDATES = {
     "PULSE_DIRECTIONAL_REQUIRE_WINNING": "0",
     "PULSE_DIRECTIONAL_EXPLORE_RATE": "0.12",
     "PULSE_MIN_EDGE": "0.02",
-    "PULSE_MIN_REWARD_RISK": "0.42",
+    "PULSE_MIN_REWARD_RISK": "0.45",
     "PULSE_MIN_REWARD_RISK_UP_PREMIUM": "0.28",
     "PULSE_GROK_UP_MIN_P_WIN": "0.58",
     # Gamma windows often appear >20s after open_ts; min_seconds_since_open=30 already delays entry.

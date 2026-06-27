@@ -39,8 +39,11 @@ class TradingViewDownBiasGate:
         block_up_early_ttc: bool = True,
         block_up_ask_heavy_ob: bool = True,
         block_up_tf_confirm_conflict: bool = True,
+        block_up_cvd_neutral: bool = True,
+        block_up_low_conviction: bool = True,
         up_late_ttc_min_s: float = 240.0,
         up_early_ttc_max_s: float = 120.0,
+        up_min_conviction: float = 0.40,
         exploration_rate: float = 0.0,
         seed: Optional[int] = None,
     ):
@@ -66,8 +69,11 @@ class TradingViewDownBiasGate:
         self.block_up_early_ttc = bool(block_up_early_ttc)
         self.block_up_ask_heavy_ob = bool(block_up_ask_heavy_ob)
         self.block_up_tf_confirm_conflict = bool(block_up_tf_confirm_conflict)
+        self.block_up_cvd_neutral = bool(block_up_cvd_neutral)
+        self.block_up_low_conviction = bool(block_up_low_conviction)
         self.up_late_ttc_min_s = max(0.0, float(up_late_ttc_min_s))
         self.up_early_ttc_max_s = max(0.0, float(up_early_ttc_max_s))
+        self.up_min_conviction = max(0.0, min(1.0, float(up_min_conviction)))
         self.exploration_rate = max(0.0, min(0.05, float(exploration_rate)))
         self.passed = 0
         self.blocked = 0
@@ -93,6 +99,8 @@ class TradingViewDownBiasGate:
         edge_score_bucket=None,
         cex_agreement_bucket=None,
         ob_pressure_bucket=None,
+        cvd_state=None,
+        conviction=None,
         ttc_s=None,
     ) -> list[str]:
         if not side or str(side).lower() != "up":
@@ -111,6 +119,7 @@ class TradingViewDownBiasGate:
         esb = str(edge_score_bucket or "").strip().lower()
         cex = str(cex_agreement_bucket or "").strip().lower()
         ob = str(ob_pressure_bucket or "").strip().lower()
+        cvd = str(cvd_state or "").strip().lower()
         if self.block_bullish_aligned_up and ma == "bullish_aligned":
             reasons.append("tv_down_bias_bullish_aligned_up")
         if self.block_mixed_mtf_up and ma == "mixed":
@@ -150,6 +159,11 @@ class TradingViewDownBiasGate:
             reasons.append("tv_down_bias_up_weak_cex")
         if self.block_up_ask_heavy_ob and ob == "ask_heavy":
             reasons.append("tv_down_bias_up_ask_heavy_ob")
+        if self.block_up_cvd_neutral and cvd == "neutral":
+            reasons.append("tv_down_bias_up_cvd_neutral")
+        if self.block_up_low_conviction and conviction is not None:
+            if float(conviction) < self.up_min_conviction:
+                reasons.append("tv_down_bias_up_low_conviction")
         if ttc_s is not None:
             ttc = float(ttc_s)
             if self.block_up_late_ttc and ttc >= self.up_late_ttc_min_s:
@@ -175,6 +189,8 @@ class TradingViewDownBiasGate:
         edge_score_bucket=None,
         cex_agreement_bucket=None,
         ob_pressure_bucket=None,
+        cvd_state=None,
+        conviction=None,
         ttc_s=None,
     ) -> dict:
         if not self.enabled:
@@ -188,6 +204,7 @@ class TradingViewDownBiasGate:
                                   edge_score_bucket=edge_score_bucket,
                                   cex_agreement_bucket=cex_agreement_bucket,
                                   ob_pressure_bucket=ob_pressure_bucket,
+                                  cvd_state=cvd_state, conviction=conviction,
                                   ttc_s=ttc_s)
         if not reasons:
             self.passed += 1
@@ -226,8 +243,11 @@ class TradingViewDownBiasGate:
             "block_up_early_ttc": self.block_up_early_ttc,
             "block_up_ask_heavy_ob": self.block_up_ask_heavy_ob,
             "block_up_tf_confirm_conflict": self.block_up_tf_confirm_conflict,
+            "block_up_cvd_neutral": self.block_up_cvd_neutral,
+            "block_up_low_conviction": self.block_up_low_conviction,
             "up_late_ttc_min_s": self.up_late_ttc_min_s,
             "up_early_ttc_max_s": self.up_early_ttc_max_s,
+            "up_min_conviction": self.up_min_conviction,
             "exploration_rate": self.exploration_rate,
             "passed": self.passed,
             "blocked": self.blocked,
