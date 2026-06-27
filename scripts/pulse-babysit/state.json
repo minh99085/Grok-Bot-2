@@ -1,20 +1,19 @@
 {
   "goals": {
     "win_rate_target": 0.8,
-    "note": "Paused by operator — restart with /pulse-babysit cycle when ready"
+    "note": "Paused by operator \u2014 restart with /pulse-babysit cycle when ready"
   },
-  "cycle": 0,
-  "phase": "stopped",
+  "cycle": 1,
+  "phase": "soak",
   "soak_hours": 1,
   "soak_minutes": 60,
-  "deployed_at": null,
-  "soak_until": null,
+  "deployed_at": "2026-06-27T16:27:01.486071+00:00",
+  "soak_until": "2026-06-27T17:27:01.486071+00:00",
   "last_eval_at": null,
   "last_verdict": null,
   "last_fixes": [],
   "last_health_verdict": null,
   "vps_sha": null,
   "history": [],
-  "stopped_at": "2026-06-27T15:36:30.235102+00:00",
-  "stopped_reason": "operator pause — cycle memory cleared"
+  "note": "1h inspect cycle \u2014 TV observe-only, green path quant DOWN"
 }

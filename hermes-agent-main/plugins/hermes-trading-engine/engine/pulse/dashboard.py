@@ -212,6 +212,7 @@ function loopEngineSection(s){
   const lc=s.decision_lifecycle||{};
   const lr=s.learning||{};
   const sg=s.learned_selectivity_gate||{};
+  const cohort=s.baseline_cohort_gate||{};
   const les=s.lessons||{};
   const rl=s.research_loop||{};
   const gd=s.grok_decider||{};
@@ -231,6 +232,17 @@ function loopEngineSection(s){
   opProse.querySelector('h2').remove();
   wrap.appendChild(opProse);
   if(loops.count) wrap.appendChild(loopsTable(loops));
+
+  const strat=$('<div class="panel soft" style="margin-top:12px"><h2>Quant path (15m DOWN)</h2><div class="kv"></div></div>');
+  const mtfG3=(s.tradingview||{}).mtf_gate||{};
+  appendKvRows(strat.querySelector('.kv'),[
+    ['Green path',cohort.green_path_enabled?'on':'off',cohort.green_path_enabled?'pos':'neu'],
+    ['TV trade authority',mtfG3.enabled?'MTF on':'observe-only',mtfG3.enabled?'neg':'pos'],
+    ['Cohort TTC (15m)',cohort['15m_ttc_band_s']?cohort['15m_ttc_band_s'].join('–')+'s':'—'],
+    ['DOWN TV gate',cohort.down_tv_gate_enabled?'on':'off',cohort.down_tv_gate_enabled?'neg':'pos'],
+    ['Cohort blocks',cohort.blocked!=null?cohort.blocked:'—'],
+  ]);
+  wrap.appendChild(strat);
 
   const h3learn=$('<h3 class="sub">Learning & self-improvement</h3>');
   wrap.appendChild(h3learn);
@@ -329,7 +341,8 @@ async function tick(){
   const h=document.getElementById('health');
   if(!s.available){h.textContent='No data';h.className='tag off';return}
   h.textContent='Live';h.className='tag live';
-  document.getElementById('meta').textContent='Ticks '+s.ticks+' · '+new Date().toLocaleTimeString();
+  const cfg=s.config||{};
+  document.getElementById('meta').textContent='Ticks '+s.ticks+' · tick '+f(cfg.tick_seconds,0)+'s · max '+f(cfg.max_price,2)+' · '+new Date().toLocaleTimeString();
 
   const coupling=s.config_coupling||{};
   const cBanner=document.getElementById('coupling-banner');
@@ -362,11 +375,15 @@ async function tick(){
   const lc=s.decision_lifecycle||{}, rbs=lc.rejected_by_stage||{};
   const topGate=Object.entries(rbs).sort((a,b)=>b[1]-a[1])[0];
   const wr=(L.win_rate||0)*100;
+  const dr=s.directional_risk||{};
+  const cohort=s.baseline_cohort_gate||{};
+  const mtfG=(s.tradingview||{}).mtf_gate||{};
   hero.appendChild(proseCard('At a glance',[
     'Status: <b>Running</b> · '+(L.open_positions>0?'has open position':'scanning markets'),
     'Trades <b>'+(L.trades||0)+'</b> ('+(L.settled||0)+' settled) · Win rate <b>'+f(wr,1)+'%</b>',
+    '15m DOWN-only · green path <b class="'+(cohort.green_path_enabled?'pos':'neu')+'">'+(cohort.green_path_enabled?'on':'off')+'</b> · TV gate <b class="pos">observe-only</b>',
     topGate?('Most blocks: <b>'+topGate[0]+'</b> ('+topGate[1]+')'):'No gate blocks recorded yet',
-    'Grok mode <b>'+(gd.mode||'—')+'</b> · Verifier '+((ver.approvals||0)+' ok / '+(ver.vetoes||0)+' veto')
+    'Grok <b>'+(gd.mode||'—')+'</b> · Verifier '+((ver.approvals||0)+' ok / '+(ver.vetoes||0)+' veto')+' · MTF trade gate <b>'+(mtfG.enabled?'on':'off')+'</b>'
   ]));
 
   const summary=document.getElementById('summary');summary.innerHTML='';
@@ -442,9 +459,11 @@ async function tick(){
     });
     tvPanel.appendChild(tb);
     const foot=$('<div class="money-sub" style="margin-top:12px"></div>');
+    const mtfGate=tv.mtf_gate||{};
     foot.innerHTML=mtfN+'-TF trend: <b class="'+mtfCls+'">'+mtfVerdict+'</b> · '
       +(mtf.trend_fresh_count==null?'—':mtf.trend_fresh_count)+'/'+mtfN+' fresh · '
-      +(tv.tradingview_alerts_valid||0)+' alerts received';
+      +(tv.tradingview_alerts_valid||0)+' alerts · trade gate <b class="pos">'
+      +(mtfGate.enabled?'on':'off (observe-only)')+'</b>';
     tvPanel.appendChild(foot);
     summary.appendChild(tvPanel);
   }
@@ -467,10 +486,13 @@ async function tick(){
     ['Reconciled',eg.reconciled?'yes':'no',eg.reconciled?'pos':'neg']
   ]));
   const sg=s.learned_selectivity_gate||{},cohort=s.baseline_cohort_gate||{};
+  const mtfG2=(s.tradingview||{}).mtf_gate||{};
   tech.appendChild(kvCard('Gates',[
-    ['Selectivity rejects',sg.rejected||0,(sg.rejected>0?'neg':'neu')],
+    ['Green path',cohort.green_path_enabled?'on':'off',cohort.green_path_enabled?'pos':'neu'],
+    ['TV MTF gate',mtfG2.enabled?'on':'off (observe)',mtfG2.enabled?'neg':'pos'],
     ['Cohort blocks',cohort.blocked||0,(cohort.blocked>0?'neg':'neu')],
-    ['Context max TTC',coupling.effective_s!=null?coupling.effective_s+'s':'—'],
+    ['Selectivity rejects',sg.rejected||0,(sg.rejected>0?'neg':'neu')],
+    ['15m TTC band',cohort['15m_ttc_band_s']?cohort['15m_ttc_band_s'][0]+'-'+cohort['15m_ttc_band_s'][1]+'s':'—'],
     ['Coupling OK',coupling.configured_ok==null?'—':(coupling.configured_ok?'yes':'no'),
       coupling.configured_ok?'pos':'neg'],
     ['Brier',f(c.brier,3)],['Calib samples',c.samples||0]

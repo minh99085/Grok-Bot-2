@@ -101,6 +101,17 @@ def test_decide_picks_side_with_edge():
     assert abs(d.edge - 0.24) < 1e-9
 
 
+def test_decide_force_side_down_evaluates_down_not_up():
+    w = _win()
+    d = decide(w, fair_p_up=0.80, now=1100.0, min_edge=0.05, edge_buffer=0.01, force_side="down")
+    assert d.side == "down" and d.price == 0.49
+    assert d.trade is False and d.reason == "edge_below_min"
+    w2 = _win()
+    w2.down_book = OrderBook(best_bid=0.10, best_ask=0.15, ask_depth_usd=500, bid_depth_usd=500)
+    d2 = decide(w2, fair_p_up=0.30, now=1100.0, min_edge=0.05, edge_buffer=0.01, force_side="down")
+    assert d2.trade and d2.side == "down"
+
+
 def test_decide_rejects_low_edge_and_late_window():
     w = _win()
     assert decide(w, 0.57, 1100.0, min_edge=0.05).reason == "edge_below_min"

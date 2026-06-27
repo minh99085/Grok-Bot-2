@@ -2155,6 +2155,7 @@ class PulseEngine:
                 context_explored = False
             else:
                 _up_rr = self._reward_risk_floor("up")
+                _force_side = ("down" if self.cfg.directional_down_only else None)
                 d = decide(w, fair_used, now, min_edge=self.cfg.min_edge,
                            min_seconds_to_close=self.cfg.min_seconds_to_close,
                            min_depth_usd=self.cfg.min_depth_usd,
@@ -2163,7 +2164,8 @@ class PulseEngine:
                            basis_buffer=self.cfg.basis_buffer,
                            min_reward_risk=self.cfg.min_reward_risk,
                            min_reward_risk_up=_up_rr if _up_rr > float(self.cfg.min_reward_risk or 0)
-                           else None)
+                           else None,
+                           force_side=_force_side)
             if grok_follow:
                 outcome_prob = grok_oprob              # Grok's P(chosen side wins) (action or view)
             elif cex_lead_active:

@@ -35,7 +35,8 @@ def decide(window, fair_p_up: Optional[float], now: float, *,
            min_depth_usd: float = 1.0, edge_buffer: float = 0.01,
            max_price: float = 0.97, min_seconds_since_open: float = 0.0,
            basis_buffer: float = 0.0, min_reward_risk: float = 0.0,
-           min_reward_risk_up: Optional[float] = None) -> PulseDecision:
+           min_reward_risk_up: Optional[float] = None,
+           force_side: Optional[str] = None) -> PulseDecision:
     """Return the PAPER trade decision for ``window`` at time ``now``.
 
     Quality gates that protect EXPECTANCY (not just realism): skip the dead early window
@@ -65,7 +66,14 @@ def decide(window, fair_p_up: Optional[float], now: float, *,
                      (1.0 - fair_p_up) - float(dn_ask) - buf))
     if not cand:
         return PulseDecision(False, fair_p_up=fair_p_up, reason="no_tradeable_ask")
-    side, token, price, edge = max(cand, key=lambda c: c[3])
+    want = str(force_side or "").strip().lower()
+    if want in ("up", "down"):
+        picked = [c for c in cand if c[0] == want]
+        if not picked:
+            return PulseDecision(False, fair_p_up=fair_p_up, reason="no_tradeable_ask")
+        side, token, price, edge = picked[0]
+    else:
+        side, token, price, edge = max(cand, key=lambda c: c[3])
     if edge < min_edge:
         return PulseDecision(False, side=side, token_id=token, price=price,
                              fair_p_up=fair_p_up, edge=edge, reason="edge_below_min")
