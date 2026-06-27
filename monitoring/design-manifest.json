@@ -1,0 +1,60 @@
+{
+  "schema": "bot_design_manifest/1.0",
+  "updated": "2026-06-27",
+  "architecture": {
+    "name": "BTC Pulse — 5m brain, 15m hands",
+    "summary": "TradingView 2/3/4m alerts observe-only. Quant cohort owns 15m DOWN entries in TTC band. Grok shadow. Paper only.",
+    "trade_authority": [
+      "baseline_cohort_gate",
+      "strategy_edge_and_reward_risk",
+      "execution_gate",
+      "verifier"
+    ],
+    "observe_only": [
+      "tradingview_webhooks",
+      "grok_decider_shadow",
+      "signal_engine",
+      "factor_model",
+      "markov_regime",
+      "edge_model",
+      "research_meta"
+    ],
+    "locked_operator_rules": [
+      ".grok/rules/tv-observe-only-lock.md",
+      "PULSE_TRADINGVIEW_SIGNAL_GATE=0",
+      "PULSE_TV_MTF_* trade gates=0",
+      "PULSE_TV_CONTEXT_GATE=0",
+      "PULSE_BASELINE_*_TV_GATE_ENABLED=0"
+    ]
+  },
+  "entry_design": {
+    "series": "btc-up-or-down-15m",
+    "side": "DOWN only",
+    "green_path": "15m DOWN skips stacked opinion gates; cohort still authoritative",
+    "ttc_band_base_s": [160, 220],
+    "ttc_band_15m_scaled_s": [480, 660],
+    "tick_seconds": 15,
+    "max_entry_price": 0.70,
+    "min_edge": 0.02,
+    "min_reward_risk": 0.55,
+    "size_usd": 5
+  },
+  "data_sources": {
+    "settlement": ["polymarket_resolution", "rtds_chainlink_proxy"],
+    "oracle": "chainlink via Polymarket RTDS",
+    "lead_feeds": ["binance_btcusdt", "coinbase_btcusd"],
+    "markets": "gamma-api.polymarket.com",
+    "orderbooks": "clob.polymarket.com",
+    "tv_webhook": "http://<vps>/webhooks/tradingview",
+    "tv_charts": "INDEX:BTCUSD 2m/3m/4m"
+  },
+  "monitoring_layers": {
+    "live_dashboard": "http://45.32.224.147/dashboard",
+    "latest_full_artifacts": "vps_full_reports/latest/",
+    "timeline_log": "monitoring/timeline.jsonl",
+    "babysit_state": "scripts/pulse-babysit/state.json",
+    "score_history_vps": "btc_pulse_score_history.json (on VPS /data)",
+    "cycle_summary": "vps_full_reports/latest/CYCLE_SUMMARY.md"
+  },
+  "env_source_of_truth": "scripts/apply-loop-arch-env.py"
+}

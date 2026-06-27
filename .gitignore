@@ -32,3 +32,8 @@ validation_light_latest.txt
 !vps_full_reports/**
 
 vps_full_reports/baseline_p1/
+
+# Bot design timeline (committed); archives are local-only full copies
+!monitoring/
+!monitoring/**
+monitoring/archives/

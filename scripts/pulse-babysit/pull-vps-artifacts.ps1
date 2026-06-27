@@ -87,6 +87,11 @@ if (Test-Path $summaryScript) {
     python $summaryScript
 }
 
+$timelineScript = Join-Path $PSScriptRoot "record-timeline.py"
+if (Test-Path $timelineScript) {
+    python $timelineScript --from-latest
+}
+
 $pushScript = Join-Path $PSScriptRoot "push-report-to-main.ps1"
 if (-not (Test-Path $pushScript)) {
     Write-Error "Missing push script: $pushScript"
