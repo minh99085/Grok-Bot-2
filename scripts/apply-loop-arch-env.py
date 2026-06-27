@@ -94,7 +94,8 @@ UPDATES = {
     "PULSE_ARB_MAX_USD": "300",
     "PULSE_PRIMARY_EDGE_SOURCE": "arbitrage",
     "PULSE_DIRECTIONAL_MAX_BANKROLL_FRAC": "0.10",
-    # Block UP until Wilson-promoted; DOWN is the proven 15m edge.
+    # DOWN-only directional: hard block every UP path (grok/cex/mispricing included).
+    "PULSE_DIRECTIONAL_DOWN_ONLY": "1",
     "PULSE_DIRECTIONAL_BLOCK_UP_UNTIL_PROMOTED": "1",
     "PULSE_DIRECTIONAL_UP_RESTRICTIONS_ENABLED": "1",
     "PULSE_DEPENDENCY_ARB_ENABLED": "1",

@@ -102,6 +102,20 @@ def test_dependency_nested_implication_detected():
     assert vios[0].constraint_type == "nested_implication"
 
 
+def test_directional_down_only_blocks_up(tmp_path):
+    t0 = 10_000_000.0
+    w = PulseWindow(event_id="e1", market_id="m1", slug="s", title="BTC",
+                    open_ts=t0, close_ts=t0 + 900, up_token_id="U", down_token_id="D",
+                    series_slug=SERIES_SLUG_15M, window_seconds=900, series_label="15m")
+    eng, _ = _engine(tmp_path, _MultiArbMkt([w]),
+                     directional_down_only=True, arbitrage_enabled=False)
+    blocked, reason = eng._directional_up_blocked("up")
+    assert blocked is True and reason == "directional_down_only"
+    assert eng._directional_up_blocked("down") == (False, "")
+    risk = eng.light_report()["directional_risk"]
+    assert risk.get("directional_down_only") is True
+
+
 def test_up_block_gate_configured_until_promoted(tmp_path):
     t0 = 10_000_000.0
     w = PulseWindow(event_id="e1", market_id="m1", slug="s", title="BTC",

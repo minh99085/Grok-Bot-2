@@ -250,6 +250,7 @@ services:
       # buckets it would block every directional trade forever (no trades => nothing to prove).
       # This lets a small capped fraction through as exploration to keep learning. 0=block-all.
       PULSE_DIRECTIONAL_EXPLORE_RATE: "${PULSE_DIRECTIONAL_EXPLORE_RATE:-0.12}"
+      PULSE_DIRECTIONAL_DOWN_ONLY: "${PULSE_DIRECTIONAL_DOWN_ONLY:-1}"
       PULSE_DIRECTIONAL_BLOCK_UP_UNTIL_PROMOTED: "${PULSE_DIRECTIONAL_BLOCK_UP_UNTIL_PROMOTED:-1}"
       PULSE_DIRECTIONAL_UP_RESTRICTIONS_ENABLED: "${PULSE_DIRECTIONAL_UP_RESTRICTIONS_ENABLED:-1}"
       PULSE_DIRECTIONAL_MAX_BANKROLL_FRAC: "${PULSE_DIRECTIONAL_MAX_BANKROLL_FRAC:-0.10}"

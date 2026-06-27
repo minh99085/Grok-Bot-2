@@ -244,6 +244,7 @@ class PulseConfig:
     # keeps learning and can DISCOVER winning buckets. 0 = strict block-all; 1 = effectively off.
     directional_explore_rate: float = 0.05
     directional_max_bankroll_frac: float = 0.10   # cap directional open exposure vs starting capital
+    directional_down_only: bool = True            # hard block ALL directional UP (no bypass)
     directional_block_up_until_promoted: bool = True  # hard block UP until direction=up promoted
     directional_up_restrictions_enabled: bool = True  # UP-only extra gates (TV/down-bias/RR premium)
     directional_series_slugs: tuple = ()        # empty = all series; else directional only on these
@@ -580,6 +581,9 @@ class PulseConfig:
             directional_winning_min_samples=int(_envf("PULSE_DIRECTIONAL_WINNING_MIN_SAMPLES", 30)),
             directional_explore_rate=_envf("PULSE_DIRECTIONAL_EXPLORE_RATE", 0.05),
             directional_max_bankroll_frac=_envf("PULSE_DIRECTIONAL_MAX_BANKROLL_FRAC", 0.10),
+            directional_down_only=str(
+                os.getenv("PULSE_DIRECTIONAL_DOWN_ONLY", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
             directional_block_up_until_promoted=str(
                 os.getenv("PULSE_DIRECTIONAL_BLOCK_UP_UNTIL_PROMOTED", "1")).strip().lower()
             in ("1", "true", "yes", "on"),
@@ -1833,6 +1837,15 @@ class PulseEngine:
                                                   float(self.cfg.grok_decider_explore_size_fraction)
                                                   * self.grok_decider.aggr.size_scale()))
                     self._grok_policy_counts["explore"] += 1
+                up_blk, up_reason = self._directional_up_blocked(side)
+                if up_blk:
+                    dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
+                                                     outcome_prob=None, model_edge=0.0,
+                                                     tradeable=False, reason=up_reason)
+                    if self.markov is not None:
+                        self.markov.record_terminal(state=cand_state, accepted=False)
+                    _finalize(dr, "rejected", reason=up_reason, stage="directional")
+                    continue
                 if (entry_mode != "mispricing_follow" and side == "up" and grok_oprob is not None
                         and float(grok_oprob) < float(self.cfg.grok_up_min_p_win)):
                     dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
@@ -1978,6 +1991,15 @@ class PulseEngine:
                 # calibration + EV gate + caps + breaker) below still applies and stays authoritative.
                 cex_lead_active = True
                 side = cex_lead_drive["side"]
+                up_blk, up_blk_reason = self._directional_up_blocked(side)
+                if up_blk:
+                    dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
+                                                     outcome_prob=None, model_edge=0.0,
+                                                     tradeable=False, reason=up_blk_reason)
+                    if self.markov is not None:
+                        self.markov.record_terminal(state=cand_state, accepted=False)
+                    _finalize(dr, "rejected", reason=up_blk_reason, stage="directional")
+                    continue
                 if side == "up":
                     up_ok, up_reason = self._up_side_tv_bias_ok(tv_feature, ttc_s=ttc,
                                                                  markov_state=cand_state,
@@ -2045,13 +2067,12 @@ class PulseEngine:
                     self.markov.record_terminal(state=cand_state, accepted=False)
                 _finalize(dr, "rejected", reason=d.reason, stage="directional")
                 continue
-            if (self.cfg.directional_block_up_until_promoted and not grok_follow
-                    and not cex_lead_active and d.side == "up"
-                    and not self._up_direction_promoted()):
-                dr.action = RejectAction(stage="directional", reason="up_blocked_until_promoted")
+            up_blk, up_reason = self._directional_up_blocked(d.side)
+            if up_blk:
+                dr.action = RejectAction(stage="directional", reason=up_reason)
                 if self.markov is not None:
                     self.markov.record_terminal(state=cand_state, accepted=False)
-                _finalize(dr, "rejected", reason="up_blocked_until_promoted", stage="directional")
+                _finalize(dr, "rejected", reason=up_reason, stage="directional")
                 continue
             # --- quant OPINION gates (TV-signal / context / late-window / selectivity). These are
             # the quant's directional opinion; in FOLLOW / CEX-LEAD-DRIVE mode the direction is owned
@@ -3546,6 +3567,7 @@ class PulseEngine:
                 2),
             "open_exposure_usd": round(self._directional_open_exposure(), 2),
             "block_up_until_promoted": bool(self.cfg.directional_block_up_until_promoted),
+            "directional_down_only": bool(self.cfg.directional_down_only),
             "directional_series_slugs": list(self.cfg.directional_series_slugs),
             "arb_series_slugs": list(self.cfg.pulse_series_slugs),
             "research_auto_apply": bool(self.cfg.research_auto_apply),
@@ -3810,6 +3832,17 @@ class PulseEngine:
         if not allowed:
             return True
         return str(getattr(w, "series_slug", "") or "") in allowed
+
+    def _directional_up_blocked(self, side: Optional[str]) -> tuple:
+        """Return (blocked, reason) for directional UP — no grok/cex bypass when down_only."""
+        if str(side or "").lower() != "up":
+            return False, ""
+        if bool(getattr(self.cfg, "directional_down_only", False)):
+            return True, "directional_down_only"
+        if (self.cfg.directional_block_up_until_promoted
+                and not self._up_direction_promoted()):
+            return True, "up_blocked_until_promoted"
+        return False, ""
 
     def _arb_epsilon_for(self, w) -> float:
         ws = int(getattr(w, "window_seconds", 0) or 0)
@@ -4292,6 +4325,7 @@ class PulseEngine:
                     * float(self.cfg.directional_max_bankroll_frac), 2),
                 "open_exposure_usd": round(self._directional_open_exposure(), 2),
                 "block_up_until_promoted": bool(self.cfg.directional_block_up_until_promoted),
+                "directional_down_only": bool(self.cfg.directional_down_only),
                 "directional_series_slugs": list(self.cfg.directional_series_slugs),
                 "arb_series_slugs": list(self.cfg.pulse_series_slugs),
                 "up_promoted": self._up_direction_promoted(),
