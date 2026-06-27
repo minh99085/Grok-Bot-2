@@ -1,23 +1,23 @@
 # Bot cycle summary (plain English)
 
-_Updated: 2026-06-27 13:33 UTC_
+_Updated: 2026-06-27 13:36 UTC_
 
 ## Last cycle
 
 | | |
 |---|---|
-| **Cycle #** | 25 |
-| **Checked at** | 2026-06-27 12:33 UTC |
+| **Cycle #** | 26 |
+| **Checked at** | 2026-06-27 13:33 UTC |
 | **Result** | **issues** |
 | **What it means** | Issues found — UP trades still lose money. More UP blocks may have been added. |
-| **Next check after** | 2026-06-27 11:35 UTC |
+| **Next check after** | 2026-06-27 14:36 UTC |
 
 **Issues flagged:** win_rate_below_target, profit_factor_low, up_side_bleed
 
 **Fixes applied:**
 
-- down_bias: block UP when volume_state=active (37.5pct WR, -10.58 PnL, n=8)
-- baseline_down: block DOWN when tf_confirm=single_tf (53.3pct WR, -10.02 PnL, n=15)
+- down_bias: block UP when entry_price<0.55 (16.7pct WR, -15.28 PnL, n=6)
+- baseline_down: block DOWN when bb_state=expansion_down (50pct WR, -6.73 PnL, n=8)
 
 ## How the bot is doing now
 
