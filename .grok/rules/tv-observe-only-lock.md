@@ -34,6 +34,7 @@ TV intake stays **on** (webhooks, `PULSE_TV_FEATURE_SYMBOL`, `PULSE_TV_MTF_TIMEF
 ## What agents may still tune (without touching TV gates)
 
 - Baseline cohort TTC band (480–660s on 15m), edge/CEX relax flags
+- **TV confidence tier** (`PULSE_TV_CONFIDENCE_TIER_*`): modulates `min_edge` / `max_price` at 15m sweet spot only — not a block/force gate
 - Selectivity, execution gate, min_edge, max_price, reward/risk
 - DOWN-only, 15m series, Grok shadow, arb settings
 - CEX-lead / mispricing (if operator asks) — separate from TV

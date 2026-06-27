@@ -405,6 +405,15 @@ class PulseConfig:
     # can only PREVENT trades (never force one or bypass the execution gate). Default OFF.
     tradingview_signal_gate_enabled: bool = False
     tradingview_min_signal_strength: float = 0.0   # 0=off; e.g. 0.72 blocks WEAK, keeps STRONG
+    # TV confidence tier: observe-only min_edge/max_price modulation at 15m sweet spot (not a gate).
+    tv_confidence_tier_enabled: bool = True
+    tv_tier_require_sweet_spot: bool = True
+    tv_tier_15m_only: bool = True
+    tv_tier_aligned_strength_min: float = 0.72
+    tv_tier_a_min_edge_delta: float = -0.005
+    tv_tier_a_max_price_delta: float = 0.02
+    tv_tier_c_min_edge_delta: float = 0.005
+    tv_tier_c_max_price_delta: float = -0.03
     # forward-return horizon (s): for EVERY TradingView signal, the bot snapshots the oracle BTC
     # price and re-checks it this many seconds later to learn whether the signal predicted the
     # move — building a prediction from the history of ALL signals (traded or not). Observe-only.
@@ -874,6 +883,19 @@ class PulseConfig:
             tradingview_signal_gate_enabled=str(os.getenv("PULSE_TRADINGVIEW_SIGNAL_GATE", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
             tradingview_min_signal_strength=_envf("PULSE_TV_MIN_SIGNAL_STRENGTH", 0.0),
+            tv_confidence_tier_enabled=str(
+                os.getenv("PULSE_TV_CONFIDENCE_TIER_ENABLED", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            tv_tier_require_sweet_spot=str(
+                os.getenv("PULSE_TV_TIER_REQUIRE_SWEET_SPOT", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            tv_tier_15m_only=str(os.getenv("PULSE_TV_TIER_15M_ONLY", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            tv_tier_aligned_strength_min=_envf("PULSE_TV_TIER_ALIGNED_STRENGTH_MIN", 0.72),
+            tv_tier_a_min_edge_delta=_envf("PULSE_TV_TIER_A_MIN_EDGE_DELTA", -0.005),
+            tv_tier_a_max_price_delta=_envf("PULSE_TV_TIER_A_MAX_PRICE_DELTA", 0.02),
+            tv_tier_c_min_edge_delta=_envf("PULSE_TV_TIER_C_MIN_EDGE_DELTA", 0.005),
+            tv_tier_c_max_price_delta=_envf("PULSE_TV_TIER_C_MAX_PRICE_DELTA", -0.03),
             tradingview_signal_horizon_s=_envf("PULSE_TV_SIGNAL_HORIZON_S", 300.0),
             tradingview_promotion_allowed=str(os.getenv("PULSE_TV_PROMOTION_ALLOWED", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
@@ -1159,6 +1181,7 @@ class PulseEngine:
         self._grok_policy_counts = {"exploit": 0, "explore": 0, "avoid": 0}   # adaptive-loop tally
         self._mispricing_gate_counts: dict = {}
         self._baseline_cohort_gate_counts: dict = {}
+        self._tv_tier_counts: dict = {}
         try:
             from engine.pulse.grok_intel import (GrokBudget, GrokSignalAnalyst,
                                                  GrokSignalPredictor, xai_key)
@@ -2180,10 +2203,30 @@ class PulseEngine:
             else:
                 _up_rr = self._reward_risk_floor("up")
                 _force_side = ("down" if self.cfg.directional_down_only else None)
-                d = decide(w, fair_used, now, min_edge=self.cfg.min_edge,
+                _ws = int(getattr(w, "window_seconds", 300) or 300)
+                from engine.pulse.tv_confidence_tier import (
+                    params_from_engine_cfg,
+                    resolve_tv_entry_params,
+                )
+                _proposed_side = _force_side or "down"
+                _tv_tier_snap = resolve_tv_entry_params(
+                    side=_proposed_side,
+                    tv_feature=tv_feature,
+                    ttc_s=ttc,
+                    window_seconds=_ws,
+                    base_min_edge=self.cfg.min_edge,
+                    base_max_price=self.cfg.max_price,
+                    params=params_from_engine_cfg(self.cfg),
+                )
+                dr.tv_confidence_tier = _tv_tier_snap
+                _eff_min_edge = float(_tv_tier_snap.get("min_edge") or self.cfg.min_edge)
+                _eff_max_price = float(_tv_tier_snap.get("max_price") or self.cfg.max_price)
+                _tier_key = str(_tv_tier_snap.get("tier") or "base")
+                self._tv_tier_counts[_tier_key] = self._tv_tier_counts.get(_tier_key, 0) + 1
+                d = decide(w, fair_used, now, min_edge=_eff_min_edge,
                            min_seconds_to_close=self.cfg.min_seconds_to_close,
                            min_depth_usd=self.cfg.min_depth_usd,
-                           edge_buffer=self.cfg.edge_buffer, max_price=self.cfg.max_price,
+                           edge_buffer=self.cfg.edge_buffer, max_price=_eff_max_price,
                            min_seconds_since_open=self.cfg.min_seconds_since_open,
                            basis_buffer=self.cfg.basis_buffer,
                            min_reward_risk=self.cfg.min_reward_risk,
@@ -4523,7 +4566,30 @@ class PulseEngine:
         rep["context_gate"] = self.tv_context_gate.report()
         rep["down_bias_gate"] = self.tv_down_bias_gate.report()
         rep["mtf_gate"] = self.tv_mtf_gate.report()
+        rep["confidence_tier"] = self._tv_confidence_tier_report()
         return rep
+
+    def _tv_confidence_tier_report(self) -> dict:
+        return {
+            "enabled": bool(self.cfg.tv_confidence_tier_enabled),
+            "observe_only": True,
+            "affects_trading": bool(self.cfg.tv_confidence_tier_enabled),
+            "can_force_trade": False,
+            "can_block_trade": False,
+            "mode": "param_modulation_restrict_only",
+            "only_15m": bool(self.cfg.tv_tier_15m_only),
+            "require_sweet_spot": bool(self.cfg.tv_tier_require_sweet_spot),
+            "tier_counts": dict(self._tv_tier_counts),
+            "deltas": {
+                "tier_a_min_edge": self.cfg.tv_tier_a_min_edge_delta,
+                "tier_a_max_price": self.cfg.tv_tier_a_max_price_delta,
+                "tier_c_min_edge": self.cfg.tv_tier_c_min_edge_delta,
+                "tier_c_max_price": self.cfg.tv_tier_c_max_price_delta,
+            },
+            "aligned_strength_min": self.cfg.tv_tier_aligned_strength_min,
+            "note": ("At 15m TTC sweet spot, TV MTF regime adjusts min_edge/max_price only. "
+                     "TV trade gates remain off per operator lock."),
+        }
 
     def _tier_report(self) -> dict:
         """REPORT-ONLY tier table across bucket dimensions (no trade/veto authority)."""

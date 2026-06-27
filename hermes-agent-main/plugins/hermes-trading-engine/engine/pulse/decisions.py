@@ -228,6 +228,7 @@ class DecisionResult:
     selectivity: Optional[dict] = None          # learned selectivity gate decision (accept/reject)
     context_gate: Optional[dict] = None         # TradingView context gate (pass/block/explore)
     green_path: Optional[dict] = None           # 15m DOWN baseline fast lane (collapsed gates)
+    tv_confidence_tier: Optional[dict] = None   # TV regime param modulation (observe-only)
     late_window: Optional[dict] = None          # late-window high-conviction entry mode decision
     grok_decision: Optional[dict] = None        # Grok decision-engine output (shadow/follow)
     cex_lead: Optional[dict] = None             # CEX-lead latency edge signal (shadow/gated)
@@ -281,6 +282,7 @@ class DecisionResult:
                 "selectivity": self.selectivity,
                 "context_gate": self.context_gate,
                 "green_path": self.green_path,
+                "tv_confidence_tier": self.tv_confidence_tier,
                 "late_window": self.late_window,
                 "grok_decision": self.grok_decision,
                 "cex_lead": self.cex_lead,

@@ -73,6 +73,15 @@ UPDATES = {
     "PULSE_MAX_PRICE": "0.70",
     # [TV-LOCK] context gate off — TV never blocks entries.
     "PULSE_TV_CONTEXT_GATE": "0",
+    # TV confidence tier: modulate min_edge/max_price at 15m sweet spot (not a trade gate).
+    "PULSE_TV_CONFIDENCE_TIER_ENABLED": "1",
+    "PULSE_TV_TIER_REQUIRE_SWEET_SPOT": "1",
+    "PULSE_TV_TIER_15M_ONLY": "1",
+    "PULSE_TV_TIER_ALIGNED_STRENGTH_MIN": "0.72",
+    "PULSE_TV_TIER_A_MIN_EDGE_DELTA": "-0.005",
+    "PULSE_TV_TIER_A_MAX_PRICE_DELTA": "0.02",
+    "PULSE_TV_TIER_C_MIN_EDGE_DELTA": "0.005",
+    "PULSE_TV_TIER_C_MAX_PRICE_DELTA": "-0.03",
     # Mispricing/edge-TTC off on quant baseline (Grok shadow; redundant with cohort).
     "PULSE_MISPRICING_GATE_ENABLED": "0",
     "PULSE_MISPRICING_TTC_MIN_S": "160",
