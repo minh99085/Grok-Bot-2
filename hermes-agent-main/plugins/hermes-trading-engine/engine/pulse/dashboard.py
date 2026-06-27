@@ -82,6 +82,27 @@ table.data tr:hover td{background:rgba(255,255,255,.02)}
 }
 .coupling-banner.show{display:block}
 .coupling-banner b{color:var(--text)}
+.flow{
+  display:flex;flex-wrap:wrap;gap:6px 4px;align-items:center;
+  font-size:17px;color:var(--text2);margin:0 0 14px;
+}
+.flow span.step{
+  padding:4px 10px;border-radius:8px;background:var(--bg2);border:1px solid var(--line);
+  color:var(--text);white-space:nowrap;
+}
+.flow span.arr{color:var(--text3);font-size:15px}
+.pill{
+  display:inline-block;padding:2px 8px;border-radius:10px;font-size:15px;
+  background:var(--bg2);color:var(--text2);
+}
+.pill.ok{color:var(--good);background:rgba(125,206,160,.12)}
+.pill.warn{color:var(--warn);background:rgba(212,196,165,.12)}
+.pill.off{color:var(--text3)}
+.lesson-item{
+  font-size:17px;color:var(--text2);padding:6px 0;border-bottom:1px solid var(--line);
+}
+.lesson-item:last-child{border-bottom:0}
+.lesson-item b{color:var(--text);font-weight:600}
 .foot{margin-top:32px;padding-top:16px;border-top:1px solid var(--line);color:var(--text3);font-size:17px}
 </style>
 </head>
@@ -125,6 +146,155 @@ function positionsTable(pos){
     </tr>`));
   });
   return tb;
+}
+function loopLivePill(info){
+  if(info.stalled) return '<span class="pill warn">stalled</span>';
+  if(info.last_beat_age_s!=null){
+    const age=info.last_beat_age_s;
+    return '<span class="pill '+(age<30?'ok':'warn')+'">'+f(age,0)+'s ago</span>';
+  }
+  const st=info.status||{};
+  if(st.tripped) return '<span class="pill warn">tripped</span>';
+  if(st.enabled===false) return '<span class="pill off">off</span>';
+  if(st.mode) return '<span class="pill ok">'+st.mode+'</span>';
+  return '<span class="pill off">—</span>';
+}
+function loopStatusNote(info){
+  const st=info.status||{};
+  const bits=[];
+  if(st.decided!=null) bits.push('decided '+st.decided);
+  if(st.requested!=null) bits.push('req '+st.requested);
+  if(st.errors) bits.push('err '+st.errors);
+  if(st.calls!=null) bits.push('calls '+st.calls);
+  if(st.tripped!=null) bits.push(st.tripped?'breaker':'ok');
+  if(info.stop_condition) bits.push(info.stop_condition);
+  return bits.length?bits.join(' · '):'—';
+}
+function loopsTable(loopsRoot){
+  const loops=(loopsRoot&&loopsRoot.loops)||{};
+  const names=Object.keys(loops).sort();
+  const tb=$('<table class="data"><thead><tr><th>Loop</th><th>Role</th><th>Trigger</th><th>Cadence</th><th>Live</th><th>Status</th></tr></thead><tbody></tbody></table>');
+  names.forEach(name=>{
+    const info=loops[name]||{};
+    const cad=info.interval_s==null?'—':f(info.interval_s,0)+'s';
+    tb.querySelector('tbody').appendChild($(`<tr>
+      <td>${name}</td><td class="neu">${info.role||'—'}</td>
+      <td class="neu">${info.trigger||'—'}</td><td class="neu">${cad}</td>
+      <td>${loopLivePill(info)}</td>
+      <td class="neu">${loopStatusNote(info)}</td>
+    </tr>`));
+  });
+  return tb;
+}
+function gateFunnelLines(lc){
+  const terms=lc.terminals||{};
+  const rbs=lc.rejected_by_stage||{};
+  const top=Object.entries(rbs).sort((a,b)=>b[1]-a[1]).slice(0,4);
+  const lines=[
+    'Windows scanned <b>'+(lc.created||0)+'</b> · scored <b>'+(lc.feature_scored||0)+'</b> · '
+    +'fills <b>'+(terms.accepted||0)+'</b> · rejected <b>'+(terms.rejected||0)+'</b> · skipped <b>'+(terms.skipped||0)+'</b>',
+  ];
+  if(top.length) lines.push('Top blocks: <b>'+top.map(([k,v])=>k+' ('+v+')').join(', ')+'</b>');
+  return lines;
+}
+function appendKvRows(kv,rows){
+  rows.forEach(([k,v,cls])=>{
+    const r=$('<div class="kv-row"><span class="kv-k"></span><span class="kv-v"></span></div>');
+    r.querySelector('.kv-k').textContent=k;
+    const vEl=r.querySelector('.kv-v');
+    vEl.textContent=v;
+    if(cls) vEl.classList.add(cls);
+    kv.appendChild(r);
+  });
+}
+function loopEngineSection(s){
+  const wrap=document.createDocumentFragment();
+  const lc=s.decision_lifecycle||{};
+  const lr=s.learning||{};
+  const sg=s.learned_selectivity_gate||{};
+  const les=s.lessons||{};
+  const rl=s.research_loop||{};
+  const gd=s.grok_decider||{};
+  const loops=s.loops||{};
+  const mb=(lr.market_benchmark||{});
+
+  const h3op=$('<h3 class="sub">Loop engine · operation</h3>');
+  wrap.appendChild(h3op);
+  const flow=$('<div class="flow"></div>');
+  ['Tick','Ingest','Fair P(up)','Gate stack','Exec gate','Paper fill','Settle','Learn']
+    .forEach((step,i,arr)=>{
+      flow.appendChild($('<span class="step">'+step+'</span>'));
+      if(i<arr.length-1) flow.appendChild($('<span class="arr">→</span>'));
+    });
+  wrap.appendChild(flow);
+  const opProse=proseCard('',gateFunnelLines(lc));
+  opProse.querySelector('h2').remove();
+  wrap.appendChild(opProse);
+  if(loops.count) wrap.appendChild(loopsTable(loops));
+
+  const h3learn=$('<h3 class="sub">Learning & self-improvement</h3>');
+  wrap.appendChild(h3learn);
+  const learnNote=$('<div class="money-sub" style="margin-bottom:12px"></div>');
+  learnNote.innerHTML='Closed loop: every settled trade grades the model, updates bucket evidence, '
+    +'compounds lessons, and tightens or loosens gates. Execution gate always has final veto.';
+  wrap.appendChild(learnNote);
+
+  const grid=$('<div class="grid" style="margin-top:8px"></div>');
+  const blend=$('<div class="panel soft"><h2>Model blend</h2><div class="kv"></div></div>');
+  appendKvRows(blend.querySelector('.kv'),[
+    ['Enabled',lr.enabled?'yes':'no'],
+    ['Active',lr.active?'yes ('+f((lr.weight||0)*100,0)+'% weight)':'no',lr.active?'pos':'neu'],
+    ['Reason',lr.reason||'—'],
+    ['Labels',lr.model_n_labeled!=null?lr.model_n_labeled:'—'],
+    ['Calib error',lr.model_calibration_error==null?'—':f(lr.model_calibration_error,3)],
+    ['Beats market',mb.model_beats_market==null?'—':(mb.model_beats_market?'yes':'no'),
+      mb.model_beats_market?'pos':(mb.model_beats_market===false?'neg':'neu')],
+  ]);
+  grid.appendChild(blend);
+
+  const sel=$('<div class="panel soft"><h2>Selectivity gate</h2><div class="kv"></div></div>');
+  const cf=sg.counterfactual||{};
+  appendKvRows(sel.querySelector('.kv'),[
+    ['Rule',sg.decision_rule||'—'],
+    ['Accepted',sg.accepted!=null?sg.accepted:'—','pos'],
+    ['Rejected',sg.rejected!=null?sg.rejected:'—',(sg.rejected>0?'neg':'neu')],
+    ['Explored',sg.explored!=null?sg.explored:'—'],
+    ['Losses avoided',cf.losses_avoided!=null?cf.losses_avoided:'—',(cf.losses_avoided>0?'pos':'neu')],
+  ]);
+  grid.appendChild(sel);
+
+  const mem=$('<div class="panel soft"><h2>Memory & research</h2><div class="kv"></div></div>');
+  appendKvRows(mem.querySelector('.kv'),[
+    ['Lessons',(les.active||0)+' active / '+(les.count||0)+' total'],
+    ['Research loop',rl.enabled?'on':'off',rl.enabled?'pos':'neu'],
+    ['Grok mode',gd.mode||'—'],
+    ['View accuracy',gd.view_accuracy==null?'—':f(gd.view_accuracy*100,0)+'%'],
+    ['Verifier',((s.verifier||{}).approvals||0)+' ok / '+((s.verifier||{}).vetoes||0)+' veto'],
+  ]);
+  grid.appendChild(mem);
+  wrap.appendChild(grid);
+
+  const recent=les.recent||[];
+  if(recent.length){
+    const sub=$('<h3 class="sub" style="margin-top:16px">Active lessons</h3>');
+    wrap.appendChild(sub);
+    const box=$('<div></div>');
+    recent.slice(0,5).forEach(ln=>{
+      const el=$('<div class="lesson-item"></div>');
+      el.innerHTML='<b>'+(ln.kind||'rule')+'</b> · '+(ln.rule||'—');
+      box.appendChild(el);
+    });
+    wrap.appendChild(box);
+  }
+  const rlNote=(rl.last_note||{}).summary;
+  if(rlNote){
+    const sub=$('<h3 class="sub" style="margin-top:16px">Research meta-loop</h3>');
+    wrap.appendChild(sub);
+    const p=$('<p class="prose" style="margin:0;color:var(--text2);font-size:18px"></p>');
+    p.textContent=rlNote;
+    wrap.appendChild(p);
+  }
+  return wrap;
 }
 function kvCard(title,rows){
   const c=$('<div class="panel"><h2></h2><div class="kv"></div></div>');
@@ -203,30 +373,29 @@ async function tick(){
   const bySeries=s.by_market_series||{};
   const seriesKeys=Object.keys(bySeries).filter(k=>is15m(bySeries[k]));
   const pos15=((l&&l.positions)||[]).filter(x=>is15m(x.research||{}));
-  if(seriesKeys.length||pos15.length){
-    const mPanel=$('<div class="panel" style="grid-column:1/-1"><h2>Performance by market</h2></div>');
-    if(seriesKeys.length){
-      const tb=$('<table class="market-table"><thead><tr><th>Market</th><th>Settled</th><th>Win rate</th><th>PF</th><th>PnL</th><th>UP</th><th>DOWN</th></tr></thead><tbody></tbody></table>');
-      seriesKeys.sort((a,b)=>(bySeries[a].series_label||'').localeCompare(bySeries[b].series_label||''))
-        .forEach(k=>{const r=bySeries[k];
-          tb.querySelector('tbody').appendChild($(`<tr>
-            <td>${r.series_label||k}</td><td>${r.settled||0}</td>
-            <td>${r.win_rate==null?'—':f(r.win_rate*100,1)+'%'}</td>
-            <td>${f(r.profit_factor,2)}</td>
-            <td class="${pnlCls(r.pnl_usd)}">${money(r.pnl_usd)}</td>
-            <td>${r.win_rate_up==null?'—':f(r.win_rate_up*100,0)+'%'}</td>
-            <td>${r.win_rate_down==null?'—':f(r.win_rate_down*100,0)+'%'}</td>
-          </tr>`));
-        });
-      mPanel.appendChild(tb);
-    }
-    if(pos15.length){
-      const sub=$('<h3 class="sub">Recent positions</h3>');
-      mPanel.appendChild(sub);
-      mPanel.appendChild(positionsTable(pos15));
-    }
-    summary.appendChild(mPanel);
+  const mPanel=$('<div class="panel" style="grid-column:1/-1"><h2>Performance by market</h2></div>');
+  if(seriesKeys.length){
+    const tb=$('<table class="market-table"><thead><tr><th>Market</th><th>Settled</th><th>Win rate</th><th>PF</th><th>PnL</th><th>UP</th><th>DOWN</th></tr></thead><tbody></tbody></table>');
+    seriesKeys.sort((a,b)=>(bySeries[a].series_label||'').localeCompare(bySeries[b].series_label||''))
+      .forEach(k=>{const r=bySeries[k];
+        tb.querySelector('tbody').appendChild($(`<tr>
+          <td>${r.series_label||k}</td><td>${r.settled||0}</td>
+          <td>${r.win_rate==null?'—':f(r.win_rate*100,1)+'%'}</td>
+          <td>${f(r.profit_factor,2)}</td>
+          <td class="${pnlCls(r.pnl_usd)}">${money(r.pnl_usd)}</td>
+          <td>${r.win_rate_up==null?'—':f(r.win_rate_up*100,0)+'%'}</td>
+          <td>${r.win_rate_down==null?'—':f(r.win_rate_down*100,0)+'%'}</td>
+        </tr>`));
+      });
+    mPanel.appendChild(tb);
   }
+  if(pos15.length){
+    const sub=$('<h3 class="sub">Recent positions</h3>');
+    mPanel.appendChild(sub);
+    mPanel.appendChild(positionsTable(pos15));
+  }
+  mPanel.appendChild(loopEngineSection(s));
+  summary.appendChild(mPanel);
 
   const va=gd.view_accuracy, edges=(gd.view_edge_candidates||[]);
   summary.appendChild(proseCard('Edge & learning',[
