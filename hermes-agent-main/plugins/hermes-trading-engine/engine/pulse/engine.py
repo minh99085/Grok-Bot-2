@@ -224,6 +224,7 @@ class PulseConfig:
     baseline_down_mid_entry_max: float = 0.60
     baseline_down_block_single_tf: bool = True
     baseline_down_block_medium_edge: bool = True
+    baseline_down_block_bb_expansion_down: bool = True
     # 15m fast lane: scaled TTC band on 15m windows (proven 160-220s cohort → 480-660s).
     baseline_cohort_15m_fast_lane: bool = True
     baseline_cohort_15m_ttc_min_s: float = 160.0
@@ -328,6 +329,8 @@ class PulseConfig:
     tv_down_bias_block_up_medium_confidence: bool = True
     tv_down_bias_block_up_not_stale: bool = True
     tv_down_bias_block_up_volume_active: bool = True
+    tv_down_bias_block_up_underdog_entry: bool = True
+    tv_down_bias_up_underdog_entry_max: float = 0.55
     tv_down_bias_up_late_ttc_min_s: float = 240.0
     tv_down_bias_up_early_ttc_max_s: float = 120.0
     tv_down_bias_up_mid_ttc_min_s: float = 120.0
@@ -610,6 +613,9 @@ class PulseConfig:
             baseline_down_block_medium_edge=str(
                 os.getenv("PULSE_BASELINE_DOWN_BLOCK_MEDIUM_EDGE", "1")).strip().lower()
             in ("1", "true", "yes", "on"),
+            baseline_down_block_bb_expansion_down=str(
+                os.getenv("PULSE_BASELINE_DOWN_BLOCK_BB_EXPANSION_DOWN", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
             baseline_cohort_15m_fast_lane=str(
                 os.getenv("PULSE_BASELINE_COHORT_15M_FAST_LANE", "1")).strip().lower()
             in ("1", "true", "yes", "on"),
@@ -782,6 +788,11 @@ class PulseConfig:
             tv_down_bias_block_up_volume_active=str(
                 os.getenv("PULSE_TV_DOWN_BIAS_BLOCK_UP_VOLUME_ACTIVE", "1")).strip().lower()
             in ("1", "true", "yes", "on"),
+            tv_down_bias_block_up_underdog_entry=str(
+                os.getenv("PULSE_TV_DOWN_BIAS_BLOCK_UP_UNDERDOG_ENTRY", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            tv_down_bias_up_underdog_entry_max=_envf(
+                "PULSE_TV_DOWN_BIAS_UP_UNDERDOG_ENTRY_MAX", 0.55),
             tv_down_bias_up_late_ttc_min_s=_envf("PULSE_TV_DOWN_BIAS_UP_LATE_TTC_MIN_S", 240.0),
             tv_down_bias_up_early_ttc_max_s=_envf("PULSE_TV_DOWN_BIAS_UP_EARLY_TTC_MAX_S", 120.0),
             tv_down_bias_up_mid_ttc_min_s=_envf("PULSE_TV_DOWN_BIAS_UP_MID_TTC_MIN_S", 120.0),
@@ -1018,6 +1029,8 @@ class PulseEngine:
             block_up_medium_confidence=bool(self.cfg.tv_down_bias_block_up_medium_confidence),
             block_up_not_stale=bool(self.cfg.tv_down_bias_block_up_not_stale),
             block_up_volume_active=bool(self.cfg.tv_down_bias_block_up_volume_active),
+            block_up_underdog_entry=bool(self.cfg.tv_down_bias_block_up_underdog_entry),
+            up_underdog_entry_max=self.cfg.tv_down_bias_up_underdog_entry_max,
             up_late_ttc_min_s=self.cfg.tv_down_bias_up_late_ttc_min_s,
             up_early_ttc_max_s=self.cfg.tv_down_bias_up_early_ttc_max_s,
             up_mid_ttc_min_s=self.cfg.tv_down_bias_up_mid_ttc_min_s,
@@ -1998,11 +2011,14 @@ class PulseEngine:
                         continue
                 # Restrict-only DOWN/TV asymmetry gate applies to all Grok-owned UP trades.
                 if side == "up":
+                    _up_book = w.up_book
+                    _up_ask = _up_book.best_ask if _up_book else None
                     db_res = self._down_bias_eval(side=side, tv_feature=tv_feature,
                                                   markov_state=cand_state, ttc_s=ttc, esnap=esnap,
                                                   fair_p_up=fair_used,
                                                   zscore_bucket=(rfeat.zscore_bucket if rfeat else None),
-                                                  confidence_tier=self._entry_confidence_tier(dr))
+                                                  confidence_tier=self._entry_confidence_tier(dr),
+                                                  ask_price=_up_ask)
                     if db_res["decision"] in ("block", "explore"):
                         dr.down_bias_gate = {"decision": db_res["decision"],
                                              "reasons": db_res["reasons"]}
@@ -2239,7 +2255,8 @@ class PulseEngine:
                                               markov_state=cand_state, ttc_s=ttc, esnap=esnap,
                                               fair_p_up=fair_used,
                                               zscore_bucket=(rfeat.zscore_bucket if rfeat else None),
-                                              confidence_tier=self._entry_confidence_tier(dr))
+                                              confidence_tier=self._entry_confidence_tier(dr),
+                                              ask_price=d.price)
                 dr.down_bias_gate = {"decision": db_res["decision"], "reasons": db_res["reasons"]}
                 db_block = (db_res["decision"] == "block"
                             or (d.side == "up" and db_res["decision"] == "explore"))
@@ -3393,6 +3410,7 @@ class PulseEngine:
             "down_block_mid_entry": bool(self.cfg.baseline_down_block_mid_entry),
             "down_block_single_tf": bool(self.cfg.baseline_down_block_single_tf),
             "down_block_medium_edge": bool(self.cfg.baseline_down_block_medium_edge),
+            "down_block_bb_expansion_down": bool(self.cfg.baseline_down_block_bb_expansion_down),
             "down_mid_entry_band": [self.cfg.baseline_down_mid_entry_min,
                                     self.cfg.baseline_down_mid_entry_max],
             "note": ("baseline quant path: 180-240s TTC band (scaled on 15m), high edge + "
@@ -3411,7 +3429,8 @@ class PulseEngine:
                         esnap=None,
                         fair_p_up: "float | None" = None,
                         zscore_bucket: "str | None" = None,
-                        confidence_tier: "str | None" = None) -> dict:
+                        confidence_tier: "str | None" = None,
+                        ask_price: "float | None" = None) -> dict:
         from engine.pulse.late_window import conviction as _conviction
         feat = tv_feature or {}
         return self.tv_down_bias_gate.evaluate(
@@ -3436,6 +3455,7 @@ class PulseEngine:
             confidence_tier=confidence_tier,
             stale_divergence=self._edge_snap_field(esnap, "stale_divergence_class"),
             volume_state=feat.get("volume_state"),
+            ask_price=ask_price,
         )
 
     def _up_side_tv_bias_ok(self, tv_feature: "dict | None",
@@ -3444,7 +3464,8 @@ class PulseEngine:
                             esnap=None,
                             fair_p_up: "float | None" = None,
                             dr=None,
-                            rfeat=None) -> "tuple[bool, str]":
+                            rfeat=None,
+                            ask_price: "float | None" = None) -> "tuple[bool, str]":
         """UP restrict-only: TV UP_STRONG plus down_bias pass (all entry modes)."""
         tv_ok, tv_reason = self._baseline_up_tv_strength_ok(tv_feature)
         if not tv_ok:
@@ -3454,7 +3475,8 @@ class PulseEngine:
                                       fair_p_up=fair_p_up,
                                       zscore_bucket=(rfeat.zscore_bucket if rfeat else None),
                                       confidence_tier=(self._entry_confidence_tier(dr)
-                                                       if dr is not None else None))
+                                                       if dr is not None else None),
+                                      ask_price=ask_price)
         if db_res["decision"] in ("block", "explore"):
             return False, db_res["reasons"][0]
         return True, ""
@@ -3469,6 +3491,10 @@ class PulseEngine:
         signal_level = str(feat.get("signal_level") or "").strip().upper()
         volume_state = str(feat.get("volume_state") or "").strip().lower()
         tf_confirm = str(feat.get("tf_confirm") or "").strip().lower()
+        bb_state = str(feat.get("bb_state") or "").strip().lower()
+        if (self.cfg.baseline_down_block_bb_expansion_down
+                and bb_state == "expansion_down"):
+            return False, "baseline_down_tv_bb_expansion_down"
         if self.cfg.baseline_down_block_single_tf and tf_confirm == "single_tf":
             return False, "baseline_down_tv_single_tf"
         if self.cfg.baseline_down_block_volume_active and volume_state == "active":

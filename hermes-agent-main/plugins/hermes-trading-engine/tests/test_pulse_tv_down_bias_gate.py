@@ -390,3 +390,20 @@ def test_blocks_up_medium_confidence():
                    tv_direction="DOWN", confidence_tier="medium")
     assert r["decision"] == "block"
     assert "tv_down_bias_up_medium_confidence" in r["reasons"]
+
+
+def test_blocks_up_underdog_entry():
+    g = TradingViewDownBiasGate(enabled=True, exploration_rate=0.0,
+                                block_up_without_bearish=False,
+                                block_mixed_mtf_up=False,
+                                block_up_on_bearish_down_stack=False,
+                                block_up_markov_chop_noise=False,
+                                block_up_medium_edge=False,
+                                block_up_weak_cex=False)
+    r = g.evaluate(side="up", mtf_alignment="bearish_aligned",
+                   tv_direction="DOWN", ask_price=0.52)
+    assert r["decision"] == "block"
+    assert "tv_down_bias_up_underdog_entry" in r["reasons"]
+    assert g.evaluate(side="up", mtf_alignment="bearish_aligned",
+                      tv_direction="DOWN", ask_price=0.56,
+                      **_STRONG_UP_EDGE)["decision"] == "pass"

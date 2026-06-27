@@ -48,6 +48,8 @@ class TradingViewDownBiasGate:
         block_up_medium_confidence: bool = True,
         block_up_not_stale: bool = True,
         block_up_volume_active: bool = True,
+        block_up_underdog_entry: bool = True,
+        up_underdog_entry_max: float = 0.55,
         up_late_ttc_min_s: float = 240.0,
         up_early_ttc_max_s: float = 120.0,
         up_mid_ttc_min_s: float = 120.0,
@@ -87,6 +89,8 @@ class TradingViewDownBiasGate:
         self.block_up_medium_confidence = bool(block_up_medium_confidence)
         self.block_up_not_stale = bool(block_up_not_stale)
         self.block_up_volume_active = bool(block_up_volume_active)
+        self.block_up_underdog_entry = bool(block_up_underdog_entry)
+        self.up_underdog_entry_max = max(0.0, min(1.0, float(up_underdog_entry_max)))
         self.up_late_ttc_min_s = max(0.0, float(up_late_ttc_min_s))
         self.up_early_ttc_max_s = max(0.0, float(up_early_ttc_max_s))
         self.up_mid_ttc_min_s = max(0.0, float(up_mid_ttc_min_s))
@@ -124,6 +128,7 @@ class TradingViewDownBiasGate:
         confidence_tier=None,
         stale_divergence=None,
         volume_state=None,
+        ask_price=None,
     ) -> list[str]:
         if not side or str(side).lower() != "up":
             return []
@@ -181,6 +186,12 @@ class TradingViewDownBiasGate:
             reasons.append("tv_down_bias_up_markov_chop_noise")
         if self.block_up_volume_active and vs == "active":
             reasons.append("tv_down_bias_up_volume_active")
+        if self.block_up_underdog_entry and ask_price is not None:
+            try:
+                if float(ask_price) < self.up_underdog_entry_max:
+                    reasons.append("tv_down_bias_up_underdog_entry")
+            except (TypeError, ValueError):
+                pass
         if self.block_up_htf_bullish and hb == "bullish":
             reasons.append("tv_down_bias_up_htf_bullish")
         if self.block_up_bear_close_near_low and cp == "bear_close_near_low":
@@ -238,6 +249,7 @@ class TradingViewDownBiasGate:
         confidence_tier=None,
         stale_divergence=None,
         volume_state=None,
+        ask_price=None,
     ) -> dict:
         if not self.enabled:
             return {"decision": "pass", "reasons": [], "active": False}
@@ -254,7 +266,8 @@ class TradingViewDownBiasGate:
                                   ttc_s=ttc_s, zscore_bucket=zscore_bucket,
                                   confidence_tier=confidence_tier,
                                   stale_divergence=stale_divergence,
-                                  volume_state=volume_state)
+                                  volume_state=volume_state,
+                                  ask_price=ask_price)
         if not reasons:
             self.passed += 1
             return {"decision": "pass", "reasons": [], "active": True}
@@ -301,6 +314,8 @@ class TradingViewDownBiasGate:
             "block_up_medium_confidence": self.block_up_medium_confidence,
             "block_up_not_stale": self.block_up_not_stale,
             "block_up_volume_active": self.block_up_volume_active,
+            "block_up_underdog_entry": self.block_up_underdog_entry,
+            "up_underdog_entry_max": self.up_underdog_entry_max,
             "up_late_ttc_min_s": self.up_late_ttc_min_s,
             "up_early_ttc_max_s": self.up_early_ttc_max_s,
             "up_mid_ttc_min_s": self.up_mid_ttc_min_s,

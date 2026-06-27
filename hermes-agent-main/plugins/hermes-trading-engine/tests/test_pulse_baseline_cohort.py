@@ -264,6 +264,22 @@ def test_15m_fast_lane_blocks_ttc_above_660_scaled():
     assert not ok and r == "baseline_cohort_ttc_too_late"
 
 
+def test_down_blocks_bb_expansion_down():
+    eng = _eng()
+    ok, r = eng._baseline_down_tv_context_ok({
+        "bb_state": "expansion_down",
+        "tf_confirm": "confirmed_down",
+        "mtf_alignment": "bearish_aligned",
+    })
+    assert not ok and r == "baseline_down_tv_bb_expansion_down"
+    ok, r = eng._baseline_down_tv_context_ok({
+        "bb_state": "expansion_up",
+        "tf_confirm": "confirmed_down",
+        "mtf_alignment": "bearish_aligned",
+    })
+    assert ok and r == ""
+
+
 def test_down_blocks_single_tf():
     eng = _eng()
     ok, r = eng._baseline_quant_cohort_ok(
