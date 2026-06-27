@@ -1,79 +1,44 @@
 #!/usr/bin/env python3
-"""Validate VPS .env has all secrets + loop-arch keys (run on VPS or via ssh)."""
+"""Validate VPS .env: secrets + frozen soak/learning manifest (run on VPS or via ssh)."""
 from __future__ import annotations
 
 import json
 import sys
 from pathlib import Path
 
-ENV_PATH = Path("/opt/Grok-Bot-2/hermes-agent-main/plugins/hermes-trading-engine/.env")
+# Reuse frozen-lock validator
+_SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(_SCRIPT_DIR))
 
-REQUIRED_NONEMPTY = (
-    "XAI_API_KEY",
-    "ANTHROPIC_API_KEY",
-    "TRADINGVIEW_WEBHOOK_SECRET",
-)
-
-REQUIRED_VALUES = {
-    "PULSE_GROK_DECIDER_MODE": "shadow",
-    "PULSE_GROK_DECIDER_EXPLORE_RATE": "0",
-    "PULSE_GROK_DECIDER_MIN_CONFIDENCE": "0.62",
-    "PULSE_VERIFIER_ENABLED": "1",
-    "PULSE_TRADINGVIEW_SIGNAL_GATE": "0",
-    "PULSE_TV_MTF_REQUIRE_CONFIRM": "0",
-    "PULSE_TV_MTF_REQUIRE_ALL_CONFIRM": "1",
-    "PULSE_TV_MTF_REQUIRE_SIDE_ALIGN": "1",
-    "PULSE_TV_DOWN_BIAS_GATE": "1",
-    "PULSE_MAX_OPEN_LAG_S": "45",
-}
-
-
-def _parse_env(path: Path) -> dict[str, str]:
-    out: dict[str, str] = {}
-    if not path.exists():
-        return out
-    for ln in path.read_text(encoding="utf-8").splitlines():
-        ln = ln.strip()
-        if not ln or ln.startswith("#") or "=" not in ln:
-            continue
-        k, v = ln.split("=", 1)
-        out[k.strip()] = v.strip()
-    return out
+from validate_frozen_lock import MANIFEST, VPS_ENV, validate_env, _parse_env, _issue  # noqa: E402
 
 
 def main() -> int:
-    env = _parse_env(ENV_PATH)
+    env_path = Path(sys.argv[1]) if len(sys.argv) > 1 else VPS_ENV
+    if not MANIFEST.exists():
+        print(json.dumps({"healthy": False, "error": f"missing {MANIFEST}"}, indent=2))
+        return 2
+
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    env = _parse_env(env_path)
     issues: list[dict] = []
 
     if not env:
-        issues.append({"code": "env_missing", "severity": "P0", "detail": str(ENV_PATH)})
+        issues.append(_issue("env_missing", "P0", str(env_path)))
 
-    for key in REQUIRED_NONEMPTY:
-        if not env.get(key):
-            issues.append({
-                "code": "secret_missing",
-                "severity": "P0",
-                "detail": key,
-                "hint": f"set {key} in {ENV_PATH} and recreate hermes-training",
-            })
+    issues.extend(validate_env(env, manifest))
 
-    for key, want in REQUIRED_VALUES.items():
-        got = env.get(key)
-        if got != want:
-            issues.append({
-                "code": "config_drift",
-                "severity": "P1" if key.startswith("PULSE_TV") else "P0",
-                "detail": f"{key}={got!r} want={want!r}",
-                "hint": "run scripts/apply-loop-arch-env.py on VPS",
-            })
+    sev_order = {"P0": 0, "P1": 1, "P2": 2}
+    issues.sort(key=lambda x: sev_order.get(x["severity"], 9))
 
     healthy = len(issues) == 0
     out = {
         "healthy": healthy,
-        "verdict": "healthy" if healthy else "blocked",
+        "verdict": "healthy" if healthy else ("blocked" if any(i["severity"] == "P0" for i in issues) else "issues"),
         "issues": issues,
-        "env_path": str(ENV_PATH),
-        "keys_present": sorted(env.keys()),
+        "env_path": str(env_path),
+        "mode": manifest.get("mode"),
+        "keys_present": len(env),
     }
     print(json.dumps(out, indent=2))
     return 0 if healthy else 1

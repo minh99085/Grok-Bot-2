@@ -1,27 +1,26 @@
 {
   "goals": {
+    "mode": "learning_collection",
     "win_rate_target": 0.8,
-    "note": "Cycle 4: relaxed quant gates — watch trade rate + WR for 1h"
+    "win_rate_target_deferred": true,
+    "priority": "trade_rate_and_ledger_continuity",
+    "note": "Soak-learning lock: apply-loop-arch enforces frozen manifest; WR tuning deferred"
   },
-  "cycle": 4,
+  "cycle": 5,
   "phase": "soak",
-  "soak_hours": 1,
-  "soak_minutes": 60,
-  "deployed_at": "2026-06-27T20:12:00.000000+00:00",
-  "soak_until": "2026-06-27T21:12:00.000000+00:00",
-  "last_eval_at": "2026-06-27T20:11:58.000000+00:00",
-  "last_verdict": "watch",
+  "soak_hours": 2,
+  "soak_minutes": 120,
+  "deployed_at": "2026-06-27T21:36:00.000000+00:00",
+  "soak_until": "2026-06-27T22:36:00.000000+00:00",
+  "last_eval_at": "2026-06-27T21:34:13.017394+00:00",
+  "last_verdict": "blocked",
   "last_fixes": [
-    "require_high_edge: 1 → 0 (medium+ edge OK on 15m DOWN)",
-    "require_strong_cex: 1 → 0 (moderate+ CEX OK)",
-    "down_block_not_stale: 1 → 0",
-    "down_block_bullish_mtf: 1 → 0",
-    "tick_seconds: 30 → 15",
-    "max_price: 0.65 → 0.70"
+    "stop_min_samples: 40 → 60 (unhalt directional; rolling n=50 in warmup)",
+    "down_block_not_stale: 0 → 1 (block momentum-against DOWN entries)"
   ],
   "last_health_verdict": "issues",
-  "baseline_trades_at_deploy": 90,
-  "vps_sha": "a929ecb872ae5319741b7c51101f68ea312856b8",
+  "baseline_trades_at_deploy": 91,
+  "vps_sha": "d11e3d323b594750c25970899286542907ff30b6",
   "history": [
     {
       "cycle": 3,
@@ -58,7 +57,31 @@
         "global_reconciled": true,
         "trades_last_6h": 4
       }
+    },
+    {
+      "cycle": 5,
+      "eval_at": "2026-06-27T21:34:13.017394+00:00",
+      "verdict": "blocked",
+      "issues": [
+        "strategy_halted",
+        "win_rate_below_target",
+        "profit_factor_low",
+        "up_side_bleed"
+      ],
+      "fixes": [
+        "stop_min_samples_60",
+        "down_block_not_stale_on"
+      ],
+      "deployed_at": "2026-06-27T21:36:00.000000+00:00",
+      "vps_sha": "d11e3d323b594750c25970899286542907ff30b6",
+      "metrics": {
+        "settled": 91,
+        "win_rate": 0.5934,
+        "profit_factor": 0.8855,
+        "global_reconciled": true,
+        "post_deploy_halt_cleared": true
+      }
     }
   ],
-  "note": "TV observe-only locked. Quant gates relaxed to increase fills; babysit inspects hourly."
+  "note": "TV observe-only locked. Directional unhalted via stop warmup; not-stale DOWN filter on."
 }

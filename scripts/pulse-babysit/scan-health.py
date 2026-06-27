@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.request import urlopen
 
 ROOT = Path(__file__).resolve().parents[2]
+SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_BASE = "http://45.32.224.147"
 
 
@@ -30,6 +31,18 @@ def main() -> int:
     def record(name: str, ok: bool, detail: str = ""):
         checks.append({"name": name, "ok": ok, "detail": detail})
         return ok
+
+    try:
+        sys.path.insert(0, str(SCRIPT_DIR))
+        from validate_frozen_lock import validate_env, _parse_env, MANIFEST as _FM
+        _local_env = _parse_env(ROOT / "hermes-agent-main" / "plugins" / "hermes-trading-engine" / ".env")
+        if _FM.exists() and _local_env:
+            _mf = json.loads(_FM.read_text(encoding="utf-8"))
+            for iss in validate_env(_local_env, _mf):
+                if iss["severity"] == "P0":
+                    issues.append(iss)
+    except Exception:
+        pass
 
     try:
         health = _fetch(f"{base}/api/health")
@@ -82,9 +95,17 @@ def main() -> int:
         issues.append(_issue("tv_signal_gate_on", "P1", "signal_gate enabled",
                              "set PULSE_TRADINGVIEW_SIGNAL_GATE=0 for loop-arch"))
     if mg.get("require_confirm"):
-        issues.append(_issue("mtf_require_confirm_on", "P1", "require_confirm=true",
+        issues.append(_issue("mtf_require_confirm_on", "P0", "require_confirm=true",
                              "set PULSE_TV_MTF_REQUIRE_CONFIRM=0"))
-    record("tv_observe_only", not sg.get("enabled") and not mg.get("require_confirm"))
+    if mg.get("require_all_confirm"):
+        issues.append(_issue("mtf_require_all_on", "P0", "require_all_confirm=true",
+                             "set PULSE_TV_MTF_REQUIRE_ALL_CONFIRM=0"))
+    cg = tv.get("context_gate") or {}
+    if cg.get("enabled"):
+        issues.append(_issue("tv_context_gate_on", "P0", "context_gate enabled",
+                             "set PULSE_TV_CONTEXT_GATE=0"))
+    record("tv_observe_only", not sg.get("enabled") and not mg.get("require_confirm")
+           and not mg.get("require_all_confirm") and not cg.get("enabled"))
 
     loops = (status.get("loops") or {}).get("loops") or {}
     for name in ("heartbeat", "data_ingestion", "tradingview", "signal_generation", "verifier", "execution"):
@@ -150,9 +171,9 @@ def main() -> int:
                              "raise PULSE_MAX_OPEN_LAG_S or fix price sampler"))
 
     if ticks > 60 and trades <= 30 and int(rbs.get("directional") or 0) > 5000:
-        if gd.get("mode") != "follow":
-            issues.append(_issue("trade_freeze", "P1", f"trades={trades} ticks={ticks}",
-                                 "enable grok follow + relax gates"))
+        issues.append(_issue("trade_freeze", "P1", f"trades={trades} ticks={ticks}",
+                             "relax quant gates (min_edge, cohort, open_lag) — keep Grok shadow; "
+                             "see soak-learning-lock.md"))
 
     metrics = {
         "trades": trades,

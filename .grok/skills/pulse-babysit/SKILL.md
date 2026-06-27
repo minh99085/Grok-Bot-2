@@ -13,9 +13,9 @@ argument-hint: "cycle | force-eval | status | deploy | soak <minutes>"
 You operate the **Grok-Bot-2** paper pulse bot without asking the operator for permission
 between cycles. Execute tools yourself. Paper-only — never enable live trading.
 
-**Team identity:** quant research + engineer + trader targeting **~80% WR** on selective entries.
-Every cycle: analyze ledger/gate funnel → propose strategy tweaks from live data → ship ≤2 evidence-backed
-fixes → re-measure. Read `.grok/rules/quant-team.md`.
+**Team identity:** quant research + engineer + trader. **Learning-collection mode active** —
+prioritize trade rate + ledger continuity over WR. Read `.grok/rules/soak-learning-lock.md` and
+`.grok/rules/quant-team.md`.
 
 ## Repo anchors
 
@@ -36,19 +36,20 @@ fixes → re-measure. Read `.grok/rules/quant-team.md`.
 | `force-eval` | Pull + evaluate now; skip soak wait |
 | `status` | Print state + last evaluation summary |
 | `deploy` | `git push origin main` + full VPS deploy (sync-vps + env + force-recreate training) |
-| `soak <minutes>` | Set soak duration (default **60 min**) via `set-soak.ps1` |
+| `soak <minutes>` | Set soak duration (default **120 min** in learning_collection) via `set-soak.ps1` |
 
 If no argument: run `cycle`.
 
 ## State machine
 
 ```
-DEPLOY → SOAK (60m default) → PULL → EVALUATE → (issues?) → FIX → COMMIT → DEPLOY → …
+DEPLOY → SOAK (120m learning default) → PULL → EVALUATE → (issues?) → FIX → COMMIT → DEPLOY → …
 ```
 
 1. Read `scripts/pulse-babysit/state.json`.
 2. If `phase` is `soak` and `now < soak_until`: run `status`, exit (do not fix).
 3. Run `python scripts/pulse-babysit/scan-health.py` — full runtime checklist (Grok/verifier/loops/stop).
+   Run `python scripts/pulse-babysit/validate-frozen-lock.py` — manifest drift (P0 authority keys).
 4. Run `.\scripts\pulse-babysit\pull-vps-artifacts.ps1` — pulls artifacts **and always commits +
    pushes** `vps_full_reports/latest/` to `origin/main` (includes `report.docx`). Use `-SkipPush`
    only for local debugging.
@@ -60,6 +61,7 @@ DEPLOY → SOAK (60m default) → PULL → EVALUATE → (issues?) → FIX → CO
 9. **MANDATORY VPS deploy** (never skip after any push to `main` — including babysit-only / report-only):
    - `.\scripts\sync-vps.ps1` — `down --remove-orphans` → `build` → `up -d --remove-orphans`
    - SSH: `python3 /opt/Grok-Bot-2/scripts/apply-loop-arch-env.py` if env/gates changed
+   - SSH: `python3 /opt/Grok-Bot-2/scripts/pulse-babysit/validate-frozen-lock.py` (wired in sync-vps)
    - SSH: `cd .../hermes-trading-engine && docker compose up -d --force-recreate hermes-training`
    - `.\scripts\verify-sync.ps1`
 10. Update state: `phase=soak`, `deployed_at`, `soak_until`, `last_fixes`, increment `cycle`.
@@ -76,6 +78,8 @@ Read `scripts/pulse-babysit/env-coupling.md` before any gate/TTC env change.
 - `scan-health.py` flags `gate_coupling_misconfigured` (P0) if `.env` is unsafe
 - Engine auto-clamps at runtime but `.env` must still be fixed
 - TradingView: **INDEX:BTCUSD** — 2m/3m/4m chart alerts (observe-only); see `tradingview/README.md`
+- **Soak/learning lock:** `.grok/rules/soak-learning-lock.md` + `frozen-env-keys.json` — frozen authority
+  chain + relaxed quant params; tunable bounds only.
 - **TV observe-only lock (operator mandate):** `.grok/rules/tv-observe-only-lock.md` — never re-enable
   MTF/context/signal/baseline-TV gates in babysit fixes; relax quant gates only.
 
@@ -104,7 +108,8 @@ The script flags issues. You may fix only what the report supports:
 
 | Situation | Duration |
 |-----------|----------|
-| Default after deploy | **60 min** (inspect + fine-tune toward **≥80% WR**) |
+| Learning collection (default) | **120 min** — no deploy/fixes during soak |
+| WR optimization (operator ends learning mode) | **60 min** |
 | Operator override | `.\scripts\pulse-babysit\set-soak.ps1 -Minutes N` |
 
 ## Todo scaffold (each cycle)

@@ -6,6 +6,13 @@ Operate as a **quant research + engineer + trader** team targeting **~80% WR** o
 Each cycle: read live performance → hypothesize from market + bot data → implement minimal gate/strategy
 changes → measure on 15-min soak. See `.grok/rules/quant-team.md`.
 
+## Soak / learning collection lock (OPERATOR MANDATE)
+
+While collecting ledger data for learning, follow `.grok/rules/soak-learning-lock.md` and
+`scripts/pulse-babysit/frozen-env-keys.json`. Run `validate-frozen-lock.py` before deploy.
+Do not tighten gates or re-enable TV authority during this phase unless the operator says so
+in the current message.
+
 ## TradingView observe-only lock (OPERATOR MANDATE — NEVER OVERRIDE)
 
 TradingView is **observe-only forever** — not a trade gate. Do **not** re-enable MTF require/side-align,

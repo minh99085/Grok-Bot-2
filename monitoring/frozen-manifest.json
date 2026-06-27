@@ -1,0 +1,8 @@
+{
+  "schema": "pulse_frozen_manifest/1.0",
+  "mode": "learning_collection",
+  "locked_at": "2026-06-27",
+  "canonical_path": "scripts/pulse-babysit/frozen-env-keys.json",
+  "rules_doc": ".grok/rules/soak-learning-lock.md",
+  "note": "Mirror of frozen-env-keys.json for monitoring dashboards; edit canonical file only."
+}

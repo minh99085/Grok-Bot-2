@@ -20,12 +20,20 @@
       "research_meta"
     ],
     "locked_operator_rules": [
+      ".grok/rules/soak-learning-lock.md",
       ".grok/rules/tv-observe-only-lock.md",
+      "scripts/pulse-babysit/frozen-env-keys.json",
       "PULSE_TRADINGVIEW_SIGNAL_GATE=0",
       "PULSE_TV_MTF_* trade gates=0",
       "PULSE_TV_CONTEXT_GATE=0",
       "PULSE_BASELINE_*_TV_GATE_ENABLED=0"
-    ]
+    ],
+    "learning_collection_mode": {
+      "active": true,
+      "priority": "trade_rate_and_ledger_continuity",
+      "soak_minutes_default": 120,
+      "wr_target_deferred": true
+    }
   },
   "entry_design": {
     "series": "btc-up-or-down-15m",
@@ -35,7 +43,7 @@
     "ttc_band_15m_scaled_s": [480, 660],
     "tick_seconds": 15,
     "max_entry_price": 0.70,
-    "min_edge": 0.02,
+    "min_edge": 0.015,
     "min_reward_risk": 0.55,
     "size_usd": 5
   },

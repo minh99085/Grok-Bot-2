@@ -88,6 +88,7 @@ if ($doRebuild) {
 set -e
 cd $VpsRepo
 python3 scripts/apply-loop-arch-env.py
+python3 scripts/pulse-babysit/validate-frozen-lock.py || exit 1
 cd $PluginPath
 docker compose down --remove-orphans
 docker compose build

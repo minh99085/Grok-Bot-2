@@ -108,8 +108,14 @@ def main() -> int:
         issues.append(_issue("tv_signal_gate_on", "P1", "TV signal gate enabled",
                              "PULSE_TRADINGVIEW_SIGNAL_GATE=0"))
     if mtf.get("require_confirm"):
-        issues.append(_issue("mtf_require_confirm_on", "P1", "MTF require_confirm on",
+        issues.append(_issue("mtf_require_confirm_on", "P0", "MTF require_confirm on",
                              "PULSE_TV_MTF_REQUIRE_CONFIRM=0"))
+    if mtf.get("require_all_confirm"):
+        issues.append(_issue("mtf_require_all_on", "P0", "MTF require_all_confirm on",
+                             "PULSE_TV_MTF_REQUIRE_ALL_CONFIRM=0"))
+    if ctx.get("enabled"):
+        issues.append(_issue("tv_context_gate_on", "P0", "TV context_gate enabled",
+                             "PULSE_TV_CONTEXT_GATE=0"))
 
     if not reconciled:
         issues.append(_issue("reconciliation_broken", "P0", "global_reconciled is false",
@@ -160,27 +166,28 @@ def main() -> int:
             "settled count flat across cycles while bot runs — relax gates or fix deadlock; "
             "never tighten on stale ledger WR alone"))
 
-    if trades >= 10:
-        wr_hint = ("tighten MTF/all-confirm, baseline cohort, DOWN TV blocks; "
-                   "block weak contexts until WR >= 80%")
-        if trade_starvation:
-            wr_hint = ("WR is on stale ledger only — do NOT tighten; fix trade_starvation first "
-                       "(relax gates, check MTF regime vs 3/3 DOWN rule)")
+    learning_mode = (st.get("goals") or {}).get("mode") == "learning_collection"
+
+    if trades >= 10 and not trade_starvation:
+        wr_hint = ("WR below target — defer tightening during learning_collection; "
+                   "see .grok/rules/soak-learning-lock.md")
+        if not learning_mode:
+            wr_hint = ("review quant selectivity / reward_risk — never re-enable TV trade gates")
         if wr is not None and float(wr) < wr_target:
             issues.append(_issue("win_rate_below_target", "P1",
                                  f"win_rate={wr} target={wr_target} settled={trades}",
                                  wr_hint))
-        if wr is not None and float(wr) < 0.55:
+        if wr is not None and float(wr) < 0.55 and not learning_mode:
             issues.append(_issue("win_rate_low", "P1", f"win_rate={wr}",
-                                 "tighten gates / high-WR profile / block weak UP"))
-        if pf is not None and float(pf) < 1.0:
+                                 "review quant gates / DOWN-only restrictors (TV gates locked off)"))
+        if pf is not None and float(pf) < 1.0 and not learning_mode:
             issues.append(_issue("profit_factor_low", "P1", f"profit_factor={pf}",
-                                 "raise min_reward_risk, context_gate, late-window"))
+                                 "review min_reward_risk / selectivity — never TV context_gate"))
         if wr_up is not None and wr_down is not None:
             if float(wr_up) < 0.52 and float(wr_down) >= 0.60:
                 issues.append(_issue("up_side_bleed", "P1",
                                      f"win_rate_up={wr_up} win_rate_down={wr_down}",
-                                     "down_bias_gate, TV STRONG-only, block bullish_aligned UP"))
+                                     "DOWN-only already on — UP restrictors OK; do not enable TV gates"))
 
     tv_valid = int(tv.get("tradingview_alerts_valid") or 0)
     if tv.get("enabled") and tv_valid < 5:
@@ -192,8 +199,7 @@ def main() -> int:
         mtf_c = (tv.get("tradingview_mtf_confirmation") or {}).get("confirm")
         issues.append(_issue("mtf_starved", "P2",
                              f"mtf_passed=0 blocked={mtf.get('blocked')} confirm={mtf_c}",
-                             "require_confirm is on — ensure 1m+5m+10m+15m INDEX:BTCUSD alerts active "
-                             "or disable PULSE_TV_MTF_REQUIRE_CONFIRM for loop-arch"))
+                             "MTF trade gate must stay off — check INDEX:BTCUSD 2m/3m/4m webhook health only"))
 
     bench = learning.get("market_benchmark") or {}
     if learning.get("active") and bench.get("model_beats_market") is False:
