@@ -1,16 +1,18 @@
 # Bot cycle summary (plain English)
 
-_Updated: 2026-06-27 23:39 UTC_
+_Updated: 2026-06-27 23:42 UTC_
 
 ## Last cycle
 
 | | |
 |---|---|
 | **Cycle #** | 5 |
-| **Checked at** | 2026-06-27 21:34 UTC |
+| **Checked at** | 2026-06-27 23:42 UTC |
 | **Result** | **blocked** |
 | **What it means** | Stopped — serious problem found. Check issues below. |
 | **Next check after** | 2026-06-27 23:37 UTC |
+
+**Issues flagged:** reconciliation_broken, win_rate_below_target, up_side_bleed
 
 **Fixes applied:**
 
@@ -48,7 +50,7 @@ _Updated: 2026-06-27 23:39 UTC_
 
 **Good:** Making money on paper (+9.9%); Arbitrage is doing most of the work; Bot is running normally.
 
-**Watch:** UP trades still weak (coin-flip or worse).
+**Watch:** UP trades still weak (coin-flip or worse); Cycle flagged UP-side losses.
 
 ---
 
