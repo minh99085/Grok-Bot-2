@@ -1,13 +1,13 @@
 {
   "goals": {
-    "win_rate_target": 0.80,
+    "win_rate_target": 0.8,
     "note": "Operator mandate: >=80% WR on selective DOWN entries; 60-min inspect/fine-tune cycles"
   },
-  "cycle": 21,
+  "cycle": 22,
   "phase": "soak",
   "soak_hours": 1,
-  "deployed_at": "2026-06-27T05:30:43.205029+00:00",
-  "soak_until": "2026-06-27T06:30:43.205029+00:00",
+  "deployed_at": "2026-06-27T05:31:58.721840+00:00",
+  "soak_until": "2026-06-27T06:31:58.721840+00:00",
   "last_eval_at": "2026-06-27T05:31:03.367275+00:00",
   "last_verdict": "issues",
   "last_fixes": [
@@ -16,7 +16,7 @@
     "stop exploration bleed: PULSE_DIRECTIONAL_EXPLORE_RATE 0.12->0"
   ],
   "last_health_verdict": "issues",
-  "vps_sha": "d92fce3d4560d6862f4dad71a99752fde21c3be6",
+  "vps_sha": "456f4475d882fce455d962f962db9104191432ca",
   "history": [
     {
       "ts": "2026-06-25T19:06:42.423656+00:00",
