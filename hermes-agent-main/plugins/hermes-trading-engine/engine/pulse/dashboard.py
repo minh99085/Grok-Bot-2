@@ -43,6 +43,9 @@ main{max-width:1180px;margin:0 auto;padding:24px 20px 40px}
   margin:0 0 14px;font-size:18px;font-weight:600;color:var(--text2);
   letter-spacing:.01em;text-transform:none;
 }
+.panel h3.sub{
+  margin:20px 0 10px;font-size:17px;font-weight:600;color:var(--text2);
+}
 .money{font-size:48px;font-weight:600;letter-spacing:-.03em;line-height:1.2}
 .money-sub{margin-top:8px;color:var(--text2);font-size:20px}
 .money-sub b{font-weight:600;color:var(--text)}
@@ -96,7 +99,6 @@ table.data tr:hover td{background:rgba(255,255,255,.02)}
   <details class="tech" id="tech-wrap">
     <summary>Show technical details</summary>
     <div class="grid" id="tech"></div>
-    <div id="positions"></div>
   </details>
   <div class="foot">Refreshes every 5s · read-only · Chainlink oracle via Polymarket RTDS</div>
 </main>
@@ -105,6 +107,25 @@ const $=(h)=>{const t=document.createElement('template');t.innerHTML=h.trim();re
 const f=(x,d=2)=>x==null?'—':(typeof x==='number'?x.toFixed(d):x);
 const money=(x)=>x==null?'—':(x>=0?'+$':'-$')+Math.abs(x).toFixed(2);
 const pnlCls=(x)=>x==null?'neu':(x>=0?'pos':'neg');
+function is15m(obj){
+  const lbl=String((obj&&obj.series_label)||'').toLowerCase();
+  const slug=String((obj&&obj.series_slug)||(obj&&obj.market_series)||'').toLowerCase();
+  return lbl==='15m'||slug.includes('15m');
+}
+function positionsTable(pos){
+  const tb=$('<table class="data"><thead><tr><th>Mkt</th><th>Side</th><th>Entry</th><th>Fair</th><th>Result</th><th>PnL</th></tr></thead><tbody></tbody></table>');
+  pos.slice(0,12).forEach(x=>{
+    const res=x.won==null?'—':(x.won?'Win':'Loss');
+    const mkt=(x.research&&x.research.series_label)||'15m';
+    tb.querySelector('tbody').appendChild($(`<tr>
+      <td>${mkt}</td><td>${x.side||'—'}</td><td>${f(x.entry_price,3)}</td>
+      <td>${f(x.fair_at_entry,3)}</td>
+      <td class="${x.won==null?'neu':(x.won?'pos':'neg')}">${res}</td>
+      <td class="${pnlCls(x.pnl_usd)}">${x.pnl_usd==null?'—':money(x.pnl_usd)}</td>
+    </tr>`));
+  });
+  return tb;
+}
 function kvCard(title,rows){
   const c=$('<div class="panel"><h2></h2><div class="kv"></div></div>');
   c.querySelector('h2').textContent=title;
@@ -180,22 +201,31 @@ async function tick(){
 
   const summary=document.getElementById('summary');summary.innerHTML='';
   const bySeries=s.by_market_series||{};
-  const seriesKeys=Object.keys(bySeries);
-  if(seriesKeys.length){
+  const seriesKeys=Object.keys(bySeries).filter(k=>is15m(bySeries[k]));
+  const pos15=((l&&l.positions)||[]).filter(x=>is15m(x.research||{}));
+  if(seriesKeys.length||pos15.length){
     const mPanel=$('<div class="panel" style="grid-column:1/-1"><h2>Performance by market</h2></div>');
-    const tb=$('<table class="market-table"><thead><tr><th>Market</th><th>Settled</th><th>Win rate</th><th>PF</th><th>PnL</th><th>UP</th><th>DOWN</th></tr></thead><tbody></tbody></table>');
-    seriesKeys.sort((a,b)=>(bySeries[a].series_label||'').localeCompare(bySeries[b].series_label||''))
-      .forEach(k=>{const r=bySeries[k];
-        tb.querySelector('tbody').appendChild($(`<tr>
-          <td>${r.series_label||k}</td><td>${r.settled||0}</td>
-          <td>${r.win_rate==null?'—':f(r.win_rate*100,1)+'%'}</td>
-          <td>${f(r.profit_factor,2)}</td>
-          <td class="${pnlCls(r.pnl_usd)}">${money(r.pnl_usd)}</td>
-          <td>${r.win_rate_up==null?'—':f(r.win_rate_up*100,0)+'%'}</td>
-          <td>${r.win_rate_down==null?'—':f(r.win_rate_down*100,0)+'%'}</td>
-        </tr>`));
-      });
-    mPanel.appendChild(tb);summary.appendChild(mPanel);
+    if(seriesKeys.length){
+      const tb=$('<table class="market-table"><thead><tr><th>Market</th><th>Settled</th><th>Win rate</th><th>PF</th><th>PnL</th><th>UP</th><th>DOWN</th></tr></thead><tbody></tbody></table>');
+      seriesKeys.sort((a,b)=>(bySeries[a].series_label||'').localeCompare(bySeries[b].series_label||''))
+        .forEach(k=>{const r=bySeries[k];
+          tb.querySelector('tbody').appendChild($(`<tr>
+            <td>${r.series_label||k}</td><td>${r.settled||0}</td>
+            <td>${r.win_rate==null?'—':f(r.win_rate*100,1)+'%'}</td>
+            <td>${f(r.profit_factor,2)}</td>
+            <td class="${pnlCls(r.pnl_usd)}">${money(r.pnl_usd)}</td>
+            <td>${r.win_rate_up==null?'—':f(r.win_rate_up*100,0)+'%'}</td>
+            <td>${r.win_rate_down==null?'—':f(r.win_rate_down*100,0)+'%'}</td>
+          </tr>`));
+        });
+      mPanel.appendChild(tb);
+    }
+    if(pos15.length){
+      const sub=$('<h3 class="sub">Recent positions</h3>');
+      mPanel.appendChild(sub);
+      mPanel.appendChild(positionsTable(pos15));
+    }
+    summary.appendChild(mPanel);
   }
 
   const va=gd.view_accuracy, edges=(gd.view_edge_candidates||[]);
@@ -291,23 +321,6 @@ async function tick(){
     ]));
   }
 
-  const posWrap=document.getElementById('positions');posWrap.innerHTML='';
-  const pos=(l&&l.positions)||[];
-  if(pos.length){
-    const pc=$('<div class="panel" style="margin-top:18px"><h2>Recent positions</h2></div>');
-    const tb=$('<table class="data"><thead><tr><th>Mkt</th><th>Side</th><th>Entry</th><th>Fair</th><th>Result</th><th>PnL</th></tr></thead><tbody></tbody></table>');
-    pos.slice(0,12).forEach(x=>{
-      const res=x.won==null?'—':(x.won?'Win':'Loss');
-      const mkt=(x.research&&x.research.series_label)||'5m';
-      tb.querySelector('tbody').appendChild($(`<tr>
-        <td>${mkt}</td><td>${x.side||'—'}</td><td>${f(x.entry_price,3)}</td>
-        <td>${f(x.fair_at_entry,3)}</td>
-        <td class="${x.won==null?'neu':(x.won?'pos':'neg')}">${res}</td>
-        <td class="${pnlCls(x.pnl_usd)}">${x.pnl_usd==null?'—':money(x.pnl_usd)}</td>
-      </tr>`));
-    });
-    pc.appendChild(tb);posWrap.appendChild(pc);
-  }
 }
 tick();setInterval(tick,5000);
 </script>
