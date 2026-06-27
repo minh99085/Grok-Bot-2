@@ -2233,7 +2233,8 @@ class PulseEngine:
                 if green_path:
                     dr.green_path = {
                         "active": True,
-                        "skipped": ["tv_signal", "context", "down_bias", "late_window", "down_tv_dup"],
+                        "skipped": ["tv_signal", "context", "down_bias", "late_window",
+                                      "down_tv_dup", "mtf_gate"],
                     }
                 elif d.side == "down":
                     down_tv_ok, down_tv_reason = self._baseline_down_tv_context_ok(tv_feature)
@@ -2280,25 +2281,37 @@ class PulseEngine:
                             self.markov.record_terminal(state=cand_state, accepted=False)
                         _finalize(dr, "rejected", reason=db_res["reasons"][0], stage="down_bias_gate")
                         continue
-                mtf_res = self.tv_mtf_gate.evaluate(
-                    tf_confirm=(tv_feature or {}).get("tf_confirm"),
-                    tf_confirm_direction=(tv_feature or {}).get("tf_confirm_direction"),
-                    tf_confirm_mtf=(tv_feature or {}).get("tf_confirm_mtf"),
-                    mtf_count=(tv_feature or {}).get("mtf_count"),
-                    trend_fresh_count=(tv_feature or {}).get("trend_fresh_count"),
-                    side=d.side)
-                dr.mtf_gate = {"decision": mtf_res["decision"], "reasons": mtf_res["reasons"],
-                               "tf_confirm": (tv_feature or {}).get("tf_confirm"),
-                               "tf_confirm_direction": (tv_feature or {}).get("tf_confirm_direction"),
-                               "mtf_timeframes": (tv_feature or {}).get("mtf_timeframes"),
-                               "tf_confirm_mtf": (tv_feature or {}).get("tf_confirm_mtf"),
-                               "trend_by_tf": (tv_feature or {}).get("trend_by_tf")}
-                if mtf_res["decision"] == "block":
-                    dr.action = RejectAction(stage="mtf_gate", reason=mtf_res["reasons"][0])
-                    if self.markov is not None:
-                        self.markov.record_terminal(state=cand_state, accepted=False)
-                    _finalize(dr, "rejected", reason=mtf_res["reasons"][0], stage="mtf_gate")
-                    continue
+                if green_path or not self.cfg.tv_mtf_conflict_gate_enabled:
+                    dr.mtf_gate = {
+                        "decision": "pass",
+                        "reasons": [],
+                        "observe_only": True,
+                        "tf_confirm": (tv_feature or {}).get("tf_confirm"),
+                        "tf_confirm_direction": (tv_feature or {}).get("tf_confirm_direction"),
+                        "tf_confirm_mtf": (tv_feature or {}).get("tf_confirm_mtf"),
+                        "mtf_timeframes": (tv_feature or {}).get("mtf_timeframes"),
+                        "trend_by_tf": (tv_feature or {}).get("trend_by_tf"),
+                    }
+                else:
+                    mtf_res = self.tv_mtf_gate.evaluate(
+                        tf_confirm=(tv_feature or {}).get("tf_confirm"),
+                        tf_confirm_direction=(tv_feature or {}).get("tf_confirm_direction"),
+                        tf_confirm_mtf=(tv_feature or {}).get("tf_confirm_mtf"),
+                        mtf_count=(tv_feature or {}).get("mtf_count"),
+                        trend_fresh_count=(tv_feature or {}).get("trend_fresh_count"),
+                        side=d.side)
+                    dr.mtf_gate = {"decision": mtf_res["decision"], "reasons": mtf_res["reasons"],
+                                   "tf_confirm": (tv_feature or {}).get("tf_confirm"),
+                                   "tf_confirm_direction": (tv_feature or {}).get("tf_confirm_direction"),
+                                   "mtf_timeframes": (tv_feature or {}).get("mtf_timeframes"),
+                                   "tf_confirm_mtf": (tv_feature or {}).get("tf_confirm_mtf"),
+                                   "trend_by_tf": (tv_feature or {}).get("trend_by_tf")}
+                    if mtf_res["decision"] == "block":
+                        dr.action = RejectAction(stage="mtf_gate", reason=mtf_res["reasons"][0])
+                        if self.markov is not None:
+                            self.markov.record_terminal(state=cand_state, accepted=False)
+                        _finalize(dr, "rejected", reason=mtf_res["reasons"][0], stage="mtf_gate")
+                        continue
                 if green_path:
                     entry_mode = "green_path"
                 else:
@@ -3443,8 +3456,8 @@ class PulseEngine:
                                     self.cfg.baseline_down_mid_entry_max],
             "green_path_enabled": bool(self.cfg.green_path_enabled),
             "note": ("baseline quant path: 180-240s TTC band (scaled on 15m), high edge + "
-                     "strong CEX; DOWN blocks bullish range-top; UP blocked until promoted; "
-                     "green_path=15m DOWN cohort+MTF only"),
+                     "strong CEX; UP blocked until promoted; "
+                     "green_path=15m DOWN cohort only (TV observe-only)"),
         }
 
     def _entry_confidence_tier(self, dr) -> "str | None":

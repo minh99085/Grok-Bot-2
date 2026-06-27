@@ -26,12 +26,13 @@ UPDATES = {
     "PULSE_VERIFIER_ENABLED": "1",
     "PULSE_VERIFIER_FAIL_OPEN": "0",
     "PULSE_VERIFIER_FOLLOW_REQUIRE_VERDICT": "1",
-    # TV observe-only — conflict veto only, not trade authority.
+    # TV observe-only — webhooks feed features/Grok; no MTF or signal trade authority.
     "PULSE_TRADINGVIEW_SIGNAL_GATE": "0",
     "PULSE_TV_MIN_SIGNAL_STRENGTH": "0",
+    "PULSE_TV_MTF_CONFLICT_GATE": "0",
     "PULSE_TV_MTF_REQUIRE_CONFIRM": "0",
-    "PULSE_TV_MTF_REQUIRE_ALL_CONFIRM": "1",
-    "PULSE_TV_MTF_REQUIRE_SIDE_ALIGN": "1",
+    "PULSE_TV_MTF_REQUIRE_ALL_CONFIRM": "0",
+    "PULSE_TV_MTF_REQUIRE_SIDE_ALIGN": "0",
     # UP restrictor floors: block proven-losing UP contexts.
     "PULSE_TV_DOWN_BIAS_GATE": "1",
     "PULSE_TV_DOWN_BIAS_BLOCK_UP_AGAINST_CONFIRMED_DOWN": "1",
@@ -90,8 +91,8 @@ UPDATES = {
     "PULSE_BASELINE_COHORT_15M_FAST_LANE": "1",
     "PULSE_BASELINE_COHORT_15M_TTC_MIN_S": "160",
     "PULSE_BASELINE_COHORT_15M_TTC_MAX_S": "220",
-    "PULSE_BASELINE_UP_TV_GATE_ENABLED": "1",
-    "PULSE_BASELINE_DOWN_TV_GATE_ENABLED": "1",
+    "PULSE_BASELINE_UP_TV_GATE_ENABLED": "0",
+    "PULSE_BASELINE_DOWN_TV_GATE_ENABLED": "0",
     "PULSE_BASELINE_DOWN_BLOCK_BULLISH_RANGE": "1",
     "PULSE_BASELINE_DOWN_BLOCK_UP_STRONG_BULLISH": "1",
     "PULSE_BASELINE_DOWN_BLOCK_NOT_STALE": "0",
@@ -192,7 +193,7 @@ for key, val in remaining.items():
     out.append(f"{key}={val}")
 out.append(
     "# LOOP ENGINE ARCH (2026-06-27): 15m DOWN green-path "
-    "TTC 480-660s + MTF 3/3 + tick 30s + max entry 0.65"
+    "TTC 480-660s + TV observe-only + tick 30s + max entry 0.65"
 )
 ENV_PATH.write_text("\n".join(out) + "\n", encoding="utf-8")
 print(f"Wrote {ENV_PATH} ({len(UPDATES)} loop-arch keys)")

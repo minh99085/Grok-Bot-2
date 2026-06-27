@@ -325,6 +325,22 @@ def test_green_path_active_only_15m_down():
     assert not off._green_path_active(side="down", window_seconds=900)
 
 
+def test_down_tv_gate_off_allows_bullish_stack():
+    eng = _eng(baseline_down_tv_gate_enabled=False)
+    ok, r = eng._baseline_quant_cohort_ok(
+        side="down",
+        esnap=_FakeEsnap(pulse_edge_score_bucket="high", cex_agreement_bucket="strong"),
+        ttc_s=600.0,
+        tv_feature={
+            "signal_level": "UP_STRONG",
+            "mtf_alignment": "bullish_aligned",
+            "range_state": "range_top",
+        },
+        window_seconds=900,
+    )
+    assert ok and r == ""
+
+
 def test_down_blocks_up_strong_range_top_mixed_mtf():
     eng = _eng()
     ok, r = eng._baseline_quant_cohort_ok(
