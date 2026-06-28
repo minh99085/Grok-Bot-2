@@ -260,4 +260,9 @@ def test_allowlist_explore_carveout_keeps_bot_active(tmp_path):
     assert eng1.light_report()["global_reconciled"] is True
 
 
-
+def test_grok_decider_observe_only_by_default(tmp_path):
+    # default mode is observe-only (shadow): Grok may grade but must NOT affect trading.
+    eng, _ = _arb_engine(tmp_path, arb=False)
+    assert eng.cfg.grok_decider_mode == "shadow"
+    if eng.grok_decider is not None:
+        assert eng.grok_decider.affects_trading() is False

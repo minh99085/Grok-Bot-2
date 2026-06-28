@@ -13,13 +13,15 @@ Read before any env, gate, deploy, or babysit cycle that alters behavior.
 - Chainlink RTDS price feed + vol sampler
 - CLOB websocket enabled
 
-## Grok observe-only (untouchable — no trade decider)
+## Trinity Grok profile (untouchable)
 
-- Grok trade decider **removed** — quant baseline + arb own all trade decisions
+- `PULSE_GROK_DECIDER_MODE=shadow` (never follow without promotion)
 - `GROK_BUDGET_DAILY_USD=35`
+- `PULSE_GROK_TIERED_COMPUTE=1` (light / full / deep)
+- `PULSE_GROK_DECIDER_MAX_CALLS_PER_HOUR=120`
 - `GROK_PREDICTOR_MAX_CALLS_PER_HOUR=60`
 - `GROK_ANALYST_MAX_CALLS_PER_HOUR=4`
-- `PULSE_GROK_NEWS_REFRESH_S=300` (CEX-lead context only)
+- `PULSE_GROK_DECIDER_USE_SEARCH=1` (deep tier only — code default)
 - `PULSE_RESEARCH_LOOP_ENABLED=1` with `PULSE_RESEARCH_AUTO_APPLY=0`
 - `PULSE_VERIFIER_ENABLED=1`
 
@@ -45,7 +47,7 @@ All keys in `scripts/pulse-babysit/frozen-env-keys.json` → `authority_frozen` 
 
 ## Never do in autopilot / babysit
 
-1. Re-enable Grok trade decider or follow mode
+1. Enable Grok follow or raise explore rates
 2. Re-enable any TV trade gate
 3. `sync-vps` / deploy without operator ask during hands-off window
 4. Relax or tighten quant gates on WR/PF alone while bot is profitable
@@ -55,11 +57,11 @@ All keys in `scripts/pulse-babysit/frozen-env-keys.json` → `authority_frozen` 
 
 ## Watch only (do not "fix")
 
-
+- Grok decider lifetime errors (monitor if climbing)
 - `missing_secret` TV rejects (stray POSTs)
 - Readiness `not_ready` for 80% promotion
 - Directional PF ~1.0 on small sample
 
 ## Winning formula (one line)
 
-Fast tick + arb ON + dep-arb ON + Grok observe-only (A/B/news) + TV observe-only + strict directional gates.
+Fast tick + arb ON + dep-arb ON + Grok shadow + TV observe-only + strict directional gates.

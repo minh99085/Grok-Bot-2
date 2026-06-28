@@ -240,7 +240,7 @@ def _drive(eng, t0):
 
 def test_engine_cex_lead_shadow_grades_but_never_trades(tmp_path):
     eng, t0 = _engine(tmp_path, cex_lead_enabled=True, cex_lead_mode="shadow",
-                      cex_lead_min_divergence=0.04, )
+                      cex_lead_min_divergence=0.04, grok_decider_mode="shadow")
     _drive(eng, t0)
     # the signal is measured every window and graded at close, but shadow can NEVER drive a trade
     assert eng.cex_lead.signals_seen >= 1
@@ -255,7 +255,7 @@ def test_engine_cex_lead_shadow_grades_but_never_trades(tmp_path):
 def test_engine_cex_lead_gated_drives_proven_bucket_via_safety_floor(tmp_path):
     eng, t0 = _engine(tmp_path, cex_lead_enabled=True, cex_lead_mode="gated",
                       cex_lead_min_samples=10, cex_lead_min_divergence=0.04,
-                      )
+                      grok_decider_mode="shadow")
     # pre-seed the strong-divergence bucket as Wilson-PROVEN (CEX right + beats market)
     for i in range(40):
         eng.cex_lead.record(bucket=">=0.30", side="up", cex_p_up=0.95, poly_yes=0.52,

@@ -26,7 +26,20 @@ def test_parse_json_handles_fences_prose_and_trailing():
     assert _parse_json("") is None
 
 
+# ------------------------------- C3: decider prompt reframed to mispricing ------------------ #
+def test_decider_prompt_frames_mispricing_and_model_vs_market():
+    from engine.pulse.grok_decider import make_decider_fn
+    captured = {}
 
+    def _chat(prompt, **kw):
+        captured["prompt"] = prompt
+        return '{"action":"no_trade","p_up":0.5,"confidence":0.0}'
+    fn = make_decider_fn(chat=_chat)
+    fn({"cex_lead_mispricing": {"divergence": 0.1}, "model_vs_market": {"model_beats_market": False}})
+    p = captured["prompt"]
+    assert "EXPLOIT MISPRICING" in p
+    assert "cex_lead_mispricing" in p and "model_vs_market" in p
+    assert "breakeven" in p.lower()
 
 
 # ------------------------------- C3: verifier framed around edge-vs-costs ------------------- #

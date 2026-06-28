@@ -20,14 +20,26 @@ if not ENV_PATH.exists():
 # re-enabled in babysit/autopilot fixes. See .grok/rules/tv-observe-only-lock.md
 
 UPDATES = {
-    # Grok observe-only: Analyst A + Predictor B + news digest — no trade decider.
+    # Grok observe-only: decide + grade every window, never place/size a trade.
+    "PULSE_GROK_DECIDER_MODE": "shadow",
+    "PULSE_GROK_DECIDER_FOLLOW_FRACTION": "0",
+    "PULSE_GROK_DECIDER_EXPLORE_RATE": "0",
+    "PULSE_GROK_DECIDER_MIN_CONFIDENCE": "0.62",
+    "PULSE_GROK_DECIDER_EXPLORE_MIN_VIEW_MARGIN": "0.08",
+    # Trinity profile: fast 15s tick (arb) + tiered Grok (profit/API/soak balance).
     "GROK_BUDGET_DAILY_USD": "35",
     "GROK_EST_USD_PER_CALL": "0.02",
     "GROK_SIGNAL_PREDICTOR_ENABLED": "1",
     "GROK_SIGNAL_ANALYST_ENABLED": "1",
     "GROK_PREDICTOR_MAX_CALLS_PER_HOUR": "60",
     "GROK_ANALYST_MAX_CALLS_PER_HOUR": "4",
+    "PULSE_GROK_DECIDER_MAX_CALLS_PER_HOUR": "120",
+    "PULSE_GROK_DECIDER_TIMEOUT_S": "18",
+    "PULSE_GROK_DECIDER_USE_SEARCH": "1",
     "PULSE_GROK_NEWS_REFRESH_S": "300",
+    "PULSE_GROK_TIERED_COMPUTE": "1",
+    "PULSE_GROK_TIER_FULL_DIVERGENCE_MIN": "0.025",
+    "PULSE_GROK_TIER_DEEP_DIVERGENCE_MIN": "0.04",
     "PULSE_VERIFIER_ENABLED": "1",
     "PULSE_VERIFIER_FAIL_OPEN": "0",
     "PULSE_VERIFIER_FOLLOW_REQUIRE_VERDICT": "1",

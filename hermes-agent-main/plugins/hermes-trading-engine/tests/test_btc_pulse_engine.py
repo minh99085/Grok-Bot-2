@@ -447,9 +447,11 @@ def test_reward_risk_floor_up_premium():
     assert eng._ask_reward_risk_ok("up", 0.55) is True
 
 
-def test_grok_up_side_allowed_without_decider():
+def test_grok_up_side_blocked_at_coin_flip_accuracy():
     eng = PulseEngine(PulseConfig())
-    assert eng._grok_up_side_allowed() is True
+    eng.grok_decider = type("G", (), {"report": lambda self: {
+        "graded_directional": 42, "direction_accuracy": 0.5}})()
+    assert eng._grok_up_side_allowed() is False
 
 
 def test_baseline_up_tv_strength_gate():

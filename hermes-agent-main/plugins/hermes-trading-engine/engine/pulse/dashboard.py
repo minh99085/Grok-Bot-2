@@ -182,6 +182,7 @@ function buildRows(s){
   const L=s.ledger||{};
   const price=s.price||{};
   const tv=s.tradingview||{};
+  const gd=s.grok_decider||{};
   const gsi=s.grok_signal_intel||{};
   const ver=s.verifier||{};
   const rl=s.research_loop||{};
@@ -189,6 +190,7 @@ function buildRows(s){
   const arb=s.arbitrage||{};
   const dep=s.dependency_arbitrage||{};
   const dr=s.directional_risk||{};
+  const cb=(gd.circuit_breaker||{});
   const loops=s.loops||{};
   const loopMap=(loops.loops||{});
   const lc=s.decision_lifecycle||{};
@@ -234,6 +236,9 @@ function buildRows(s){
   addRow(rows,'Ledger reconcile',reconciled?'yes':'NO',
     'Books must match',
     reconciled?'green':'red');
+  addRow(rows,'Circuit breaker',cb.tripped?(cb.reason||'TRIPPED'):'OK',
+    'Daily loss used '+usd(cb.daily_follow_loss_usd)+' / cap '+usd(cb.daily_loss_cap_usd),
+    cb.tripped?'red':'green');
 
   addSection(rows,'Price feed');
   const pAge=price.age_s;
@@ -268,7 +273,14 @@ function buildRows(s){
     fresh+'/'+mtfN+' fresh · observe-only trade gate',
     mtfVerdict.includes('confirmed')&&fresh>=2?'green':(fresh>=1?'yellow':'red'));
 
-  addSection(rows,'Grok AI (observe-only)');
+  addSection(rows,'Grok AI');
+  const gdReq=gd.requested||0;
+  const gdErr=gd.errors||0;
+  const gdErrRate=gdReq>0?gdErr/gdReq:0;
+  const gdOk=gd.enabled&&gd.mode==='shadow'&&!cb.tripped;
+  addRow(rows,'Decider C',(gd.mode||'off')+' · '+f(gd.decided,0)+' decided',
+    'abstains '+f(gd.abstains,0)+' · err '+f(gdErr,0)+' ('+f(gdErrRate*100,1)+'%)',
+    !gd.enabled||cb.tripped?'red':(gdOk&&gdErrRate<0.08?'green':(gdOk?'yellow':'yellow')));
   addRow(rows,'Predictor B',pB.enabled?'on':'off',
     f(pB.predicted,0)+' predicted · acc '+f((pB.accuracy||0)*100,1)+'%',
     pB.enabled&&(pB.errors||0)<5?'green':'yellow');
@@ -320,6 +332,7 @@ function overallLight(s,rows){
   if(!s.available)return {light:'red',text:'NO DATA'};
   if(s.live_trading_enabled)return {light:'red',text:'LIVE TRADING ON'};
   if((s.reconciliation||{}).global_reconciled===false)return {light:'red',text:'LEDGER BROKEN'};
+  if(((s.grok_decider||{}).circuit_breaker||{}).tripped)return {light:'red',text:'BREAKER TRIPPED'};
   if(reds>=3)return {light:'red',text:'MULTIPLE ISSUES ('+reds+')'};
   if(reds>=1)return {light:'yellow',text:'WATCH — '+reds+' issue(s)'};
   if((cap.total_on_hand_usd||0)>500)return {light:'green',text:'HEALTHY · PROFITABLE'};

@@ -47,13 +47,15 @@ def build_state_md(*, status: dict, ledger: dict, stop_conditions: Optional[dict
     out.append("## Active strategies\n")
     dir_halted = (stops.get("directional") or {}).get("halted")
     arb_halted = (stops.get("arbitrage") or {}).get("halted")
+    grok_mode = (status.get("grok_decider") or {}).get("mode") or cfg.get("grok_decider_mode")
     out.append("- **arbitrage (primary):** enabled=%s · halted=%s · realized=$%s · open=%s"
                % (arb.get("executed") is not None, arb_halted, arb.get("realized_profit_usd"),
                   arb.get("open")))
     out.append("- **directional:** enabled · halted=%s · settled=%s · WR=%s · PF=%s · PnL=$%s"
                % (dir_halted, led.get("settled"), led.get("win_rate"), led.get("profit_factor"),
                   led.get("realized_pnl_usd")))
-    out.append("- **grok:** observe-only (Analyst A + Predictor B); no trade decider")
+    out.append("- **grok decider:** mode=%s · affects_trading=%s"
+               % (grok_mode, (status.get("grok_decider") or {}).get("affects_trading")))
     ver = status.get("verifier") or {}
     out.append("- **verifier (maker-checker):** enabled=%s · approve_rate=%s\n"
                % (ver.get("enabled"), ver.get("approve_rate")))

@@ -127,7 +127,16 @@ def test_executable_mispricing_margin():
 def test_mispricing_follow_entry_on_abstain():
     eng = _gate_engine(mispricing_ttc_min_s=90.0, mispricing_ttc_max_s=300.0,
                        mispricing_follow_on_abstain=True)
+    eng.grok_decider = type("G", (), {"report": lambda self: {"graded_directional": 30,
+                                                               "direction_accuracy": 0.55}})()
+    sig = {"has_signal": True, "side": "up", "divergence": 0.12, "confirmed": True,
+           "cex_p_up": 0.62}
+    esnap = _FakeEsnap("not_stale")
+    esnap.pulse_edge_score_bucket = "high"
+    esnap.cex_agreement_bucket = "strong"
     tv = _up_strong_tv()
+    assert eng._mispricing_follow_entry(sig, 210.0, esnap, tv) is None
+    assert eng._mispricing_gate_counts.get("misprice_up_side_disabled") == 1
     down_sig = {"has_signal": True, "side": "down", "divergence": -0.12, "confirmed": True,
                 "cex_p_up": 0.38}
     down_esnap = _FakeEsnap("stale_polymarket_down")

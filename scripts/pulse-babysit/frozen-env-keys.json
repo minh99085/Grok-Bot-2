@@ -23,7 +23,9 @@
     "TRADINGVIEW_WEBHOOK_SECRET"
   ],
   "authority_frozen": {
-
+    "PULSE_GROK_DECIDER_MODE": "shadow",
+    "PULSE_GROK_DECIDER_FOLLOW_FRACTION": "0",
+    "PULSE_GROK_DECIDER_EXPLORE_RATE": "0",
     "PULSE_VERIFIER_ENABLED": "1",
     "PULSE_VERIFIER_FAIL_OPEN": "0",
     "PULSE_VERIFIER_FOLLOW_REQUIRE_VERDICT": "1",
@@ -53,7 +55,7 @@
     "PULSE_LATE_WINDOW_ENTRY": "0"
   },
   "learning_collection_frozen": {
-
+    "PULSE_GROK_DECIDER_MIN_CONFIDENCE": "0.62",
     "PULSE_MIN_EDGE": "0.010",
     "PULSE_BASIS_BUFFER": "0.01",
     "PULSE_MIN_REWARD_RISK": "0.45",
@@ -127,7 +129,7 @@
     "engine/pulse/engine.py",
     "engine/pulse/tv_confidence_tier.py",
     "engine/pulse/config_coupling.py",
-    "engine/pulse/grok_news.py",
+    "engine/pulse/grok_decider.py",
     "engine/pulse/executor.py",
     "tests/test_open_snapshot_persist.py"
   ],
@@ -137,7 +139,7 @@
     "eval_starvation_flat_streak": 2
   },
   "runtime_checks": {
-    "grok_decider.enabled": false,
+    "grok_decider.mode": "shadow",
     "grok_decider.affects_trading": false,
     "tradingview.signal_gate.enabled": false,
     "tradingview.mtf_gate.require_confirm": false

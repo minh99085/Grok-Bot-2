@@ -106,6 +106,35 @@ class PulseConfig:
     grok_est_usd_per_call: float = 0.02
     grok_predictor_max_calls_per_hour: int = 90
     grok_analyst_max_calls_per_hour: int = 8
+    # ---- Grok DECISION ENGINE ("Grok decides, bot executes"; PAPER ONLY) ----
+    # mode: off | shadow (decide+grade only, no trade — safe default) | follow (engine follows Grok
+    # direction/size subject to the deterministic floor: execution realism, risk caps, freshness).
+    grok_decider_mode: str = "shadow"        # observe-only by default (grades, never affects trading)
+    grok_decider_model: str = "grok-4.3"
+    grok_decider_timeout_s: float = 12.0
+    grok_decider_use_search: bool = False            # enable xAI live web/X news search (slower/$$)
+    grok_decider_min_confidence: float = 0.55
+    grok_decider_ttl_s: float = 240.0
+    grok_decider_max_calls_per_hour: int = 200
+    grok_tiered_compute_enabled: bool = True
+    grok_tier_full_divergence_min: float = 0.025
+    grok_tier_deep_divergence_min: float = 0.04
+    grok_decider_follow_fraction: float = 1.0        # A/B canary: fraction of windows to follow
+    grok_decider_max_consecutive_losses: int = 4     # breaker: trip after N follow-losses in a row
+    grok_decider_daily_loss_cap_usd: float = 30.0    # breaker: trip after this much follow-loss/day
+    grok_decider_max_latency_s: float = 20.0         # breaker: trip on sustained high decision latency
+    grok_decider_cooldown_s: float = 1800.0          # breaker: stay tripped (use baseline) this long
+    # FOLLOW exploration: when Grok ABSTAINS, trade its directional VIEW at this rate (paper data
+    # gathering so the bot keeps trading + learns action-level P&L). 0 = never (pure follow).
+    grok_decider_explore_rate: float = 0.0
+    grok_decider_explore_size_fraction: float = 0.5
+    # Minimum |p_up - 0.5| required before an explore trade on Grok's abstain view (blocks coin-flip).
+    grok_decider_explore_min_view_margin: float = 0.08
+    # minimum P(UP wins) before any Grok-owned UP trade (follow/explore/adaptive/mispricing).
+    grok_up_min_p_win: float = 0.58
+    # adaptive self-improvement loop: auto-EXPLOIT contexts with a proven view-edge (Wilson lower >
+    # 0.5), AVOID proven-losing contexts, and only EXPLORE the uncertain ones. Default ON.
+    grok_decider_adaptive: bool = True
     # ---- #1 maker-checker VERIFIER (independent Claude model) + #4 research meta-loop ----
     verifier_enabled: bool = True          # maker-checker ON for paper by default (needs ANTHROPIC key)
     verifier_fail_open: bool = True          # no verdict in time -> approve (don't freeze) but log
@@ -460,6 +489,32 @@ class PulseConfig:
             grok_est_usd_per_call=_envf("GROK_EST_USD_PER_CALL", 0.02),
             grok_predictor_max_calls_per_hour=int(_envf("GROK_PREDICTOR_MAX_CALLS_PER_HOUR", 90)),
             grok_analyst_max_calls_per_hour=int(_envf("GROK_ANALYST_MAX_CALLS_PER_HOUR", 8)),
+            grok_decider_mode=(os.getenv("PULSE_GROK_DECIDER_MODE", "shadow") or "shadow").strip().lower(),
+            grok_decider_model=(os.getenv("PULSE_GROK_DECIDER_MODEL", "grok-4.3")
+                                or "grok-4.3").strip(),
+            grok_decider_timeout_s=_envf("PULSE_GROK_DECIDER_TIMEOUT_S", 12.0),
+            grok_decider_use_search=str(os.getenv("PULSE_GROK_DECIDER_USE_SEARCH", "0"))
+            .strip().lower() in ("1", "true", "yes", "on"),
+            grok_decider_min_confidence=_envf("PULSE_GROK_DECIDER_MIN_CONFIDENCE", 0.55),
+            grok_decider_ttl_s=_envf("PULSE_GROK_DECIDER_TTL_S", 240.0),
+            grok_decider_max_calls_per_hour=int(_envf("PULSE_GROK_DECIDER_MAX_CALLS_PER_HOUR", 200)),
+            grok_tiered_compute_enabled=str(os.getenv("PULSE_GROK_TIERED_COMPUTE", "1"))
+            .strip().lower() in ("1", "true", "yes", "on"),
+            grok_tier_full_divergence_min=_envf("PULSE_GROK_TIER_FULL_DIVERGENCE_MIN", 0.025),
+            grok_tier_deep_divergence_min=_envf("PULSE_GROK_TIER_DEEP_DIVERGENCE_MIN", 0.04),
+            grok_decider_follow_fraction=_envf("PULSE_GROK_DECIDER_FOLLOW_FRACTION", 1.0),
+            grok_decider_max_consecutive_losses=int(
+                _envf("PULSE_GROK_DECIDER_MAX_CONSECUTIVE_LOSSES", 4)),
+            grok_decider_daily_loss_cap_usd=_envf("PULSE_GROK_DECIDER_DAILY_LOSS_CAP_USD", 30.0),
+            grok_decider_max_latency_s=_envf("PULSE_GROK_DECIDER_MAX_LATENCY_S", 20.0),
+            grok_decider_cooldown_s=_envf("PULSE_GROK_DECIDER_COOLDOWN_S", 1800.0),
+            grok_decider_explore_rate=_envf("PULSE_GROK_DECIDER_EXPLORE_RATE", 0.0),
+            grok_decider_explore_size_fraction=_envf("PULSE_GROK_DECIDER_EXPLORE_SIZE_FRACTION", 0.5),
+            grok_decider_explore_min_view_margin=_envf(
+                "PULSE_GROK_DECIDER_EXPLORE_MIN_VIEW_MARGIN", 0.08),
+            grok_up_min_p_win=_envf("PULSE_GROK_UP_MIN_P_WIN", 0.58),
+            grok_decider_adaptive=str(os.getenv("PULSE_GROK_DECIDER_ADAPTIVE", "1"))
+            .strip().lower() in ("1", "true", "yes", "on"),
             verifier_enabled=str(os.getenv("PULSE_VERIFIER_ENABLED", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
             verifier_fail_open=str(os.getenv("PULSE_VERIFIER_FAIL_OPEN", "1"))
@@ -1152,20 +1207,29 @@ class PulseEngine:
         self.overlay = None
         self.grok_analyst = None
         self.grok_predictor = None
+        self.grok_decider = None
         self.grok_news = None
         self.grok_dep_screener = None
+        self._grok_pending: list = []             # pending decision grades (decision_id/price0/close)
+        self._grok_tv_fp: dict = {}               # decision_id -> last MTF fingerprint (refresh Grok)
+        self._grok_entry_band_seen: set = set()   # windows that got entry-band Grok refresh
         self._verifier_pending: list = []        # pending verifier counterfactual grades at window close
-        self._recent_windows: list = []           # rolling recent BTC 5m window outcomes
+        self._recent_windows: list = []           # rolling recent BTC 5m window outcomes (for Grok)
+        import random as _random
+        self._grok_rng = _random.Random()         # exploration sampler (follow-mode data gathering)
+        self._grok_policy_counts = {"exploit": 0, "explore": 0, "avoid": 0}   # adaptive-loop tally
         self._mispricing_gate_counts: dict = {}
         self._baseline_cohort_gate_counts: dict = {}
         self._tv_tier_counts: dict = {}
         try:
             from engine.pulse.grok_intel import (GrokBudget, GrokSignalAnalyst,
                                                  GrokSignalPredictor, xai_key)
+            decider_on = str(self.cfg.grok_decider_mode).strip().lower() in ("shadow", "follow")
             any_grok = (bool(self.cfg.grok_overlay_enabled)
                         or bool(self.cfg.grok_signal_analyst_enabled)
                         or bool(self.cfg.grok_signal_predictor_enabled)
-                        or bool(self.cfg.grok_dependency_enabled))
+                        or bool(self.cfg.grok_dependency_enabled)
+                        or decider_on)
             if any_grok and xai_key():
                 self.grok_budget = GrokBudget(
                     daily_usd_cap=self.cfg.grok_budget_daily_usd,
@@ -1173,6 +1237,7 @@ class PulseEngine:
                     per_feature_hourly={"predictor": self.cfg.grok_predictor_max_calls_per_hour,
                                         "analyst": self.cfg.grok_analyst_max_calls_per_hour,
                                         "overlay": self.cfg.grok_overlay_max_calls_per_hour,
+                                        "decider": self.cfg.grok_decider_max_calls_per_hour,
                                         "news": 40,
                                         "dependency": 12})
             if bool(self.cfg.grok_overlay_enabled) and xai_key():
@@ -1188,11 +1253,31 @@ class PulseEngine:
                 self.grok_analyst = GrokSignalAnalyst(
                     budget=self.grok_budget, interval_s=self.cfg.grok_analyst_interval_s,
                     report_provider=self._grok_analyst_report).start()
-            if any_grok and xai_key():
-                from engine.pulse.grok_news import GrokNewsDigest
-                self.grok_news = GrokNewsDigest(
-                    budget=self.grok_budget,
-                    interval_s=self.cfg.grok_news_refresh_s).start()
+            if decider_on and xai_key():
+                from engine.pulse.grok_decider import (GrokDecider, make_decider_fn,
+                                                       GrokNewsDigest, make_news_fn)
+                # news digest is a SEPARATE periodic search worker; the per-window decision reuses it
+                # (cheaper/faster than searching every window). Enabled via use_search.
+                if bool(self.cfg.grok_decider_use_search) or self.cfg.grok_tiered_compute_enabled:
+                    self.grok_news = GrokNewsDigest(
+                        budget=self.grok_budget,
+                        news_fn=make_news_fn(model=self.cfg.grok_decider_model,
+                                             timeout_s=max(35.0, self.cfg.grok_decider_timeout_s)),
+                        interval_s=self.cfg.grok_news_refresh_s).start()
+                self.grok_decider = GrokDecider(
+                    decider_fn=make_decider_fn(
+                        model=self.cfg.grok_decider_model,
+                        timeout_s=self.cfg.grok_decider_timeout_s,
+                        use_search=bool(self.cfg.grok_decider_use_search),
+                        use_search_deep_only=True,
+                        default_ttl_s=self.cfg.grok_decider_ttl_s),
+                    budget=self.grok_budget, mode=self.cfg.grok_decider_mode,
+                    min_confidence=self.cfg.grok_decider_min_confidence,
+                    ttl_s=self.cfg.grok_decider_ttl_s,
+                    max_consecutive_losses=self.cfg.grok_decider_max_consecutive_losses,
+                    daily_loss_cap_usd=self.cfg.grok_decider_daily_loss_cap_usd,
+                    max_latency_s=self.cfg.grok_decider_max_latency_s,
+                    cooldown_s=self.cfg.grok_decider_cooldown_s).start()
             if bool(self.cfg.grok_dependency_enabled) and xai_key():
                 from engine.pulse.grok_dependency import GrokDependencyScreener
                 self.grok_dep_screener = GrokDependencyScreener(
@@ -1202,7 +1287,7 @@ class PulseEngine:
         except Exception:  # noqa: BLE001 — Grok never blocks startup
             logger.exception("grok init failed; continuing as pure quant")
             self.grok_budget = self.overlay = self.grok_analyst = self.grok_predictor = None
-            self.grok_news = self.grok_dep_screener = None
+            self.grok_decider = self.grok_news = self.grok_dep_screener = None
         # ---- #2 compounding lessons + #3 loop registry ----
         from engine.pulse.lessons import LessonsBook
         from engine.pulse.loops import LoopRegistry
@@ -1475,6 +1560,8 @@ class PulseEngine:
             self.grok_predictor.load_state(acct.get("grok_predictor") or {})
         if self.grok_analyst is not None:
             self.grok_analyst.load_state(acct.get("grok_analyst") or {})
+        if self.grok_decider is not None:
+            self.grok_decider.load_state(acct.get("grok_decider") or {})
         if self.grok_news is not None:
             self.grok_news.load_state(acct.get("grok_news") or {})
         self._grok_pending = list(acct.get("grok_pending") or [])
@@ -1589,6 +1676,7 @@ class PulseEngine:
                     gp = self.grok_predictor.get(feat.get("event_id"))
                     if gp is not None:
                         tv_feature = {**feat, "grok_p_up": gp.get("p_up")}
+        self._grade_grok_decisions(now)   # grade prior Grok decisions vs realized window close
         self._grade_verifier_decisions(now)  # counterfactual grade for vetoed (and shadow) setups
         self._grade_cex_lead(now)         # grade prior CEX-lead signals vs realized window close
         self._grade_market_benchmark(now) # grade model-vs-market accuracy (learning-blend gate)
@@ -1830,9 +1918,310 @@ class PulseEngine:
                     cex_p_up=cex_p_up, poly_yes=mc.poly_yes, fair=fair_used, ttc_s=ttc,
                     basket_direction=_basket_dir, exchange_agreement=_agreement, ob_imbalance=_ob_imb,
                     tv_direction=_tv_dir, tv_strength=_tv_str, news_sentiment=_news_sent)
-            cex_lead_active = False
+            # ---- GROK DECISION ENGINE ("Grok decides, bot executes"; PAPER ONLY) ----
+            # Request one decision per window (async, off the tick loop), record it observe-only, and
+            # schedule a grade vs the realized close (traded or not). In SHADOW mode this is the only
+            # effect. In FOLLOW mode the decision drives side/size below, subject to the floor.
+            grok_dec = None
             grok_size_frac = 1.0
-            if cex_lead_drive is not None:
+            grok_verdict = None
+            if self.grok_decider is not None:
+                self.loops.beat("signal_generation", now)
+                _grok_bundle = self._grok_decision_bundle(mc, dr, w, fair_used, ttc, tv_feature)
+                _refresh = self._grok_refresh_token(mc.decision_id, _grok_bundle, ttc=ttc,
+                                                    window_seconds=int(getattr(w, "window_seconds", 300) or 300))
+                from engine.pulse.grok_bundle import (classify_grok_compute_tier,
+                                                      compact_bundle_for_light_tier)
+                _tier = classify_grok_compute_tier(
+                    _grok_bundle, refresh_token=_refresh,
+                    tiered_enabled=self.cfg.grok_tiered_compute_enabled,
+                    full_divergence_min=self.cfg.grok_tier_full_divergence_min,
+                    deep_divergence_min=self.cfg.grok_tier_deep_divergence_min)
+                _grok_bundle["grok_compute_tier"] = _tier
+                if _tier == "light":
+                    _grok_bundle = compact_bundle_for_light_tier(_grok_bundle)
+                self.grok_decider.request(
+                    mc.decision_id,
+                    _grok_bundle,
+                    context=self._grok_decision_context(dr.features, cand_state, ttc, fair_used),
+                    refresh_token=_refresh)
+                grok_dec = self.grok_decider.get(mc.decision_id)
+                dr.grok_decision = grok_dec
+                if grok_dec is not None:
+                    self._schedule_grok_grade(mc.decision_id, snap.price, w.close_ts, grok_dec)
+                    if self.verifier is not None:
+                        self.loops.beat("verifier", now)
+                        self.verifier.request(mc.decision_id, {
+                            "decision": {k: grok_dec.get(k) for k in
+                                         ("action", "p_up", "confidence", "size_fraction",
+                                          "rationale")},
+                            "context": grok_dec.get("context"),
+                            "payoff": {"up_ask": (w.up_book.best_ask if w.up_book else None),
+                                       "down_ask": (w.down_book.best_ask if w.down_book else None),
+                                       "min_reward_risk": self.cfg.min_reward_risk},
+                            "digital_fair_p_up": fair_used, "poly_yes": mc.poly_yes,
+                            # mispricing context for the checker: divergence + the CEX-lead signal +
+                            # the proof the bot's model is worse than the market (veto if edge<costs)
+                            "fair_minus_poly": (round(float(fair_used) - float(mc.poly_yes), 4)
+                                                if (fair_used is not None and mc.poly_yes is not None)
+                                                else None),
+                            "cex_lead_mispricing": {k: (dr.cex_lead or {}).get(k) for k in
+                                                    ("divergence", "side", "confirmed",
+                                                     "tv_confirms", "late_decisive")},
+                            "edge_signal": {k: (dr.edge or {}).get(k) for k in
+                                            ("stale_divergence_class", "pulse_edge_score_bucket",
+                                             "ttc_bucket", "cex_agreement_bucket")},
+                            "model_vs_market": self._market_benchmark(),
+                            "recent_windows": self._recent_windows_view(6),
+                            "lessons": self.lessons.recent(10),
+                            "view_accuracy": self.grok_decider.report().get("view_accuracy")})
+                self._maybe_schedule_verifier_counterfactual(
+                    mc, w, snap, grok_dec, acted=False)
+            # FOLLOW only when: mode=follow, breaker not tripped, and this window is in the A/B canary
+            # follow-fraction. Otherwise fall through to the baseline path (the A/B control arm).
+            grok_follow = False
+            cex_lead_active = False
+            if self.cfg.grok_decider_mode == "follow" and self.grok_decider is not None:
+                ok, _br = self.grok_decider.should_follow(now)
+                grok_follow = ok and self._follow_canary(mc.decision_id)
+            # the directional decision uses the (possibly learning-adjusted) probability; the
+            # STRICT execution gate below is UNCHANGED and remains the sole trade authority.
+            if grok_follow:
+                # FOLLOW: act on Grok; opinion gates bypassed, only the deterministic floor
+                # (freshness, max_price, execution realism, caps, breaker) may abstain. When Grok is
+                # actionable -> follow its action. When it ABSTAINS, EXPLORE its directional VIEW
+                # (p_up) at a capped rate so the bot keeps trading + gathers action-level P&L data
+                # (paper; breaker-protected) instead of freezing.
+                actionable = self.grok_decider.is_actionable(grok_dec, now=now)
+                # ADAPTIVE SELF-IMPROVEMENT: when Grok abstains, consult the live per-context policy.
+                pol = ({"mode": "explore"} if (not self.cfg.grok_decider_adaptive or grok_dec is None
+                                               or grok_dec.get("p_up") is None or actionable)
+                       else self.grok_decider.context_policy(grok_dec.get("context") or {}))
+                exploit = (pol["mode"] == "exploit")           # proven-edge context -> act on view
+                # self-tuning: aggression raises the exploration rate as acted trades turn profitable
+                eff_explore_rate = self.grok_decider.aggr.effective_explore_rate(
+                    self.cfg.grok_decider_explore_rate)
+                if not self._grok_up_side_allowed():
+                    eff_explore_rate = 0.0
+                _pu_view = (float(grok_dec.get("p_up"))
+                            if grok_dec is not None and grok_dec.get("p_up") is not None else None)
+                _view_margin = (abs(_pu_view - 0.5) if _pu_view is not None else 0.0)
+                explore = (not actionable and not exploit and grok_dec is not None
+                           and _pu_view is not None and pol["mode"] != "avoid"
+                           and _view_margin >= float(self.cfg.grok_decider_explore_min_view_margin)
+                           and eff_explore_rate > 0.0
+                           and self._grok_rng.random() < eff_explore_rate)
+                misprice_entry = (None if (actionable or exploit or explore)
+                                  else self._mispricing_follow_entry(
+                                      dr.cex_lead, ttc, esnap, tv_feature))
+                if not actionable and not exploit and not explore and misprice_entry is None:
+                    if pol["mode"] == "avoid":
+                        self._grok_policy_counts["avoid"] += 1
+                    reason = ("grok_avoid_proven_bad" if pol["mode"] == "avoid"
+                              else ("grok_explore_view_too_weak"
+                                    if (not actionable and not exploit and grok_dec is not None
+                                        and _pu_view is not None
+                                        and _view_margin < float(
+                                            self.cfg.grok_decider_explore_min_view_margin))
+                                    else ("grok_no_decision" if not grok_dec
+                                          else ("grok_abstain" if grok_dec.get("action") == "no_trade"
+                                                else "grok_low_confidence_or_stale"))))
+                    dr.candidate = CandidateDecision(side=None, fair_p_up=fair_used,
+                                                     outcome_prob=None, model_edge=0.0,
+                                                     tradeable=False, reason=reason)
+                    if self.markov is not None:
+                        self.markov.record_terminal(state=cand_state, accepted=False)
+                    _finalize(dr, "rejected", reason=reason, stage="grok_decider")
+                    continue
+                if misprice_entry is not None:
+                    side = misprice_entry["side"]
+                    entry_mode = "mispricing_follow"
+                    grok_oprob = misprice_entry["p_win"]
+                    grok_size_frac = misprice_entry["size_frac"]
+                    self._mispricing_gate_counts["mispricing_follow_on_abstain"] = (
+                        self._mispricing_gate_counts.get("mispricing_follow_on_abstain", 0) + 1)
+                elif actionable:
+                    side = grok_dec["action"]
+                    entry_mode = "grok_follow"
+                    # EV uses the side-aligned P(win) = p_up (up) / 1-p_up (down), NOT raw confidence
+                    # (confidence is 'how sure', not the win probability the EV gate needs).
+                    _pu = grok_dec.get("p_up")
+                    if _pu is not None:
+                        grok_oprob = float(_pu) if side == "up" else (1.0 - float(_pu))
+                    else:
+                        grok_oprob = float(grok_dec.get("confidence") or 0.5)
+                    grok_size_frac = max(0.0, min(1.0, float(grok_dec.get("size_fraction") or 1.0)))
+                elif exploit:                      # proven-edge context: act on Grok's view, sized up
+                    pu = float(grok_dec.get("p_up"))
+                    side = "up" if pu >= 0.5 else "down"
+                    entry_mode = "grok_adaptive"
+                    grok_oprob = pu if side == "up" else (1.0 - pu)
+                    grok_size_frac = max(0.0, min(1.0, 0.5 * float(pol.get("size_mult") or 1.0)
+                                                  * self.grok_decider.aggr.size_scale()))
+                    self._grok_policy_counts["exploit"] += 1
+                else:                              # exploration trade on Grok's directional view
+                    pu = float(grok_dec.get("p_up"))
+                    side = "up" if pu >= 0.5 else "down"
+                    entry_mode = "grok_explore"
+                    grok_oprob = pu if side == "up" else (1.0 - pu)
+                    grok_size_frac = max(0.0, min(1.0,
+                                                  float(self.cfg.grok_decider_explore_size_fraction)
+                                                  * self.grok_decider.aggr.size_scale()))
+                    self._grok_policy_counts["explore"] += 1
+                up_blk, up_reason = self._directional_up_blocked(side)
+                if up_blk:
+                    dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
+                                                     outcome_prob=None, model_edge=0.0,
+                                                     tradeable=False, reason=up_reason)
+                    if self.markov is not None:
+                        self.markov.record_terminal(state=cand_state, accepted=False)
+                    _finalize(dr, "rejected", reason=up_reason, stage="directional")
+                    continue
+                if (entry_mode != "mispricing_follow" and side == "up" and grok_oprob is not None
+                        and float(grok_oprob) < float(self.cfg.grok_up_min_p_win)):
+                    dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
+                                                     outcome_prob=None, model_edge=0.0,
+                                                     tradeable=False,
+                                                     reason="grok_up_p_win_too_low")
+                    if self.markov is not None:
+                        self.markov.record_terminal(state=cand_state, accepted=False)
+                    _finalize(dr, "rejected", reason="grok_up_p_win_too_low", stage="grok_decider")
+                    continue
+                mp_ok, mp_reason = self._mispricing_gate_ok(
+                    side=side, cex_sig=dr.cex_lead, ttc_s=ttc, esnap=esnap,
+                    window_seconds=int(getattr(w, "window_seconds", 300) or 300))
+                if not mp_ok:
+                    self._mispricing_gate_counts[mp_reason] = (
+                        self._mispricing_gate_counts.get(mp_reason, 0) + 1)
+                    dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
+                                                     outcome_prob=None, model_edge=0.0,
+                                                     tradeable=False, reason=mp_reason)
+                    if self.markov is not None:
+                        self.markov.record_terminal(state=cand_state, accepted=False)
+                    _finalize(dr, "rejected", reason=mp_reason, stage="mispricing_gate")
+                    continue
+                et_ok, et_reason = self._edge_ttc_gate_ok(
+                    esnap=esnap, ttc_s=ttc,
+                    window_seconds=int(getattr(w, "window_seconds", 300) or 300))
+                if not et_ok:
+                    self._mispricing_gate_counts[et_reason] = (
+                        self._mispricing_gate_counts.get(et_reason, 0) + 1)
+                    dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
+                                                     outcome_prob=None, model_edge=0.0,
+                                                     tradeable=False, reason=et_reason)
+                    if self.markov is not None:
+                        self.markov.record_terminal(state=cand_state, accepted=False)
+                    _finalize(dr, "rejected", reason=et_reason, stage="mispricing_gate")
+                    continue
+                if (entry_mode != "mispricing_follow" and side == "up"
+                        and not self._grok_up_side_allowed()):
+                    dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
+                                                     outcome_prob=None, model_edge=0.0,
+                                                     tradeable=False, reason="grok_no_edge_up")
+                    if self.markov is not None:
+                        self.markov.record_terminal(state=cand_state, accepted=False)
+                    _finalize(dr, "rejected", reason="grok_no_edge_up", stage="grok_decider")
+                    continue
+                if side == "up":
+                    up_tv_ok, up_tv_reason = self._baseline_up_tv_strength_ok(tv_feature)
+                    if not up_tv_ok:
+                        dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
+                                                         outcome_prob=None, model_edge=0.0,
+                                                         tradeable=False, reason=up_tv_reason)
+                        if self.markov is not None:
+                            self.markov.record_terminal(state=cand_state, accepted=False)
+                        _finalize(dr, "rejected", reason=up_tv_reason, stage="grok_decider")
+                        continue
+                # Restrict-only DOWN/TV asymmetry gate applies to all Grok-owned UP trades.
+                if side == "up":
+                    _up_book = w.up_book
+                    _up_ask = _up_book.best_ask if _up_book else None
+                    db_res = self._down_bias_eval(side=side, tv_feature=tv_feature,
+                                                  markov_state=cand_state, ttc_s=ttc, esnap=esnap,
+                                                  fair_p_up=fair_used,
+                                                  zscore_bucket=(rfeat.zscore_bucket if rfeat else None),
+                                                  confidence_tier=self._entry_confidence_tier(dr),
+                                                  ask_price=_up_ask)
+                    if db_res["decision"] in ("block", "explore"):
+                        dr.down_bias_gate = {"decision": db_res["decision"],
+                                             "reasons": db_res["reasons"]}
+                        dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
+                                                         outcome_prob=None, model_edge=0.0,
+                                                         tradeable=False,
+                                                         reason=db_res["reasons"][0])
+                        if self.markov is not None:
+                            self.markov.record_terminal(state=cand_state, accepted=False)
+                        _finalize(dr, "rejected", reason=db_res["reasons"][0],
+                                  stage="down_bias_gate")
+                        continue
+                # #1 MAKER-CHECKER: veto/shrink Grok-owned trades. When the mispricing gate is ON,
+                # CEX-stack alignment already validated the entry — skip the Grok-opinion verifier.
+                grok_verdict = None
+                if (self.verifier is not None and not self.cfg.mispricing_gate_enabled):
+                    if self.cfg.verifier_follow_require_verdict:
+                        # fail-CLOSED on a pending verdict: WAIT for the real maker-checker (it's
+                        # cached per decision_id, so a later tick on this same window proceeds).
+                        grok_verdict = self.verifier.get(mc.decision_id) or {
+                            "approve": False, "pending": True, "reason": "verifier_pending"}
+                    else:
+                        grok_verdict = self.verifier.verdict_or_failopen(mc.decision_id)
+                    if not grok_verdict.get("approve"):
+                        vr = "verifier_pending" if grok_verdict.get("pending") else "verifier_veto"
+                        if not grok_verdict.get("pending"):
+                            book_v = w.up_book if side == "up" else w.down_book
+                            ask_v = book_v.best_ask if book_v else None
+                            self._maybe_schedule_verifier_counterfactual(
+                                mc, w, snap, grok_dec, side=side, entry_ask=ask_v,
+                                size_frac=grok_size_frac, acted=False)
+                        dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
+                                                         outcome_prob=None, model_edge=0.0,
+                                                         tradeable=False, reason=vr)
+                        if self.markov is not None:
+                            self.markov.record_terminal(state=cand_state, accepted=False)
+                        _finalize(dr, "rejected", reason=vr, stage="verifier")
+                        continue
+                    grok_size_frac = min(grok_size_frac,
+                                         float(grok_verdict.get("max_size_fraction") or 1.0))
+                book = w.up_book if side == "up" else w.down_book
+                ask = book.best_ask if book else None
+                cap = min(self.cfg.max_price, grok_dec.get("max_price") or self.cfg.max_price)
+                if ask is None:
+                    dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
+                                                     outcome_prob=None, model_edge=0.0,
+                                                     tradeable=False, reason="no_tradeable_ask")
+                    _finalize(dr, "rejected", reason="no_tradeable_ask", stage="grok_decider")
+                    continue
+                if float(ask) > cap:
+                    dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
+                                                     outcome_prob=None, model_edge=0.0,
+                                                     tradeable=False, reason="grok_max_price")
+                    _finalize(dr, "rejected", reason="grok_max_price", stage="grok_decider")
+                    continue
+                ex_ok, ex_reason = self._executable_mispricing_ok(p_win=grok_oprob, ask=float(ask))
+                if not ex_ok:
+                    self._mispricing_gate_counts[ex_reason] = (
+                        self._mispricing_gate_counts.get(ex_reason, 0) + 1)
+                    dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
+                                                     outcome_prob=None, model_edge=0.0,
+                                                     tradeable=False, reason=ex_reason)
+                    if self.markov is not None:
+                        self.markov.record_terminal(state=cand_state, accepted=False)
+                    _finalize(dr, "rejected", reason=ex_reason, stage="mispricing_gate")
+                    continue
+                if (entry_mode != "mispricing_follow"
+                        and not self._ask_reward_risk_ok(side, float(ask))):
+                    dr.candidate = CandidateDecision(side=side, fair_p_up=fair_used,
+                                                     outcome_prob=None, model_edge=0.0,
+                                                     tradeable=False, reason="reward_risk_too_low")
+                    self._payoff_guard_counts["rejected_bad_reward_to_risk"] += 1
+                    _finalize(dr, "rejected", reason="reward_risk_too_low", stage="grok_decider")
+                    continue
+                from engine.pulse.strategy import PulseDecision
+                d = PulseDecision(trade=True, side=side,
+                                  token_id=(w.up_token_id if side == "up" else w.down_token_id),
+                                  price=float(ask), fair_p_up=fair_used, edge=0.0, reason=entry_mode)
+                context_explored = False
+            elif cex_lead_drive is not None:
                 # CEX-LEAD DRIVE: a Wilson-PROVEN divergence bucket proposes the side. Opinion gates
                 # bypassed (the proven edge owns the direction); the safety floor (selectivity +
                 # calibration + EV gate + caps + breaker) below still applies and stays authoritative.
@@ -1916,7 +2305,9 @@ class PulseEngine:
                            min_reward_risk_up=_up_rr if _up_rr > float(self.cfg.min_reward_risk or 0)
                            else None,
                            force_side=_force_side)
-            if cex_lead_active:
+            if grok_follow:
+                outcome_prob = grok_oprob              # Grok's P(chosen side wins) (action or view)
+            elif cex_lead_active:
                 outcome_prob = cex_oprob               # CEX-lead P(chosen side wins) on a proven bucket
             else:
                 outcome_prob = (fair_used if d.side == "up" else (1.0 - fair_used)) \
@@ -1945,7 +2336,7 @@ class PulseEngine:
             # the quant's directional opinion; in FOLLOW / CEX-LEAD-DRIVE mode the direction is owned
             # by the proven driver so they are bypassed. The deterministic FLOOR (selectivity +
             # calibration + execution-quality gate + caps) below still applies in every mode.
-            if not cex_lead_active:
+            if not grok_follow and not cex_lead_active:
                 cohort_ok, cohort_reason = self._baseline_quant_cohort_ok(
                     side=d.side, esnap=esnap, ttc_s=ttc, tv_feature=tv_feature,
                     window_seconds=int(getattr(w, "window_seconds", 300) or 300),
@@ -1959,15 +2350,15 @@ class PulseEngine:
                     _finalize(dr, "rejected", reason=cohort_reason, stage="baseline_cohort_gate")
                     continue
             if (self.cfg.directional_up_restrictions_enabled
-                    and not cex_lead_active and d.side == "up"
+                    and not grok_follow and not cex_lead_active and d.side == "up"
                     and not self._grok_up_side_allowed()):
-                dr.action = RejectAction(stage="directional", reason="grok_no_edge_up")
+                dr.action = RejectAction(stage="grok_decider", reason="grok_no_edge_up")
                 if self.markov is not None:
                     self.markov.record_terminal(state=cand_state, accepted=False)
-                _finalize(dr, "rejected", reason="grok_no_edge_up", stage="directional")
+                _finalize(dr, "rejected", reason="grok_no_edge_up", stage="grok_decider")
                 continue
             if (self.cfg.directional_up_restrictions_enabled
-                    and not cex_lead_active and d.side == "up"):
+                    and not grok_follow and not cex_lead_active and d.side == "up"):
                 up_tv_ok, up_tv_reason = self._baseline_up_tv_strength_ok(tv_feature)
                 if not up_tv_ok:
                     dr.action = RejectAction(stage="directional", reason=up_tv_reason)
@@ -1976,7 +2367,7 @@ class PulseEngine:
                     _finalize(dr, "rejected", reason=up_tv_reason, stage="directional")
                     continue
             green_path = False
-            if not cex_lead_active:
+            if not grok_follow and not cex_lead_active:
                 green_path = self._green_path_active(
                     side=d.side,
                     window_seconds=int(getattr(w, "window_seconds", 300) or 300))
@@ -2139,7 +2530,8 @@ class PulseEngine:
             # near-efficient market, so only take a directional trade in a CONFIDENTLY-WINNING bucket
             # (Wilson lower-bound > breakeven, n>=min). Pre-execution BLOCK, not advisory. Driven
             # strategies (grok-follow / cex-lead) and arb are exempt (they have their own proof).
-            if (self.cfg.directional_require_winning_bucket and not cex_lead_active
+            if (self.cfg.directional_require_winning_bucket and not grok_follow
+                    and not cex_lead_active
                     and (not self._any_winning_bucket(sel_tags)
                          or not self._directional_market_benchmark_ok())):
                 # cold-start carve-out: let a small capped fraction through as EXPLORATION so the
@@ -2164,14 +2556,17 @@ class PulseEngine:
                     self.markov.record_terminal(state=cand_state, accepted=False)
                 _finalize(dr, "rejected", reason=gate_res["reasons"][0], stage="selectivity_gate")
                 continue
-            if cex_lead_active:
+            if grok_follow:
+                gate_decision = ("grok_follow_explored" if gate_res["decision"] == "explore"
+                                 else "grok_follow")
+            elif cex_lead_active:
                 gate_decision = ("cex_lead_explored" if gate_res["decision"] == "explore"
                                  else "cex_lead")
             else:
                 gate_decision = "explored" if gate_res["decision"] == "explore" else "passed"
             # B (EXPLOIT side): size UP a proven-winning research exploit-context (baseline opinion
             # path only; capped). The execution gate + caps below remain authoritative.
-            if (not cex_lead_active and self.cfg.research_auto_apply
+            if (not grok_follow and not cex_lead_active and self.cfg.research_auto_apply
                     and not self.cfg.research_forbid_size_increase
                     and self._research_exploit_hit(sel_tags)):
                 grok_size_frac = min(self.cfg.cex_lead_max_size_frac,
@@ -2311,6 +2706,12 @@ class PulseEngine:
             pos.research["entry_mode"] = entry_mode
             pos.research["entry_ttc_s"] = float(ttc)
             pos.research["conviction_bucket"] = _conv_bucket(fair_used)
+            if grok_dec is not None:
+                pos.research["grok_snapshot"] = {
+                    "action": grok_dec.get("action"),
+                    "p_up": grok_dec.get("p_up"),
+                    "confidence": grok_dec.get("confidence"),
+                }
             if self.verifier is not None:
                 vv_snap = self.verifier.get(mc.decision_id)
                 if vv_snap and not vv_snap.get("pending"):
@@ -2318,6 +2719,10 @@ class PulseEngine:
                         "approved": bool(vv_snap.get("approve")),
                         "reason": str(vv_snap.get("reason") or "")[:120],
                     }
+            if self.verifier is not None and grok_verdict:
+                pos.research["verifier"] = {"approved": True,
+                                            "max_size_fraction": grok_verdict.get("max_size_fraction"),
+                                            "reason": grok_verdict.get("reason")}
             if esnap is not None:
                 pos.research.update({"edge_stale_divergence": esnap.stale_divergence_class,
                                      "edge_ttc_bucket": esnap.ttc_bucket,
@@ -2501,6 +2906,12 @@ class PulseEngine:
                 ev_after_cost=(pos.research or {}).get("ev_after_cost"), outcome_up=outcome)
             self.selectivity_gate.record_settled((pos.research or {}).get("gate_decision"),
                                                  won=bool(pos.won), pnl=float(pos.pnl_usd or 0.0))
+            # feed FOLLOW/EXPLORE trades back to the Grok decider's circuit breaker
+            if (self.grok_decider is not None
+                    and (pos.research or {}).get("entry_mode")
+                    in ("grok_follow", "grok_explore", "grok_adaptive")):
+                self.grok_decider.record_follow_result(
+                    won=bool(pos.won), pnl=float(pos.pnl_usd or 0.0), now=now)
             # grade the maker-checker (approved trade outcome) + record lessons from this settlement
             if self.verifier is not None and (pos.research or {}).get("verifier"):
                 self.verifier.grade(pos.decision_id or pos.window_key, won=bool(pos.won),
@@ -2639,6 +3050,221 @@ class PulseEngine:
         except (TypeError, ValueError):
             return None
 
+    def _grok_decision_context(self, rf, cand_state, ttc, fair_used) -> dict:
+        """Compact entry-time context tags used to bucket the decider's OWN accuracy as it learns."""
+        conv = abs(float(fair_used) - 0.5) * 2 if fair_used is not None else None
+        conv_bucket = ("na" if conv is None else
+                       ("strong" if conv >= 0.4 else ("lean" if conv >= 0.2 else "coinflip")))
+        return {"hurst_regime": (rf.get("hurst_regime") if rf else None),
+                "markov_state": cand_state, "ttc_bucket": ttc_bucket(ttc),
+                "conviction_bucket": conv_bucket}
+
+    def _grok_tv_fingerprint(self, tv_trend: Optional[dict]) -> str:
+        """Stable key for MTF changes that should trigger a fresh Grok read."""
+        tv_trend = tv_trend or {}
+        parts = [str(tv_trend.get("confirm_mtf")), str(tv_trend.get("fresh_tf_count"))]
+        for label, row in sorted((tv_trend.get("charts") or {}).items()):
+            if not isinstance(row, dict):
+                continue
+            parts.append("%s:%s:%s:%s" % (
+                label, row.get("direction"), row.get("signal_level"), row.get("strength")))
+        return "|".join(parts)
+
+    def _grok_refresh_token(self, decision_id: str, bundle: dict, *, ttc: float,
+                            window_seconds: int) -> Optional[str]:
+        """Return refresh_token when TV MTF flips or 15m window enters baseline entry band."""
+        import hashlib
+        tv_trend = bundle.get("tradingview_trend") or {}
+        fp = self._grok_tv_fingerprint(tv_trend)
+        prev = self._grok_tv_fp.get(decision_id)
+        tokens: list[str] = []
+        if prev is not None and prev != fp:
+            tokens.append("tv:" + hashlib.sha256(fp.encode()).hexdigest()[:12])
+        ws = int(window_seconds or 300)
+        if ws >= 900 and 480.0 <= float(ttc) <= 660.0:
+            if decision_id not in self._grok_entry_band_seen:
+                self._grok_entry_band_seen.add(decision_id)
+                if prev is not None:
+                    tokens.append("entry15m")
+        self._grok_tv_fp[decision_id] = fp
+        return "+".join(tokens) if tokens else None
+
+    def _book_side_snapshot(self, book) -> "dict | None":
+        if book is None:
+            return None
+        return {
+            "mid": self._r(book.mid), "spread": self._r(book.spread),
+            "best_bid": self._r(book.best_bid), "best_ask": self._r(book.best_ask),
+            "bid_depth_usd": self._r(book.bid_depth_usd, 1),
+            "ask_depth_usd": self._r(book.ask_depth_usd, 1),
+            "ask_levels": len(book.asks or []), "bid_levels": len(book.bids or []),
+        }
+
+    def _market_window_snapshot(self, w, *, now=None) -> dict:
+        now = now if now is not None else (self.last_tick_ts or time.time())
+        return {
+            "series_slug": getattr(w, "series_slug", SERIES_SLUG_5M),
+            "series_label": getattr(w, "series_label", "5m"),
+            "window_seconds": int(getattr(w, "window_seconds", 300) or 300),
+            "event_id": w.event_id, "title": w.title,
+            "ttc_s": self._r(w.seconds_to_close(now), 1),
+            "up": self._book_side_snapshot(w.up_book),
+            "down": self._book_side_snapshot(w.down_book),
+        }
+
+    def _active_markets_for_grok(self) -> list:
+        try:
+            windows = self.market.active_windows(now=self.last_tick_ts)
+        except Exception:  # noqa: BLE001
+            return []
+        out = []
+        for win in windows:
+            try:
+                self.market.hydrate_books(win)
+            except Exception:  # noqa: BLE001
+                pass
+            out.append(self._market_window_snapshot(win))
+        return out
+
+    def _cex_prices_snapshot(self) -> dict:
+        out = {}
+        if self.leads is not None:
+            for k, v in (getattr(self.leads, "_latest", {}) or {}).items():
+                px = v[0] if isinstance(v, (tuple, list)) else v
+                out[k] = self._r(px, 2)
+        return out
+
+    def _grok_decision_bundle(self, mc, dr, w, fair_used, ttc, tv_feature) -> dict:
+        """Fully-structured 'analyze everything' payload for the Grok decider. Numerics rounded,
+        nulls allowed, ordered so the decision-critical fields lead. Includes: market microstructure
+        + binary payoff (the breakeven bar), the digital fair vs Polymarket divergence, the
+        TradingView signal, live news, regime/research, edge signal, account/risk state, the bot's
+        OWN learned evidence, and the decider's track record (so Grok LEARNS as it trades)."""
+        rf = dr.features or {}
+        try:
+            sel_be = self.selectivity_gate.bucket_evidence(self.selectivity_evidence, top=6)
+        except Exception:  # noqa: BLE001
+            sel_be = {}
+        ls = self.ledger.stats()
+        up_ask = (w.up_book.best_ask if w.up_book else None)
+        dn_ask = (w.down_book.best_ask if w.down_book else None)
+        poly_yes = mc.poly_yes
+        divergence = (round(float(fair_used) - float(poly_yes), 4)
+                      if (fair_used is not None and poly_yes is not None) else None)
+        # compact TradingView signal: drop nulls/unknowns to keep the payload tight + readable
+        tv = None
+        if tv_feature:
+            tv = {k: v for k, v in tv_feature.items()
+                  if v is not None and v != "unknown" and k not in ("observe_only", "source")}
+        series_label = getattr(w, "series_label", mc.series_label)
+        mtf = None
+        tv_trend = None
+        if self.tradingview is not None:
+            mtf = self.tradingview.mtf_confirmation(
+                symbol=self.cfg.tradingview_feature_symbol, now=self.last_tick_ts)
+            tv_rep = self.tradingview.report()
+            from engine.pulse.grok_bundle import tv_trend_snapshot
+            tv_trend = tv_trend_snapshot(
+                mtf=mtf,
+                latest_by_timeframe=tv_rep.get("tradingview_latest_by_timeframe") or {},
+                feature_symbol=tv_rep.get("tradingview_feature_symbol")
+                or self.cfg.tradingview_feature_symbol,
+            )
+        from engine.pulse.grok_bundle import (compact_tv_learning, gate_funnel_top,
+                                              grok_task_for_window)
+        from engine.pulse.reporting import ledger_stats_by_market_series
+        lifecycle = self.reconciler.report()
+        _ws = int(getattr(w, "window_seconds", mc.window_seconds) or 300)
+        return {
+            "schema_version": "grok_decision_bundle/1.4",
+            "grok_task": grok_task_for_window(series_label=series_label, window_seconds=_ws,
+                                               ttc_s=ttc),
+            "market": "polymarket_btc_%s_up_or_down" % series_label,
+            "series_slug": getattr(w, "series_slug", mc.series_slug),
+            "series_label": series_label,
+            "window_seconds": _ws,
+            "objective": ("settles UP if BTC Chainlink close >= window open (%s window); "
+                          "pick up/down/no_trade") % series_label,
+            "decision_id": mc.decision_id,
+            "by_market_series": ledger_stats_by_market_series(self.ledger.positions),
+            "gate_funnel": gate_funnel_top(lifecycle.get("rejected_by_stage") or {}),
+            "tradingview_trend": tv_trend,
+            "tv_signal_learning": compact_tv_learning(self._tv_learner.report(
+                promotion_allowed=self.cfg.tradingview_promotion_allowed,
+                min_samples=self.cfg.tradingview_promotion_min_samples,
+                min_win_rate=self.cfg.tradingview_promotion_min_win_rate)),
+            "timing": {"seconds_to_close": self._r(ttc, 1),
+                       "window_seconds": int(getattr(w, "window_seconds", mc.window_seconds) or 300),
+                       "utc_minute_of_hour": int((self.last_tick_ts or time.time()) // 60 % 60)},
+            "price": {"btc_now": self._r(mc.s_now, 2), "btc_open": self._r(mc.s_open, 2),
+                      "move_from_open": (self._r(mc.s_now - mc.s_open, 2)
+                                         if (mc.s_now is not None and mc.s_open is not None) else None),
+                      "sigma_per_sec": self._r(mc.sigma_per_sec, 6),
+                      "lead_prices": {k: self._r(v, 2) for k, v in (mc.lead_prices or {}).items()
+                                      if v is not None}},
+            "digital_fair_p_up": self._r(fair_used),
+            "polymarket": {
+                "yes_mid": self._r(poly_yes), "spread": self._r(mc.spread),
+                "up_best_ask": self._r(up_ask), "down_best_ask": self._r(dn_ask),
+                "ask_depth_usd": self._r(mc.ask_depth_usd, 1),
+                "fair_minus_poly": divergence,
+                "up_book": self._book_side_snapshot(w.up_book),
+                "down_book": self._book_side_snapshot(w.down_book),
+            },
+            "active_markets": self._active_markets_for_grok(),
+            "cex_prices": self._cex_prices_snapshot(),
+            "payoff": {"up": self._reward_risk(up_ask), "down": self._reward_risk(dn_ask),
+                       "min_reward_risk_floor": self.cfg.min_reward_risk,
+                       "note": "only trade a side if your P(win) clears its breakeven_win_rate after costs"},
+            "recent_windows": self._recent_windows_view(10),
+            "trade_decision_history": self.trade_history.view_for_grok(50),
+            "lessons": self.lessons.recent(10),
+            "tradingview_signal": tv,
+            "news": (self.grok_news.latest() if self.grok_news is not None else None),
+            "research": {"hurst_regime": rf.get("hurst_regime"),
+                         "zscore_bucket": rf.get("zscore_bucket"),
+                         "half_life_s": self._r(rf.get("half_life_s"), 1),
+                         "regime": (dr.regime or {}).get("state")},
+            "edge_signal": {k: (dr.edge or {}).get(k) for k in
+                            ("pulse_edge_score", "stale_divergence_class", "cex_agreement_bucket",
+                             "orderbook_pressure")},
+            # PRIMARY mispricing signal: fresh CEX-implied P(up) vs the market price (lead-lag), with
+            # orderflow + TradingView + late-window confirmation. This is the credible edge to exploit.
+            "cex_lead_mispricing": {k: (dr.cex_lead or {}).get(k) for k in
+                                    ("divergence", "side", "confirmed", "tv_confirms",
+                                     "late_decisive", "news_state", "cex_p_up", "poly_yes")},
+            # the bot's directional model is graded WORSE than the market price out-of-sample; trust
+            # the market price + divergence-based mispricing over the model's raw opinion.
+            "model_vs_market": self._market_benchmark(),
+            "edge_model_p_up": self._r((dr.model or {}).get("p_up")),
+            "grok_per_signal_p_up": (tv_feature or {}).get("grok_p_up"),
+            "account_state": {"open_positions": ls.get("open_positions"),
+                              "settled": ls.get("settled"), "win_rate": self._r(ls.get("win_rate")),
+                              "realized_pnl_usd": self._r(ls.get("realized_pnl_usd"), 2),
+                              "daily_loss_so_far_usd": self._r(self._daily_loss, 2),
+                              "size_usd": self.cfg.size_usd},
+            "bot_learned_evidence": {
+                "selectivity_blocked_or_notable": sel_be.get("buckets", [])[:6],
+                "late_window_edge_verdict": self.late_window_edge.report().get("verdict"),
+                "pnl_by_ttc_bucket": self._groups.summary().get("ttc_bucket", {}),
+                "pnl_by_hurst_regime": self._groups.summary().get("hurst_regime", {})},
+            "decider_track_record": (self.grok_decider.report() if self.grok_decider else {}),
+            "note": ("advisory PAPER decision; the bot enforces a realism/risk floor (execution gate, "
+                     "caps, freshness) and follows your direction; learn from decider_track_record."),
+        }
+
+    def _follow_canary(self, decision_id: str) -> bool:
+        """A/B canary: deterministically follow Grok on ``follow_fraction`` of windows (stable per
+        decision_id), leaving the rest on the baseline arm for live comparison."""
+        frac = float(self.cfg.grok_decider_follow_fraction)
+        if frac >= 1.0:
+            return True
+        if frac <= 0.0:
+            return False
+        import hashlib
+        h = int(hashlib.sha256(str(decision_id).encode("utf-8")).hexdigest()[:8], 16) / 0xFFFFFFFF
+        return h < frac
+
     @staticmethod
     def _counterfactual_side_pnl(side: str, entry_price: float, size_usd: float,
                                    outcome_up: bool):
@@ -2648,6 +3274,54 @@ class PulseEngine:
         shares = float(size_usd) / float(entry_price)
         pnl = round((shares if won else 0.0) - float(size_usd), 6)
         return bool(won), pnl
+
+    @staticmethod
+    def _grok_proposed_side(grok_dec: Optional[dict]) -> Optional[str]:
+        if not grok_dec:
+            return None
+        act = grok_dec.get("action")
+        return act if act in ("up", "down") else None
+
+    def _schedule_verifier_grade(self, decision_id: str, *, price0, close_ts: float, side: str,
+                                 entry_ask: float, size_usd: float, acted: bool) -> None:
+        """Queue a verifier verdict for counterfactual grading at window close."""
+        if (not decision_id or side not in ("up", "down") or price0 is None
+                or entry_ask is None or self.verifier is None):
+            return
+        for p in self._verifier_pending:
+            if p["decision_id"] == decision_id:
+                return
+        self._verifier_pending.append({
+            "decision_id": decision_id,
+            "price0": float(price0),
+            "close_ts": float(close_ts),
+            "side": side,
+            "entry_ask": float(entry_ask),
+            "size_usd": float(size_usd),
+            "acted": bool(acted),
+        })
+
+    def _maybe_schedule_verifier_counterfactual(self, mc, w, snap, grok_dec, *,
+                                                side=None, entry_ask=None,
+                                                size_frac: float = 1.0, acted: bool = False) -> None:
+        """Schedule counterfactual P&L grade when Claude has a final verdict on a proposed side."""
+        if self.verifier is None or acted:
+            return
+        verdict = self.verifier.get(mc.decision_id)
+        if not verdict or verdict.get("pending") or verdict.get("approve"):
+            return
+        side = side or self._grok_proposed_side(grok_dec)
+        if side not in ("up", "down"):
+            return
+        if entry_ask is None:
+            book = w.up_book if side == "up" else w.down_book
+            entry_ask = book.best_ask if book else None
+        if entry_ask is None or snap.price is None:
+            return
+        size_usd = float(self.cfg.size_usd) * float(size_frac or 1.0)
+        self._schedule_verifier_grade(
+            mc.decision_id, price0=snap.price, close_ts=w.close_ts, side=side,
+            entry_ask=float(entry_ask), size_usd=size_usd, acted=False)
 
     def _grade_verifier_decisions(self, now: float) -> None:
         """Grade due verifier verdicts vs the realized 5-min outcome (veto counterfactual P&L)."""
@@ -2669,6 +3343,48 @@ class PulseEngine:
             elif now <= p["close_ts"] + 600:
                 still.append(p)
         self._verifier_pending = still[-2000:]
+
+    def _schedule_grok_grade(self, decision_id: str, price0, close_ts: float, decision: dict) -> None:
+        """Queue a decision for grading at window close. The gradeable fields (action/p_up/context)
+        are SNAPSHOTTED here and persisted, so grading survives a process restart (the decider's
+        in-memory result cache does not)."""
+        if price0 is None:
+            return
+        for p in self._grok_pending:
+            if p["decision_id"] == decision_id:
+                return
+        self._grok_pending.append({"decision_id": decision_id, "price0": float(price0),
+                                   "close_ts": float(close_ts),
+                                   "action": decision.get("action"), "p_up": decision.get("p_up"),
+                                   "context": decision.get("context") or {}})
+
+    def _grade_grok_decisions(self, now: float) -> None:
+        """Grade due Grok decisions vs the realized 5-min outcome (UP if close >= open), traded or
+        not. Leakage-free (price0 snapshotted at entry). Uses the persisted snapshot so it survives
+        restarts. This is the always-on directional edge data Grok learns from."""
+        if not self._grok_pending or self.grok_decider is None:
+            return
+        px = self.price.current()
+        still = []
+        for p in self._grok_pending:
+            if now < p["close_ts"]:
+                still.append(p)
+                continue
+            if px is not None:
+                s_open, s_close = float(p["price0"]), float(px)
+                outcome_up = s_close >= s_open
+                self.grok_decider.grade_fields(
+                    action=p.get("action"), p_up=p.get("p_up"), context=p.get("context") or {},
+                    outcome_up=outcome_up)
+                # record the resolved window so Grok sees the recent sequence of outcomes
+                self._recent_windows.append({
+                    "close_ts": round(float(p["close_ts"]), 1), "s_open": round(s_open, 2),
+                    "s_close": round(s_close, 2), "outcome": ("up" if outcome_up else "down"),
+                    "move_pct": (round((s_close - s_open) / s_open * 100, 4) if s_open else None)})
+                self._recent_windows = self._recent_windows[-40:]
+            elif now <= p["close_ts"] + 600:
+                still.append(p)
+        self._grok_pending = still[-2000:]
 
     def _schedule_cex_lead_grade(self, decision_id: str, price0, close_ts: float,
                                  sig: dict) -> None:
@@ -2791,8 +3507,14 @@ class PulseEngine:
         return ((1.0 - float(ask)) / float(ask)) >= floor
 
     def _grok_up_side_allowed(self) -> bool:
+        if self.grok_decider is None:
+            return True
+        rep = self.grok_decider.report()
+        graded = int(rep.get("graded_directional") or 0)
+        acc = rep.get("direction_accuracy")
+        if graded >= 20 and acc is not None and float(acc) < 0.52:
+            return False
         return True
-
 
     def _green_path_active(self, *, side: str, window_seconds: int) -> bool:
         """15m DOWN baseline quant: cohort + MTF; skip stacked opinion gates."""
@@ -3420,6 +4142,27 @@ class PulseEngine:
                         rule=("AVOID %s=%s — confidently below breakeven (WR %s vs %s, n %s, "
                               "EV/trade %s)." % (r["dimension"], r["bucket"], r.get("win_rate"),
                               r.get("breakeven_win_rate"), r.get("n"), r.get("ev_per_trade"))), now=now)
+            if self.grok_decider is not None:
+                for c in (self.grok_decider.report().get("view_edge_candidates") or []):
+                    key = "edge:%s=%s" % (c["dimension"], c["bucket"])
+                    active_keys.add(("exploit", key))
+                    if self.lessons.add(
+                            kind="exploit", key=key,
+                            rule=("EXPLOIT %s=%s — Grok's directional view is a real edge (acc %s, "
+                                  "lowerCI %s, n %s)." % (c["dimension"], c["bucket"], c.get("accuracy"),
+                                  c.get("accuracy_lower_ci"), c.get("n"))), now=now):
+                        new_lesson = True
+                        if self.research_loop is not None:
+                            self.research_loop.request_run("new_edge")
+                br = self.grok_decider.breaker_status()
+                if br.get("tripped"):
+                    day = int((self.last_tick_ts or time.time()) // 86400)
+                    if self.lessons.add(kind="risk", key="breaker:%s:%s" % (br.get("reason"), day),
+                                        rule="Circuit breaker tripped (%s) — follow paused, baseline "
+                                             "only." % br.get("reason")):
+                        new_lesson = True
+                        if self.research_loop is not None:
+                            self.research_loop.request_run("breaker")
             # RETRACT avoid/exploit lessons no longer backed by live evidence (regime changed) so the
             # maker/checker stop reading stale rules. Risk (breaker) lessons are historical, not synced.
             retracted = self.lessons.sync(active_keys=active_keys, now=now).get("n", 0)
@@ -3867,7 +4610,8 @@ class PulseEngine:
                            "observe_only": True,
                        })
         r.register("signal_generation", role="signal", trigger="per_window",
-                   skill="research/factors/markov/edge_model")
+                   skill="research/factors/markov/edge_model",
+                   status_fn=(lambda: self._grok_decider_report()) if self.grok_decider else None)
         r.register("verifier", role="verify(maker-checker)", trigger="per_decision",
                    skill="independent Claude verdict", verifier="claude",
                    stop_condition="approve/veto verdict",
@@ -3880,7 +4624,8 @@ class PulseEngine:
                        stop_condition=self.stop_monitor.verified_stop_line("arbitrage"),
                        status_fn=lambda: self.arb_ledger.report())
         r.register("risk_monitor", role="risk", trigger="per_settlement",
-                   skill="reconciliation")
+                   skill="breaker + reconciliation",
+                   status_fn=(lambda: self.grok_decider.breaker_status()) if self.grok_decider else None)
         r.register("news", role="context", trigger="interval",
                    interval_s=self.cfg.grok_news_refresh_s,
                    status_fn=(lambda: self.grok_news.report()) if self.grok_news else None)
@@ -3929,9 +4674,30 @@ class PulseEngine:
                 "open_positions": ls.get("open_positions")}
 
     def _grok_decider_report(self) -> dict:
-        return {"enabled": False, "removed": True, "paper_only": True, "affects_trading": False,
-                "note": "Grok trade decider removed — quant baseline + arb own all trade decisions."}
-
+        """Grok Decision Engine status (off/shadow/follow): decisions, direction accuracy, Brier,
+        latency, abstains, per-action breakdown. PAPER ONLY; shadow does not trade."""
+        if self.grok_decider is None:
+            return {"enabled": False, "mode": self.cfg.grok_decider_mode, "paper_only": True,
+                    "affects_trading": False}
+        rep = self.grok_decider.report()
+        rep["pending_grades"] = len(self._grok_pending)
+        rep["use_search"] = bool(self.cfg.grok_decider_use_search)
+        rep["follow_fraction"] = self.cfg.grok_decider_follow_fraction
+        rep["adaptive_enabled"] = bool(self.cfg.grok_decider_adaptive)
+        rep["adaptive_policy_counts"] = dict(self._grok_policy_counts)
+        rep["mispricing_gate"] = {
+            "enabled": bool(self.cfg.mispricing_gate_enabled),
+            "edge_ttc_gate_enabled": bool(self.cfg.edge_ttc_gate_enabled),
+            "follow_on_abstain": bool(self.cfg.mispricing_follow_on_abstain),
+            "follow_size_fraction": self.cfg.mispricing_follow_size_fraction,
+            "ttc_window_s": [self.cfg.mispricing_ttc_min_s, self.cfg.mispricing_ttc_max_s],
+            "min_executable_margin": self.cfg.mispricing_min_executable_margin,
+            "reject_counts": dict(self._mispricing_gate_counts),
+        }
+        rep["explore_rate"] = self.cfg.grok_decider_explore_rate
+        rep["news_digest"] = (self.grok_news.report() if self.grok_news is not None
+                              else {"enabled": False})
+        return rep
 
     def _grok_intel_report(self) -> dict:
         """Observe-only Grok signal-intelligence status (A analyst + B predictor + budget)."""
@@ -4033,7 +4799,8 @@ class PulseEngine:
             "config": {"tick_seconds": self.cfg.tick_seconds, "size_usd": self.cfg.size_usd,
                        "min_edge": self.cfg.min_edge, "edge_buffer": self.cfg.edge_buffer,
                        "min_depth_usd": self.cfg.min_depth_usd, "max_price": self.cfg.max_price,
-                       "min_reward_risk": self.cfg.min_reward_risk},
+                       "min_reward_risk": self.cfg.min_reward_risk,
+                       "grok_decider_mode": self.cfg.grok_decider_mode},
             "price": self.price.status(),
             "capital": self._capital_status(),
             "ledger": self.ledger.stats(),
@@ -4173,8 +4940,11 @@ class PulseEngine:
                                                  if self.grok_predictor is not None else {}),
                               "grok_analyst": (self.grok_analyst.to_state()
                                                if self.grok_analyst is not None else {}),
+                              "grok_decider": (self.grok_decider.to_state()
+                                               if self.grok_decider is not None else {}),
                               "grok_news": (self.grok_news.to_state()
                                             if self.grok_news is not None else {}),
+                              "grok_pending": self._grok_pending[-2000:],
                               "verifier_pending": self._verifier_pending[-2000:],
                               "recent_windows": self._recent_windows[-40:],
                               "verifier": (self.verifier.to_state() if self.verifier is not None
