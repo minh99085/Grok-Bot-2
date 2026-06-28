@@ -20,7 +20,7 @@
   ],
   "last_health_verdict": "issues",
   "baseline_trades_at_deploy": 132,
-  "vps_sha": "TBD",
+  "vps_sha": "9e1a98aefbdca927ac4334a79ef269776130c0e7",
   "history": [
     {
       "cycle": 3,
@@ -801,7 +801,7 @@
         "min_reward_risk_0.50"
       ],
       "deployed_at": "2026-06-28T20:14:00.000000+00:00",
-      "vps_sha": "TBD",
+      "vps_sha": "9e1a98a",
       "metrics": {
         "settled": 132,
         "win_rate": 0.6439,
