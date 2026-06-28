@@ -134,7 +134,7 @@
     "tests/test_open_snapshot_persist.py"
   ],
   "soak_defaults": {
-    "learning_collection_minutes": 120,
+    "learning_collection_minutes": 240,
     "eval_starvation_min_hours": 6,
     "eval_starvation_flat_streak": 2
   },

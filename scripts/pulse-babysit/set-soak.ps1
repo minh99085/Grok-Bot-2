@@ -1,6 +1,6 @@
 param(
     [double]$Hours,
-    [int]$Minutes = 120
+    [int]$Minutes = 240
 )
 $ErrorActionPreference = "Stop"
 $statePath = Join-Path $PSScriptRoot "state.json"

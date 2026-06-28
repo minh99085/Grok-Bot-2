@@ -36,14 +36,14 @@ prioritize trade rate + ledger continuity over WR. Read `.grok/rules/soak-learni
 | `force-eval` | Pull + evaluate now; skip soak wait |
 | `status` | Print state + last evaluation summary |
 | `deploy` | `git push origin main` + full VPS deploy (sync-vps + env + force-recreate training) |
-| `soak <minutes>` | Set soak duration (default **120 min** in learning_collection) via `set-soak.ps1` |
+| `soak <minutes>` | Set soak duration (default **240 min / 4h** in learning_collection) via `set-soak.ps1` |
 
 If no argument: run `cycle`.
 
 ## State machine
 
 ```
-DEPLOY → SOAK (120m learning default) → PULL → EVALUATE → (issues?) → FIX → COMMIT → DEPLOY → …
+DEPLOY → SOAK (240m / 4h learning default) → PULL → EVALUATE → (issues?) → FIX → COMMIT → DEPLOY → …
 ```
 
 1. Read `scripts/pulse-babysit/state.json`.
@@ -108,7 +108,7 @@ The script flags issues. You may fix only what the report supports:
 
 | Situation | Duration |
 |-----------|----------|
-| Learning collection (default) | **120 min** — no deploy/fixes during soak |
+| Learning collection (default) | **240 min (4h)** — no deploy/fixes during soak |
 | WR optimization (operator ends learning mode) | **60 min** |
 | Operator override | `.\scripts\pulse-babysit\set-soak.ps1 -Minutes N` |
 
