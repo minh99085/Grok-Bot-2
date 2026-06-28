@@ -26,6 +26,7 @@ import time
 from collections import deque
 from typing import Optional
 
+from engine.pulse.grok_bundle import serialize_bundle_for_grok
 from engine.pulse.grok_intel import _grok_chat, _grok_responses, _parse_json, GrokBudget
 
 ACTIONS = ("up", "down", "no_trade")
@@ -156,12 +157,47 @@ def normalize_decision(d, *, default_ttl_s: float = 240.0) -> Optional[dict]:
         ttl = float(d.get("ttl_s")) if d.get("ttl_s") is not None else float(default_ttl_s)
     except (TypeError, ValueError):
         ttl = float(default_ttl_s)
-    return {"action": action, "confidence": round(conf or 0.0, 4), "p_up": round(p_up, 4),
-            "size_fraction": round(size or 0.0, 4), "max_price": mp,
-            "ttl_s": max(0.0, ttl),
-            "key_risks": [str(x)[:160] for x in (d.get("key_risks") or [])][:6],
-            "rationale": str(d.get("rationale") or "")[:600],
-            "schema_version": str(d.get("schema_version") or "1")}
+    out = {"action": action, "confidence": round(conf or 0.0, 4), "p_up": round(p_up, 4),
+           "size_fraction": round(size or 0.0, 4), "max_price": mp,
+           "ttl_s": max(0.0, ttl),
+           "key_risks": [str(x)[:160] for x in (d.get("key_risks") or [])][:6],
+           "rationale": str(d.get("rationale") or "")[:600],
+           "schema_version": str(d.get("schema_version") or "2")}
+    for opt_key in ("tv_read", "mispricing_read", "edge_quality"):
+        if d.get(opt_key) is not None:
+            out[opt_key] = str(d.get(opt_key))[:400]
+    return out
+
+
+def build_decider_prompt(bundle: dict, *, use_search: bool = False) -> str:
+    """Instructions + ordered bundle JSON for the Grok decider (v2)."""
+    return (
+        "You are the lead decision-maker for an OBSERVE-AND-PAPER-TRADE Polymarket BTC bot. "
+        "Markets settle UP if Chainlink BTC/USD at window close >= open (ties -> UP). "
+        "You receive 5m AND 15m windows; read grok_task.primary_series and timing.seconds_to_close "
+        "for THIS decision. "
+        "DECISION FRAMEWORK (do this mentally before answering):\n"
+        "1) MISPRICING: read cex_lead_mispricing — divergence=cex_p_up-poly_yes is the primary edge; "
+        "note confirmed/tv_confirms/late_decisive.\n"
+        "2) TV MTF: read tradingview_trend.charts (2m/3m/4m) — direction, signal_level, strength, "
+        "fresh, age_s; trust confirm_mtf over one stale row; cite FLAT as 'no trend' not missing data.\n"
+        "3) LEARNED TV: tv_signal_learning shows which signal_level buckets historically won/lost.\n"
+        "4) PAYOFF: polymarket asks + payoff breakeven — only act up/down if p_up clears breakeven "
+        "after costs AND mispricing+TV align.\n"
+        "5) SELF-CALIBRATION: decider_track_record + trade_decision_history — avoid repeating "
+        "losing contexts; exploit proven buckets.\n"
+        "model_vs_market: trust market price + CEX lead over raw edge_model_p_up. "
+        "For 15m: when grok_task.in_entry_band is true, weight fresh tradingview_trend heavily. "
+        "Prefer no_trade when uncertain; ALWAYS output p_up (graded every window). "
+        + ("You may use live web/X news in the bundle. " if use_search else "")
+        + "Respond STRICT JSON ONLY:\n"
+        '{"action":"up|down|no_trade","p_up":<0-1>,"confidence":<0-1>,'
+        '"size_fraction":<0-1>,"max_price":<0-1 optional>,'
+        '"tv_read":"<1-2 sentences: MTF verdict + which TFs you trust>",'
+        '"mispricing_read":"<1 sentence: divergence side + confirmed?>",'
+        '"edge_quality":"none|weak|medium|strong",'
+        '"key_risks":["..."],"rationale":"<short>","ttl_s":<seconds>}\n'
+        "BUNDLE: " + serialize_bundle_for_grok(bundle))
 
 
 def make_decider_fn(*, model: str = "grok-4.3", timeout_s: float = 12.0,
@@ -177,41 +213,7 @@ def make_decider_fn(*, model: str = "grok-4.3", timeout_s: float = 12.0,
                                        "max_search_results": 8}}
 
     def _decide(bundle: dict) -> Optional[dict]:
-        prompt = (
-            "You are the lead decision-maker for an OBSERVE-AND-PAPER-TRADE bot on the Polymarket "
-            "BTC 5-minute 'Up or Down' market (settles UP if BTC's Chainlink price at window close "
-            "is >= the open). You are given EVERYTHING the bot knows: the TradingView signal "
-            "(incl. order-flow/event fields), the live Polymarket order book (spread/depth/mid), "
-            "price/volatility + regime, the bot's OWN learned per-bucket performance (win-rate vs "
-            "breakeven, EV-after-cost), the RECENT sequence of resolved 5-min windows "
-            "('recent_windows': recent up/down outcomes, up-rate, current streak — read momentum vs "
-            "mean-reversion), recent decision grades, and position/account state"
-            + (" plus live web/X news you may search" if use_search else "") + ". Your job is to "
-            "EXPLOIT MISPRICING, not to predict direction in the abstract. The 'cex_lead_mispricing' "
-            "block is the primary edge: a FRESH CEX-implied P(up) vs the lagging market price "
-            "(divergence = cex_p_up - poly_yes) with orderflow/TradingView/late-window confirmation — "
-            "the market price is slow to re-price. NOTE 'model_vs_market': the bot's own directional "
-            "model is graded WORSE than the market out-of-sample, so trust the MARKET PRICE plus the "
-            "lead-lag divergence over any raw model opinion. Decide the single best action for THIS "
-            "window. Account for the binary payoff: at ask price p a win nets (1-p)/p per $ while a "
-            "loss costs the full stake, so breakeven win-rate is ~p; only choose up/down when your "
-            "probability clears that bar after costs AND a confirmed mispricing favors that side, "
-            "else no_trade. "
-            "Use 'by_market_series' (5m vs 15m win-rate/PF/PnL) to favor the stronger market. "
-            "Read 'gate_funnel.top_blockers' — if UP bleeds, avoid weak UP when down_bias/context "
-            "gates dominate. 'tradingview_trend' has all chart TFs (4/5/10/13/15m) with strength "
-            "and confirm_mtf — trust multi-TF trend over a single stale alert. "
-            "LEARN from your own track record in 'decider_track_record' (direction accuracy overall, "
-            "by context, and 'recent_decisions' hits/misses) AND from 'trade_decision_history' (last "
-            "50 settled bot trades with per-trade grok alignment + rolling aggregates): lean into "
-            "contexts/sides/modes that won and avoid repeating losing patterns as evidence grows. "
-            "Be calibrated and selective; prefer no_trade for the ACTION when uncertain. But ALWAYS "
-            "give your best-estimate p_up (probability BTC closes UP this window) even when action is "
-            "no_trade — it is graded every window to build your track record. Respond with STRICT "
-            "JSON ONLY: {\"action\":\"up|down|no_trade\",\"p_up\":<0-1>,\"confidence\":<0-1>,"
-            "\"size_fraction\":<0-1>,\"max_price\":<0-1 optional>,\"key_risks\":[\"...\"],"
-            "\"rationale\":\"<short>\",\"ttl_s\":<seconds this decision stays valid>}.\nBUNDLE: "
-            + json.dumps(bundle, default=str)[:12000])
+        prompt = build_decider_prompt(bundle, use_search=use_search)
         content = chat(prompt, model=model, timeout_s=timeout_s, box=box, extra_body=extra)
         return normalize_decision(_parse_json(content), default_ttl_s=default_ttl_s)
     return _decide
@@ -389,13 +391,16 @@ class GrokDecider:
         self._recent: deque = deque(maxlen=12)
 
     # -- request / read ----------------------------------------------------- #
-    def request(self, decision_id: str, bundle: dict, context: Optional[dict] = None) -> None:
+    def request(self, decision_id: str, bundle: dict, context: Optional[dict] = None,
+                *, refresh_token: Optional[str] = None) -> None:
+        """Queue one Grok decision. ``refresh_token`` allows a new call when TV/entry-band updates."""
         if not decision_id or self.mode == "off":
             return
+        key = decision_id if not refresh_token else "%s#%s" % (decision_id, refresh_token)
         with self._lock:
-            if decision_id in self._seen:
+            if key in self._seen:
                 return
-            self._seen.add(decision_id)
+            self._seen.add(key)
             self._queue.append((decision_id, bundle, context or {}))
             self.requested += 1
 

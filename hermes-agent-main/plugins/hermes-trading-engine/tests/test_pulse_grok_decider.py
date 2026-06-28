@@ -156,7 +156,7 @@ class _FakeDecider:
                 else ({"mode": "avoid", "dimension": "hurst_regime", "bucket": "x"}
                       if self._policy_mode == "avoid" else {"mode": "explore"}))
 
-    def request(self, decision_id, bundle, context=None):
+    def request(self, decision_id, bundle, context=None, *, refresh_token=None):
         self.requested += 1
         self.last_bundle = bundle
 

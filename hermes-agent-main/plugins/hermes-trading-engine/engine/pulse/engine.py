@@ -1204,6 +1204,8 @@ class PulseEngine:
         self.grok_news = None
         self.grok_dep_screener = None
         self._grok_pending: list = []             # pending decision grades (decision_id/price0/close)
+        self._grok_tv_fp: dict = {}               # decision_id -> last MTF fingerprint (refresh Grok)
+        self._grok_entry_band_seen: set = set()   # windows that got entry-band Grok refresh
         self._verifier_pending: list = []        # pending verifier counterfactual grades at window close
         self._recent_windows: list = []           # rolling recent BTC 5m window outcomes (for Grok)
         import random as _random
@@ -1916,10 +1918,14 @@ class PulseEngine:
             grok_verdict = None
             if self.grok_decider is not None:
                 self.loops.beat("signal_generation", now)
+                _grok_bundle = self._grok_decision_bundle(mc, dr, w, fair_used, ttc, tv_feature)
+                _refresh = self._grok_refresh_token(mc.decision_id, _grok_bundle, ttc=ttc,
+                                                    window_seconds=int(getattr(w, "window_seconds", 300) or 300))
                 self.grok_decider.request(
                     mc.decision_id,
-                    self._grok_decision_bundle(mc, dr, w, fair_used, ttc, tv_feature),
-                    context=self._grok_decision_context(dr.features, cand_state, ttc, fair_used))
+                    _grok_bundle,
+                    context=self._grok_decision_context(dr.features, cand_state, ttc, fair_used),
+                    refresh_token=_refresh)
                 grok_dec = self.grok_decider.get(mc.decision_id)
                 dr.grok_decision = grok_dec
                 if grok_dec is not None:
@@ -3034,6 +3040,36 @@ class PulseEngine:
                 "markov_state": cand_state, "ttc_bucket": ttc_bucket(ttc),
                 "conviction_bucket": conv_bucket}
 
+    def _grok_tv_fingerprint(self, tv_trend: Optional[dict]) -> str:
+        """Stable key for MTF changes that should trigger a fresh Grok read."""
+        tv_trend = tv_trend or {}
+        parts = [str(tv_trend.get("confirm_mtf")), str(tv_trend.get("fresh_tf_count"))]
+        for label, row in sorted((tv_trend.get("charts") or {}).items()):
+            if not isinstance(row, dict):
+                continue
+            parts.append("%s:%s:%s:%s" % (
+                label, row.get("direction"), row.get("signal_level"), row.get("strength")))
+        return "|".join(parts)
+
+    def _grok_refresh_token(self, decision_id: str, bundle: dict, *, ttc: float,
+                            window_seconds: int) -> Optional[str]:
+        """Return refresh_token when TV MTF flips or 15m window enters baseline entry band."""
+        import hashlib
+        tv_trend = bundle.get("tradingview_trend") or {}
+        fp = self._grok_tv_fingerprint(tv_trend)
+        prev = self._grok_tv_fp.get(decision_id)
+        tokens: list[str] = []
+        if prev is not None and prev != fp:
+            tokens.append("tv:" + hashlib.sha256(fp.encode()).hexdigest()[:12])
+        ws = int(window_seconds or 300)
+        if ws >= 900 and 480.0 <= float(ttc) <= 660.0:
+            if decision_id not in self._grok_entry_band_seen:
+                self._grok_entry_band_seen.add(decision_id)
+                if prev is not None:
+                    tokens.append("entry15m")
+        self._grok_tv_fp[decision_id] = fp
+        return "+".join(tokens) if tokens else None
+
     def _book_side_snapshot(self, book) -> "dict | None":
         if book is None:
             return None
@@ -3115,21 +3151,29 @@ class PulseEngine:
                 feature_symbol=tv_rep.get("tradingview_feature_symbol")
                 or self.cfg.tradingview_feature_symbol,
             )
-        from engine.pulse.grok_bundle import gate_funnel_top
+        from engine.pulse.grok_bundle import (compact_tv_learning, gate_funnel_top,
+                                              grok_task_for_window)
         from engine.pulse.reporting import ledger_stats_by_market_series
         lifecycle = self.reconciler.report()
+        _ws = int(getattr(w, "window_seconds", mc.window_seconds) or 300)
         return {
-            "schema_version": "grok_decision_bundle/1.3",
+            "schema_version": "grok_decision_bundle/1.4",
+            "grok_task": grok_task_for_window(series_label=series_label, window_seconds=_ws,
+                                               ttc_s=ttc),
             "market": "polymarket_btc_%s_up_or_down" % series_label,
             "series_slug": getattr(w, "series_slug", mc.series_slug),
             "series_label": series_label,
-            "window_seconds": int(getattr(w, "window_seconds", mc.window_seconds) or 300),
+            "window_seconds": _ws,
             "objective": ("settles UP if BTC Chainlink close >= window open (%s window); "
                           "pick up/down/no_trade") % series_label,
             "decision_id": mc.decision_id,
             "by_market_series": ledger_stats_by_market_series(self.ledger.positions),
             "gate_funnel": gate_funnel_top(lifecycle.get("rejected_by_stage") or {}),
             "tradingview_trend": tv_trend,
+            "tv_signal_learning": compact_tv_learning(self._tv_learner.report(
+                promotion_allowed=self.cfg.tradingview_promotion_allowed,
+                min_samples=self.cfg.tradingview_promotion_min_samples,
+                min_win_rate=self.cfg.tradingview_promotion_min_win_rate)),
             "timing": {"seconds_to_close": self._r(ttc, 1),
                        "window_seconds": int(getattr(w, "window_seconds", mc.window_seconds) or 300),
                        "utc_minute_of_hour": int((self.last_tick_ts or time.time()) // 60 % 60)},
@@ -3150,7 +3194,6 @@ class PulseEngine:
             },
             "active_markets": self._active_markets_for_grok(),
             "cex_prices": self._cex_prices_snapshot(),
-            "tradingview_mtf": mtf,
             "payoff": {"up": self._reward_risk(up_ask), "down": self._reward_risk(dn_ask),
                        "min_reward_risk_floor": self.cfg.min_reward_risk,
                        "note": "only trade a side if your P(win) clears its breakeven_win_rate after costs"},

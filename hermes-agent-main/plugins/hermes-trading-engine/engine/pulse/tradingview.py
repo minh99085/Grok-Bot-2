@@ -911,6 +911,9 @@ class TradingViewIntake:
         self.rejected = 0
         self.consumed = 0
         self.reject_reasons: dict = {}
+        self._last_received_at: float = 0.0
+        self._last_valid_at: float = 0.0
+        self._last_reject_reason: Optional[str] = None
         self.latest: Optional[TradingViewSignalEvent] = None
         # per-source tracking (INDEX:BTCUSD alerts stored under feature_symbol)
         self.latest_by_symbol: dict = {}
@@ -1094,9 +1097,11 @@ class TradingViewIntake:
         now = float(now if now is not None else time.time())
         with self._lock:
             self.received += 1
+            self._last_received_at = now
             ev, reason = self.normalize(raw_bytes, provided_header=provided_header, now=now)
             if reason is not None:
                 self.rejected += 1
+                self._last_reject_reason = reason
                 self.reject_reasons[reason] = self.reject_reasons.get(reason, 0) + 1
                 # 401 for auth failures, 400 for everything else (never reveals the secret)
                 code = 401 if reason in (MISSING_SECRET, BAD_SECRET) else 400
@@ -1118,6 +1123,8 @@ class TradingViewIntake:
                 # keep the set bounded to the deque window
                 self._seen_set = set(self._seen)
             self.valid += 1
+            self._last_valid_at = now
+            self._last_reject_reason = None
             self.latest = ev
             store_sym = self._storage_symbol(ev.symbol)
             self.latest_by_symbol[store_sym] = ev
@@ -1292,6 +1299,11 @@ class TradingViewIntake:
 
     def report(self) -> dict:
         with self._lock:
+            now = time.time()
+            last_valid = float(self._last_valid_at or (self.latest.received_at if self.latest else 0) or 0)
+            last_recv = float(self._last_received_at or 0)
+            since_valid = round(now - last_valid, 1) if last_valid > 0 else None
+            since_recv = round(now - last_recv, 1) if last_recv > 0 else None
             return {
                 "enabled": True,
                 "tradingview_observe_only": True,
@@ -1305,10 +1317,19 @@ class TradingViewIntake:
                                                  for s, e in self.latest_by_symbol.items()},
                 "tradingview_valid_by_symbol": dict(self.valid_by_symbol),
                 "tradingview_latest_by_timeframe": {
-                    "%s@%s" % (s, tf): {"direction": e.direction, "strength": e.strength}
+                    "%s@%s" % (s, tf): {
+                        "direction": e.direction,
+                        "strength": e.strength,
+                        "signal_level": e.signal_level,
+                    }
                     for (s, tf), (e, _ts) in self.latest_by_tf.items()},
                 "tradingview_mtf_confirmation": self.mtf_confirmation(symbol=self.feature_symbol),
                 "tradingview_mtf_timeframes": list(self.mtf_timeframes),
+                "tradingview_last_received_at": last_recv or None,
+                "tradingview_last_valid_at": last_valid or None,
+                "tradingview_seconds_since_valid": since_valid,
+                "tradingview_seconds_since_received": since_recv,
+                "tradingview_last_reject_reason": self._last_reject_reason,
                 "tradingview_feature_symbol": self.feature_symbol,
                 "allowed_symbols": sorted(self.allowed_symbols),
                 "bot_name": self.bot_name,
@@ -1354,6 +1375,8 @@ class TradingViewIntake:
         self._seen_set = set(self._seen)
         # restore the last signal(s) so the report keeps showing them across restarts
         self.latest = _event_from_dict(data.get("latest"))
+        if self.latest is not None and float(self.latest.received_at or 0) > 0:
+            self._last_valid_at = float(self.latest.received_at)
         self.latest_by_symbol = {}
         for sym, ed in (data.get("latest_by_symbol") or {}).items():
             ev = _event_from_dict(ed)
