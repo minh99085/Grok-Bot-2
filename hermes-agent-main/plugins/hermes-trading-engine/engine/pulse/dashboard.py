@@ -41,8 +41,32 @@ main{max-width:1280px;margin:0 auto;padding:14px 16px 24px}
   padding:8px 14px;border-radius:var(--radius);background:var(--card);border:1px solid var(--line);
   margin-bottom:12px;
 }
+.body-split{
+  display:grid;grid-template-columns:1fr 360px;gap:14px;align-items:start;
+}
+.trades-panel{
+  background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+  padding:12px 14px;position:sticky;top:12px;max-height:calc(100vh - 220px);overflow-y:auto;
+}
+.trades-panel h2{
+  margin:0 0 10px;font-size:14px;font-weight:600;color:var(--accent);
+  text-transform:uppercase;letter-spacing:.05em;
+}
+.trade-row{
+  display:grid;grid-template-columns:1fr auto;gap:4px 10px;
+  padding:8px 0;border-bottom:1px solid var(--line);font-size:13px;
+}
+.trade-row:last-child{border-bottom:0}
+.trade-meta{color:var(--text2);font-size:12px}
+.trade-side{font-weight:600}
+.trade-side.up{color:var(--green)}.trade-side.down{color:var(--red)}
+.trade-pnl{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.trade-pnl.up{color:var(--green)}.trade-pnl.dn{color:var(--red)}.trade-pnl.neu{color:var(--text3)}
+.trade-status{font-size:11px;padding:1px 6px;border-radius:8px;background:var(--bg2);color:var(--text3)}
+.trade-status.win{color:var(--green)}.trade-status.loss{color:var(--red)}.trade-status.open{color:var(--yellow)}
+.trades-empty{color:var(--text3);font-size:13px;padding:8px 0}
 .tl-grid{
-  display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:8px;
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:8px;
 }
 .tl-row{
   display:grid;grid-template-columns:18px 1fr auto;gap:8px;align-items:center;
@@ -61,6 +85,10 @@ main{max-width:1280px;margin:0 auto;padding:14px 16px 24px}
   text-transform:uppercase;letter-spacing:.06em;padding:6px 2px 2px;
 }
 .foot{margin-top:14px;color:var(--text3);font-size:12px}
+@media(max-width:960px){
+  .body-split{grid-template-columns:1fr}
+  .trades-panel{position:static;max-height:none}
+}
 @media(max-width:420px){
   .tl-grid{grid-template-columns:1fr}
   .cap-main{font-size:32px}
@@ -77,7 +105,13 @@ main{max-width:1280px;margin:0 auto;padding:14px 16px 24px}
 <main>
   <div class="cap-bar" id="cap-bar"></div>
   <div class="verdict" id="verdict"></div>
-  <div class="tl-grid" id="tl-grid"></div>
+  <div class="body-split">
+    <div class="tl-grid" id="tl-grid"></div>
+    <div class="trades-panel" id="trades-panel">
+      <h2>Last 10 trades</h2>
+      <div id="trades-list"></div>
+    </div>
+  </div>
   <div class="foot">Refreshes every 5s · read-only · total capital = start + arb + dep-arb + directional</div>
 </main>
 <script>
@@ -94,6 +128,43 @@ function fmtAge(sec){
   if(s<60)return s+'s';
   if(s<3600)return Math.floor(s/60)+'m';
   return Math.floor(s/3600)+'h';
+}
+function fmtTsShort(ts){
+  if(ts==null)return '—';
+  try{
+    const d=new Date(Number(ts)*1000);
+    return d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+  }catch(e){return '—';}
+}
+function tradeOutcome(x){
+  const st=(x.status||'').toLowerCase();
+  if(st==='open')return {label:'open',cls:'open',pnlCls:'neu',pnl:'—'};
+  if(x.won===true)return {label:'win',cls:'win',pnlCls:'up',pnl:usd(x.pnl_usd)};
+  if(x.won===false)return {label:'loss',cls:'loss',pnlCls:'dn',pnl:usd(x.pnl_usd)};
+  return {label:st||'—',cls:'',pnlCls:'neu',pnl:x.pnl_usd==null?'—':usd(x.pnl_usd)};
+}
+function renderTrades(listEl,positions){
+  listEl.innerHTML='';
+  const pos=(positions||[]).slice(0,10);
+  if(!pos.length){
+    listEl.innerHTML='<div class="trades-empty">No trades yet.</div>';
+    return;
+  }
+  pos.forEach(x=>{
+    const r=x.research||{};
+    const side=(x.side||'—').toUpperCase();
+    const sideCls=side==='UP'?'up':(side==='DOWN'?'down':'');
+    const series=r.series_label||r.market_series||'—';
+    const oc=tradeOutcome(x);
+    const row=$('<div class="trade-row"></div>');
+    row.innerHTML=
+      '<div><span class="trade-side '+sideCls+'">'+side+'</span>'
+      +' <span class="trade-status '+oc.cls+'">'+oc.label+'</span>'
+      +'<div class="trade-meta">'+series+' · @'+f(x.entry_price,2)+' · $'+f(x.size_usd,0)+'</div>'
+      +'<div class="trade-meta">'+fmtTsShort(x.entry_ts)+'</div></div>'
+      +'<div class="trade-pnl '+oc.pnlCls+'">'+oc.pnl+'</div>';
+    listEl.appendChild(row);
+  });
 }
 
 function addRow(rows,name,val,hint,light){
@@ -295,9 +366,13 @@ function setTag(id,text,cls){
 
 async function tick(){
   setTag('health','Loading…','');
-  let s;
-  try{s=await fetchJson('/api/polymarket/training/btc_pulse');}
-  catch(e){setTag('health',e&&e.name==='AbortError'?'Timed out':'Unreachable','off');return;}
+  let s,l;
+  try{
+    [s,l]=await Promise.all([
+      fetchJson('/api/polymarket/training/btc_pulse'),
+      fetchJson('/api/polymarket/training/btc_pulse/ledger?summary=1'),
+    ]);
+  }catch(e){setTag('health',e&&e.name==='AbortError'?'Timed out':'Unreachable','off');return;}
   if(!s.available){setTag('health','No data','off');return;}
   setTag('health','Live','live');
   const cfg=s.config||{};
@@ -323,6 +398,7 @@ async function tick(){
   v.innerHTML=dot(ov.light)+'<span>'+ov.text+'</span>';
   v.style.borderColor=ov.light==='green'?'rgba(74,222,128,.4)':(ov.light==='yellow'?'rgba(250,204,21,.4)':'rgba(248,113,113,.4)');
   renderRows(document.getElementById('tl-grid'),rows);
+  renderTrades(document.getElementById('trades-list'),(l&&l.positions)||[]);
 }
 tick();setInterval(tick,5000);
 </script>
