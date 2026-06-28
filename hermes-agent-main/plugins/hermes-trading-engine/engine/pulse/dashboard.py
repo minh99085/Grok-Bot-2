@@ -10,7 +10,7 @@ DASHBOARD_HTML = r"""<!doctype html>
 <style>
 :root{
   --bg:#12141a;--bg2:#181b24;--card:#1c2029;--line:#2a3040;
-  --text:#f0f4f8;--text2:#dde4ee;--text3:#c8d2de;
+  --text:#f0f4f8;--text2:#aeb8c8;--text3:#8f9aad;
   --green:#4ade80;--yellow:#facc15;--red:#f87171;--accent:#a8c8f0;
   --radius:12px;
 }
