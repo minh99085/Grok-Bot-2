@@ -1,21 +1,20 @@
 # Bot cycle summary (plain English)
 
-_Updated: 2026-06-28 16:59 UTC_
+_Updated: 2026-06-28 17:01 UTC_
 
 ## Last cycle
 
 | | |
 |---|---|
-| **Cycle #** | 14 |
-| **Checked at** | 2026-06-28 14:02 UTC |
+| **Cycle #** | 15 |
+| **Checked at** | 2026-06-28 17:01 UTC |
 | **Result** | **issues** |
 | **What it means** | Issues found — bot still running, but tuning may be needed. |
-| **Next check after** | 2026-06-28 15:05 UTC |
+| **Next check after** | 2026-06-28 18:01 UTC |
 
 **Fixes applied:**
 
-- wr_tune_min_entry_0.45_max_price_0.62
-- smart_wr_autotune_babysit
+- wr_tune_min_entry_0.46_max_price_0.60
 
 ## How the bot is doing now
 

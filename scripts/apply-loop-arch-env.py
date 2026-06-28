@@ -76,7 +76,7 @@ UPDATES = {
     "PULSE_DIRECTIONAL_EXPLORE_RATE": "0",
     "PULSE_MIN_EDGE": "0.008",
     "PULSE_BASIS_BUFFER": "0.008",
-    "PULSE_MIN_ENTRY_PRICE": "0.45",
+    "PULSE_MIN_ENTRY_PRICE": "0.46",
     "PULSE_MIN_REWARD_RISK": "0.45",
     "PULSE_MIN_REWARD_RISK_UP_PREMIUM": "0.28",
     "PULSE_GROK_UP_MIN_P_WIN": "0.58",
@@ -87,7 +87,7 @@ UPDATES = {
     "PULSE_STOP_MIN_SAMPLES": "60",
     # Sweet-spot entry (1M MC sim): base 160-220s → 15m TTC 480-660s (minutes 8-11).
     "PULSE_TICK_SECONDS": "15",
-    "PULSE_MAX_PRICE": "0.62",
+    "PULSE_MAX_PRICE": "0.6",
     # [TV-LOCK] context gate off — TV never blocks entries.
     "PULSE_TV_CONTEXT_GATE": "0",
     # TV confidence tier: modulate min_edge/max_price at 15m sweet spot (not a trade gate).
