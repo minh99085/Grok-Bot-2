@@ -120,6 +120,25 @@ def test_vwap_enrichment_marks_actionable():
     assert vios[0].reason == "vwap_executable"
 
 
+def test_load_state_recomputes_capped_settled_pnl():
+    ledger = DependencyArbLedger(execute_enabled=True)
+    ledger.positions["p1"] = {
+        "status": "settled",
+        "shares": 5000.0,
+        "entry_vwap": 0.01,
+        "cost_usd": 50.0,
+        "violation_magnitude": 0.47,
+        "expected_profit_usd": 1175.0,
+        "close_ts": 1.0,
+    }
+    ledger.realized_profit_usd = 1175.0
+    ledger.settled = 1
+    ledger.load_state(ledger.to_state())
+    assert ledger.realized_profit_usd < 1175.0
+    assert ledger.realized_profit_usd == round(50.0 * 0.47 * 0.5, 6)
+    assert ledger.report()["booking"]["capture_ratio"] is not None
+
+
 def test_realized_profit_capped_below_theoretical_on_low_entry():
     trade = {
         "shares": 5000.0,

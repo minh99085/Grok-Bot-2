@@ -56,26 +56,32 @@ class ClobBookFeed:
         self._subscribed.update(new)
 
         def _run():
-            try:
-                from websockets.sync.client import connect
-                self._ws_running = True
-                with connect(CLOB_WS, open_timeout=10) as ws:
-                    sub = {"assets_ids": list(self._subscribed), "type": "market"}
-                    ws.send(json.dumps(sub))
-                    while self._ws_running:
-                        try:
-                            raw = ws.recv(timeout=5.0)
-                            msg = json.loads(raw)
-                            aid = msg.get("asset_id") or msg.get("market")
-                            if aid:
-                                with self._lock:
-                                    self._cache[str(aid)] = msg
-                        except Exception:
-                            break
-            except Exception as exc:
-                logger.debug("clob ws feed stopped: %s", exc)
-                self._errors += 1
-            finally:
-                self._ws_running = False
+            from websockets.sync.client import connect
+            self._ws_running = True
+            backoff = 1.0
+            while self._ws_running:
+                try:
+                    with connect(CLOB_WS, open_timeout=10) as ws:
+                        backoff = 1.0
+                        sub = {"assets_ids": list(self._subscribed), "type": "market"}
+                        ws.send(json.dumps(sub))
+                        while self._ws_running:
+                            try:
+                                raw = ws.recv(timeout=5.0)
+                                msg = json.loads(raw)
+                                aid = msg.get("asset_id") or msg.get("market")
+                                if aid:
+                                    with self._lock:
+                                        self._cache[str(aid)] = msg
+                            except Exception:
+                                break
+                except Exception as exc:
+                    logger.debug("clob ws feed reconnect: %s", exc)
+                    self._errors += 1
+                    if not self._ws_running:
+                        break
+                    time.sleep(min(30.0, backoff))
+                    backoff = min(30.0, backoff * 1.5)
+            self._ws_running = False
 
         threading.Thread(target=_run, daemon=True, name="clob-book-ws").start()

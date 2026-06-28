@@ -322,6 +322,40 @@ class DependencyArbLedger:
                 n += 1
         return n
 
+    def _normalize_position(self, p: dict) -> dict:
+        """Backfill Roan booking fields and re-apply capped settlement on load."""
+        pos = dict(p)
+        entry = float(pos.get("entry_vwap") or 0)
+        mag = float(pos.get("violation_magnitude") or 0)
+        if not pos.get("implied_bound") and entry and mag:
+            pos["implied_bound"] = round(entry + mag, 6)
+        pos.setdefault("capture_frac", 0.5)
+        pos.setdefault("theoretical_profit_usd", pos.get("expected_profit_usd"))
+        if pos.get("status") == "settled":
+            pos["realized_profit_usd"] = realized_dependency_profit_usd(pos)
+        return pos
+
+    def _recompute_realized_totals(self) -> None:
+        total = sum(
+            float(p.get("realized_profit_usd") or 0)
+            for p in self.positions.values()
+            if p.get("status") == "settled"
+        )
+        self.realized_profit_usd = round(total, 6)
+
+    def _booking_summary(self) -> dict:
+        settled = [p for p in self.positions.values() if p.get("status") == "settled"]
+        theoretical = round(sum(float(p.get("theoretical_profit_usd")
+                                    or p.get("expected_profit_usd") or 0) for p in settled), 4)
+        realized = round(sum(float(p.get("realized_profit_usd") or 0) for p in settled), 4)
+        ratio = round(realized / theoretical, 4) if theoretical > 0 else None
+        return {
+            "theoretical_settled_usd": theoretical,
+            "realized_settled_usd": realized,
+            "capture_ratio": ratio,
+            "settled_n": len(settled),
+        }
+
     def report(self) -> dict:
         mode = "paper_execute" if self.execute_enabled else "log_only"
         return {"strategy": "dependency_arbitrage", "paper_only": True,
@@ -334,6 +368,7 @@ class DependencyArbLedger:
                 "executed": self.executed, "settled": self.settled,
                 "open": sum(1 for p in self.positions.values() if p.get("status") == "open"),
                 "realized_profit_usd": round(self.realized_profit_usd, 4),
+                "booking": self._booking_summary(),
                 "last_violations": self.last_violations[-20:],
                 "segregated_from_directional": True,
                 "note": ("LCMM nested-window scanner + optional paper execution on validated "
@@ -361,6 +396,9 @@ class DependencyArbLedger:
         self.mid_only_violations = int(data.get("mid_only_violations", 0) or 0)
         self.executed = int(data.get("executed", 0) or 0)
         self.settled = int(data.get("settled", 0) or 0)
-        self.realized_profit_usd = float(data.get("realized_profit_usd", 0.0) or 0.0)
         self.last_violations = list(data.get("last_violations") or [])
-        self.positions = {k: dict(v) for k, v in (data.get("positions") or {}).items()}
+        self.positions = {
+            k: self._normalize_position(v)
+            for k, v in (data.get("positions") or {}).items()
+        }
+        self._recompute_realized_totals()

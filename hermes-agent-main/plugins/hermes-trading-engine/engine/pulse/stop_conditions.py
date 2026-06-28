@@ -50,6 +50,7 @@ class StopConfig:
     sharpe_min_samples: int = 20
     # arb anomaly guard: halt if any settled arb booked non-positive guaranteed profit
     arb_guard_enabled: bool = True
+    dep_arb_guard_enabled: bool = True
 
 
 def _entry_ts(p) -> float:
@@ -164,17 +165,52 @@ def evaluate_arbitrage(*, arb_positions, arb_report: dict, cfg: StopConfig) -> d
             "note": "arb halt only on anomaly (guaranteed_profit<=0); risk-free P&L is segregated"}
 
 
+def evaluate_dependency_arb(*, dep_positions, dep_report: dict, cfg: StopConfig) -> dict:
+    """Lane B stop: anomaly guard + walk-forward observability (segregated from directional)."""
+    if not cfg.enabled:
+        return {"strategy": "dependency_arbitrage", "enabled": False, "halted": False,
+                "verifiable": False, "reasons": [], "metrics": {}}
+    from engine.pulse.walk_forward import passes_walk_forward
+    rep = dep_report or {}
+    pos_list = list((dep_positions or {}).values())
+    settled = [p for p in pos_list if p.get("status") == "settled"]
+    wf = passes_walk_forward(pos_list, min_holdout_n=5, min_holdout_pf=1.0)
+    booking = rep.get("booking") or {}
+    reasons = []
+    if cfg.dep_arb_guard_enabled and int(rep.get("settled") or 0) > 0:
+        realized = float(booking.get("realized_settled_usd")
+                         or rep.get("realized_profit_usd") or 0)
+        if realized < 0:
+            reasons.append("negative_realized_dependency_arb")
+    metrics = {
+        "executed": rep.get("executed"),
+        "settled": rep.get("settled"),
+        "realized_profit_usd": rep.get("realized_profit_usd"),
+        "booking": booking,
+        "walk_forward": wf,
+    }
+    halted = bool(reasons)
+    return {"strategy": "dependency_arbitrage", "enabled": True, "halted": halted,
+            "verifiable": True, "reasons": reasons, "metrics": metrics,
+            "note": "Lane B halt on booking anomaly only; walk-forward is observability"}
+
+
 def evaluate_all(*, directional_positions, arb_positions, directional_stats: dict,
                  arb_report: dict, starting_capital: float,
+                 dep_positions=None, dep_report: Optional[dict] = None,
                  cfg: Optional[StopConfig] = None) -> dict:
     cfg = cfg or StopConfig()
     directional = evaluate_directional(positions=directional_positions,
                                        ledger_stats=directional_stats,
                                        starting_capital=starting_capital, cfg=cfg)
     arbitrage = evaluate_arbitrage(arb_positions=arb_positions, arb_report=arb_report, cfg=cfg)
-    any_halted = bool(directional.get("halted") or arbitrage.get("halted"))
+    dependency_arbitrage = evaluate_dependency_arb(
+        dep_positions=dep_positions or {}, dep_report=dep_report or {}, cfg=cfg)
+    any_halted = bool(directional.get("halted") or arbitrage.get("halted")
+                      or dependency_arbitrage.get("halted"))
     return {"paper_only": True, "agent_independent": True, "any_halted": any_halted,
-            "strategies": {"directional": directional, "arbitrage": arbitrage},
+            "strategies": {"directional": directional, "arbitrage": arbitrage,
+                           "dependency_arbitrage": dependency_arbitrage},
             "note": ("quantitative kill switches checked each tick from settled ledger evidence; "
                      "NOT the LLM's opinion. Halting blocks NEW entries only.")}
 
@@ -187,11 +223,13 @@ class StrategyStopMonitor:
         self._state: dict = {}
 
     def refresh(self, *, directional_positions, arb_positions, directional_stats: dict,
-                arb_report: dict, starting_capital: float) -> dict:
+                arb_report: dict, starting_capital: float,
+                dep_positions=None, dep_report: Optional[dict] = None) -> dict:
         self._state = evaluate_all(
             directional_positions=directional_positions, arb_positions=arb_positions,
             directional_stats=directional_stats, arb_report=arb_report,
-            starting_capital=starting_capital, cfg=self.cfg)
+            starting_capital=starting_capital,
+            dep_positions=dep_positions, dep_report=dep_report, cfg=self.cfg)
         return self._state
 
     def report(self) -> dict:

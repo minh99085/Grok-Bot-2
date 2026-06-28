@@ -24,6 +24,27 @@ def split_holdout_by_entry_ts(
     return settled[:cut], settled[cut:]
 
 
+def _position_pnl(p) -> float:
+    if isinstance(p, dict):
+        for key in ("pnl_usd", "realized_profit_usd", "expected_profit_usd"):
+            if p.get(key) is not None:
+                return float(p.get(key) or 0)
+        return 0.0
+    for attr in ("pnl_usd", "realized_profit_usd", "expected_profit_usd"):
+        val = getattr(p, attr, None)
+        if val is not None:
+            return float(val or 0)
+    return 0.0
+
+
+def _position_won(p) -> bool:
+    if isinstance(p, dict) and p.get("won") is not None:
+        return bool(p.get("won"))
+    if not isinstance(p, dict) and getattr(p, "won", None) is not None:
+        return bool(p.won)
+    return _position_pnl(p) > 0
+
+
 def holdout_metrics(positions: list) -> dict:
     n = len(positions)
     if not n:
@@ -33,8 +54,8 @@ def holdout_metrics(positions: list) -> dict:
     gw = 0.0
     gl = 0.0
     for p in positions:
-        won = getattr(p, "won", None) if not isinstance(p, dict) else p.get("won")
-        pu = float(getattr(p, "pnl_usd", None) or p.get("pnl_usd", 0) or 0)
+        pu = _position_pnl(p)
+        won = _position_won(p)
         pnl += pu
         if won:
             wins += 1
@@ -42,7 +63,12 @@ def holdout_metrics(positions: list) -> dict:
                 gw += pu
         elif pu < 0:
             gl += -pu
-    pf = round(gw / gl, 4) if gl > 0 else None
+    if gl > 0:
+        pf = round(gw / gl, 4)
+    elif gw > 0:
+        pf = 999.0
+    else:
+        pf = None
     return {
         "n": n,
         "win_rate": round(wins / n, 4),

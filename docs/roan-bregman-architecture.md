@@ -63,11 +63,11 @@ flowchart LR
 
 - **Math:** LCMM linear constraints → Bregman projection distance = max theoretical profit → Frank-Wolfe + IP oracle for optimal trade vector on small groups.
 - **Primary constraint (Phase 1–4):** nested implication: `P(up_15m) ≥ P(up_5m)` for overlapping windows.
-- **Code today:** `dependency_arb.py` (LCMM), `bregman_projection.py` (KL observe-only stub), `arb_graph.py`, `grok_dependency.py`.
-- **Ledger:** `DependencyArbLedger` (segregated).
-- **Execute:** `PULSE_DEPENDENCY_ARB_EXECUTE=0` until promotion scorecard passes.
+- **Code:** `dependency_arb.py` (LCMM + execute), `bregman_projection.py` (KL + Frank-Wolfe), `frank_wolfe.py`, `ip_oracle.py`, `arb_graph.py`, `grok_dependency.py`.
+- **Ledger:** `DependencyArbLedger` (segregated; capped ROI booking).
+- **Execute:** `PULSE_DEPENDENCY_ARB_EXECUTE=1` with `PULSE_BREGMAN_TRADE_AUTHORITY=1` (learning_collection; frozen manifest).
 
-**Bregman scope rule:** Never invoke full projection on single 2-outcome windows. Skip if `n_conditions <= 2`.
+**Bregman scope rule:** Never invoke full projection on **single-window** dutch-book polytopes (no cross-market dependency constraints). **Do** run on nested 2-variable groups (`parent_up`, `child_up`) with `nested_implication` constraints (5m brain vs 15m hands).
 
 ---
 
@@ -109,9 +109,10 @@ flowchart LR
 | **2** | Bregman diagnostics on violations | Report shows projection_distance |
 | **3** | Frank-Wolfe + OR-Tools; `optimal_trade_vector` | Fixture converges |
 | **4** | `PULSE_BREGMAN_TRADE_AUTHORITY=1`; dep execute | ≥1 paper dep trade; segregated PnL |
-| **5** | WebSocket CLOB, latency metrics | Ops dashboard |
+| **5** | WebSocket CLOB + REST latency metrics | `clob_feed.samples` > 0 on soak |
+| **6** | Walk-forward holdout, dep-arb stop observability, unified capital rollup | `walk_forward` + `booking.capture_ratio` in status |
 
-**Learning_collection:** Directional frozen keys unchanged. Phase 1+ only widens **scan** slugs.
+**Learning_collection:** Directional frozen keys unchanged. Phase 1+ only widens **scan** slugs. Lane B PnL never blends into directional WR/PF.
 
 ---
 

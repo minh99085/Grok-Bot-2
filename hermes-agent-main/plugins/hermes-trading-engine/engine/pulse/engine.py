@@ -1682,6 +1682,10 @@ class PulseEngine:
             arb_positions=(self.arb_ledger.positions if self.arb_ledger is not None else {}),
             directional_stats=self.ledger.stats(),
             arb_report=(self.arb_ledger.report() if self.arb_ledger is not None else {}),
+            dep_positions=(self.dep_arb_ledger.positions
+                           if self.dep_arb_ledger is not None else {}),
+            dep_report=(self.dep_arb_ledger.report()
+                        if self.dep_arb_ledger is not None else {}),
             starting_capital=self.cfg.starting_capital_usd)
         if getattr(self, "clob_feed", None) and windows:
             _tids = []

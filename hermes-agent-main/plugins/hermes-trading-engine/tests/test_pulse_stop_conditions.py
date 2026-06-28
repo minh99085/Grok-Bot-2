@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from engine.pulse.stop_conditions import (StopConfig, evaluate_directional,
-                                           evaluate_arbitrage, StrategyStopMonitor)
+                                           evaluate_arbitrage,
+                                           evaluate_dependency_arb,
+                                           StrategyStopMonitor)
 from engine.pulse.state import build_state_md
 
 
@@ -95,6 +97,24 @@ def test_stop_monitor_is_halted():
                 arb_positions={}, directional_stats={"max_drawdown_usd": 1},
                 arb_report={}, starting_capital=500)
     assert mon.is_halted("directional") is True
+
+
+def test_dependency_arb_stop_observes_walk_forward_not_halted_on_positive():
+    cfg = StopConfig()
+    rep = {
+        "executed": 12,
+        "settled": 12,
+        "realized_profit_usd": 50.0,
+        "booking": {"realized_settled_usd": 50.0, "theoretical_settled_usd": 80.0,
+                    "capture_ratio": 0.625, "settled_n": 12},
+    }
+    positions = {
+        f"p{i}": {"status": "settled", "entry_ts": float(i), "realized_profit_usd": 4.0}
+        for i in range(30)
+    }
+    out = evaluate_dependency_arb(dep_positions=positions, dep_report=rep, cfg=cfg)
+    assert out["halted"] is False
+    assert out["metrics"]["walk_forward"]["passed"] is True
 
 
 def test_state_md_contains_sections():
