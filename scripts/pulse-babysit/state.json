@@ -6,21 +6,18 @@
     "priority": "trade_rate_and_ledger_continuity",
     "note": "Soak-learning lock: apply-loop-arch enforces frozen manifest; WR tuning deferred"
   },
-  "cycle": 6,
+  "cycle": 7,
   "phase": "soak",
   "soak_hours": 2,
   "soak_minutes": 120,
-  "deployed_at": "2026-06-27T23:45:00.000000+00:00",
-  "soak_until": "2026-06-28T01:45:00.000000+00:00",
-  "last_eval_at": "2026-06-27T23:42:22.350330+00:00",
+  "deployed_at": "2026-06-28T02:36:00.000000+00:00",
+  "soak_until": "2026-06-28T04:36:00.000000+00:00",
+  "last_eval_at": "2026-06-28T02:34:11.427265+00:00",
   "last_verdict": "issues",
-  "last_fixes": [
-    "reconciliation: repair_accounting_drift before each light_report (absorb ledger/lifecycle drift)",
-    "min_edge: 0.015 → 0.012; min_reward_risk: 0.55 → 0.50 (trade_starvation_streak P0)"
-  ],
+  "last_fixes": [],
   "last_health_verdict": "issues",
-  "baseline_trades_at_deploy": 93,
-  "vps_sha": "e672220f53daa528b1279fa21fc643986ca61dd0",
+  "baseline_trades_at_deploy": 97,
+  "vps_sha": "64e3c6d44b1f88141f4ff5e426b7f323ca639f0f",
   "history": [
     {
       "cycle": 3,
@@ -113,7 +110,83 @@
         "hours_since_last_trade": 0.37,
         "settled_flat_eval_streak": 2
       }
+    },
+    {
+      "ts": "2026-06-28T01:11:17.662305+00:00",
+      "verdict": "issues",
+      "metrics": {
+        "settled": 93,
+        "win_rate_target": 0.8,
+        "win_rate": 0.6022,
+        "profit_factor": 0.941,
+        "win_rate_up": 0.5,
+        "win_rate_down": 0.6301,
+        "realized_pnl_usd": -10.03,
+        "tv_valid": 694,
+        "mtf_passed": 141,
+        "mtf_blocked": 276,
+        "context_blocked": 879,
+        "down_bias_blocked": 538,
+        "signal_gate": false,
+        "min_reward_risk": 0.55,
+        "global_reconciled": true,
+        "ticks": 4,
+        "hours_since_last_trade": 0.37,
+        "settled_flat_eval_streak": 1
+      },
+      "issue_codes": [
+        "win_rate_below_target",
+        "up_side_bleed"
+      ]
+    },
+    {
+      "ts": "2026-06-28T02:34:11.427265+00:00",
+      "verdict": "issues",
+      "metrics": {
+        "settled": 97,
+        "win_rate_target": 0.8,
+        "win_rate": 0.6082,
+        "profit_factor": 0.9807,
+        "win_rate_up": 0.5,
+        "win_rate_down": 0.6364,
+        "realized_pnl_usd": -3.38,
+        "tv_valid": 801,
+        "mtf_passed": 141,
+        "mtf_blocked": 276,
+        "context_blocked": 879,
+        "down_bias_blocked": 538,
+        "signal_gate": false,
+        "min_reward_risk": 0.5,
+        "global_reconciled": true,
+        "ticks": 1,
+        "hours_since_last_trade": 0.73,
+        "settled_flat_eval_streak": 2
+      },
+      "issue_codes": [
+        "win_rate_below_target",
+        "up_side_bleed"
+      ]
+    },
+    {
+      "cycle": 7,
+      "eval_at": "2026-06-28T02:34:11.427265+00:00",
+      "verdict": "issues",
+      "issues": [
+        "win_rate_below_target",
+        "up_side_bleed"
+      ],
+      "fixes": [],
+      "deployed_at": "2026-06-28T02:36:00.000000+00:00",
+      "vps_sha": "64e3c6d44b1f88141f4ff5e426b7f323ca639f0f",
+      "metrics": {
+        "settled": 97,
+        "win_rate": 0.6082,
+        "profit_factor": 0.9807,
+        "global_reconciled": true,
+        "hours_since_last_trade": 0.73,
+        "settled_flat_eval_streak": 2
+      }
     }
   ],
-  "note": "Reconciliation green post-deploy; quant gates relaxed for eval streak (post-restart artifact likely)."
+  "note": "Cycle 7: WR/up_bleed deferred (learning_collection); trade rate OK (+4 settled); report-only deploy."
 }
