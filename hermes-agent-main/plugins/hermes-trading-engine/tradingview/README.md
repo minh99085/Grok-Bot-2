@@ -1,34 +1,65 @@
-# TradingView — INDEX:BTCUSD only
+# TradingView — BTCUSD lite MTF (3 charts)
 
-Polymarket BTC up/down windows settle on **Chainlink BTC/USD**. Use TradingView's
-**INDEX:BTCUSD** (multi-exchange spot USD index), not Binance BTCUSDT.
+Polymarket BTC windows settle on **Chainlink BTC/USD**. Use **BTCUSD** or **INDEX:BTCUSD** on TradingView.
 
-## Setup
+## Recommended script
 
-1. Add `Hermes_BTC_Pulse_v7_IndexTrend.pine` to TradingView.
-2. Open **three** charts, all symbol **INDEX:BTCUSD**:
-   - 5 minutes
-   - 10 minutes
-   - 15 minutes
-3. Add the indicator to each chart.
-4. Create one alert per chart: **Any alert() function call** → webhook
-   `http://<vps-ip>/webhooks/tradingview`
-5. Alert JSON sends `"symbol":"INDEX:BTCUSD"` and `"timeframe"` from the chart
-   (5, 10, or 15).
+**`Hermes_BTC_Pulse_Lite.pine`** — simple EMA + RSI, lightweight webhook JSON (direction, strength, signal_level per chart). Replaces the heavy v7 composite for observe-only / Grok MTF.
 
-Each timeframe is stored separately — alerts never overwrite each other. Grok sees
-all three via `tradingview_trend` (`confirm_mtf` / `confirm_3tf` in status API).
+Legacy: `Hermes_BTC_Pulse_v7_IndexTrend.pine` (full composite v6 fields).
 
-## Env (VPS)
+## Setup — minimum **3 alerts**
+
+| # | Chart | Timeframe | Alert |
+|---|-------|-----------|-------|
+| 1 | BTCUSD | **2m** | Any `alert()` function call → webhook |
+| 2 | BTCUSD | **3m** | same |
+| 3 | BTCUSD | **4m** | same |
+
+Webhook URL (all three):
+
+```
+http://<vps-ip>/webhooks/tradingview
+```
+
+Paste your VPS `TRADINGVIEW_WEBHOOK_SECRET` into the indicator **Hermes webhook secret** input on each chart.
+
+Bot env (already set via `scripts/apply-loop-arch-env.py`):
 
 ```
 PULSE_TV_FEATURE_SYMBOL=BTCUSD
-TRADINGVIEW_ALLOWED_SYMBOLS=BTCUSD,INDEX:BTCUSD
-PULSE_TV_MTF_TIMEFRAMES=5,10,15
-PULSE_TV_MTF_CONFIRM_WINDOW_S=750
-PULSE_TV_MTF_CONFIRM_WINDOW_10M_S=1500
-PULSE_TV_MTF_CONFIRM_WINDOW_15M_S=2250
+TRADINGVIEW_ALLOWED_SYMBOLS=BTCUSD,INDEX:BTCUSD,BTC/USD,BTC,XBTUSD
+PULSE_TV_MTF_TIMEFRAMES=2,3,4
+TRADINGVIEW_MAX_AGE_S=180
 ```
 
-Apply via `python3 /opt/Grok-Bot-2/scripts/apply-loop-arch-env.py` then
-`docker compose up -d --force-recreate hermes-training`.
+## Why 3 alerts (not 1 or 5)
+
+- **1 alert** — only one timeframe; MTF stays `single_tf`, Grok never sees 2m+3m+4m alignment.
+- **3 alerts** — matches bot `PULSE_TV_MTF_TIMEFRAMES=2,3,4`; each TF fires on its own bar close (~every 2–4 min). Fresh windows: 2m=300s, 3m=450s, 4m=600s.
+- **More than 3** — only needed if you change `PULSE_TV_MTF_TIMEFRAMES` in `.env`.
+
+## Lite JSON fields (per alert)
+
+```json
+{
+  "secret": "...",
+  "bot_name": "hermes",
+  "symbol": "BTCUSD",
+  "timeframe": "2",
+  "direction": "UP",
+  "signal_level": "UP_STRONG",
+  "strength": 0.72,
+  "event_id": "BTCUSD-2-...-UP_STRONG-lite-1",
+  "bar_time": "...",
+  "price": 60100.0
+}
+```
+
+Apply env after changes:
+
+```bash
+python3 /opt/Grok-Bot-2/scripts/apply-loop-arch-env.py
+cd /opt/Grok-Bot-2/hermes-agent-main/plugins/hermes-trading-engine
+docker compose up -d --force-recreate hermes-training
+```
