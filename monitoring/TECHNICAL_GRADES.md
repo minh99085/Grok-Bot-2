@@ -1,23 +1,23 @@
 # Technical Data Grades
 
-**Generated:** 2026-06-28T20:12:45.463079+00:00  
-**Repo SHA:** `da780c7ed2af`  
-**Ticks:** 366 | **Settled:** 132
+**Generated:** 2026-06-28T21:34:05.554861+00:00  
+**Repo SHA:** `b6d1f759f4c4`  
+**Ticks:** 261 | **Settled:** 133
 
 ## Composite
 
 | Metric | Score | Grade |
 |--------|------:|-------|
 | **Composite** | **77.8** | **C+** |
-| Report overall | 74.1 | C |
-| Technical runtime | 86.5 | B+ |
+| Report overall | 73.6 | C |
+| Technical runtime | 87.7 | B+ |
 
 ## Report scores (engine)
 
 | Section | Score | Grade |
 |---------|------:|-------|
-| Trading Performance | 80.8 | B |
-| Operation | 87.9 | B+ |
+| Trading Performance | 79.9 | C+ |
+| Operation | 87.7 | B+ |
 | External Signals | 47.0 | F |
 
 ## Technical runtime
@@ -26,22 +26,22 @@ _RTDS/oracle health, TV observe-only intake, design manifest compliance, pipelin
 
 | Component | Score | Weight |
 |-----------|------:|-------:|
-| rtds_health | 97.0 | 20 |
-| tv_intake | 96.9 | 20 |
+| rtds_health | 100.0 | 20 |
+| tv_intake | 100.0 | 20 |
 | design_compliance | 70.0 | 25 |
 | trade_pipeline | 100.0 | 20 |
-| gate_coupling | 67.8 | 15 |
+| gate_coupling | 68.2 | 15 |
 
-### Rtds Health (97.0)
+### Rtds Health (100.0)
 
 | Component | Score | Weight |
 |-----------|------:|-------:|
 | connected | 100.0 | 35 |
 | oracle_fresh | 100.0 | 30 |
-| stability | 85.0 | 20 |
+| stability | 100.0 | 20 |
 | price_feed | 100.0 | 15 |
 
-### Tv Intake (96.9)
+### Tv Intake (100.0)
 
 | Component | Score | Weight |
 |-----------|------:|-------:|
@@ -49,7 +49,7 @@ _RTDS/oracle health, TV observe-only intake, design manifest compliance, pipelin
 | alert_flow | 100.0 | 25 |
 | reject_rate | 99.7 | 15 |
 | trade_gates_off | 100.0 | 20 |
-| mtf_freshness | 80.0 | 15 |
+| mtf_freshness | 100.0 | 15 |
 
 ### Design Compliance (70.0)
 
@@ -77,22 +77,22 @@ _RTDS/oracle health, TV observe-only intake, design manifest compliance, pipelin
 | not_halted | 100.0 | 10 |
 | uptime_ticks | 100.0 | 10 |
 
-### Gate Coupling (67.8)
+### Gate Coupling (68.2)
 
 | Component | Score | Weight |
 |-----------|------:|-------:|
-| lifecycle_funnel | 37.4 | 25 |
-| exec_pass_rate | 91.3 | 25 |
-| reject_diversity | 69.3 | 20 |
-| cohort_session_load | 70.0 | 15 |
+| lifecycle_funnel | 37.3 | 25 |
+| exec_pass_rate | 91.5 | 25 |
+| reject_diversity | 69.2 | 20 |
+| cohort_session_load | 73.0 | 15 |
 | recent_eval_spread | 75.0 | 15 |
 
 ## VPS score history (last entries)
 
 | UTC | Settled | Overall | Trading | Operation | External |
 |-----|--------:|--------:|--------:|----------:|---------:|
-| 2026-06-28 18:31:11 UTC | 129 | 74.1 | 80.6 | 88.3 | 47.0 |
-| 2026-06-28 18:48:12 UTC | 130 | 74.4 | 81.2 | 88.2 | 47.0 |
-| 2026-06-28 19:18:12 UTC | 130 | 74.4 | 81.2 | 88.1 | 47.0 |
 | 2026-06-28 19:30:27 UTC | 131 | 73.9 | 80.3 | 88.1 | 47.0 |
 | 2026-06-28 19:48:12 UTC | 132 | 74.2 | 80.8 | 88.1 | 47.0 |
+| 2026-06-28 20:18:14 UTC | 132 | 74.1 | 80.8 | 87.9 | 47.0 |
+| 2026-06-28 20:48:15 UTC | 132 | 74.1 | 80.8 | 87.8 | 47.0 |
+| 2026-06-28 21:17:00 UTC | 133 | 73.7 | 79.9 | 87.8 | 47.0 |
