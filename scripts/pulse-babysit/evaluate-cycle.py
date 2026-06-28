@@ -147,6 +147,9 @@ def main() -> int:
                 settled_flat_streak += 1
             else:
                 break
+        # Break streak when current ledger advanced since last eval (avoids false P0 after soak).
+        if trades > cur:
+            settled_flat_streak = 0
 
     trade_starvation = False
     if (not dir_halted and ticks >= STARVATION_MIN_TICKS and hours_since_trade is not None

@@ -60,9 +60,9 @@ UPDATES = {
     # Baseline quant path: allowlist was deadlocking (no proven bucket + 0% explore).
     "PULSE_DIRECTIONAL_REQUIRE_WINNING": "0",
     "PULSE_DIRECTIONAL_EXPLORE_RATE": "0",
-    "PULSE_MIN_EDGE": "0.012",
+    "PULSE_MIN_EDGE": "0.010",
     "PULSE_BASIS_BUFFER": "0.01",
-    "PULSE_MIN_REWARD_RISK": "0.50",
+    "PULSE_MIN_REWARD_RISK": "0.45",
     "PULSE_MIN_REWARD_RISK_UP_PREMIUM": "0.28",
     "PULSE_GROK_UP_MIN_P_WIN": "0.58",
     # Gamma windows often appear >20s after open_ts; min_seconds_since_open=30 already delays entry.
@@ -72,7 +72,7 @@ UPDATES = {
     "PULSE_STOP_MIN_SAMPLES": "60",
     # Sweet-spot entry (1M MC sim): base 160-220s → 15m TTC 480-660s (minutes 8-11).
     "PULSE_TICK_SECONDS": "15",
-    "PULSE_MAX_PRICE": "0.70",
+    "PULSE_MAX_PRICE": "0.75",
     # [TV-LOCK] context gate off — TV never blocks entries.
     "PULSE_TV_CONTEXT_GATE": "0",
     # TV confidence tier: modulate min_edge/max_price at 15m sweet spot (not a trade gate).

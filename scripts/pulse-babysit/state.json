@@ -12,12 +12,12 @@
   "soak_minutes": 120,
   "deployed_at": "2026-06-28T02:36:00.000000+00:00",
   "soak_until": "2026-06-28T04:36:00.000000+00:00",
-  "last_eval_at": "2026-06-28T02:34:11.427265+00:00",
+  "last_eval_at": "2026-06-28T04:37:00.691791+00:00",
   "last_verdict": "issues",
   "last_fixes": [],
   "last_health_verdict": "issues",
   "baseline_trades_at_deploy": 97,
-  "vps_sha": "64e3c6d44b1f88141f4ff5e426b7f323ca639f0f",
+  "vps_sha": "827990dbbf16e3c6da5e5c4e8a2a667632e9fff6",
   "history": [
     {
       "cycle": 3,
@@ -177,7 +177,7 @@
       ],
       "fixes": [],
       "deployed_at": "2026-06-28T02:36:00.000000+00:00",
-      "vps_sha": "64e3c6d44b1f88141f4ff5e426b7f323ca639f0f",
+      "vps_sha": "827990dbbf16e3c6da5e5c4e8a2a667632e9fff6",
       "metrics": {
         "settled": 97,
         "win_rate": 0.6082,
@@ -186,6 +186,61 @@
         "hours_since_last_trade": 0.73,
         "settled_flat_eval_streak": 2
       }
+    },
+    {
+      "ts": "2026-06-28T04:36:26.391214+00:00",
+      "verdict": "blocked",
+      "metrics": {
+        "settled": 100,
+        "win_rate_target": 0.8,
+        "win_rate": 0.6,
+        "profit_factor": 0.9498,
+        "win_rate_up": 0.5,
+        "win_rate_down": 0.625,
+        "realized_pnl_usd": -9.28,
+        "tv_valid": 835,
+        "mtf_passed": 141,
+        "mtf_blocked": 276,
+        "context_blocked": 879,
+        "down_bias_blocked": 538,
+        "signal_gate": false,
+        "min_reward_risk": 0.5,
+        "global_reconciled": true,
+        "ticks": 483,
+        "hours_since_last_trade": 0.29,
+        "settled_flat_eval_streak": 2
+      },
+      "issue_codes": [
+        "trade_starvation_streak"
+      ]
+    },
+    {
+      "ts": "2026-06-28T04:37:00.691791+00:00",
+      "verdict": "issues",
+      "metrics": {
+        "settled": 100,
+        "win_rate_target": 0.8,
+        "win_rate": 0.6,
+        "profit_factor": 0.9498,
+        "win_rate_up": 0.5,
+        "win_rate_down": 0.625,
+        "realized_pnl_usd": -9.28,
+        "tv_valid": 835,
+        "mtf_passed": 141,
+        "mtf_blocked": 276,
+        "context_blocked": 879,
+        "down_bias_blocked": 538,
+        "signal_gate": false,
+        "min_reward_risk": 0.5,
+        "global_reconciled": true,
+        "ticks": 483,
+        "hours_since_last_trade": 0.29,
+        "settled_flat_eval_streak": 1
+      },
+      "issue_codes": [
+        "win_rate_below_target",
+        "up_side_bleed"
+      ]
     }
   ],
   "note": "Cycle 7: WR/up_bleed deferred (learning_collection); trade rate OK (+4 settled); report-only deploy."
