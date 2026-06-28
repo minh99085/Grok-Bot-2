@@ -16,6 +16,7 @@
 //        Message: leave default (script builds JSON in alert())
 //
 // Each chart sends a lightweight row: direction, strength, signal_level, timeframe.
+// Optional FLAT heartbeat on quiet bars keeps per-TF ages fresh (see sendFlatHeartbeat).
 // Bot MTF config: PULSE_TV_MTF_TIMEFRAMES=2,3,4
 // =====================================================================================
 indicator("Hermes BTC Pulse Lite", overlay=true)
@@ -24,10 +25,11 @@ indicator("Hermes BTC Pulse Lite", overlay=true)
 secretInput = input.string("", "Hermes webhook secret")
 botName = input.string("hermes", "Bot name")
 indicatorName = input.string("Hermes BTC Pulse Lite", "Indicator name")
-liteVersion = "lite-1"
+liteVersion = "lite-2"
 
 sendWeak = input.bool(true, "Send weak signals")
 sendStrong = input.bool(true, "Send strong signals")
+sendFlatHeartbeat = input.bool(true, "Send FLAT on quiet bars (keeps MTF age fresh)")
 
 // --- Simple trend: dual EMA + RSI ---
 emaFastLen = input.int(9, "EMA fast", minval=2)
@@ -71,11 +73,16 @@ signalStrength = signalDirection == "NONE" ? 0.0 :
          math.round((0.65 + 0.25 * math.min(rsiPush, 1.0)) * 100) / 100 :
          math.round((0.40 + 0.25 * math.min(rsiPush, 1.0)) * 100) / 100
 
-shouldAlert = barstate.isconfirmed and signalDirection != "NONE"
+hasSignal = signalDirection != "NONE"
+shouldAlert = barstate.isconfirmed and (hasSignal or sendFlatHeartbeat)
 
 // --- Minimal JSON (lightweight TF row + required auth fields) ---
 if shouldAlert
-    eventId = "BTCUSD-" + timeframe.period + "-" + str.tostring(time_close) + "-" + signalLevel + "-" + liteVersion
+    outDir = hasSignal ? signalDirection : "FLAT"
+    outLevel = hasSignal ? signalLevel : "FLAT"
+    outStrength = hasSignal ? signalStrength : 0.0
+
+    eventId = "BTCUSD-" + timeframe.period + "-" + str.tostring(time_close) + "-" + outLevel + "-" + liteVersion
 
     msg = "{"
     msg := msg + "\"secret\":\"" + secretInput + "\","
@@ -83,15 +90,16 @@ if shouldAlert
     msg := msg + "\"source\":\"tradingview\","
     msg := msg + "\"symbol\":\"BTCUSD\","
     msg := msg + "\"timeframe\":\"" + timeframe.period + "\","
-    msg := msg + "\"direction\":\"" + signalDirection + "\","
-    msg := msg + "\"signal_level\":\"" + signalLevel + "\","
-    msg := msg + "\"strength\":" + str.tostring(signalStrength) + ","
+    msg := msg + "\"direction\":\"" + outDir + "\","
+    msg := msg + "\"signal_level\":\"" + outLevel + "\","
+    msg := msg + "\"strength\":" + str.tostring(outStrength) + ","
     msg := msg + "\"indicator_name\":\"" + indicatorName + "\","
     msg := msg + "\"event_id\":\"" + eventId + "\","
     msg := msg + "\"bar_time\":\"" + str.tostring(time_close) + "\","
     msg := msg + "\"price\":" + str.tostring(close, format.mintick) + ","
     msg := msg + "\"composite_version\":\"" + liteVersion + "\","
-    msg := msg + "\"bar_confirmed\":true"
+    msg := msg + "\"bar_confirmed\":true,"
+    msg := msg + "\"non_repainting\":true"
     msg := msg + "}"
 
     alert(msg, alert.freq_once_per_bar_close)

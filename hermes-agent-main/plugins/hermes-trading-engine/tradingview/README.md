@@ -24,6 +24,16 @@ http://<vps-ip>/webhooks/tradingview
 
 Paste your VPS `TRADINGVIEW_WEBHOOK_SECRET` into the indicator **Hermes webhook secret** input on each chart.
 
+### Indicator toggles (recommended)
+
+| Setting | Recommended | Why |
+|---------|-------------|-----|
+| Send weak signals | ON | Early trend rows for Grok / learning |
+| Send strong signals | ON | High-confidence `UP_STRONG` / `DOWN_STRONG` |
+| Send FLAT on quiet bars | ON | Every bar close sends `FLAT` when no UP/DOWN — keeps `tf_2m/3m/4m_age_s` fresh |
+
+Turn **FLAT heartbeat** off only if webhook volume is too high; MTF ages may go stale on quiet charts.
+
 Bot env (already set via `scripts/apply-loop-arch-env.py`):
 
 ```
@@ -55,6 +65,19 @@ TRADINGVIEW_MAX_AGE_S=180
   "price": 60100.0
 }
 ```
+
+Quiet bar (heartbeat):
+
+```json
+{
+  "timeframe": "3",
+  "direction": "FLAT",
+  "signal_level": "FLAT",
+  "strength": 0.0
+}
+```
+
+`FLAT` updates per-TF age and tells Grok “no trend on this chart” vs “chart silent.” Directional MTF count (`trend_fresh_count`) still only counts UP/DOWN.
 
 Apply env after changes:
 
