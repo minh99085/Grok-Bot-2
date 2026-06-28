@@ -69,15 +69,11 @@ def main() -> int:
     record("ticks_positive", int(status.get("ticks") or 0) > 0, f"ticks={status.get('ticks')}")
 
     gd = status.get("grok_decider") or {}
-    if not record("grok_shadow", gd.get("mode") == "shadow" and not gd.get("affects_trading"),
-                  f"mode={gd.get('mode')} affects={gd.get('affects_trading')}"):
-        issues.append(_issue("grok_not_shadow", "P0", f"mode={gd.get('mode')} affects={gd.get('affects_trading')}",
-                             "set PULSE_GROK_DECIDER_MODE=shadow on VPS"))
-    if gd.get("mode") == "follow" and gd.get("affects_trading"):
-        issues.append(_issue("grok_follow_on", "P0", "Grok is driving trades",
-                             "set PULSE_GROK_DECIDER_MODE=shadow"))
-    if int(gd.get("errors") or 0) >= 10:
-        issues.append(_issue("grok_errors", "P1", f"errors={gd.get('errors')}", "check XAI_API_KEY"))
+    record("grok_decider_off", not gd.get("enabled") and not gd.get("affects_trading"),
+           f"enabled={gd.get('enabled')} removed={gd.get('removed')}")
+    if gd.get("enabled") or gd.get("affects_trading"):
+        issues.append(_issue("grok_decider_on", "P0", "Grok trade decider must stay disabled",
+                             "redeploy engine without grok_decider module"))
 
     ver = status.get("verifier") or {}
     if not record("verifier_enabled", ver.get("enabled") is True, f"enabled={ver.get('enabled')}"):
@@ -112,7 +108,7 @@ def main() -> int:
         record(f"loop_{name}", name in loops)
 
     cfg = status.get("config") or {}
-    record("config_grok_shadow", cfg.get("grok_decider_mode") == "shadow")
+    record("config_no_grok_decider", "grok_decider_mode" not in cfg)
     _rr = float(cfg.get("min_reward_risk") or 0)
     record("config_reward_risk", 0.35 <= _rr <= 0.50)
 
