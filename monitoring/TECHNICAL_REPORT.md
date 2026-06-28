@@ -1,18 +1,18 @@
 # BTC Pulse — Technical Report (plain English)
 
-_Updated: 2026-06-28 17:07:14 UTC_
+_Updated: 2026-06-28 17:21:58 UTC_
 
 ## At a glance
 
 | | |
 |---|---|
-| **Overall grade** | **C+** (76.9/100) — Mixed — some systems fine, others need attention. |
-| Trading performance | C+ (78.5/100) |
+| **Overall grade** | **C+** (77.3/100) — Mixed — some systems fine, others need attention. |
+| Trading performance | C+ (79.1/100) |
 | Engine operation | B+ (88.5/100) |
 | External signals | F (47.0/100) |
-| Technical runtime | B+ (85.9/100) |
-| Settled trades | 125 |
-| Engine ticks | 19 |
+| Technical runtime | B+ (86.5/100) |
+| Settled trades | 126 |
+| Engine ticks | 78 |
 
 ## Executive summary
 
@@ -24,30 +24,30 @@ The bot is **running safely with solid technical runtime**, but **trading result
 |---|---|
 | Mode | Paper only |
 | Starting capital | $500.00 |
-| Total on hand | $640.65 (28.1% return) |
-| Directional PnL | $43.22 |
+| Total on hand | $645.02 (29.0% return) |
+| Directional PnL | $47.31 |
 | Arb PnL | $59.73 |
-| Win rate | 63.2% (125 settled) |
-| UP / DOWN win rate | 50.0% / 65.7% |
-| Profit factor | 1.201 |
+| Win rate | 63.5% (126 settled) |
+| UP / DOWN win rate | 50.0% / 66.0% |
+| Profit factor | 1.22 |
 | Bot halted? | No — running |
 
 ## Infrastructure & data health
 
-- **Oracle (RTDS):** Connected; fresh (age 0.13s).
-- **TradingView:** 1540 valid alerts of 1559 received; observe-only=yes; MTF verdict: `confirmed_down_mtf`.
+- **Oracle (RTDS):** Connected; fresh (age 0.29s).
+- **TradingView:** 1552 valid alerts of 1571 received; observe-only=yes; MTF verdict: `confirmed_down_mtf`.
 - **Entry config:** tick 15.0s, max price 0.6, min edge 0.008, min R:R 0.45, 15m TTC band [450.0, 720.0]s, green path=on.
 
 ## What's dragging the score
 
-- **Trading performance** (C+): weakest — Win rate (46), Profit factor (63), DOWN vs UP balance (75).
+- **Trading performance** (C+): weakest — Win rate (47), Profit factor (65), DOWN vs UP balance (76).
 - **Operation** (B+): weakest — Promotion readiness (40), Grok/decider errors (83), Ledger reconciliation (100).
 - **External signals** (F): weakest — Grok direction accuracy (0), TV signal hit rate (0), CEX lead proven (40).
 - **Technical runtime**: watch — Gate funnel balance (68), Design manifest match (70).
 
 ## Where candidates get blocked (top gates)
 
-- `directional`: 34,741
+- `directional`: 34,757
 - `baseline_cohort_gate`: 3,637
 - `grok_decider`: 3,540
 - `directional_allowlist`: 1,364
@@ -55,7 +55,8 @@ The bot is **running safely with solid technical runtime**, but **trading result
 
 ## Why recent windows didn't trade
 
-- `directional_series_not_allowed`: 12 recent eval(s)
+- `directional_series_not_allowed`: 11 recent eval(s)
+- `edge_below_min`: 1 recent eval(s)
 
 ## Design vs deployed (drift)
 
@@ -70,7 +71,7 @@ The bot is **running safely with solid technical runtime**, but **trading result
 - TradingView webhooks are flowing; observe-only lock is respected.
 - Ledger and lifecycle accounting reconcile cleanly.
 - Engine operation score is strong — loops, stops, and pipeline are up.
-- Paper portfolio is up 28.1% overall (arb helping).
+- Paper portfolio is up 29.0% overall (arb helping).
 
 **Watch:**
 - External signals (TV hit rate, Grok accuracy) are not yet predictive of outcomes.
@@ -81,7 +82,7 @@ The bot is **running safely with solid technical runtime**, but **trading result
 
 ## Score trend (VPS history)
 
-Report overall moved **up** (72.3 → 73.1) over the last 5 recorded snapshots. Trading: 76.8 → 78.5; Operation: 88.6 → 88.5.
+Report overall moved **flat** (72.9 → 73.4) over the last 5 recorded snapshots. Trading: 78.0 → 79.1; Operation: 88.6 → 88.5.
 
 ---
 
