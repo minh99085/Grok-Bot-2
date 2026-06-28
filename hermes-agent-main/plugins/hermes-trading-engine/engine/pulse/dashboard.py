@@ -110,11 +110,11 @@ main{max-width:min(1680px,100%);margin:0 auto;padding:14px 20px 24px}
   <div class="content-split">
     <div class="tl-grid" id="tl-grid"></div>
     <aside class="trades-col">
-      <div class="trades-head">Last 10 trades</div>
+      <div class="trades-head">Last 20 trades</div>
       <div id="trades-list"></div>
     </aside>
   </div>
-  <div class="foot">Refreshes every 5s · read-only · total capital = start + arb + dep-arb + directional</div>
+  <div class="foot">Refreshes every 1 min · read-only · total capital = start + arb + dep-arb + directional</div>
 </main>
 <script>
 const $=(h)=>{const t=document.createElement('template');t.innerHTML=h.trim();return t.content.firstChild};
@@ -147,7 +147,7 @@ function tradeOutcome(x){
 }
 function renderTrades(listEl,positions){
   listEl.innerHTML='';
-  const pos=(positions||[]).slice(0,10);
+  const pos=(positions||[]).slice(0,20);
   if(!pos.length){
     listEl.innerHTML='<div class="trades-empty">No trades yet.</div>';
     return;
@@ -274,9 +274,13 @@ function buildRows(s){
     mtfVerdict.includes('confirmed')&&fresh>=2?'green':(fresh>=1?'yellow':'red'));
 
   addSection(rows,'Grok AI');
+  const gdReq=gd.requested||0;
+  const gdErr=gd.errors||0;
+  const gdErrRate=gdReq>0?gdErr/gdReq:0;
+  const gdOk=gd.enabled&&gd.mode==='shadow'&&!cb.tripped;
   addRow(rows,'Decider C',(gd.mode||'off')+' · '+f(gd.decided,0)+' decided',
-    'abstains '+f(gd.abstains,0)+' · errors '+f(gd.errors,0),
-    gd.enabled&&gd.mode==='shadow'&&(gd.errors||0)<10?'green':((gd.errors||0)>=10?'red':'yellow'));
+    'abstains '+f(gd.abstains,0)+' · err '+f(gdErr,0)+' ('+f(gdErrRate*100,1)+'%)',
+    !gd.enabled||cb.tripped?'red':(gdOk&&gdErrRate<0.08?'green':(gdOk?'yellow':'yellow')));
   addRow(rows,'Predictor B',pB.enabled?'on':'off',
     f(pB.predicted,0)+' predicted · acc '+f((pB.accuracy||0)*100,1)+'%',
     pB.enabled&&(pB.errors||0)<5?'green':'yellow');
@@ -402,7 +406,7 @@ async function tick(){
   renderRows(document.getElementById('tl-grid'),rows);
   renderTrades(document.getElementById('trades-list'),(l&&l.positions)||[]);
 }
-tick();setInterval(tick,5000);
+tick();setInterval(tick,60000);
 </script>
 </body>
 </html>"""

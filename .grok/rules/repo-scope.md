@@ -11,7 +11,6 @@ When `scripts/pulse-babysit/state.json` has `phase: hands_off` and `now < hands_
 - **Do NOT** run babysit cycles, deploy, sync-vps, env/gate changes, or any bot behavior tweaks.
 - **Read** `.grok/rules/hands-off-untouchable.md` — profitable-bot untouchables (money path, Trinity Grok, TV observe-only, frozen gates).
 - **Baseline** for 24h compare: `baseline_at_hands_off` in state.json (103 trades, $584.91, 61.2% WR).
-- **Wake after window:** `/pulse-babysit cycle` or `force-eval`; re-enable scheduled task if operator wants autopilot.
 
 ## VPS deploy — MANDATORY after every push to `main` (except hands_off)
 
