@@ -13,7 +13,8 @@ STATUS = LATEST / "btc_pulse_status.json"
 LIGHT = LATEST / "btc_pulse_light_report.json"
 LEDGER = LATEST / "btc_pulse_ledger.json"
 STATE = Path(__file__).resolve().parent / "state.json"
-STARVATION_MIN_HOURS = 6.0
+STARVATION_MIN_HOURS_DEFAULT = 6.0
+STARVATION_MIN_HOURS_REAL_MONEY = 3.0
 STARVATION_MIN_TICKS = 3
 STARVATION_FLAT_EVAL_STREAK = 2
 
@@ -122,7 +123,12 @@ def main() -> int:
                              "fix accounting before tuning gates"))
 
     st = _load(STATE)
-    wr_target = float((st.get("goals") or {}).get("win_rate_target") or 0.80)
+    goals = st.get("goals") or {}
+    wr_target = float(goals.get("win_rate_target") or 0.80)
+    real_money = goals.get("mode") == "real_money_discipline"
+    learning_mode = goals.get("mode") == "learning_collection"
+    starvation_min_hours = (STARVATION_MIN_HOURS_REAL_MONEY if real_money
+                            else STARVATION_MIN_HOURS_DEFAULT)
     engine_ts = float(data.get("ts") or 0)
     ticks = int(data.get("ticks") or 0)
     dir_halted = bool((stop.get("strategies") or {}).get("directional", {}).get("halted"))
@@ -153,7 +159,7 @@ def main() -> int:
 
     trade_starvation = False
     if (not dir_halted and ticks >= STARVATION_MIN_TICKS and hours_since_trade is not None
-            and hours_since_trade >= STARVATION_MIN_HOURS):
+            and hours_since_trade >= starvation_min_hours):
         trade_starvation = True
         issues.append(_issue(
             "trade_starvation", "P0",
@@ -169,28 +175,31 @@ def main() -> int:
             "settled count flat across cycles while bot runs — relax gates or fix deadlock; "
             "never tighten on stale ledger WR alone"))
 
-    learning_mode = (st.get("goals") or {}).get("mode") == "learning_collection"
-
     if trades >= 10 and not trade_starvation:
-        wr_hint = ("WR below target — defer tightening during learning_collection; "
-                   "see .grok/rules/soak-learning-lock.md")
-        if not learning_mode:
-            wr_hint = ("review quant selectivity / reward_risk — never re-enable TV trade gates")
+        wr_hint = ("tighten quant selectivity / reward_risk — never re-enable TV trade gates")
+        if learning_mode:
+            wr_hint = ("WR below target — defer tightening during learning_collection; "
+                       "see .grok/rules/soak-learning-lock.md")
         if wr is not None and float(wr) < wr_target:
-            issues.append(_issue("win_rate_below_target", "P1",
-                                 f"win_rate={wr} target={wr_target} settled={trades}",
-                                 wr_hint))
-        if wr is not None and float(wr) < 0.55 and not learning_mode:
+            if learning_mode:
+                issues.append(_issue("win_rate_below_target", "P1",
+                                     f"win_rate={wr} target={wr_target} settled={trades}",
+                                     wr_hint))
+            else:
+                issues.append(_issue("win_rate_below_target", "P1",
+                                     f"win_rate={wr} target={wr_target} settled={trades}",
+                                     wr_hint))
+        if wr is not None and float(wr) < 0.55 and (real_money or not learning_mode):
             issues.append(_issue("win_rate_low", "P1", f"win_rate={wr}",
                                  "review quant gates / DOWN-only restrictors (TV gates locked off)"))
-        if pf is not None and float(pf) < 1.0 and not learning_mode:
+        if pf is not None and float(pf) < 1.0 and (real_money or not learning_mode):
             issues.append(_issue("profit_factor_low", "P1", f"profit_factor={pf}",
                                  "review min_reward_risk / selectivity — never TV context_gate"))
         if wr_up is not None and wr_down is not None:
             if float(wr_up) < 0.52 and float(wr_down) >= 0.60:
                 issues.append(_issue("up_side_bleed", "P1",
                                      f"win_rate_up={wr_up} win_rate_down={wr_down}",
-                                     "DOWN-only already on — UP restrictors OK; do not enable TV gates"))
+                                     "strengthen DOWN-only restrictors; do not enable TV gates"))
 
     tv_valid = int(tv.get("tradingview_alerts_valid") or 0)
     if tv.get("enabled") and tv_valid < 5:

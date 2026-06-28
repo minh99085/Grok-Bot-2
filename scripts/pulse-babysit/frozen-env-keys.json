@@ -1,6 +1,6 @@
 {
   "schema": "pulse_frozen_manifest/1.1",
-  "mode": "learning_collection",
+  "mode": "real_money_discipline",
   "locked_at": "2026-06-27",
   "roan_bregman_phase": 4,
   "source_of_truth": "scripts/apply-loop-arch-env.py",
@@ -86,8 +86,14 @@
     "PULSE_TV_CONTEXT_MAX_TTC_S": "900",
     "PULSE_DIRECTIONAL_REQUIRE_WINNING": "0",
     "PULSE_DIRECTIONAL_EXPLORE_RATE": "0",
-    "PULSE_SELECTIVITY_MIN_SAMPLES": "50",
-    "PULSE_SELECTIVITY_MIN_PROFIT_FACTOR": "0.85",
+    "PULSE_SELECTIVITY_MIN_SAMPLES": "30",
+    "PULSE_SELECTIVITY_MIN_PROFIT_FACTOR": "0.92",
+    "PULSE_SELECTIVITY_MIN_WIN_RATE": "0.55",
+    "PULSE_RESEARCH_INTERVAL_S": "1200",
+    "PULSE_RESEARCH_AVOID_MAX": "20",
+    "PULSE_LEARNING_MIN_SAMPLES": "40",
+    "PULSE_LEARNING_RAMP_SAMPLES": "120",
+    "PULSE_LEARNING_BENCH_MARGIN": "-0.02",
     "PULSE_BREGMAN_TRADE_AUTHORITY": "1",
     "PULSE_BREGMAN_ALPHA": "0.9",
     "PULSE_BREGMAN_EPSILON_INIT": "0.1",
@@ -97,10 +103,10 @@
     "PULSE_CLOB_WEBSOCKET_ENABLED": "1"
   },
   "tunable_bounds": {
-    "PULSE_MIN_EDGE": { "min": 0.01, "max": 0.015, "direction": "relax_only" },
-    "PULSE_BASIS_BUFFER": { "min": 0.005, "max": 0.01, "direction": "relax_only" },
-    "PULSE_MAX_PRICE": { "min": 0.7, "max": 0.75, "direction": "relax_only" },
-    "PULSE_MIN_REWARD_RISK": { "min": 0.45, "max": 0.55, "direction": "relax_only" },
+    "PULSE_MIN_EDGE": { "min": 0.008, "max": 0.015, "direction": "tighten_or_relax" },
+    "PULSE_BASIS_BUFFER": { "min": 0.005, "max": 0.01, "direction": "tighten_or_relax" },
+    "PULSE_MAX_PRICE": { "min": 0.68, "max": 0.75, "direction": "tighten_or_relax" },
+    "PULSE_MIN_REWARD_RISK": { "min": 0.45, "max": 0.55, "direction": "tighten_or_relax" },
     "PULSE_STOP_MIN_SAMPLES": { "min": 60, "max": 120, "direction": "raise_only" }
   },
   "forbidden_tighten_to_one": [
@@ -136,6 +142,7 @@
   ],
   "soak_defaults": {
     "learning_collection_minutes": 240,
+    "real_money_discipline_minutes": 60,
     "eval_starvation_min_hours": 6,
     "eval_starvation_flat_streak": 2
   },

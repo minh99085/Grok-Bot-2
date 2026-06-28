@@ -13,8 +13,9 @@ argument-hint: "cycle | force-eval | status | deploy | soak <minutes>"
 You operate the **Grok-Bot-2** paper pulse bot without asking the operator for permission
 between cycles. Execute tools yourself. Paper-only — never enable live trading.
 
-**Team identity:** quant research + engineer + trader. **Learning-collection mode active** —
-prioritize trade rate + ledger continuity over WR. Read `.grok/rules/self-improve-loop.md` (adjust ON),
+**Team identity:** quant research + engineer + trader. **`real_money_discipline` mode** —
+treat paper PnL as real capital; fix WR/PF/bleed, not just trade rate. Read
+`.grok/rules/real-money-discipline.md`, `.grok/rules/self-improve-loop.md`,
 `.grok/rules/soak-learning-lock.md`, `.grok/rules/quant-team.md`, and
 **`.grok/rules/hands-off-untouchable.md`** (profitable-bot lock).
 
@@ -44,7 +45,7 @@ If no argument: run `cycle`.
 ## State machine
 
 ```
-DEPLOY → SOAK (240m / 4h learning default) → PULL → EVALUATE → (issues?) → FIX → COMMIT → DEPLOY → …
+DEPLOY → SOAK (60m real-money default) → PULL → EVALUATE → (issues?) → FIX → COMMIT → DEPLOY → …
 ```
 
 1. Read `scripts/pulse-babysit/state.json`.
@@ -90,13 +91,12 @@ Read `scripts/pulse-babysit/env-coupling.md` before any gate/TTC env change.
 
 The script flags issues. You may fix only what the report supports:
 
-- **`trade_starvation` / `trade_starvation_streak` (P0)** → bot ticks but settled flat for **2**
-  consecutive eval cycles, or no fills for ≥6h. **Relax quant gates** (cohort edge/CEX, execution floor,
-  selectivity) — **never** re-enable TV trade gates per `tv-observe-only-lock.md`. **Never tighten**
-  on `win_rate_below_target` / `profit_factor_low` in the same cycle when starvation is present.
-- `win_rate_low` / `profit_factor_low` → quant gates, selectivity, reward/risk (**not** TV gates;
-  **only if not trade_starvation** — stale WR on zero new trades is misleading)
-- `up_side_bleed` → DOWN-only + quant restrictors (not TV context/MTF gates — locked off)
+- **`trade_starvation` / `trade_starvation_streak` (P0)** → settled flat for **2** evals or no fills
+  for ≥**3h** (real-money mode). **Relax quant gates** first — never TV trade gates. **Do not tighten**
+  WR/PF in the same cycle when starvation is present.
+- **`win_rate_below_target` / `profit_factor_low` (P1 — act in real_money_discipline)** → tighten
+  quant gates, reward/risk, selectivity when trades are flowing (**not** TV gates).
+- `up_side_bleed` → strengthen DOWN-only + quant restrictors (not TV gates)
 - `mtf_starved` → TV webhook health only (observe-only); **do not** enable MTF require/side-align
 - `reconciliation_broken` → bug fix immediately (P0)
 - `verifier_disabled` / `grok_not_follow` → run `validate-vps-env.py` on VPS; fix `.env`; recreate `hermes-training`
@@ -111,8 +111,8 @@ The script flags issues. You may fix only what the report supports:
 
 | Situation | Duration |
 |-----------|----------|
-| Learning collection (default) | **240 min (4h)** — no deploy/fixes during soak |
-| WR optimization (operator ends learning mode) | **60 min** |
+| Real-money discipline (default) | **60 min (1h)** — no deploy/fixes during soak |
+| Learning collection (legacy) | **240 min (4h)** |
 | Operator override | `.\scripts\pulse-babysit\set-soak.ps1 -Minutes N` |
 
 ## Todo scaffold (each cycle)

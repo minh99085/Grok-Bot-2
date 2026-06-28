@@ -68,7 +68,7 @@ def validate_env(env: dict[str, str], manifest: dict) -> list[dict]:
     for key in manifest.get("forbidden_tighten_to_one") or []:
         frozen_val = (manifest.get("learning_collection_frozen") or {}).get(key, "0")
         got = env.get(key)
-        if frozen_val == "0" and got == "1":
+        if frozen_val == "0" and got == "1" and manifest.get("mode") != "real_money_discipline":
             issues.append(_issue(
                 "forbidden_tighten", "P1", f"{key}=1 (frozen=0)",
                 "do not re-tighten during learning_collection — relax quant gates only",
@@ -90,11 +90,12 @@ def validate_env(env: dict[str, str], manifest: dict) -> list[dict]:
                 "stay within tunable_bounds in frozen-env-keys.json",
             ))
         elif direction == "relax_only" and got_f > frozen_f:
-            issues.append(_issue(
-                "forbidden_tighten", "P1",
-                f"{key}={got_f} tightened above frozen {frozen_f}",
-                "learning_collection allows relax-only on this key",
-            ))
+            if manifest.get("mode") != "real_money_discipline":
+                issues.append(_issue(
+                    "forbidden_tighten", "P1",
+                    f"{key}={got_f} tightened above frozen {frozen_f}",
+                    "learning_collection allows relax-only on this key",
+                ))
         elif direction == "raise_only" and got_f < frozen_f:
             issues.append(_issue(
                 "forbidden_relax", "P2",

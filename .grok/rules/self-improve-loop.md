@@ -2,27 +2,30 @@
 
 Operator mandate: bot must **scan → trade → learn → adjust** without manual prompting.
 
+**Mode:** `real_money_discipline` — see `.grok/rules/real-money-discipline.md`. Paper PnL treated as real capital.
+
 ## Adjust layer (runtime — engine)
 
 | Knob | Value | Effect |
 |------|-------|--------|
-| `PULSE_RESEARCH_AUTO_APPLY` | **1** | Research loop applies **evidence-backed** avoid/exploit contexts (maker-checker; never loosens gates) |
-| `PULSE_RESEARCH_FORBID_SIZE_INCREASE` | **1** | No auto size-ups from research |
-| `PULSE_LEARNING_ENABLED` | **1** | Edge-model blend when model beats market Brier (weight 0 until then) |
+| `PULSE_RESEARCH_AUTO_APPLY` | **1** | Evidence-backed avoid/exploit (maker-checker; never loosens gates) |
+| `PULSE_SELECTIVITY_MIN_SAMPLES` | **30** | Faster auto-blocks on proven losers |
+| `PULSE_LEARNING_ENABLED` | **1** | Edge-model blend (near-market bench margin) |
 
 ## Outer loop (babysit)
 
 | Item | Value |
 |------|-------|
-| `state.json` `phase` | `soak` (not `hands_off`) |
+| `state.json` `goals.mode` | `real_money_discipline` |
+| `phase` | `soak` (60 min — not 4h) |
 | `babysit_autopilot` | `true` |
-| Windows task `GrokBot2-PulseBabysit` | Enabled (~15 min tick; full eval after soak) |
+| Windows task `GrokBot2-PulseBabysit` | Enabled (~15 min) |
 
-Babysit may still relax gates on **trade_starvation** only — never TV trade gates, never Grok follow.
+Babysit **relaxes** on trade_starvation; **tightens** on WR/PF/up_bleed. Never TV trade gates, never Grok follow.
 
 ## Still frozen
 
 - Grok decider **shadow** only
 - TV observe-only (no signal/MTF/context trade gates)
-- Paper-only, arb + dep-arb ON, 15s tick
-- No live trading
+- Paper-only until explicit live ask
+- Arb + dep-arb ON, 15s tick

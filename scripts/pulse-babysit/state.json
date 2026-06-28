@@ -1,19 +1,19 @@
 {
   "goals": {
-    "mode": "learning_collection",
+    "mode": "real_money_discipline",
     "win_rate_target": 0.8,
-    "win_rate_target_deferred": true,
-    "priority": "trade_rate_and_ledger_continuity",
-    "note": "Soak-learning lock: apply-loop-arch enforces frozen manifest; WR tuning deferred"
+    "win_rate_target_deferred": false,
+    "priority": "pnl_protection_and_win_rate",
+    "note": "Paper PnL = real capital. Babysit fixes WR/PF/bleed + starvation. See .grok/rules/real-money-discipline.md"
   },
   "cycle": 9,
   "phase": "soak",
-  "soak_hours": 4,
-  "soak_minutes": 240,
-  "deployed_at": "2026-06-28T07:38:00+00:00",
-  "soak_until": "2026-06-28T11:38:00+00:00",
-  "last_eval_at": "2026-06-28T06:38:56.029960+00:00",
-  "last_verdict": "issues",
+  "soak_hours": 1,
+  "soak_minutes": 60,
+  "deployed_at": "2026-06-28T08:00:00+00:00",
+  "soak_until": "2026-06-28T07:50:00+00:00",
+  "last_eval_at": "2026-06-28T07:44:22.551846+00:00",
+  "last_verdict": "blocked",
   "last_fixes": [],
   "last_health_verdict": "issues",
   "baseline_trades_at_deploy": 103,
@@ -312,9 +312,144 @@
         "hours_since_last_trade": 0.56,
         "settled_flat_eval_streak": 0
       }
+    },
+    {
+      "ts": "2026-06-28T07:42:07.683682+00:00",
+      "verdict": "blocked",
+      "metrics": {
+        "settled": 103,
+        "win_rate_target": 0.8,
+        "win_rate": 0.6117,
+        "profit_factor": 1.0147,
+        "win_rate_up": 0.5,
+        "win_rate_down": 0.6386,
+        "realized_pnl_usd": 2.71,
+        "tv_valid": 949,
+        "mtf_passed": 141,
+        "mtf_blocked": 276,
+        "context_blocked": 879,
+        "down_bias_blocked": 538,
+        "signal_gate": false,
+        "min_reward_risk": 0.45,
+        "global_reconciled": true,
+        "ticks": 8,
+        "hours_since_last_trade": 0.56,
+        "settled_flat_eval_streak": 2
+      },
+      "issue_codes": [
+        "trade_starvation_streak"
+      ]
+    },
+    {
+      "ts": "2026-06-28T07:42:13.545152+00:00",
+      "verdict": "blocked",
+      "metrics": {
+        "settled": 103,
+        "win_rate_target": 0.8,
+        "win_rate": 0.6117,
+        "profit_factor": 1.0147,
+        "win_rate_up": 0.5,
+        "win_rate_down": 0.6386,
+        "realized_pnl_usd": 2.71,
+        "tv_valid": 949,
+        "mtf_passed": 141,
+        "mtf_blocked": 276,
+        "context_blocked": 879,
+        "down_bias_blocked": 538,
+        "signal_gate": false,
+        "min_reward_risk": 0.45,
+        "global_reconciled": true,
+        "ticks": 8,
+        "hours_since_last_trade": 0.56,
+        "settled_flat_eval_streak": 3
+      },
+      "issue_codes": [
+        "trade_starvation_streak"
+      ]
+    },
+    {
+      "ts": "2026-06-28T07:42:15.659849+00:00",
+      "verdict": "blocked",
+      "metrics": {
+        "settled": 103,
+        "win_rate_target": 0.8,
+        "win_rate": 0.6117,
+        "profit_factor": 1.0147,
+        "win_rate_up": 0.5,
+        "win_rate_down": 0.6386,
+        "realized_pnl_usd": 2.71,
+        "tv_valid": 949,
+        "mtf_passed": 141,
+        "mtf_blocked": 276,
+        "context_blocked": 879,
+        "down_bias_blocked": 538,
+        "signal_gate": false,
+        "min_reward_risk": 0.45,
+        "global_reconciled": true,
+        "ticks": 8,
+        "hours_since_last_trade": 0.56,
+        "settled_flat_eval_streak": 4
+      },
+      "issue_codes": [
+        "trade_starvation_streak"
+      ]
+    },
+    {
+      "ts": "2026-06-28T07:42:18.614624+00:00",
+      "verdict": "blocked",
+      "metrics": {
+        "settled": 103,
+        "win_rate_target": 0.8,
+        "win_rate": 0.6117,
+        "profit_factor": 1.0147,
+        "win_rate_up": 0.5,
+        "win_rate_down": 0.6386,
+        "realized_pnl_usd": 2.71,
+        "tv_valid": 949,
+        "mtf_passed": 141,
+        "mtf_blocked": 276,
+        "context_blocked": 879,
+        "down_bias_blocked": 538,
+        "signal_gate": false,
+        "min_reward_risk": 0.45,
+        "global_reconciled": true,
+        "ticks": 8,
+        "hours_since_last_trade": 0.56,
+        "settled_flat_eval_streak": 5
+      },
+      "issue_codes": [
+        "trade_starvation_streak"
+      ]
+    },
+    {
+      "ts": "2026-06-28T07:44:22.551846+00:00",
+      "verdict": "blocked",
+      "metrics": {
+        "settled": 103,
+        "win_rate_target": 0.8,
+        "win_rate": 0.6117,
+        "profit_factor": 1.0147,
+        "win_rate_up": 0.5,
+        "win_rate_down": 0.6386,
+        "realized_pnl_usd": 2.71,
+        "tv_valid": 949,
+        "mtf_passed": 141,
+        "mtf_blocked": 276,
+        "context_blocked": 879,
+        "down_bias_blocked": 538,
+        "signal_gate": false,
+        "min_reward_risk": 0.45,
+        "global_reconciled": true,
+        "ticks": 8,
+        "hours_since_last_trade": 0.56,
+        "settled_flat_eval_streak": 6
+      },
+      "issue_codes": [
+        "trade_starvation_streak"
+      ]
     }
   ],
-  "note": "Operator 2026-06-28: self-improve loop ON — scan/trade/learn/adjust + babysit autopilot. See .grok/rules/self-improve-loop.md",
+  "note": "Operator 2026-06-28: real_money_discipline \u2014 paper PnL = real capital; 60m soak; autopilot ON. See .grok/rules/real-money-discipline.md",
   "hands_off_started_at": "2026-06-28T07:10:37.789340+00:00",
   "hands_off_until": null,
   "self_improve_started_at": "2026-06-28T12:00:00+00:00",

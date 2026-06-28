@@ -13,7 +13,7 @@ Read **`.grok/rules/destructive-change-guard.md`** before any delete/remove/disa
 When `scripts/pulse-babysit/state.json` has `babysit_autopilot: true` and `phase` is not `hands_off`:
 
 - **Run** babysit cycles on schedule — soak → pull → eval → fix → deploy.
-- **Read** `.grok/rules/self-improve-loop.md` — adjust layer (`PULSE_RESEARCH_AUTO_APPLY=1`, learning ON).
+- **Read** `.grok/rules/real-money-discipline.md` + `.grok/rules/self-improve-loop.md` — paper PnL = real capital.
 - **Read** `.grok/rules/hands-off-untouchable.md` — profitable-bot untouchables (Grok shadow, TV observe-only, no live).
 
 If `phase: hands_off` and `now < hands_off_until`: pause all cycles/deploys; respect untouchables only.

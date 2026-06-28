@@ -50,7 +50,7 @@ All keys in `scripts/pulse-babysit/frozen-env-keys.json` → `authority_frozen` 
 
 1. Enable Grok follow or raise explore rates
 2. Re-enable any TV trade gate
-3. Relax or tighten quant gates on WR/PF alone while bot is profitable (except babysit **trade_starvation**)
+3. Re-enable TV trade gates or Grok follow to chase WR (babysit may tighten quant gates on WR/PF in `real_money_discipline`)
 4. Enable live trading
 5. Raise Grok budget above $35 without evidence of starvation
 6. Disable `PULSE_RESEARCH_AUTO_APPLY` without operator ask
