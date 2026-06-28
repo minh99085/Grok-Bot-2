@@ -25,7 +25,7 @@ h1{font-size:20px;font-weight:600;margin:0}
 .tag.live{color:var(--green)}
 .tag.warn{color:var(--yellow)}
 .tag.off{color:var(--red)}
-main{max-width:1280px;margin:0 auto;padding:14px 16px 24px}
+main{max-width:min(1680px,100%);margin:0 auto;padding:14px 20px 24px}
 .cap-bar{
   display:flex;flex-wrap:wrap;align-items:baseline;gap:10px 20px;
   background:linear-gradient(135deg,var(--card) 0%,#222836 100%);
@@ -36,37 +36,37 @@ main{max-width:1280px;margin:0 auto;padding:14px 16px 24px}
 .cap-sub{font-size:14px;color:var(--text2)}
 .cap-sub b{color:var(--text);font-weight:600}
 .cap-sub .up{color:var(--green)}.cap-sub .dn{color:var(--red)}
+.content-split{
+  display:grid;grid-template-columns:1fr 290px;gap:8px 28px;align-items:start;
+}
+.main-col{min-width:0}
 .verdict{
   display:flex;align-items:center;gap:8px;font-size:15px;font-weight:600;
   padding:8px 14px;border-radius:var(--radius);background:var(--card);border:1px solid var(--line);
-  margin-bottom:12px;
+  margin-bottom:10px;
 }
-.body-split{
-  display:grid;grid-template-columns:1fr 360px;gap:14px;align-items:start;
+.trades-col{padding:0;margin:0}
+.trades-head{
+  display:flex;align-items:center;gap:8px;min-height:40px;margin-bottom:6px;
+  font-size:12px;font-weight:600;color:var(--accent);
+  text-transform:uppercase;letter-spacing:.06em;
 }
-.trades-panel{
-  background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
-  padding:12px 14px;position:sticky;top:12px;max-height:calc(100vh - 220px);overflow-y:auto;
+.trade-line{
+  display:flex;justify-content:space-between;align-items:center;gap:10px;
+  padding:4px 0;font-size:13px;line-height:1.3;
+  border-bottom:1px solid rgba(42,48,64,.45);
 }
-.trades-panel h2{
-  margin:0 0 10px;font-size:14px;font-weight:600;color:var(--accent);
-  text-transform:uppercase;letter-spacing:.05em;
-}
-.trade-row{
-  display:grid;grid-template-columns:1fr auto;gap:4px 10px;
-  padding:8px 0;border-bottom:1px solid var(--line);font-size:13px;
-}
-.trade-row:last-child{border-bottom:0}
-.trade-meta{color:var(--text2);font-size:12px}
-.trade-side{font-weight:600}
+.trade-line:last-child{border-bottom:0}
+.trade-info{min-width:0;color:var(--text2)}
+.trade-side{font-weight:600;color:var(--text)}
 .trade-side.up{color:var(--green)}.trade-side.down{color:var(--red)}
-.trade-pnl{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.trade-tag{font-size:11px;color:var(--text3);margin-left:4px}
+.trade-tag.win{color:var(--green)}.trade-tag.loss{color:var(--red)}.trade-tag.open{color:var(--yellow)}
+.trade-pnl{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
 .trade-pnl.up{color:var(--green)}.trade-pnl.dn{color:var(--red)}.trade-pnl.neu{color:var(--text3)}
-.trade-status{font-size:11px;padding:1px 6px;border-radius:8px;background:var(--bg2);color:var(--text3)}
-.trade-status.win{color:var(--green)}.trade-status.loss{color:var(--red)}.trade-status.open{color:var(--yellow)}
-.trades-empty{color:var(--text3);font-size:13px;padding:8px 0}
+.trades-empty{color:var(--text3);font-size:13px}
 .tl-grid{
-  display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:8px;
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:8px;
 }
 .tl-row{
   display:grid;grid-template-columns:18px 1fr auto;gap:8px;align-items:center;
@@ -86,8 +86,8 @@ main{max-width:1280px;margin:0 auto;padding:14px 16px 24px}
 }
 .foot{margin-top:14px;color:var(--text3);font-size:12px}
 @media(max-width:960px){
-  .body-split{grid-template-columns:1fr}
-  .trades-panel{position:static;max-height:none}
+  .content-split{grid-template-columns:1fr}
+  .trades-col{margin-top:4px}
 }
 @media(max-width:420px){
   .tl-grid{grid-template-columns:1fr}
@@ -104,13 +104,15 @@ main{max-width:1280px;margin:0 auto;padding:14px 16px 24px}
 </header>
 <main>
   <div class="cap-bar" id="cap-bar"></div>
-  <div class="verdict" id="verdict"></div>
-  <div class="body-split">
-    <div class="tl-grid" id="tl-grid"></div>
-    <div class="trades-panel" id="trades-panel">
-      <h2>Last 10 trades</h2>
-      <div id="trades-list"></div>
+  <div class="content-split">
+    <div class="main-col">
+      <div class="verdict" id="verdict"></div>
+      <div class="tl-grid" id="tl-grid"></div>
     </div>
+    <aside class="trades-col">
+      <div class="trades-head">Last 10 trades</div>
+      <div id="trades-list"></div>
+    </aside>
   </div>
   <div class="foot">Refreshes every 5s · read-only · total capital = start + arb + dep-arb + directional</div>
 </main>
@@ -156,12 +158,12 @@ function renderTrades(listEl,positions){
     const sideCls=side==='UP'?'up':(side==='DOWN'?'down':'');
     const series=r.series_label||r.market_series||'—';
     const oc=tradeOutcome(x);
-    const row=$('<div class="trade-row"></div>');
+    const row=$('<div class="trade-line"></div>');
     row.innerHTML=
-      '<div><span class="trade-side '+sideCls+'">'+side+'</span>'
-      +' <span class="trade-status '+oc.cls+'">'+oc.label+'</span>'
-      +'<div class="trade-meta">'+series+' · @'+f(x.entry_price,2)+' · $'+f(x.size_usd,0)+'</div>'
-      +'<div class="trade-meta">'+fmtTsShort(x.entry_ts)+'</div></div>'
+      '<div class="trade-info"><span class="trade-side '+sideCls+'">'+side+'</span>'
+      +'<span class="trade-tag '+oc.cls+'">'+oc.label+'</span>'
+      +' <span class="trade-tag">'+series+' @'+f(x.entry_price,2)+'</span>'
+      +'<br><span class="trade-tag">'+fmtTsShort(x.entry_ts)+'</span></div>'
       +'<div class="trade-pnl '+oc.pnlCls+'">'+oc.pnl+'</div>';
     listEl.appendChild(row);
   });
