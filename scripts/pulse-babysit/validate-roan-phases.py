@@ -49,8 +49,8 @@ def main() -> int:
 
     chk("2", "bregman_enabled", bg.get("enabled") is True)
     chk("2", "bregman_samples",
-        len(bg.get("samples") or []) >= 1 or da.get("violations_detected", 0) == 0,
-        f"samples={len(bg.get('samples') or [])}")
+        len(bg.get("samples") or []) >= 1 or int(da.get("violations_detected") or 0) > 0,
+        f"samples={len(bg.get('samples') or [])} violations={da.get('violations_detected')}")
 
     chk("3", "fw_configured",
         bool(bg.get("frank_wolfe")),
