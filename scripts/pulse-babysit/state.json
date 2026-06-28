@@ -10,14 +10,14 @@
   "phase": "soak",
   "soak_hours": 4,
   "soak_minutes": 240,
-  "deployed_at": "2026-06-28T06:48:11.413588+00:00",
-  "soak_until": "2026-06-28T06:00:00+00:00",
+  "deployed_at": "2026-06-28T07:38:00+00:00",
+  "soak_until": "2026-06-28T11:38:00+00:00",
   "last_eval_at": "2026-06-28T06:38:56.029960+00:00",
   "last_verdict": "issues",
   "last_fixes": [],
   "last_health_verdict": "issues",
   "baseline_trades_at_deploy": 103,
-  "vps_sha": "55eae713a9353231a61e6ec9c1c968c048b50a3b",
+  "vps_sha": "46ae3c09279420d60bab962afd36d3ce8c155550",
   "history": [
     {
       "cycle": 3,
