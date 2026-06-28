@@ -58,17 +58,25 @@ DEPLOY → SOAK (60m real-money default) → PULL → EVALUATE → (issues?) →
    pushes** `vps_full_reports/latest/` to `origin/main` (includes `report.docx`). Use `-SkipPush`
    only for local debugging.
 6. Run `python scripts/pulse-babysit/evaluate-cycle.py` — parse JSON stdout.
-7. If `verdict` is `healthy`: append history, set `phase=soak`, `soak_until=now+soak_hours`, done.
-8. If `verdict` is `issues`: pick **at most 2** highest-severity issues; fix in plugin code only.
-9. Run targeted tests under `hermes-agent-main/plugins/hermes-trading-engine/tests/`.
-10. Commit with clear message; `git push origin main`.
-11. **MANDATORY VPS deploy** (never skip after any push to `main` — unless `hands_off`):
+7. **WR auto-tune (mandatory in `real_money_discipline`):** if eval has **no** `trade_starvation` /
+   `trade_starvation_streak`, run:
+   `python scripts/pulse-babysit/apply-wr-tune.py --eval-json '<eval stdout>' --apply`
+   when `band_issues` is non-empty or `win_rate_below_target` / `cheap_down_bleed` /
+   `expensive_down_bleed` appear. This patches `apply-loop-arch-env.py` + `frozen-env-keys.json`
+   deterministically (never lowers `PULSE_MIN_ENTRY_PRICE` below **0.45**). Skip when starvation P0.
+8. If `verdict` is `healthy`: append history, set `phase=soak`, `soak_until=now+soak_hours`, done.
+9. If `verdict` is `issues`: pick **at most 2** highest-severity issues; fix in plugin code **or**
+   accept WR tune from step 7 as a fix (counts toward the 2-fix cap).
+10. Run targeted tests under `hermes-agent-main/plugins/hermes-trading-engine/tests/` and
+    `python -m pytest scripts/pulse-babysit/test_price_band_analysis.py -q` when WR tune changed.
+11. Commit with clear message; `git push origin main`.
+12. **MANDATORY VPS deploy** (never skip after any push to `main` — unless `hands_off`):
     - `.\scripts\sync-vps.ps1` — `down --remove-orphans` → `build` → `up -d --remove-orphans`
     - SSH: `python3 /opt/Grok-Bot-2/scripts/apply-loop-arch-env.py` if env/gates changed
     - SSH: `python3 /opt/Grok-Bot-2/scripts/pulse-babysit/validate-frozen-lock.py` (wired in sync-vps)
     - SSH: `cd .../hermes-trading-engine && docker compose up -d --force-recreate hermes-training`
     - `.\scripts\verify-sync.ps1`
-12. Update state: `phase=soak`, `deployed_at`, `soak_until`, `last_fixes`, increment `cycle`.
+13. Update state: `phase=soak`, `deployed_at`, `soak_until`, `last_fixes`, increment `cycle`.
 
 ## Env coupling (mandatory memory)
 
@@ -94,8 +102,10 @@ The script flags issues. You may fix only what the report supports:
 - **`trade_starvation` / `trade_starvation_streak` (P0)** → settled flat for **2** evals or no fills
   for ≥**3h** (real-money mode). **Relax quant gates** first — never TV trade gates. **Do not tighten**
   WR/PF in the same cycle when starvation is present.
-- **`win_rate_below_target` / `profit_factor_low` (P1 — act in real_money_discipline)** → tighten
-  quant gates, reward/risk, selectivity when trades are flowing (**not** TV gates).
+- **`win_rate_below_target` / `profit_factor_low` (P1 — act in real_money_discipline)** → run
+  `apply-wr-tune.py --apply` first (price-band evidence); then tighten reward/risk if still below target.
+- **`cheap_down_bleed` / `expensive_down_bleed` / `sweet_spot_underuse`** → `apply-wr-tune.py --apply`
+  (deterministic; see `wr-tune-policy.json`). Never lower `min_entry_price` below **0.45**.
 - `up_side_bleed` → strengthen DOWN-only + quant restrictors (not TV gates)
 - `mtf_starved` → TV webhook health only (observe-only); **do not** enable MTF require/side-align
 - `reconciliation_broken` → bug fix immediately (P0)

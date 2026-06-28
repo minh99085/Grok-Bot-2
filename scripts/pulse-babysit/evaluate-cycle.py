@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+BABYSIT = Path(__file__).resolve().parent
 LATEST = ROOT / "vps_full_reports" / "latest"
 STATUS = LATEST / "btc_pulse_status.json"
 LIGHT = LATEST / "btc_pulse_light_report.json"
@@ -17,6 +18,13 @@ STARVATION_MIN_HOURS_DEFAULT = 6.0
 STARVATION_MIN_HOURS_REAL_MONEY = 3.0
 STARVATION_MIN_TICKS = 3
 STARVATION_FLAT_EVAL_STREAK = 2
+
+sys.path.insert(0, str(BABYSIT))
+try:
+    from price_band_analysis import analyze_price_bands, detect_band_issues
+except ImportError:
+    analyze_price_bands = None  # type: ignore[misc, assignment]
+    detect_band_issues = None  # type: ignore[misc, assignment]
 
 
 def _load(path: Path) -> dict:
@@ -219,6 +227,22 @@ def main() -> int:
                              f"model_brier={bench.get('model_brier')} market={bench.get('market_brier')}",
                              "veto learning blend when model_not_beating_market"))
 
+    price_band_24h: dict = {}
+    if analyze_price_bands and detect_band_issues and not trade_starvation:
+        try:
+            price_band_24h = analyze_price_bands(
+                led,
+                lookback_hours=24.0,
+                side="down",
+                now_ts=engine_ts if engine_ts else None,
+            )
+            for bi in detect_band_issues(price_band_24h):
+                issues.append(_issue(
+                    bi["code"], bi["severity"], bi["detail"], bi.get("hint", ""),
+                ))
+        except Exception:
+            price_band_24h = {}
+
     sev_order = {"P0": 0, "P1": 1, "P2": 2}
     issues.sort(key=lambda x: sev_order.get(x["severity"], 9))
 
@@ -245,6 +269,7 @@ def main() -> int:
         "hours_since_last_trade": (round(hours_since_trade, 2)
                                    if hours_since_trade is not None else None),
         "settled_flat_eval_streak": settled_flat_streak,
+        "price_band_24h": price_band_24h,
     }
 
     out = {

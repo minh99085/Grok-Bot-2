@@ -34,6 +34,17 @@ Paper ledger is treated as **real capital**. Optimize PnL, win rate, and drawdow
 
 **Priority when multiple issues:** starvation first (bot must trade), then PnL/WR tighten.
 
+**WR auto-tune (post-starvation):** when trades flow and 24h DOWN ledger shows band bleed,
+`scripts/pulse-babysit/apply-wr-tune.py --apply` patches price gates from `wr-tune-policy.json`:
+
+| Issue | Action |
+|-------|--------|
+| `cheap_down_bleed` | Raise `PULSE_MIN_ENTRY_PRICE` (+0.01, cap 0.48) |
+| `expensive_down_bleed` | Lower `PULSE_MAX_PRICE` (−0.02, floor 0.58) |
+| `sweet_spot_underuse` | Tighten toward 0.45–0.55 band |
+
+Floor: **never** lower `PULSE_MIN_ENTRY_PRICE` below **0.45** for starvation relief.
+
 **Never:** Grok follow, TV trade gates, live trading, disable execution gate.
 
 ## Still paper-only
