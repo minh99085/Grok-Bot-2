@@ -6,15 +6,18 @@
     "priority": "pnl_protection_and_win_rate",
     "note": "Paper PnL = real capital. Babysit fixes WR/PF/bleed + starvation. See .grok/rules/real-money-discipline.md"
   },
-  "cycle": 9,
+  "cycle": 10,
   "phase": "soak",
   "soak_hours": 1,
   "soak_minutes": 60,
-  "deployed_at": "2026-06-28T08:00:00+00:00",
-  "soak_until": "2026-06-28T07:50:00+00:00",
+  "deployed_at": "2026-06-28T07:57:07.376912+00:00",
+  "soak_until": "2026-06-28T08:57:07.376912+00:00",
   "last_eval_at": "2026-06-28T07:44:22.551846+00:00",
   "last_verdict": "blocked",
-  "last_fixes": [],
+  "last_fixes": [
+    "min_entry_price_0.42",
+    "min_edge_0.008_cohort_ttc_widen"
+  ],
   "last_health_verdict": "issues",
   "baseline_trades_at_deploy": 103,
   "vps_sha": "f1a1173f8cde880fd6478c8a1ffb06d823543723",
