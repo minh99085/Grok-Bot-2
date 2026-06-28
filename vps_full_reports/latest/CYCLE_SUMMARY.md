@@ -1,18 +1,23 @@
 # Bot cycle summary (plain English)
 
-_Updated: 2026-06-28 07:56 UTC_
+_Updated: 2026-06-28 09:33 UTC_
 
 ## Last cycle
 
 | | |
 |---|---|
-| **Cycle #** | 9 |
-| **Checked at** | 2026-06-28 07:56 UTC |
+| **Cycle #** | 10 |
+| **Checked at** | 2026-06-28 08:03 UTC |
 | **Result** | **blocked** |
 | **What it means** | Stopped — serious problem found. Check issues below. |
-| **Next check after** | 2026-06-28 07:50 UTC |
+| **Next check after** | 2026-06-28 08:57 UTC |
 
-**Issues flagged:** trade_starvation_streak
+**Issues flagged:** trade_starvation_streak, learning_hurts
+
+**Fixes applied:**
+
+- min_entry_price_0.42
+- min_edge_0.008_cohort_ttc_widen
 
 ## How the bot is doing now
 
@@ -20,12 +25,12 @@ _Updated: 2026-06-28 07:56 UTC_
 |---|---|
 | **Mode** | Paper only (fake money) |
 | **Started with** | $500.00 |
-| **Total now** | $585.00 (17.0% return) |
+| **Total now** | $600.98 (20.2% return) |
 | **Arb profit** | $59.73 (7 trades) |
-| **Directional profit** | $2.71 |
-| **Win rate** | 61.2% (103 settled trades) |
+| **Directional profit** | $17.67 |
+| **Win rate** | 61.8% (110 settled trades) |
 | **UP win rate** | 50.0% |
-| **DOWN win rate** | 63.9% |
+| **DOWN win rate** | 64.4% |
 | **Bot stopped?** | No — bot is running |
 | **Overall grade** | — (—/100) |
 
@@ -33,17 +38,17 @@ _Updated: 2026-06-28 07:56 UTC_
 
 | Market | Trades | Win rate | PnL |
 |--------|--------|----------|-----|
-| **15m** | 36 | 58.3% | $2.53 |
+| **15m** | 43 | 60.5% | $17.48 |
 | **5m** | 19 | 63.2% | $-1.31 |
 
 ### TradingView (INDEX:BTCUSD)
 
-- Alerts received: **1027**
-- 5-chart trend: **confirmed_up_3tf** (3/3 fresh)
+- Alerts received: **1117**
+- 5-chart trend: **conflict_3tf** (3/3 fresh)
 
 ## Quick verdict
 
-**Good:** Making money on paper (+17.0%); Arbitrage is doing most of the work; Bot is running normally.
+**Good:** Making money on paper (+20.2%); Arbitrage is doing most of the work; Bot is running normally.
 
 **Watch:** UP trades still weak (coin-flip or worse).
 

@@ -1,18 +1,18 @@
 # BTC Pulse — Technical Report (plain English)
 
-_Updated: 2026-06-28 07:56:16 UTC_
+_Updated: 2026-06-28 09:33:57 UTC_
 
 ## At a glance
 
 | | |
 |---|---|
-| **Overall grade** | **C** (73.4/100) — Below target — review config and performance. |
-| Trading performance | D (67.0/100) |
+| **Overall grade** | **C+** (75.5/100) — Mixed — some systems fine, others need attention. |
+| Trading performance | C (73.3/100) |
 | Engine operation | B+ (89.8/100) |
 | External signals | F (47.0/100) |
 | Technical runtime | B+ (86.6/100) |
-| Settled trades | 103 |
-| Engine ticks | 33 |
+| Settled trades | 110 |
+| Engine ticks | 386 |
 
 ## Executive summary
 
@@ -24,42 +24,45 @@ The bot is **running safely with solid technical runtime**, but **trading result
 |---|---|
 | Mode | Paper only |
 | Starting capital | $500.00 |
-| Total on hand | $585.00 (17.0% return) |
-| Directional PnL | $2.71 |
+| Total on hand | $600.98 (20.2% return) |
+| Directional PnL | $17.67 |
 | Arb PnL | $59.73 |
-| Win rate | 61.2% (103 settled) |
-| UP / DOWN win rate | 50.0% / 63.9% |
-| Profit factor | 1.0147 |
+| Win rate | 61.8% (110 settled) |
+| UP / DOWN win rate | 50.0% / 64.4% |
+| Profit factor | 1.0906 |
 | Bot halted? | No — running |
 
 ## Infrastructure & data health
 
-- **Oracle (RTDS):** Connected; fresh (age 1.11s).
-- **TradingView:** 1027 valid alerts of 1046 received; observe-only=yes; MTF verdict: `confirmed_up_mtf`.
-- **Entry config:** tick 15.0s, max price 0.75, min edge 0.01, min R:R 0.45, 15m TTC band [450.0, 690.0]s, green path=on.
+- **Oracle (RTDS):** Connected; fresh (age 0.13s).
+- **TradingView:** 1117 valid alerts of 1136 received; observe-only=yes; MTF verdict: `conflict_mtf`.
+- **Entry config:** tick 15.0s, max price 0.75, min edge 0.008, min R:R 0.45, 15m TTC band [450.0, 720.0]s, green path=on.
 
 ## What's dragging the score
 
-- **Trading performance** (D): weakest — Profit factor (39), Win rate (42), Directional PnL (55).
+- **Trading performance** (C): weakest — Win rate (44), Profit factor (49), DOWN vs UP balance (73).
 - **Operation** (B+): weakest — Promotion readiness (40), Grok/decider errors (92), Ledger reconciliation (100).
 - **External signals** (F): weakest — Grok direction accuracy (0), TV signal hit rate (0), CEX lead proven (40).
-- **Technical runtime**: watch — Gate funnel balance (68), Design manifest match (72).
+- **Technical runtime**: watch — Gate funnel balance (61), Design manifest match (70).
 
 ## Where candidates get blocked (top gates)
 
-- `directional`: 33,858
+- `directional`: 33,895
 - `grok_decider`: 3,540
-- `baseline_cohort_gate`: 3,339
+- `baseline_cohort_gate`: 3,393
 - `directional_allowlist`: 1,364
 - `context_gate`: 879
 
 ## Why recent windows didn't trade
 
-- `directional_series_not_allowed`: 12 recent eval(s)
+- `directional_series_not_allowed`: 6 recent eval(s)
+- `edge_below_min`: 2 recent eval(s)
+- `baseline_cohort_ttc_too_late`: 2 recent eval(s)
 
 ## Design vs deployed (drift)
 
 - **Max entry price** — running `0.75`, design expects `0.7`
+- **Minimum edge** — running `0.008`, design expects `0.015`
 - **Minimum reward/risk** — running `0.45`, design expects `0.55`
 
 ## Verdict
@@ -69,7 +72,7 @@ The bot is **running safely with solid technical runtime**, but **trading result
 - TradingView webhooks are flowing; observe-only lock is respected.
 - Ledger and lifecycle accounting reconcile cleanly.
 - Engine operation score is strong — loops, stops, and pipeline are up.
-- Paper portfolio is up 17.0% overall (arb helping).
+- Paper portfolio is up 20.2% overall (arb helping).
 
 **Watch:**
 - External signals (TV hit rate, Grok accuracy) are not yet predictive of outcomes.
@@ -80,7 +83,7 @@ The bot is **running safely with solid technical runtime**, but **trading result
 
 ## Score trend (VPS history)
 
-Report overall moved **flat** (67.3 → 67.8) over the last 5 recorded snapshots. Trading: 65.7 → 67.0; Operation: 90.7 → 90.0.
+Report overall moved **up** (69.0 → 70.8) over the last 5 recorded snapshots. Trading: 69.5 → 73.3; Operation: 89.9 → 89.8.
 
 ---
 
