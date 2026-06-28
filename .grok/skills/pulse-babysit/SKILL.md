@@ -14,8 +14,8 @@ You operate the **Grok-Bot-2** paper pulse bot without asking the operator for p
 between cycles. Execute tools yourself. Paper-only — never enable live trading.
 
 **Team identity:** quant research + engineer + trader. **Learning-collection mode active** —
-prioritize trade rate + ledger continuity over WR. Read `.grok/rules/soak-learning-lock.md` and
-`.grok/rules/quant-team.md`.
+prioritize trade rate + ledger continuity over WR. Read `.grok/rules/soak-learning-lock.md`,
+`.grok/rules/quant-team.md`, and **`.grok/rules/hands-off-untouchable.md`** (profitable-bot lock).
 
 ## Repo anchors
 
@@ -47,24 +47,26 @@ DEPLOY → SOAK (240m / 4h learning default) → PULL → EVALUATE → (issues?)
 ```
 
 1. Read `scripts/pulse-babysit/state.json`.
-2. If `phase` is `soak` and `now < soak_until`: run `status`, exit (do not fix).
-3. Run `python scripts/pulse-babysit/scan-health.py` — full runtime checklist (Grok/verifier/loops/stop).
+2. If `phase` is `hands_off` and `now < hands_off_until`: print status + baseline metrics, **exit**
+   (no pull, no eval, no fix, no deploy). Respect `.grok/rules/hands-off-untouchable.md`.
+3. If `phase` is `soak` and `now < soak_until`: run `status`, exit (do not fix).
+4. Run `python scripts/pulse-babysit/scan-health.py` — full runtime checklist (Grok/verifier/loops/stop).
    Run `python scripts/pulse-babysit/validate-frozen-lock.py` — manifest drift (P0 authority keys).
-4. Run `.\scripts\pulse-babysit\pull-vps-artifacts.ps1` — pulls artifacts **and always commits +
+5. Run `.\scripts\pulse-babysit\pull-vps-artifacts.ps1` — pulls artifacts **and always commits +
    pushes** `vps_full_reports/latest/` to `origin/main` (includes `report.docx`). Use `-SkipPush`
    only for local debugging.
-5. Run `python scripts/pulse-babysit/evaluate-cycle.py` — parse JSON stdout.
-5. If `verdict` is `healthy`: append history, set `phase=soak`, `soak_until=now+soak_hours`, done.
-6. If `verdict` is `issues`: pick **at most 2** highest-severity issues; fix in plugin code only.
-7. Run targeted tests under `hermes-agent-main/plugins/hermes-trading-engine/tests/`.
-8. Commit with clear message; `git push origin main`.
-9. **MANDATORY VPS deploy** (never skip after any push to `main` — including babysit-only / report-only):
-   - `.\scripts\sync-vps.ps1` — `down --remove-orphans` → `build` → `up -d --remove-orphans`
-   - SSH: `python3 /opt/Grok-Bot-2/scripts/apply-loop-arch-env.py` if env/gates changed
-   - SSH: `python3 /opt/Grok-Bot-2/scripts/pulse-babysit/validate-frozen-lock.py` (wired in sync-vps)
-   - SSH: `cd .../hermes-trading-engine && docker compose up -d --force-recreate hermes-training`
-   - `.\scripts\verify-sync.ps1`
-10. Update state: `phase=soak`, `deployed_at`, `soak_until`, `last_fixes`, increment `cycle`.
+6. Run `python scripts/pulse-babysit/evaluate-cycle.py` — parse JSON stdout.
+7. If `verdict` is `healthy`: append history, set `phase=soak`, `soak_until=now+soak_hours`, done.
+8. If `verdict` is `issues`: pick **at most 2** highest-severity issues; fix in plugin code only.
+9. Run targeted tests under `hermes-agent-main/plugins/hermes-trading-engine/tests/`.
+10. Commit with clear message; `git push origin main`.
+11. **MANDATORY VPS deploy** (never skip after any push to `main` — unless `hands_off`):
+    - `.\scripts\sync-vps.ps1` — `down --remove-orphans` → `build` → `up -d --remove-orphans`
+    - SSH: `python3 /opt/Grok-Bot-2/scripts/apply-loop-arch-env.py` if env/gates changed
+    - SSH: `python3 /opt/Grok-Bot-2/scripts/pulse-babysit/validate-frozen-lock.py` (wired in sync-vps)
+    - SSH: `cd .../hermes-trading-engine && docker compose up -d --force-recreate hermes-training`
+    - `.\scripts\verify-sync.ps1`
+12. Update state: `phase=soak`, `deployed_at`, `soak_until`, `last_fixes`, increment `cycle`.
 
 ## Env coupling (mandatory memory)
 

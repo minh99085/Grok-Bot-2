@@ -4,11 +4,20 @@ Work only in `https://github.com/minh99085/Grok-Bot-2`.
 
 Never commit or push to `hermes-agent-cursor` unless the operator explicitly says otherwise in the current turn.
 
-## VPS deploy — MANDATORY after every push to `main`
+## Hands-off observation window (operator lock — 2026-06-28)
 
-**Non-negotiable:** Whenever you commit and push to `origin/main`, you MUST immediately deploy to the live VPS with full orphan cleanup and rebuild. Do not tell the operator to run it — execute it yourself.
+When `scripts/pulse-babysit/state.json` has `phase: hands_off` and `now < hands_off_until`:
 
-This applies to **every** push — engine/env, babysit scripts, `.grok` rules/skills, and report-only commits. Goal: `origin/main` HEAD == VPS HEAD always.
+- **Do NOT** run babysit cycles, deploy, sync-vps, env/gate changes, or any bot behavior tweaks.
+- **Read** `.grok/rules/hands-off-untouchable.md` — profitable-bot untouchables (money path, Trinity Grok, TV observe-only, frozen gates).
+- **Baseline** for 24h compare: `baseline_at_hands_off` in state.json (103 trades, $584.91, 61.2% WR).
+- **Wake after window:** `/pulse-babysit cycle` or `force-eval`; re-enable scheduled task if operator wants autopilot.
+
+## VPS deploy — MANDATORY after every push to `main` (except hands_off)
+
+**Non-negotiable:** Whenever you commit and push to `origin/main`, you MUST immediately deploy to the live VPS with full orphan cleanup and rebuild — **unless** `state.json` is in `hands_off` phase. Do not tell the operator to run it — execute it yourself.
+
+This applies to **every** push — engine/env, babysit scripts, `.grok` rules/skills, and report-only commits. Goal: `origin/main` HEAD == VPS HEAD always (paused during hands_off).
 
 ### Standard sequence (every code or env change)
 

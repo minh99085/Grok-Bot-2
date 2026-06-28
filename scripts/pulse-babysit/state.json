@@ -7,11 +7,11 @@
     "note": "Soak-learning lock: apply-loop-arch enforces frozen manifest; WR tuning deferred"
   },
   "cycle": 9,
-  "phase": "soak",
+  "phase": "hands_off",
   "soak_hours": 4,
   "soak_minutes": 240,
   "deployed_at": "2026-06-28T06:48:11.413588+00:00",
-  "soak_until": "2026-06-28T10:48:11.413588+00:00",
+  "soak_until": null,
   "last_eval_at": "2026-06-28T06:38:56.029960+00:00",
   "last_verdict": "issues",
   "last_fixes": [],
@@ -314,5 +314,17 @@
       }
     }
   ],
-  "note": "Cycle 9: +3 trades during soak (100->103); PF>1; WR/UP-bleed deferred in learning_collection; no gate changes."
+  "note": "Operator 2026-06-28: 24h hands-off observation. No babysit cycles/fixes/deploys. See .grok/rules/hands-off-untouchable.md",
+  "hands_off_started_at": "2026-06-28T07:10:37.789340+00:00",
+  "hands_off_until": "2026-06-29T07:10:37.789340+00:00",
+  "babysit_autopilot": false,
+  "baseline_at_hands_off": {
+    "trades": 103,
+    "total_on_hand_usd": 584.91,
+    "win_rate": 0.6117,
+    "arb_pnl": 59.73,
+    "dep_pnl": 22.47,
+    "dir_pnl": 2.71,
+    "vps_sha": "c05d55fb9409faf7b4507247248e81b7f15919af"
+  }
 }
