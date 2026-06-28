@@ -4,6 +4,10 @@ Work only in `https://github.com/minh99085/Grok-Bot-2`.
 
 Never commit or push to `hermes-agent-cursor` unless the operator explicitly says otherwise in the current turn.
 
+## Destructive change guard (mandatory)
+
+Read **`.grok/rules/destructive-change-guard.md`** before any delete/remove/disable that could damage the bot. **Warn the operator and get explicit confirmation before executing** — no commit, push, or deploy until they say proceed.
+
 ## Hands-off observation window (operator lock — 2026-06-28)
 
 When `scripts/pulse-babysit/state.json` has `phase: hands_off` and `now < hands_off_until`:
