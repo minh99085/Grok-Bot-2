@@ -1,6 +1,6 @@
 # BTC Pulse — Technical Report (plain English)
 
-_Updated: 2026-06-29 03:20:49 UTC_
+_Updated: 2026-06-29 03:23:44 UTC_
 
 ## At a glance
 
@@ -10,9 +10,9 @@ _Updated: 2026-06-29 03:20:49 UTC_
 | Trading performance | C+ (78.9/100) |
 | Engine operation | B+ (87.1/100) |
 | External signals | F (47.0/100) |
-| Technical runtime | B+ (87.3/100) |
+| Technical runtime | B+ (87.5/100) |
 | Settled trades | 136 |
-| Engine ticks | 52 |
+| Engine ticks | 63 |
 
 ## Executive summary
 
@@ -34,8 +34,8 @@ The bot is **running safely with solid technical runtime**, but **trading result
 
 ## Infrastructure & data health
 
-- **Oracle (RTDS):** Connected; fresh (age 0.72s).
-- **TradingView:** 2005 valid alerts of 2024 received; observe-only=yes; MTF verdict: `confirmed_up_mtf`.
+- **Oracle (RTDS):** Connected; fresh (age 1.04s).
+- **TradingView:** 2007 valid alerts of 2026 received; observe-only=yes; MTF verdict: `confirmed_up_mtf`.
 - **Entry config:** tick 15.0s, max price 0.6, min edge 0.008, min R:R 0.52, 15m TTC band [450.0, 720.0]s, green path=on.
 
 ## What's dragging the score
@@ -47,7 +47,7 @@ The bot is **running safely with solid technical runtime**, but **trading result
 
 ## Where candidates get blocked (top gates)
 
-- `directional`: 36,640
+- `directional`: 36,651
 - `baseline_cohort_gate`: 3,737
 - `grok_decider`: 3,540
 - `directional_allowlist`: 1,364
@@ -56,8 +56,7 @@ The bot is **running safely with solid technical runtime**, but **trading result
 ## Why recent windows didn't trade
 
 - `directional_series_not_allowed`: 6 recent eval(s)
-- `edge_below_min`: 4 recent eval(s)
-- `no_tradeable_ask`: 2 recent eval(s)
+- `edge_below_min`: 6 recent eval(s)
 
 ## Verdict
 

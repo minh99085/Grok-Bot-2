@@ -1,8 +1,8 @@
 {
   "schema": "technical_grades/1.0",
-  "ts_utc": "2026-06-29T03:20:49.260744+00:00",
-  "repo_sha": "30b5085c0273",
-  "ticks": 52,
+  "ts_utc": "2026-06-29T03:23:44.972886+00:00",
+  "repo_sha": "5b773ec34544",
+  "ticks": 63,
   "settled": 136,
   "report_scores": {
     "schema": "btc_pulse_report_scores/1.0",
@@ -83,7 +83,7 @@
           "contribution": 15.0
         },
         "low_errors": {
-          "score": 74.0,
+          "score": 73.9,
           "weight": 15,
           "contribution": 11.1
         }
@@ -133,7 +133,7 @@
     }
   },
   "technical_runtime": {
-    "score": 87.3,
+    "score": 87.5,
     "grade": "B+",
     "components": {
       "rtds_health": {
@@ -152,9 +152,9 @@
         "contribution": 18.1
       },
       "trade_pipeline": {
-        "score": 92.6,
+        "score": 93.2,
         "weight": 20,
-        "contribution": 18.5
+        "contribution": 18.6
       },
       "gate_coupling": {
         "score": 71.3,
@@ -274,7 +274,7 @@
         }
       },
       "trade_pipeline": {
-        "score": 92.6,
+        "score": 93.2,
         "components": {
           "accounting_integrity": {
             "score": 100.0,
@@ -302,9 +302,9 @@
             "contribution": 10.0
           },
           "uptime_ticks": {
-            "score": 26.0,
+            "score": 31.5,
             "weight": 10,
-            "contribution": 2.6
+            "contribution": 3.1
           }
         }
       },

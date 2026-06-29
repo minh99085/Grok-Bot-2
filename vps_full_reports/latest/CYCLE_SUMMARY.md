@@ -1,18 +1,18 @@
 # Bot cycle summary (plain English)
 
-_Updated: 2026-06-29 03:20 UTC_
+_Updated: 2026-06-29 03:23 UTC_
 
 ## Last cycle
 
 | | |
 |---|---|
 | **Cycle #** | 20 |
-| **Checked at** | 2026-06-29 03:20 UTC |
-| **Result** | **issues** |
-| **What it means** | Issues found — UP trades still lose money. More UP blocks may have been added. |
+| **Checked at** | 2026-06-29 03:21 UTC |
+| **Result** | **blocked** |
+| **What it means** | Stopped — serious problem found. Check issues below. |
 | **Next check after** | 2026-06-29 02:42 UTC |
 
-**Issues flagged:** win_rate_below_target, up_side_bleed, cheap_down_bleed
+**Issues flagged:** trade_starvation_streak
 
 **Fixes applied:**
 
@@ -43,14 +43,14 @@ _Updated: 2026-06-29 03:20 UTC_
 
 ### TradingView (INDEX:BTCUSD)
 
-- Alerts received: **2005**
+- Alerts received: **2007**
 - 5-chart trend: **confirmed_up_3tf** (3/3 fresh)
 
 ## Quick verdict
 
 **Good:** Making money on paper (+34.7%); Arbitrage is doing most of the work; DOWN trades work well; Bot is running normally.
 
-**Watch:** UP trades still weak (coin-flip or worse); Cycle flagged UP-side losses.
+**Watch:** UP trades still weak (coin-flip or worse).
 
 ---
 
