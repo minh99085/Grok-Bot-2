@@ -1,23 +1,21 @@
 # Bot cycle summary (plain English)
 
-_Updated: 2026-06-29 03:23 UTC_
+_Updated: 2026-06-29 04:44 UTC_
 
 ## Last cycle
 
 | | |
 |---|---|
-| **Cycle #** | 20 |
-| **Checked at** | 2026-06-29 03:21 UTC |
+| **Cycle #** | 21 |
+| **Checked at** | 2026-06-29 03:23 UTC |
 | **Result** | **blocked** |
 | **What it means** | Stopped — serious problem found. Check issues below. |
-| **Next check after** | 2026-06-29 02:42 UTC |
-
-**Issues flagged:** trade_starvation_streak
+| **Next check after** | 2026-06-29 04:24 UTC |
 
 **Fixes applied:**
 
-- wr_tune_min_entry_0.48
-- min_reward_risk_0.52
+- min_entry_price_0.46_starvation_relax
+- min_reward_risk_0.48_starvation_relax
 
 ## How the bot is doing now
 
@@ -25,12 +23,12 @@ _Updated: 2026-06-29 03:23 UTC_
 |---|---|
 | **Mode** | Paper only (fake money) |
 | **Started with** | $500.00 |
-| **Total now** | $673.38 (34.68% return) |
+| **Total now** | $672.91 (34.58% return) |
 | **Arb profit** | $59.73 (7 trades) |
-| **Directional profit** | $51.81 |
-| **Win rate** | 63.2% (136 settled trades) |
+| **Directional profit** | $46.81 |
+| **Win rate** | 62.8% (137 settled trades) |
 | **UP win rate** | 50.0% |
-| **DOWN win rate** | 65.5% |
+| **DOWN win rate** | 65.0% |
 | **Bot stopped?** | No — bot is running |
 | **Overall grade** | — (—/100) |
 
@@ -38,17 +36,17 @@ _Updated: 2026-06-29 03:23 UTC_
 
 | Market | Trades | Win rate | PnL |
 |--------|--------|----------|-----|
-| **15m** | 69 | 63.8% | $51.63 |
+| **15m** | 70 | 62.9% | $46.63 |
 | **5m** | 19 | 63.2% | $-1.31 |
 
 ### TradingView (INDEX:BTCUSD)
 
-- Alerts received: **2007**
-- 5-chart trend: **confirmed_up_3tf** (3/3 fresh)
+- Alerts received: **2096**
+- 5-chart trend: **confirmed_down_3tf** (3/3 fresh)
 
 ## Quick verdict
 
-**Good:** Making money on paper (+34.7%); Arbitrage is doing most of the work; DOWN trades work well; Bot is running normally.
+**Good:** Making money on paper (+34.6%); Arbitrage is doing most of the work; Bot is running normally.
 
 **Watch:** UP trades still weak (coin-flip or worse).
 
