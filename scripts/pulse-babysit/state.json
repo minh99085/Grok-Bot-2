@@ -6,21 +6,21 @@
     "priority": "pnl_protection_and_win_rate",
     "note": "Paper PnL = real capital. Babysit fixes WR/PF/bleed + starvation. See .grok/rules/real-money-discipline.md"
   },
-  "cycle": 18,
+  "cycle": 19,
   "phase": "soak",
   "soak_hours": 1,
   "soak_minutes": 60,
-  "deployed_at": "2026-06-28T21:40:46.384687+00:00",
-  "soak_until": "2026-06-28T22:40:46.384687+00:00",
-  "last_eval_at": "2026-06-28T21:34:36.026125+00:00",
-  "last_verdict": "blocked",
+  "deployed_at": "2026-06-29T00:13:27.813577+00:00",
+  "soak_until": "2026-06-29T01:13:27.813577+00:00",
+  "last_eval_at": "2026-06-29T00:07:27.189308+00:00",
+  "last_verdict": "issues",
   "last_fixes": [
-    "min_entry_price_0.46_starvation_relax",
-    "min_reward_risk_0.48_starvation_relax"
+    "wr_tune_min_entry_0.47",
+    "min_reward_risk_0.50"
   ],
   "last_health_verdict": "issues",
-  "baseline_trades_at_deploy": 133,
-  "vps_sha": "189a23d074a5721b7ca65ca9bc6e3acff5fd5557",
+  "baseline_trades_at_deploy": 134,
+  "vps_sha": "bdaf84246bb1a959e2928d02b6e1f943f1e371ff",
   "history": [
     {
       "cycle": 3,
@@ -1012,6 +1012,92 @@
         "global_reconciled": true,
         "settled_flat_eval_streak": 3,
         "hours_since_last_trade": 0.51
+      }
+    },
+    {
+      "ts": "2026-06-29T00:07:27.189308+00:00",
+      "verdict": "issues",
+      "metrics": {
+        "settled": 134,
+        "win_rate_target": 0.8,
+        "win_rate": 0.6418,
+        "profit_factor": 1.2747,
+        "win_rate_up": 0.5,
+        "win_rate_down": 0.6667,
+        "realized_pnl_usd": 61.81,
+        "tv_valid": 1916,
+        "mtf_passed": 141,
+        "mtf_blocked": 276,
+        "context_blocked": 879,
+        "down_bias_blocked": 538,
+        "signal_gate": false,
+        "min_reward_risk": 0.48,
+        "global_reconciled": true,
+        "ticks": 583,
+        "hours_since_last_trade": 1.25,
+        "settled_flat_eval_streak": 0,
+        "price_band_24h": {
+          "lookback_hours": 24.0,
+          "side": "down",
+          "cutoff_ts": 1782605222.0060685,
+          "now_ts": 1782691622.0060685,
+          "total": {
+            "n": 40,
+            "wins": 29,
+            "win_rate": 0.725,
+            "pnl_usd": 67.75
+          },
+          "bands": {
+            "cheap": {
+              "n": 4,
+              "wins": 0,
+              "win_rate": 0.0,
+              "pnl_usd": -20.0
+            },
+            "sweet": {
+              "n": 20,
+              "wins": 18,
+              "win_rate": 0.9,
+              "pnl_usd": 75.83
+            },
+            "expensive": {
+              "n": 16,
+              "wins": 11,
+              "win_rate": 0.6875,
+              "pnl_usd": 11.93
+            }
+          },
+          "sweet_share": 0.5
+        }
+      },
+      "issue_codes": [
+        "win_rate_below_target",
+        "up_side_bleed",
+        "cheap_down_bleed"
+      ]
+    },
+    {
+      "cycle": 19,
+      "eval_at": "2026-06-29T00:07:27.189308+00:00",
+      "verdict": "issues",
+      "issues": [
+        "win_rate_below_target",
+        "up_side_bleed",
+        "cheap_down_bleed"
+      ],
+      "fixes": [
+        "wr_tune_min_entry_0.47",
+        "min_reward_risk_0.50"
+      ],
+      "deployed_at": "2026-06-29T00:13:27.813577+00:00",
+      "vps_sha": "bdaf84246bb1a959e2928d02b6e1f943f1e371ff",
+      "metrics": {
+        "settled": 134,
+        "win_rate": 0.6418,
+        "profit_factor": 1.2747,
+        "global_reconciled": true,
+        "hours_since_last_trade": 1.25,
+        "settled_flat_eval_streak": 0
       }
     }
   ],
