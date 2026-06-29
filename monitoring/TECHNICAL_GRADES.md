@@ -1,23 +1,23 @@
 # Technical Data Grades
 
-**Generated:** 2026-06-28T21:34:05.554861+00:00  
-**Repo SHA:** `b6d1f759f4c4`  
-**Ticks:** 261 | **Settled:** 133
+**Generated:** 2026-06-29T00:07:21.735008+00:00  
+**Repo SHA:** `2ca238f7a048`  
+**Ticks:** 583 | **Settled:** 134
 
 ## Composite
 
 | Metric | Score | Grade |
 |--------|------:|-------|
 | **Composite** | **77.8** | **C+** |
-| Report overall | 73.6 | C |
-| Technical runtime | 87.7 | B+ |
+| Report overall | 73.8 | C |
+| Technical runtime | 87.1 | B+ |
 
 ## Report scores (engine)
 
 | Section | Score | Grade |
 |---------|------:|-------|
-| Trading Performance | 79.9 | C+ |
-| Operation | 87.7 | B+ |
+| Trading Performance | 80.5 | B |
+| Operation | 87.4 | B+ |
 | External Signals | 47.0 | F |
 
 ## Technical runtime
@@ -26,19 +26,19 @@ _RTDS/oracle health, TV observe-only intake, design manifest compliance, pipelin
 
 | Component | Score | Weight |
 |-----------|------:|-------:|
-| rtds_health | 100.0 | 20 |
+| rtds_health | 97.0 | 20 |
 | tv_intake | 100.0 | 20 |
 | design_compliance | 70.0 | 25 |
 | trade_pipeline | 100.0 | 20 |
 | gate_coupling | 68.2 | 15 |
 
-### Rtds Health (100.0)
+### Rtds Health (97.0)
 
 | Component | Score | Weight |
 |-----------|------:|-------:|
 | connected | 100.0 | 35 |
 | oracle_fresh | 100.0 | 30 |
-| stability | 100.0 | 20 |
+| stability | 85.0 | 20 |
 | price_feed | 100.0 | 15 |
 
 ### Tv Intake (100.0)
@@ -81,9 +81,9 @@ _RTDS/oracle health, TV observe-only intake, design manifest compliance, pipelin
 
 | Component | Score | Weight |
 |-----------|------:|-------:|
-| lifecycle_funnel | 37.3 | 25 |
+| lifecycle_funnel | 37.2 | 25 |
 | exec_pass_rate | 91.5 | 25 |
-| reject_diversity | 69.2 | 20 |
+| reject_diversity | 69.1 | 20 |
 | cohort_session_load | 73.0 | 15 |
 | recent_eval_spread | 75.0 | 15 |
 
@@ -91,8 +91,8 @@ _RTDS/oracle health, TV observe-only intake, design manifest compliance, pipelin
 
 | UTC | Settled | Overall | Trading | Operation | External |
 |-----|--------:|--------:|--------:|----------:|---------:|
-| 2026-06-28 19:30:27 UTC | 131 | 73.9 | 80.3 | 88.1 | 47.0 |
-| 2026-06-28 19:48:12 UTC | 132 | 74.2 | 80.8 | 88.1 | 47.0 |
-| 2026-06-28 20:18:14 UTC | 132 | 74.1 | 80.8 | 87.9 | 47.0 |
-| 2026-06-28 20:48:15 UTC | 132 | 74.1 | 80.8 | 87.8 | 47.0 |
-| 2026-06-28 21:17:00 UTC | 133 | 73.7 | 79.9 | 87.8 | 47.0 |
+| 2026-06-28 22:17:05 UTC | 133 | 73.6 | 79.9 | 87.6 | 47.0 |
+| 2026-06-28 22:47:19 UTC | 133 | 73.6 | 79.9 | 87.6 | 47.0 |
+| 2026-06-28 23:03:05 UTC | 134 | 73.9 | 80.5 | 87.5 | 47.0 |
+| 2026-06-28 23:33:19 UTC | 134 | 73.8 | 80.5 | 87.4 | 47.0 |
+| 2026-06-29 00:03:19 UTC | 134 | 73.8 | 80.5 | 87.4 | 47.0 |

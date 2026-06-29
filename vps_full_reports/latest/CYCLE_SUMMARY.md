@@ -1,21 +1,21 @@
 # Bot cycle summary (plain English)
 
-_Updated: 2026-06-28 21:34 UTC_
+_Updated: 2026-06-29 00:07 UTC_
 
 ## Last cycle
 
 | | |
 |---|---|
-| **Cycle #** | 17 |
-| **Checked at** | 2026-06-28 20:12 UTC |
-| **Result** | **issues** |
-| **What it means** | Issues found — bot still running, but tuning may be needed. |
-| **Next check after** | 2026-06-28 21:14 UTC |
+| **Cycle #** | 18 |
+| **Checked at** | 2026-06-28 21:34 UTC |
+| **Result** | **blocked** |
+| **What it means** | Stopped — serious problem found. Check issues below. |
+| **Next check after** | 2026-06-28 22:40 UTC |
 
 **Fixes applied:**
 
-- wr_tune_min_entry_0.48
-- min_reward_risk_0.50
+- min_entry_price_0.46_starvation_relax
+- min_reward_risk_0.48_starvation_relax
 
 ## How the bot is doing now
 
@@ -23,12 +23,12 @@ _Updated: 2026-06-28 21:34 UTC_
 |---|---|
 | **Mode** | Paper only (fake money) |
 | **Started with** | $500.00 |
-| **Total now** | $665.45 (33.09% return) |
+| **Total now** | $677.28 (35.46% return) |
 | **Arb profit** | $59.73 (7 trades) |
-| **Directional profit** | $56.81 |
-| **Win rate** | 63.9% (133 settled trades) |
+| **Directional profit** | $61.81 |
+| **Win rate** | 64.2% (134 settled trades) |
 | **UP win rate** | 50.0% |
-| **DOWN win rate** | 66.4% |
+| **DOWN win rate** | 66.7% |
 | **Bot stopped?** | No — bot is running |
 | **Overall grade** | — (—/100) |
 
@@ -36,17 +36,17 @@ _Updated: 2026-06-28 21:34 UTC_
 
 | Market | Trades | Win rate | PnL |
 |--------|--------|----------|-----|
-| **15m** | 66 | 65.1% | $56.63 |
+| **15m** | 67 | 65.7% | $61.63 |
 | **5m** | 19 | 63.2% | $-1.31 |
 
 ### TradingView (INDEX:BTCUSD)
 
-- Alerts received: **1784**
-- 5-chart trend: **confirmed_up_3tf** (3/3 fresh)
+- Alerts received: **1916**
+- 5-chart trend: **conflict_3tf** (3/3 fresh)
 
 ## Quick verdict
 
-**Good:** Making money on paper (+33.1%); Arbitrage is doing most of the work; DOWN trades work well; Bot is running normally.
+**Good:** Making money on paper (+35.5%); Arbitrage is doing most of the work; DOWN trades work well; Bot is running normally.
 
 **Watch:** UP trades still weak (coin-flip or worse).
 

@@ -1,18 +1,18 @@
 # BTC Pulse — Technical Report (plain English)
 
-_Updated: 2026-06-28 21:34:05 UTC_
+_Updated: 2026-06-29 00:07:21 UTC_
 
 ## At a glance
 
 | | |
 |---|---|
 | **Overall grade** | **C+** (77.8/100) — Mixed — some systems fine, others need attention. |
-| Trading performance | C+ (79.9/100) |
-| Engine operation | B+ (87.7/100) |
+| Trading performance | B (80.5/100) |
+| Engine operation | B+ (87.4/100) |
 | External signals | F (47.0/100) |
-| Technical runtime | B+ (87.7/100) |
-| Settled trades | 133 |
-| Engine ticks | 261 |
+| Technical runtime | B+ (87.1/100) |
+| Settled trades | 134 |
+| Engine ticks | 583 |
 
 ## Executive summary
 
@@ -24,31 +24,31 @@ The bot is **running safely with solid technical runtime**, but **trading result
 |---|---|
 | Mode | Paper only |
 | Starting capital | $500.00 |
-| Total on hand | $665.45 (33.1% return) |
-| Directional PnL | $56.81 |
+| Total on hand | $677.28 (35.5% return) |
+| Directional PnL | $61.81 |
 | Arb PnL | $59.73 |
-| Win rate | 63.9% (133 settled) |
-| UP / DOWN win rate | 50.0% / 66.4% |
-| Profit factor | 1.2525 |
+| Win rate | 64.2% (134 settled) |
+| UP / DOWN win rate | 50.0% / 66.7% |
+| Profit factor | 1.2747 |
 | Bot halted? | No — running |
 
 ## Infrastructure & data health
 
-- **Oracle (RTDS):** Connected; fresh (age 1.31s).
-- **TradingView:** 1784 valid alerts of 1803 received; observe-only=yes; MTF verdict: `confirmed_up_mtf`.
-- **Entry config:** tick 15.0s, max price 0.6, min edge 0.008, min R:R 0.5, 15m TTC band [450.0, 720.0]s, green path=on.
+- **Oracle (RTDS):** Connected; fresh (age 1.41s).
+- **TradingView:** 1916 valid alerts of 1935 received; observe-only=yes; MTF verdict: `conflict_mtf`.
+- **Entry config:** tick 15.0s, max price 0.6, min edge 0.008, min R:R 0.48, 15m TTC band [450.0, 720.0]s, green path=on.
 
 ## What's dragging the score
 
-- **Trading performance** (C+): weakest — Win rate (48), Profit factor (69), DOWN vs UP balance (76).
-- **Operation** (B+): weakest — Promotion readiness (40), Grok/decider errors (78), Ledger reconciliation (100).
+- **Trading performance** (B): weakest — Win rate (48), Profit factor (72), DOWN vs UP balance (77).
+- **Operation** (B+): weakest — Promotion readiness (40), Grok/decider errors (76), Ledger reconciliation (100).
 - **External signals** (F): weakest — Grok direction accuracy (0), TV signal hit rate (0), CEX lead proven (40).
 - **Technical runtime**: watch — Gate funnel balance (68), Design manifest match (70).
 
 ## Where candidates get blocked (top gates)
 
-- `directional`: 35,432
-- `baseline_cohort_gate`: 3,690
+- `directional`: 35,989
+- `baseline_cohort_gate`: 3,709
 - `grok_decider`: 3,540
 - `directional_allowlist`: 1,364
 - `context_gate`: 879
@@ -56,13 +56,13 @@ The bot is **running safely with solid technical runtime**, but **trading result
 ## Why recent windows didn't trade
 
 - `directional_series_not_allowed`: 6 recent eval(s)
-- `edge_below_min`: 6 recent eval(s)
+- `no_tradeable_ask`: 6 recent eval(s)
 
 ## Design vs deployed (drift)
 
 - **Max entry price** — running `0.6`, design expects `0.7`
 - **Minimum edge** — running `0.008`, design expects `0.015`
-- **Minimum reward/risk** — running `0.5`, design expects `0.55`
+- **Minimum reward/risk** — running `0.48`, design expects `0.55`
 
 ## Verdict
 
@@ -71,7 +71,7 @@ The bot is **running safely with solid technical runtime**, but **trading result
 - TradingView webhooks are flowing; observe-only lock is respected.
 - Ledger and lifecycle accounting reconcile cleanly.
 - Engine operation score is strong — loops, stops, and pipeline are up.
-- Paper portfolio is up 33.1% overall (arb helping).
+- Paper portfolio is up 35.5% overall (arb helping).
 
 **Watch:**
 - External signals (TV hit rate, Grok accuracy) are not yet predictive of outcomes.
@@ -82,7 +82,7 @@ The bot is **running safely with solid technical runtime**, but **trading result
 
 ## Score trend (VPS history)
 
-Report overall moved **flat** (73.9 → 73.7) over the last 5 recorded snapshots. Trading: 80.3 → 79.9; Operation: 88.1 → 87.8.
+Report overall moved **flat** (73.6 → 73.8) over the last 5 recorded snapshots. Trading: 79.9 → 80.5; Operation: 87.6 → 87.4.
 
 ---
 
