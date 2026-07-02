@@ -1,6 +1,7 @@
 # Repo scope
 
-Work only in `https://github.com/minh99085/Grok-Bot-2`.
+Work only in `https://github.com/minh99085/Robinhood-Bot`.
+Local workspace: `C:\Users\tieut\Robinhood-Bot`.
 
 Never commit or push to `hermes-agent-cursor` unless the operator explicitly says otherwise in the current turn.
 
@@ -20,23 +21,27 @@ If `phase: hands_off` and `now < hands_off_until`: pause all cycles/deploys; res
 
 **Baseline** for compare: `baseline_at_hands_off` in state.json (103 trades, $584.91, 61.2% WR).
 
-## VPS deploy — MANDATORY after every push to `main` (except hands_off)
+## VPS deploy — MANDATORY after every push to `main` (OPERATOR MEMORY 2026-07-02)
 
-**Non-negotiable:** Whenever you commit and push to `origin/main`, you MUST immediately deploy to the live VPS with full orphan cleanup and rebuild — **unless** `state.json` is in `hands_off` phase. Do not tell the operator to run it — execute it yourself.
+**Always:** push to `main` → sync VPS → remove orphans → rebuild. Execute yourself — never push and stop.
 
-This applies to **every** push — engine/env, babysit scripts, `.grok` rules/skills, and report-only commits. Goal: `origin/main` HEAD == VPS HEAD always (paused during hands_off).
+Applies to **every** push (code, env, rules, reports) unless `state.json` is in `hands_off` phase.
+Goal: `origin/main` HEAD == VPS HEAD always.
+
+See **`.grok/rules/vps-deploy-mandate.md`** for the canonical step list.
 
 ### Standard sequence (every code or env change)
 
 1. `git push origin main`
-2. `.\scripts\sync-vps.ps1` from repo root (default — **never** use `-SkipRebuild` unless operator explicitly asks for code-only sync)
+2. `.\scripts\sync-vps.ps1` (default — **never** `-SkipRebuild` unless operator asks in the current message)
    - Syncs git bundle to `/opt/Grok-Bot-2`
    - `docker compose down --remove-orphans`
    - `docker compose build` (both images — no service arg)
-   - `docker compose up -d --remove-orphans`
+   - `docker compose up -d --force-recreate --remove-orphans`
 3. On VPS: `python3 scripts/apply-loop-arch-env.py` (when env/gate keys changed)
 4. On VPS plugin dir: `docker compose up -d --force-recreate hermes-training` (loop runs in `hermes-training`; API alone is not enough)
-5. Verify: `.\scripts\verify-sync.ps1` — VPS HEAD SHA == `origin/main`; both containers healthy
+5. If Robinhood plugin changed: `.\scripts\sync-vps-robinhood.ps1`
+6. Verify: `.\scripts\verify-sync.ps1` — VPS HEAD SHA == `origin/main`; containers healthy
 
 ### Never do
 

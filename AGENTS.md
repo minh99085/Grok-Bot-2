@@ -28,23 +28,29 @@ explicitly says otherwise **in the current message**. Full frozen keys and behav
 
 ## Repository scope (ALWAYS follow)
 
-- **Canonical repo:** `https://github.com/minh99085/Grok-Bot-2` — the **only** GitHub repository for code, commits, pushes, reports, and deploys.
+- **Canonical repo:** `https://github.com/minh99085/Robinhood-Bot` — the **only** GitHub repository for code, commits, pushes, reports, and deploys.
 - **Do not** clone, commit, or push to `hermes-agent-cursor` or any other repo unless the operator explicitly overrides this in the current message.
-- **Local workspace:** prefer `C:\Users\tieut\Grok-Bot-2` when working from this machine.
+- **Local workspace:** prefer `C:\Users\tieut\Robinhood-Bot` when working from this machine.
 - **Default branch:** `main`.
-- **VPS deploy (MANDATORY after every push to `main`):** You MUST run the full deploy yourself —
-  never push and stop. Sequence:
-  1. `git push origin main`
-  2. `.\scripts\sync-vps.ps1` — always default (sync + `down --remove-orphans` → `build` →
-     `up -d --remove-orphans`). **Never** `-SkipRebuild` unless operator explicitly requests it.
-  3. SSH: `python3 scripts/apply-loop-arch-env.py` when env/gates changed
-  4. SSH: `docker compose up -d --force-recreate hermes-training` in the plugin dir
-  5. `.\scripts\verify-sync.ps1` — VPS HEAD must equal `origin/main`
-  See `.grok/rules/repo-scope.md`.
+
+## VPS deploy (OPERATOR MEMORY — ALWAYS follow, set 2026-07-02)
+
+**Every completed change:** push to `main` → sync VPS → `down --remove-orphans` → `build` → `up -d --remove-orphans`. Execute yourself; never push and stop.
+
+1. `git push origin main`
+2. `.\scripts\sync-vps.ps1` (default — **never** `-SkipRebuild` unless operator asks in the current message)
+3. `python3 scripts/apply-loop-arch-env.py` on VPS when env/gates changed
+4. `docker compose up -d --force-recreate hermes-training` in pulse plugin dir when loop env changed
+5. `.\scripts\sync-vps-robinhood.ps1` when Robinhood plugin changed
+6. `.\scripts\verify-sync.ps1` — VPS HEAD must equal `origin/main`
+
+Full detail: `.grok/rules/vps-deploy-mandate.md` and `.grok/rules/repo-scope.md`.
 
 ## Project layout
 
-- Trading bot plugin: `hermes-agent-main/plugins/hermes-trading-engine/`
+- Polymarket paper engine: `hermes-agent-main/plugins/hermes-trading-engine/`
+- Robinhood Agentic plugin (isolated): `hermes-agent-main/plugins/hermes-trading-engine-robinhood/`
+  - Deploy separately: `.\scripts\sync-vps-robinhood.ps1` — does **not** modify Polymarket containers
 - Full VPS reports: `vps_full_reports/latest/` — **always commit + push to `main` after pull**
   (includes `report.docx`; automatic via `pull-vps-artifacts.ps1`)
 - Design townhall: `Design Townhall` (repo root)

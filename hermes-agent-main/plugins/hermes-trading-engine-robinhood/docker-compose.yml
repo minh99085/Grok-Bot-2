@@ -1,0 +1,47 @@
+# Robinhood Agentic Trading plugin — ISOLATED from Polymarket pulse (hermes-trading-engine).
+#
+# Not started by scripts/sync-vps.ps1 (Polymarket deploy). Use scripts/sync-vps-robinhood.ps1
+# or manual commands below. Default profile keeps services opt-in.
+#
+#   docker compose --profile robinhood up -d --build
+#   docker compose --profile robinhood down --remove-orphans
+#
+services:
+  hermes-robinhood-api:
+    profiles: ["robinhood"]
+    build: .
+    container_name: hermes-robinhood-api
+    ports:
+      - "${RH_API_PUBLISH:-127.0.0.1:8810}:8810"
+    volumes:
+      - rh_data:/data
+    env_file:
+      - .env
+    environment:
+      RH_DATA_DIR: "/data"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8810/api/health').status==200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    restart: unless-stopped
+
+  hermes-robinhood-agent:
+    profiles: ["robinhood"]
+    build: .
+    container_name: hermes-robinhood-agent
+    depends_on:
+      hermes-robinhood-api:
+        condition: service_started
+    volumes:
+      - rh_data:/data
+    env_file:
+      - .env
+    environment:
+      RH_DATA_DIR: "/data"
+    command: python scripts/run_robinhood_agent.py
+    restart: unless-stopped
+
+volumes:
+  rh_data:

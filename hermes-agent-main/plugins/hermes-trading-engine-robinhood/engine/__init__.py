@@ -1,0 +1,1 @@
+"""Hermes Robinhood Agentic Trading plugin (isolated from Polymarket pulse engine)."""

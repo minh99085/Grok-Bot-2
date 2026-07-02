@@ -87,6 +87,10 @@ The fast loop + entrypoint are `engine/pulse/engine.py` + `scripts/run_btc_pulse
 
 ## Deployment & sync directive (ALWAYS follow)
 
+**OPERATOR MEMORY (2026-07-02):** Always push to `main` → sync VPS → `down --remove-orphans` →
+`build` → `up -d --remove-orphans`. Execute yourself; never push and stop. See
+`.grok/rules/vps-deploy-mandate.md`.
+
 **ALWAYS push every completed change to BOTH the GitHub `main` repo AND the live VPS, and
 keep them identical (SHA-for-SHA: `origin/main` == VPS `git rev-parse HEAD`).** Never advance
 one without the other; verify the SHAs match before calling a task done.
