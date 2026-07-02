@@ -150,3 +150,31 @@ min-edge, depth, price cap). Smoke test without Docker: `python scripts/run_btc_
 `python -m pytest tests/` — `tests/test_btc_pulse_engine.py` covers ingestion, the digital
 fair value, rolling vol, open-snapshot gating, the loosened decision, paper fill + settlement
 P&L, calibration, and a full deterministic trade→settle→calibrate cycle.
+
+## Cursor Cloud specific instructions
+
+**Docker is NOT available in the Cloud Agent VM** — run the pulse engine natively (the compose
+workflow above is VPS-only). The VM update script provisions a per-plugin venv at
+`plugins/hermes-trading-engine/.venv` (Python 3.12) with `requirements.txt` +
+`requirements-dev.txt`. Activate it before running anything here: `. .venv/bin/activate`.
+
+- **`HTE_DATA_DIR` must point at a writable dir.** The default is `/data` (a Docker volume that
+  does not exist natively). Export e.g. `export HTE_DATA_DIR=/tmp/hte_data && mkdir -p $HTE_DATA_DIR`
+  before running the loop or API, and point both at the SAME dir (the API only reads the JSON the
+  loop writes).
+- **Run the two services in separate shells (use tmux for long-lived processes):**
+  - Loop: `python scripts/run_btc_pulse.py` (smoke: `--max-ticks 3`). Reaches live Polymarket
+    Gamma/CLOB + Coinbase over the public internet — no keys needed. Writes
+    `$HTE_DATA_DIR/btc_pulse_status.json` (+ ledger/reports) every tick.
+  - API/dashboard: `python -m uvicorn engine.app:app --host 127.0.0.1 --port 8800`. Endpoints:
+    `/api/health`, `/api/polymarket/training/btc_pulse`, `/.../btc_pulse/ledger?summary=true`,
+    and the HTML `/dashboard`.
+- **Optional LLM keys fail-open.** Without `XAI_API_KEY` / `ANTHROPIC_API_KEY` (and without
+  `TRADINGVIEW_WEBHOOK_SECRET`) the dashboard shows benign warnings ("MULTIPLE ISSUES", Grok/Claude
+  "off", TradingView "DOWN") — this is expected; the pure-quant paper loop still runs fully.
+- **Binance is geo-blocked (HTTP 451) from the VM** — the engine falls back to the Coinbase lead
+  feed automatically, so this is non-blocking.
+- **Full `pytest tests/` includes live-network tests** (Polymarket CLOB websocket) that are slow
+  and can hang without a timeout. For a fast deterministic signal run the core file:
+  `python -m pytest tests/test_btc_pulse_engine.py`. To bound the whole suite, add
+  `pip install pytest-timeout` then `pytest tests/ --timeout=20 --timeout-method=thread`.
