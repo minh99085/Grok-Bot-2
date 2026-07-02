@@ -29,7 +29,10 @@ function Invoke-VpsBash([string]$Script) {
     Remove-Item -Force $tmp -ErrorAction SilentlyContinue
 }
 
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 & git fetch origin main 2>&1 | Out-Null
+$ErrorActionPreference = $prevEap
 $local = (git rev-parse HEAD).Trim()
 $origin = (git rev-parse origin/main).Trim()
 if ($local -ne $origin) {
