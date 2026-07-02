@@ -34,12 +34,16 @@ services:
     depends_on:
       hermes-robinhood-api:
         condition: service_started
+    ports:
+      # OAuth callback (use: ssh -L 53682:127.0.0.1:53682 root@<vps> during login)
+      - "127.0.0.1:53682:53682"
     volumes:
       - rh_data:/data
     env_file:
       - .env
     environment:
       RH_DATA_DIR: "/data"
+      RH_OAUTH_BIND_HOST: "0.0.0.0"
     command: python scripts/run_robinhood_agent.py
     restart: unless-stopped
 

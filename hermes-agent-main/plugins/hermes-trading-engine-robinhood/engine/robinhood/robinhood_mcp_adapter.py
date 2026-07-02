@@ -7,6 +7,7 @@ import logging
 import time
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
+from collections.abc import Awaitable, Callable
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
@@ -39,7 +40,14 @@ class MCPHealth:
 class RobinhoodMCPAdapter:
     """Manages a long-lived MCP session to Robinhood's Trading MCP server."""
 
-    def __init__(self, config: RobinhoodConfig, audit: AuditLog | None = None) -> None:
+    def __init__(
+        self,
+        config: RobinhoodConfig,
+        audit: AuditLog | None = None,
+        *,
+        redirect_handler: Callable[[str], Awaitable[None]] | None = None,
+        callback_handler: Callable[[], Awaitable[tuple[str, str | None]]] | None = None,
+    ) -> None:
         self.config = config
         self.audit = audit or AuditLog(config.data_dir)
         self.storage = FileTokenStorage(config.data_dir)
@@ -49,6 +57,8 @@ class RobinhoodMCPAdapter:
         self._http: httpx.AsyncClient | None = None
         self._lock = asyncio.Lock()
         self._stop = asyncio.Event()
+        self._redirect_handler = redirect_handler or self._default_redirect_handler
+        self._callback_handler = callback_handler or self._default_callback_handler
 
     def _oauth_provider(self) -> OAuthClientProvider:
         return OAuthClientProvider(
@@ -65,12 +75,12 @@ class RobinhoodMCPAdapter:
         )
 
     @staticmethod
-    async def _redirect_handler(auth_url: str) -> None:
+    async def _default_redirect_handler(auth_url: str) -> None:
         logger.info("OAuth required — open this URL in a desktop browser: %s", auth_url)
         print(f"\n=== Robinhood OAuth ===\nOpen: {auth_url}\n")
 
     @staticmethod
-    async def _callback_handler() -> tuple[str, str | None]:
+    async def _default_callback_handler() -> tuple[str, str | None]:
         # VPS / headless: operator pastes callback URL after browser auth.
         callback_url = await asyncio.to_thread(
             input, "Paste the full callback URL from your browser: "
