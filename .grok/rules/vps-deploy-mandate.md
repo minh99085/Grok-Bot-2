@@ -1,4 +1,6 @@
-# VPS deploy mandate (OPERATOR MEMORY — 2026-07-02)
+# VPS deploy mandate (OPERATOR MEMORY — 2026-07-02, reaffirmed 2026-07-02)
+
+**Operator memory (verbatim):** always push to `main` and VPS, then remove orphans and rebuild the container.
 
 **Non-negotiable on every completed change:** push to `main`, sync the VPS, remove orphans, rebuild.
 

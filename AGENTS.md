@@ -33,7 +33,9 @@ explicitly says otherwise **in the current message**. Full frozen keys and behav
 - **Local workspace:** prefer `C:\Users\tieut\Robinhood-Bot` when working from this machine.
 - **Default branch:** `main`.
 
-## VPS deploy (OPERATOR MEMORY — ALWAYS follow, set 2026-07-02)
+## VPS deploy (OPERATOR MEMORY — ALWAYS follow, set 2026-07-02, reaffirmed 2026-07-02)
+
+**ALWAYS push to `main` and VPS, then remove orphans and rebuild the container.**
 
 **Every completed change:** push to `main` → sync VPS → `down --remove-orphans` → `build` → `up -d --remove-orphans`. Execute yourself; never push and stop.
 
