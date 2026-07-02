@@ -1,58 +1,67 @@
-# Grok-Bot-2 — project rules
+# Robinhood-Bot — project rules
 
-## Quant team mandate (ALWAYS follow)
+## Mandate (ALWAYS follow)
 
-Operate as a **quant research + engineer + trader** team targeting **~80% WR** on selective entries.
-Each cycle: read live performance → hypothesize from market + bot data → implement minimal gate/strategy
-changes → measure on 15-min soak. See `.grok/rules/quant-team.md`.
+This repo is a **Robinhood Agentic options + equities trading bot**. It connects to
+Robinhood's official Trading MCP (`https://agent.robinhood.com/mcp/trading`) and places
+orders through a local safety layer. There is **no Polymarket engine** — it was removed.
 
-## Roan / Bregman architecture (Phase 0+)
-
-5m brain, 15m hands — `docs/roan-bregman-architecture.md`. Promotion gates:
-`scripts/pulse-babysit/roan-bregman-promotion-scorecard.json`. Do not enable
-`PULSE_BREGMAN_TRADE_AUTHORITY` or `PULSE_DEPENDENCY_ARB_EXECUTE` until scorecard passes.
-
-## Soak / learning collection lock (OPERATOR MANDATE)
-
-While collecting ledger data for learning, follow `.grok/rules/soak-learning-lock.md` and
-`scripts/pulse-babysit/frozen-env-keys.json`. Run `validate-frozen-lock.py` before deploy.
-Do not tighten gates or re-enable TV authority during this phase unless the operator says so
-in the current message.
-
-## TradingView observe-only lock (OPERATOR MANDATE — NEVER OVERRIDE)
-
-TradingView is **observe-only forever** — not a trade gate. Do **not** re-enable MTF require/side-align,
-TV context, signal gate, or baseline TV stack blocks in env, code, or babysit fixes unless the operator
-explicitly says otherwise **in the current message**. Full frozen keys and behavior:
-`.grok/rules/tv-observe-only-lock.md`.
-
-## Repository scope (ALWAYS follow)
-
-- **Canonical repo:** `https://github.com/minh99085/Robinhood-Bot` — the **only** GitHub repository for code, commits, pushes, reports, and deploys.
-- **Do not** clone, commit, or push to `hermes-agent-cursor` or any other repo unless the operator explicitly overrides this in the current message.
-- **Local workspace:** prefer `C:\Users\tieut\Robinhood-Bot` when working from this machine.
-- **Default branch:** `main`.
-
-## VPS deploy (OPERATOR MEMORY — ALWAYS follow, set 2026-07-02)
-
-**Every completed change:** push to `main` → sync VPS → `down --remove-orphans` → `build` → `up -d --remove-orphans`. Execute yourself; never push and stop.
-
-1. `git push origin main`
-2. `.\scripts\sync-vps.ps1` (default — **never** `-SkipRebuild` unless operator asks in the current message)
-3. `python3 scripts/apply-loop-arch-env.py` on VPS when env/gates changed
-4. `docker compose up -d --force-recreate hermes-training` in pulse plugin dir when loop env changed
-5. `.\scripts\sync-vps-robinhood.ps1` when Robinhood plugin changed
-6. `.\scripts\verify-sync.ps1` — VPS HEAD must equal `origin/main`
-
-Full detail: `.grok/rules/vps-deploy-mandate.md` and `.grok/rules/repo-scope.md`.
+Operate as a **quant research + engineer + trader** team: read live behavior, hypothesize,
+implement the smallest safe change, and verify. Every order path must stay behind the
+safety gates.
 
 ## Project layout
 
-- Polymarket paper engine: `hermes-agent-main/plugins/hermes-trading-engine/`
-- Robinhood Agentic plugin (isolated): `hermes-agent-main/plugins/hermes-trading-engine-robinhood/`
-  - Deploy separately: `.\scripts\sync-vps-robinhood.ps1` — does **not** modify Polymarket containers
-- Full VPS reports: `vps_full_reports/latest/` — **always commit + push to `main` after pull**
-  (includes `report.docx`; automatic via `pull-vps-artifacts.ps1`)
-- Design townhall: `Design Townhall` (repo root)
-- Operator guide for the pulse engine: `hermes-agent-main/plugins/hermes-trading-engine/AGENTS.md`
-- Autonomous closed loop: `/pulse-babysit cycle` or `.\scripts\pulse-babysit\install-scheduled-task.ps1` (15m soak default; see `.grok/skills/pulse-babysit/SKILL.md`)
+- **Trading bot (the whole product):** `hermes-agent-main/plugins/hermes-trading-engine-robinhood/`
+  - `engine/robinhood/` — MCP adapter, safe client, safety gates, OAuth storage, audit log
+  - `engine/app.py` — read-only health/status API (`:8810`)
+  - `scripts/run_robinhood_agent.py` — agent loop (MCP connect + reconnect + status)
+  - `scripts/robinhood_oauth_login.py` — one-time desktop OAuth
+  - Operator guide: that plugin's `AGENTS.md`
+- **Framework:** `hermes-agent-main/` is the vendored Hermes agent framework the plugin ships inside.
+- **Deploy scripts:** `scripts/sync-vps-robinhood.ps1`, `scripts/verify-sync.ps1`
+- **Rules:** `.grok/rules/`
+
+## Repository scope (ALWAYS follow)
+
+- **Canonical repo:** `https://github.com/minh99085/Robinhood-Bot` — the only GitHub repo for
+  code, commits, pushes, and deploys.
+- **Do not** clone, commit, or push to any other repo unless the operator explicitly overrides
+  this in the current message.
+- **Default branch:** `main`.
+
+## Safety (real money — NEVER relax without explicit operator ask)
+
+- `RH_LIVE_TRADING_ENABLED=0` by default — all `place_*` orders are blocked until the operator
+  turns it on in `.env`.
+- All `place_equity_order` / `place_option_order` calls go through `SafeRobinhoodClient` →
+  `RobinhoodSafetyGates`. Orders ≥ `RH_REVIEW_THRESHOLD_NOTIONAL_USD` must pass Robinhood
+  `review_*` first.
+- PDT, daily-loss, concentration, and max-notional gates are enforced locally.
+- See `.grok/rules/real-money-discipline.md` and `.grok/rules/destructive-change-guard.md`.
+
+## VPS deploy (OPERATOR MEMORY — ALWAYS follow)
+
+**Every completed change:** push to `main` → sync VPS → `down --remove-orphans` → `build` →
+`up -d --remove-orphans`. Execute yourself; never push and stop.
+
+1. `git push origin main`
+2. `.\scripts\sync-vps-robinhood.ps1`
+3. `.\scripts\verify-sync.ps1` — VPS HEAD must equal `origin/main`
+
+Manual on VPS (`/opt/Robinhood-Bot/hermes-agent-main/plugins/hermes-trading-engine-robinhood`):
+
+```bash
+docker compose --profile robinhood down --remove-orphans
+docker compose --profile robinhood build
+docker compose --profile robinhood up -d --force-recreate --remove-orphans
+```
+
+## Tests
+
+From the plugin dir:
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+python -m pytest tests/ -q
+```

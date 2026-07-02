@@ -1,5 +1,4 @@
-# Sync GitHub main -> VPS and rebuild ONLY the Robinhood Agentic plugin.
-# Does NOT touch hermes-trading-engine (Polymarket pulse).
+# Sync GitHub main -> VPS and rebuild the Robinhood Agentic trading plugin.
 #
 # Usage:
 #   .\scripts\sync-vps-robinhood.ps1
@@ -10,8 +9,8 @@ param(
     [string]$SshKey = "$env:USERPROFILE\.ssh\bot2_grok_temp",
     [string]$VpsHost = "45.32.224.147",
     [string]$VpsUser = "root",
-    [string]$VpsRepo = "/opt/Grok-Bot-2",
-    [string]$PluginPath = "/opt/Grok-Bot-2/hermes-agent-main/plugins/hermes-trading-engine-robinhood"
+    [string]$VpsRepo = "/opt/Robinhood-Bot",
+    [string]$PluginPath = "/opt/Robinhood-Bot/hermes-agent-main/plugins/hermes-trading-engine-robinhood"
 )
 
 $ErrorActionPreference = "Stop"
@@ -80,5 +79,5 @@ sleep 6
 docker ps --format '{{.Names}} {{.Status}}' | grep -E 'hermes-robinhood'
 "@
 Invoke-VpsBash $docker
-Write-Host "Robinhood plugin deployed (Polymarket engine untouched)."
+Write-Host "Robinhood plugin deployed."
 exit 0
