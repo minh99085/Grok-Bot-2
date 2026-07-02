@@ -386,20 +386,20 @@ When the lead ships v1.1 (better SOUL, new skill), engineers run `hermes profile
 
 ### Community: publish a public agent
 
-You built something novel — maybe a "Polymarket trader" or an "academic paper summarizer" or a "Minecraft server ops assistant." You want to share it.
+You built something novel — maybe a "crypto analyst" or an "academic paper summarizer" or a "Minecraft server ops assistant." You want to share it.
 
 ```bash
 # You
-cd ~/.hermes/profiles/polymarket-trader
+cd ~/.hermes/profiles/crypto-analyst
 # Write a solid README.md at the repo root — GitHub shows it on the repo page
 git init && git add . && git commit -m "v1.0"
 git tag v1.0.0
 # Publish to a public GitHub repo
-git remote add origin https://github.com/you/hermes-polymarket-trader.git
+git remote add origin https://github.com/you/hermes-crypto-analyst.git
 git push -u origin main --tags
 
 # Anyone
-hermes profile install github.com/you/hermes-polymarket-trader --alias
+hermes profile install github.com/you/hermes-crypto-analyst --alias
 ```
 
 Tweet the install command. People who try it send you issues and PRs. If someone wants to customize, they fork — same git workflow everyone already knows.

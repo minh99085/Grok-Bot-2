@@ -386,20 +386,20 @@ pr-reviewer chat
 
 ### 社区：发布公开 agent
 
-你构建了一些新颖的东西——也许是"Polymarket 交易员"、"学术论文摘要器"或"Minecraft 服务器运维助手"。你想分享它。
+你构建了一些新颖的东西——也许是"加密分析师"、"学术论文摘要器"或"Minecraft 服务器运维助手"。你想分享它。
 
 ```bash
 # 你
-cd ~/.hermes/profiles/polymarket-trader
+cd ~/.hermes/profiles/crypto-analyst
 # 在仓库根目录写一个完整的 README.md——GitHub 会在仓库页面展示它
 git init && git add . && git commit -m "v1.0"
 git tag v1.0.0
 # 发布到公开 GitHub 仓库
-git remote add origin https://github.com/you/hermes-polymarket-trader.git
+git remote add origin https://github.com/you/hermes-crypto-analyst.git
 git push -u origin main --tags
 
 # 任何人
-hermes profile install github.com/you/hermes-polymarket-trader --alias
+hermes profile install github.com/you/hermes-crypto-analyst --alias
 ```
 
 发推分享安装命令。尝试的人会给你提 issue 和 PR。想要自定义的人可以 fork——与大家已熟悉的 git 工作流完全相同。
