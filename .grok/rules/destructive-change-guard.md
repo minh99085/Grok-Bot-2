@@ -1,29 +1,26 @@
-# Destructive change guard (operator mandate — 2026-06-28)
+# Destructive change guard
 
-**Before executing** any user prompt to delete, remove, disable, or strip code/env that affects live bot behavior, **stop and tell the operator first**. Do not commit, push, or deploy until they confirm.
+Before executing any request to delete, remove, disable, or strip code/config that affects the
+bot's trading or safety behavior, understand the blast radius first. For operator-initiated
+destructive work in the current message, proceed; otherwise pause and confirm.
 
-## Triggers (always pause + explain)
+## High-risk triggers (understand impact before editing)
 
-- Remove or delete engine modules (decider, gates, arb, feeds, loops)
-- Disable Grok/verifier/TV/trading paths or env authority keys
-- Change `frozen-env-keys.json`, `apply-loop-arch-env.py`, or gate defaults
-- Large refactors that touch `engine/pulse/engine.py` money path
-- `sync-vps` / deploy during `hands_off` unless operator explicitly overrides hands-off for that change
+- Removing or weakening `engine/robinhood/safety_gates.py`, `client.py`, or the audit log
+- Changing `RH_LIVE_TRADING_ENABLED`, notional/loss/PDT/concentration caps, or `RH_APPROVAL_MODE`
+- Disabling the OAuth token storage or MCP reconnect loop
+- Deleting or bypassing `SafeRobinhoodClient` on any order path
+- Large refactors of the agent loop (`scripts/run_robinhood_agent.py`) or MCP adapter
 
-## Required response (before any edits)
+## Before high-risk edits, state
 
-1. **What** will be removed/changed (files + runtime effect)
-2. **Risk** to trading, PnL, soak baseline, or VPS state
-3. **What stays** untouched (arb, dep-arb, gates, paper-only, etc.)
-4. **Deploy impact** — will VPS need rebuild? Is hands-off active?
-5. **Ask:** "Proceed with this removal?" — wait for explicit yes
+1. **What** changes (files + runtime effect)
+2. **Risk** to real capital, safety gates, or connectivity
+3. **What stays** protected (live kill switch, gates, audit log)
+4. **Deploy impact** — does the VPS need a rebuild?
 
-## Safe to proceed without full pause
+## Safe to proceed without pause
 
-- Read-only scans, dashboard-only display, docs the operator asked for
-- Reverting a change the operator explicitly asked to undo in the same session
-- Operator says "yes proceed", "do it", "execute", or confirms after the warning
-
-## Example (Grok decider removal)
-
-Operator: "remove Grok decider" → **Do not delete yet.** Reply: decider is removed from trading path but Analyst/Predictor stay; stops per-window Grok API calls; commit `f72d6e3` not on VPS until deploy; confirm before push/deploy.
+- Read-only scans, docs, and refactors that keep all safety gates intact
+- Changes the operator explicitly asked for in the current message ("remove X", "do it", etc.)
+- Reverting a change the operator asked to undo in the same session

@@ -1,52 +1,40 @@
-# Real-money discipline (operator ON — 2026-06-28)
+# Real-money discipline (Robinhood Agentic)
 
-Paper ledger is treated as **real capital**. Optimize PnL, win rate, and drawdown — not “collect more trades.”
+Robinhood orders move **real capital**. Treat every `place_*` path as production money —
+protect PnL and avoid catastrophic orders before chasing returns.
 
-## Goals (state.json)
+## Live-trading kill switch
 
-| Field | Value |
-|-------|--------|
-| `goals.mode` | `real_money_discipline` |
-| `goals.priority` | `pnl_protection_and_win_rate` |
-| `goals.win_rate_target_deferred` | **false** |
-| `soak_minutes` | **60** (1h between deploys — not 4h) |
+- `RH_LIVE_TRADING_ENABLED=0` is the default and MUST stay off until the operator explicitly
+  enables live trading in a dedicated message.
+- When off, `SafeRobinhoodClient` blocks every `place_equity_order` / `place_option_order`.
+- Never flip it on in code, `.env` committed to git, or a babysit/automation fix.
 
-## Runtime (engine — less conservative adjust)
+## Order safety gates (never bypass)
 
-| Knob | Discipline value | Why |
-|------|------------------|-----|
-| `PULSE_RESEARCH_AUTO_APPLY` | 1 | Block proven losers, promote proven winners |
-| `PULSE_SELECTIVITY_MIN_SAMPLES` | 30 | Faster evidence for auto-apply |
-| `PULSE_SELECTIVITY_MIN_PROFIT_FACTOR` | 0.92 | Stricter on losing buckets |
-| `PULSE_RESEARCH_INTERVAL_S` | 1200 | Research every 20 min |
-| `PULSE_LEARNING_BENCH_MARGIN` | -0.02 | Allow blend when model is near market |
-| `PULSE_LEARNING_MIN_SAMPLES` | 40 | Sooner learning ramp |
-| `PULSE_LEARNING_RAMP_SAMPLES` | 120 | Faster weight ramp |
+Every order flows through `RobinhoodSafetyGates` (`engine/robinhood/safety_gates.py`):
 
-## Babysit — act like a trader
+| Gate | Env key | Purpose |
+|------|---------|---------|
+| Max notional | `RH_MAX_ORDER_NOTIONAL_USD` | Hard per-order cap |
+| Review threshold | `RH_REVIEW_THRESHOLD_NOTIONAL_USD` | Forces Robinhood `review_*` before place |
+| Daily loss halt | `RH_DAILY_LOSS_LIMIT_USD` | Stops new orders after daily loss |
+| Position size | `RH_MAX_POSITION_PCT` | Max order as % of portfolio |
+| Concentration | `RH_MAX_SYMBOL_CONCENTRATION_PCT` | Max single-symbol exposure |
+| PDT | `RH_MAX_DAY_TRADES_5D` | Rolling 5-day day-trade limit |
+| Buying-power buffer | `RH_MIN_BUYING_POWER_BUFFER_USD` | Keeps cash reserve |
 
-**Fix these (not deferred):**
+- `RH_APPROVAL_MODE=review_required`: `place_*` above the threshold must pass `review_option_order`
+  / `review_equity_order` first.
+- Never widen a cap or disable a gate to "unblock" the bot without an explicit operator request.
 
-- `trade_starvation` / `trade_starvation_streak` → **relax** quant gates (still no TV gates)
-- `win_rate_below_target` / `profit_factor_low` → **tighten** quant gates / reward_risk
-- `up_side_bleed` → strengthen DOWN-only restrictors
-- `reconciliation_broken` / `strategy_halted` → fix immediately
+## Auditability
 
-**Priority when multiple issues:** starvation first (bot must trade), then PnL/WR tighten.
+- Every tool call + safety decision is written to `/data/robinhood_audit.jsonl`.
+- Do not remove or downgrade audit logging.
 
-**WR auto-tune (post-starvation):** when trades flow and 24h DOWN ledger shows band bleed,
-`scripts/pulse-babysit/apply-wr-tune.py --apply` patches price gates from `wr-tune-policy.json`:
+## When adding a strategy
 
-| Issue | Action |
-|-------|--------|
-| `cheap_down_bleed` | Raise `PULSE_MIN_ENTRY_PRICE` (+0.01, cap 0.48) |
-| `expensive_down_bleed` | Lower `PULSE_MAX_PRICE` (−0.02, floor 0.58) |
-| `sweet_spot_underuse` | Tighten toward 0.45–0.55 band |
-
-Floor: **never** lower `PULSE_MIN_ENTRY_PRICE` below **0.45** for starvation relief.
-
-**Never:** Grok follow, TV trade gates, live trading, disable execution gate.
-
-## Still paper-only
-
-`live_trading_enabled` stays OFF until operator explicitly enables live in a dedicated message.
+- Build it on top of `SafeRobinhoodClient`, never around it.
+- Prove it against the gates (unit tests) before wiring it to live order placement.
+- No martingale / averaging-down: size must not grow after a loss.

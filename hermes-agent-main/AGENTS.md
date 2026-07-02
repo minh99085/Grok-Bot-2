@@ -14,8 +14,8 @@ Instructions for AI coding assistants and developers working on the hermes-agent
   to the VPS, and never patch the VPS without also pushing to `main`. After any change,
   `git rev-parse HEAD` on the VPS MUST equal `origin/main`.
 - ALWAYS keep the GitHub `main` branch and the VPS codebase
-  (`/opt/hermes-agent-main`, plugin at
-  `/opt/hermes-agent-main/hermes-agent-main/plugins/hermes-trading-engine`) in sync.
+  (`/opt/Robinhood-Bot`, plugin at
+  `/opt/Robinhood-Bot/hermes-agent-main/plugins/hermes-trading-engine-robinhood`) in sync.
 - Any code fix MUST be committed and pushed to `main` AND deployed to the VPS so the two
   match. Never leave the VPS on a different commit than `main`, and never leave the VPS
   working tree dirty with ad-hoc edits.
