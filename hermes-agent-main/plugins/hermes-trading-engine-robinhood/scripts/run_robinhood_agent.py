@@ -61,7 +61,10 @@ async def _main() -> None:
             payload = client.status()
             payload["ts"] = time.time()
             _write_status(status_path, payload)
-            await asyncio.wait([stop.wait()], timeout=cfg.health_interval_s)
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=cfg.health_interval_s)
+            except asyncio.TimeoutError:
+                pass
     finally:
         adapter.stop()
         reconnect_task.cancel()

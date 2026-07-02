@@ -187,10 +187,12 @@ class RobinhoodMCPAdapter:
                     await self.health_check()
                     if not self.health.connected:
                         await self._disconnect_unlocked()
-                await asyncio.wait(
-                    [self._stop.wait()],
-                    timeout=self.config.health_interval_s,
-                )
+                try:
+                    await asyncio.wait_for(
+                        self._stop.wait(), timeout=self.config.health_interval_s
+                    )
+                except asyncio.TimeoutError:
+                    pass
             except Exception as exc:  # noqa: BLE001
                 self.health.reconnect_attempts += 1
                 self.health.last_error = str(exc)
@@ -202,7 +204,10 @@ class RobinhoodMCPAdapter:
                     details={"delay_s": delay, "attempt": self.health.reconnect_attempts},
                 )
                 logger.warning("MCP reconnect in %.1fs: %s", delay, exc)
-                await asyncio.wait([self._stop.wait()], timeout=delay)
+                try:
+                    await asyncio.wait_for(self._stop.wait(), timeout=delay)
+                except asyncio.TimeoutError:
+                    pass
                 delay = min(delay * 2, self.config.reconnect_max_s)
 
     def stop(self) -> None:
