@@ -1,5 +1,0 @@
-name: hermes-trading-engine
-version: 0.1.0
-description: "BTC 5-minute 'Up or Down' pulse PAPER engine for Polymarket. Simulated only — never places real orders. Prices each 5-min window as a digital option and paper-trades the edge."
-author: "NousResearch community"
-kind: tools
