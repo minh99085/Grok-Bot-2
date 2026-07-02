@@ -1,4 +1,4 @@
-# Hermes Robinhood Agentic plugin — isolated from Polymarket pulse engine.
+# Hermes Robinhood Agentic plugin — options + equities trading via Robinhood's Trading MCP.
 FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1 \

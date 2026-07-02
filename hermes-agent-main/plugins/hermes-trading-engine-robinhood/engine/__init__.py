@@ -1,1 +1,1 @@
-"""Hermes Robinhood Agentic Trading plugin (isolated from Polymarket pulse engine)."""
+"""Hermes Robinhood Agentic Trading plugin — options + equities via Robinhood's Trading MCP."""

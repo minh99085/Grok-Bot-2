@@ -1,6 +1,6 @@
 # Hermes Trading Engine — Robinhood Agentic
 
-Isolated plugin for connecting Hermes to [Robinhood's official Trading MCP](https://agent.robinhood.com/mcp/trading). Runs **alongside** the Polymarket paper engine (`hermes-trading-engine`) without sharing containers, ports, or data volumes.
+The repo's trading bot: connects Hermes to [Robinhood's official Trading MCP](https://agent.robinhood.com/mcp/trading) to trade **options and equities** on a Robinhood Agentic account, with local safety gates in front of every order.
 
 ## Architecture
 
@@ -27,16 +27,15 @@ curl http://127.0.0.1:8810/api/health
 curl http://127.0.0.1:8810/api/robinhood/tools
 ```
 
-## VPS deploy (does not touch Polymarket)
+## VPS deploy
 
 From repo root after pushing to `main`:
 
 ```powershell
 git push origin main
 .\scripts\sync-vps-robinhood.ps1
+.\scripts\verify-sync.ps1
 ```
-
-Polymarket deploy remains `.\scripts\sync-vps.ps1` — unchanged.
 
 ### First-time VPS OAuth
 
@@ -46,6 +45,18 @@ Robinhood requires **desktop** OAuth for Agentic account onboarding:
 2. `python scripts/robinhood_oauth_login.py` — open the printed URL, complete auth, paste callback URL.
 3. Confirm tokens at `/data/robinhood_oauth_tokens.json` inside `rh_data` volume.
 4. Start containers: `docker compose --profile robinhood up -d`.
+
+## Options + equities
+
+Order tools are gated the same way for both asset classes:
+
+| Place tool | Review tool |
+|------------|-------------|
+| `place_option_order` | `review_option_order` |
+| `place_equity_order` | `review_equity_order` |
+
+Every `place_*` call flows through `SafeRobinhoodClient` → `RobinhoodSafetyGates`; option
+chains and other read tools are whatever the Robinhood MCP server exposes (logged at OAuth login).
 
 ## Safety defaults
 

@@ -2,34 +2,27 @@
 
 ## Scope
 
-This plugin is **isolated** from `hermes-trading-engine/` (Polymarket BTC pulse). Never modify the Polymarket plugin when working on Robinhood integration.
+This plugin is the repo's trading bot: it trades **options and equities** on a Robinhood
+Agentic account through Robinhood's official Trading MCP.
 
 - **MCP endpoint:** `https://agent.robinhood.com/mcp/trading`
 - **Plugin path:** `hermes-agent-main/plugins/hermes-trading-engine-robinhood/`
-- **VPS plugin path:** `/opt/Grok-Bot-2/hermes-agent-main/plugins/hermes-trading-engine-robinhood`
+- **VPS plugin path:** `/opt/Robinhood-Bot/hermes-agent-main/plugins/hermes-trading-engine-robinhood`
 
-## Deploy to VPS (OPERATOR MEMORY — ALWAYS follow, set 2026-07-02)
+## Deploy to VPS (OPERATOR MEMORY — ALWAYS follow)
 
 **Every change:** push to `main` → sync VPS → `down --remove-orphans` → `build` → `up -d --remove-orphans`.
 
-Polymarket (always, on every push):
-
 ```powershell
 git push origin main
-.\scripts\sync-vps.ps1
-.\scripts\verify-sync.ps1
-```
-
-Robinhood (when this plugin changed):
-
-```powershell
 .\scripts\sync-vps-robinhood.ps1
+.\scripts\verify-sync.ps1
 ```
 
 Manual on VPS:
 
 ```bash
-cd /opt/Grok-Bot-2/hermes-agent-main/plugins/hermes-trading-engine-robinhood
+cd /opt/Robinhood-Bot/hermes-agent-main/plugins/hermes-trading-engine-robinhood
 cp .env.example .env   # first time only
 docker compose --profile robinhood down --remove-orphans
 docker compose --profile robinhood build
@@ -67,9 +60,9 @@ To enable after OAuth + Agentic account onboarding:
 - All `place_equity_order` / `place_option_order` calls go through `SafeRobinhoodClient`
 - Orders ≥ `RH_REVIEW_THRESHOLD_NOTIONAL_USD` must pass Robinhood `review_*` first
 - PDT, daily loss, concentration, and max-notional gates are enforced locally
-- No trading strategies in this plugin — connectivity + safety only (Phase 1)
+- Connectivity + safety layer (Phase 1). Add trading strategies deliberately, always behind the gates.
 
-## Stop without affecting Polymarket
+## Stop the bot
 
 ```bash
 docker compose --profile robinhood down --remove-orphans

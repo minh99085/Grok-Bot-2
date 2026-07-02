@@ -1,7 +1,7 @@
-# Robinhood Agentic Trading plugin — ISOLATED from Polymarket pulse (hermes-trading-engine).
+# Robinhood Agentic Trading plugin — the repo's trading bot (options + equities).
 #
-# Not started by scripts/sync-vps.ps1 (Polymarket deploy). Use scripts/sync-vps-robinhood.ps1
-# or manual commands below. Default profile keeps services opt-in.
+# Deploy with scripts/sync-vps-robinhood.ps1 or the manual commands below. Services stay
+# behind the `robinhood` profile so they are opt-in.
 #
 #   docker compose --profile robinhood up -d --build
 #   docker compose --profile robinhood down --remove-orphans
